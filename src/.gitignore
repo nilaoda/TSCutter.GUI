@@ -1,0 +1,83 @@
+# Rider
+.idea
+
+# lib
+av_libglesv2.lib
+libHarfBuzzSharp.lib
+libSkiaSharp.lib
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.suo
+*.ntvs_analysis.dat
+*.vs/
+.vscode/
+
+# Auto-generated files
+*.dll
+*.exe
+*.pdb
+*.cache
+*.log
+
+# Build results
+[Oo]bj/
+[Dd]ebug/
+[Dd]ebugPublic/
+[Rr]eleases/
+[Rr]eleasesPublic/
+*.app/
+*.dSYM/
+*.ncb
+*.suo
+*.suo*
+*.user
+*.userosscache
+*.suo
+*.cache
+*.pdb
+*.log
+*.vs/
+
+# Rider-specific files
+.idea/
+*.sln.iml
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Thumbnails
+._*
+
+# Files that might be created by Mac applications
+*.plist
+
+# Core dumps
+*.core
+
+# JetBrains Rider
+.idea/
+*.sln.iml
+*.sln
+*.csproj.user
+*.csproj.user.*
+*.ncb
+*.suo
+*.suo.*
+*.user
+*.userosscache
+*.vs/
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+
+# NuGet Packages
+*.nupkg
+*.snupkg
+packages/

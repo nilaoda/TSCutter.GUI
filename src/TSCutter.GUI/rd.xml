@@ -1,0 +1,5 @@
+﻿<Directives>
+    <Application>
+        <Assembly Name="Sdcb.FFmpeg" Dynamic="Required All"/>
+    </Application>
+</Directives>

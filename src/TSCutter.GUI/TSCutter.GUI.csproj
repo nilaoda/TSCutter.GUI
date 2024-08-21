@@ -1,0 +1,49 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+    <PropertyGroup>
+        <Version>0.0.0</Version>
+        <OutputType>WinExe</OutputType>
+        <TargetFramework>net8.0</TargetFramework>
+        <Nullable>enable</Nullable>
+        <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
+        <ApplicationManifest>app.manifest</ApplicationManifest>
+        <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <AvaloniaResource Include="Assets\**"/>
+    </ItemGroup>
+
+    <ItemGroup>
+        <PackageReference Include="Avalonia" Version="11.1.1"/>
+        <PackageReference Include="Avalonia.Desktop" Version="11.1.1"/>
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.1.1"/>
+        <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
+        <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.1.1"/>
+        <PackageReference Include="Avalonia.ReactiveUI" Version="11.1.1" />
+        <PackageReference Include="Avalonia.Xaml.Interactions" Version="11.1.0" />
+        <PackageReference Include="CommunityToolkit.Mvvm" Version="8.2.1"/>
+        <PackageReference Include="HanumanInstitute.MvvmDialogs" Version="2.1.0" />
+        <PackageReference Include="HanumanInstitute.MvvmDialogs.Avalonia" Version="2.1.0" />
+        <PackageReference Include="HanumanInstitute.MvvmDialogs.Avalonia.MessageBox" Version="2.1.0" />
+        <PackageReference Include="Irihi.Ursa" Version="1.1.0" />
+        <PackageReference Include="Irihi.Ursa.Themes.Semi" Version="1.1.0" />
+        <PackageReference Include="Sdcb.FFmpeg" Version="7.0.0" />
+        <PackageReference Include="Semi.Avalonia" Version="11.1.0.2" />
+        <PackageReference Include="Semi.Avalonia.DataGrid" Version="11.1.0.2" />
+        <PackageReference Include="Splat.DependencyInjection.SourceGenerator" Version="1.2.3">
+          <PrivateAssets>all</PrivateAssets>
+          <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+        </PackageReference>
+    </ItemGroup>
+    
+    <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
+        <PackageReference Include="Sdcb.FFmpeg.runtime.windows-x64" Version="7.0.0" />
+        <None Update="$(NuGetPackageRoot)sdcb.ffmpeg.runtime.windows-x64\**\*.dll">
+            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+        </None>
+    </ItemGroup>
+
+    <ItemGroup>
+      <UpToDateCheckInput Remove="Styles\SliderStyles.axaml" />
+    </ItemGroup>
+</Project>

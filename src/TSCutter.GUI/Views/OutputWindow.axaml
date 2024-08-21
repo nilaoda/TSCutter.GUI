@@ -1,0 +1,26 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        mc:Ignorable="d"
+        Width="300" Height="100"
+        x:Class="TSCutter.GUI.Views.OutputWindow"
+        DataContext="{x:Static local:App.OutputDialog}"
+        x:DataType="viewModels:OutputWindowViewModel"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Title="Output File">
+    <Interaction.Behaviors>
+        <EventTriggerBehavior EventName="Loaded">
+            <InvokeCommandAction Command="{Binding OutputCommand}" />
+        </EventTriggerBehavior>
+    </Interaction.Behaviors>
+    <Panel HorizontalAlignment="Center" VerticalAlignment="Center">
+        <ProgressBar ShowProgressText="True"
+                     Minimum="0" Maximum="100"
+                     Height="30" Width="250"
+                     Value="{Binding Percent}"/>
+    </Panel>
+</Window>
