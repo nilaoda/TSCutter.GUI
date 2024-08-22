@@ -99,8 +99,6 @@ public class VideoInstance(string filePath) : IDisposable
     private DecodeResult DecodeGopFrame(int count = 1)
     {
         var packetIndex = 1;
-        var width = videoDecoder!.Width;
-        var height = videoDecoder!.Height;
 
         // Back forward
         if (count < 0)
@@ -123,7 +121,7 @@ public class VideoInstance(string filePath) : IDisposable
             PositionInFile = packet.Position;
             
             // Process packet and frames
-            var result = DecodePacket(packet, width, height);
+            var result = DecodePacket(packet);
             if (result != null)
             {
                 return result;
@@ -179,7 +177,7 @@ public class VideoInstance(string filePath) : IDisposable
         return TimeSpan.FromSeconds((pts - firstFrameTimestamp) / t);
     }
     
-    private DecodeResult? DecodePacket(Packet packet, int width, int height)
+    private DecodeResult? DecodePacket(Packet packet)
     {
         using Frame destRef = new Frame();
         // 1 packet -> 0..N frame
@@ -197,7 +195,7 @@ public class VideoInstance(string filePath) : IDisposable
 
             try
             {
-                decodedBitmap = ImageUtil.CreateBitmapFromFrame(frame, width, height);
+                decodedBitmap = ImageUtil.CreateBitmapFromFrame(frame);
             }
             catch (FFmpegException e)
             {
