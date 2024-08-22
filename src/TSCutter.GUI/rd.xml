@@ -1,5 +1,6 @@
 ﻿<Directives>
     <Application>
         <Assembly Name="Sdcb.FFmpeg" Dynamic="Required All"/>
+        <Assembly Name="TSCutter.GUI" Dynamic="Required All"/>
     </Application>
 </Directives>
