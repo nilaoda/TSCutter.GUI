@@ -88,6 +88,7 @@
                                     <CornerRadius x:Key="SliderTrackCornerRadius">0</CornerRadius>
                                     <SolidColorBrush x:Key="SliderThumbBorderBrush" Color="#2ecc71" />
                                     <SolidColorBrush x:Key="SliderTrackForeground" Opacity="0.05" Color="#2E3238" />
+                                    <SolidColorBrush x:Key="SliderTrackBackground" Opacity="0.05" Color="#2E3238" />
                                 </ResourceDictionary>
                                 <ResourceDictionary x:Key="Dark">
                                     <system:Double x:Key="SliderTrackWidth">18</system:Double>
@@ -96,7 +97,8 @@
                                     <CornerRadius x:Key="SliderThumbCornerRadius">0</CornerRadius>
                                     <CornerRadius x:Key="SliderTrackCornerRadius">0</CornerRadius>
                                     <SolidColorBrush x:Key="SliderThumbBorderBrush" Color="#27ae60" />
-                                    <SolidColorBrush x:Key="SliderTrackForeground" Opacity="0.05" Color="#2E3238" />
+                                    <SolidColorBrush x:Key="SliderTrackForeground" Opacity="0.05" Color="#717174" />
+                                    <SolidColorBrush x:Key="SliderTrackBackground" Opacity="0.05" Color="#717174" />
                                 </ResourceDictionary>
                             </ResourceDictionary.ThemeDictionaries>
                         </ResourceDictionary>
@@ -196,8 +198,8 @@
                       CanUserSortColumns="False"
                       AutoGenerateColumns="False">
                 <DataGrid.Columns>
-                    <DataGridTextColumn Header="Start Time" Width="Auto" Binding="{Binding StartTimeStr}" />
-                    <DataGridTextColumn Header="End Time" Width="Auto" Binding="{Binding EndTimeStr}" />
+                    <DataGridTextColumn Header="Start Time" Width="120" Binding="{Binding StartTimeStr}" />
+                    <DataGridTextColumn Header="End Time" Width="120" Binding="{Binding EndTimeStr}" />
                     <DataGridTextColumn Header="Output Path" Width="*" Binding="{Binding OutputPath}" />
                 </DataGrid.Columns>
             </DataGrid>
