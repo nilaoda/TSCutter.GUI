@@ -39,6 +39,6 @@ public partial class MainWindow : Window
     {
         Console.WriteLine($"Seek to {e}");
         await ViewModel.SeekToTimeAsync(TimeSpan.FromSeconds(e));
-        await ViewModel.DrawNextGopAsync(1);
+        await ViewModel.DrawNextFrameAsync(1);
     }
 }

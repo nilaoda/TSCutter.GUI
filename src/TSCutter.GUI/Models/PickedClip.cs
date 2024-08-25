@@ -24,10 +24,12 @@ public partial class PickedClip : ObservableObject
     private long _endPosition = -1;
 
     [ObservableProperty]
-    private string? _outputPath;
+    [NotifyPropertyChangedFor(nameof(OutputFileSizeStr))]
+    private FileInfo? _outputFileInfo;
     
-    public required FileInfo FilePath { get; init; }
+    public required FileInfo InFileInfo { get; init; }
 
     public string StartTimeStr => CommonUtil.FormatSeconds(StartTime);
+    public string? OutputFileSizeStr => OutputFileInfo == null ? null : CommonUtil.FormatFileSize(OutputFileInfo.Length);
     public string EndTimeStr => EndTime < 0 ? "Inf." : CommonUtil.FormatSeconds(EndTime);
 }

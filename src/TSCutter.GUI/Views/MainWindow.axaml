@@ -127,7 +127,7 @@
                     </Grid.Styles>
                     <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" Margin="4, 4">
                         <Button Command="{Binding Prev10GopClickCommand}"
-                                ToolTip.Tip="Previous 10 GOP"
+                                ToolTip.Tip="Previous 10"
                                 Classes="Secondary">
                             <PathIcon Height="12" Data="{StaticResource fast_forward_regular}">
                                 <PathIcon.RenderTransform>
@@ -136,17 +136,17 @@
                             </PathIcon>
                         </Button>
                         <Button Command="{Binding PrevGopClickCommand}"
-                                ToolTip.Tip="Previous GOP"
+                                ToolTip.Tip="Previous"
                                 Classes="Secondary">
                             <PathIcon Height="12" Data="{StaticResource caret_left_regular}" />
                         </Button>
                         <Button Command="{Binding NextGopClickCommand}"
-                                ToolTip.Tip="Next GOP"
+                                ToolTip.Tip="Next"
                                 Classes="Secondary">
                             <PathIcon Height="12" Data="{StaticResource caret_right_regular}" />
                         </Button>
                         <Button Command="{Binding Next10GopClickCommand}"
-                                ToolTip.Tip="Next 10 GOP"
+                                ToolTip.Tip="Next 10"
                                 Classes="Secondary">
                             <PathIcon Height="12" Data="{StaticResource fast_forward_regular}" />
                         </Button>
@@ -200,7 +200,8 @@
                 <DataGrid.Columns>
                     <DataGridTextColumn Header="Start Time" Width="120" Binding="{Binding StartTimeStr}" />
                     <DataGridTextColumn Header="End Time" Width="120" Binding="{Binding EndTimeStr}" />
-                    <DataGridTextColumn Header="Output Path" Width="*" Binding="{Binding OutputPath}" />
+                    <DataGridTextColumn Header="Output Size" Width="120" Binding="{Binding OutputFileSizeStr}" />
+                    <DataGridTextColumn Header="Output Path" Width="*" Binding="{Binding OutputFileInfo.FullName}" />
                 </DataGrid.Columns>
             </DataGrid>
         </Grid>

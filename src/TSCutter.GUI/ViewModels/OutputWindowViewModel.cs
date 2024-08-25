@@ -24,7 +24,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     {
         try
         {
-            await CommonUtil.CopyFileAsync(SelectedClip!.FilePath, OutputPath!, SelectedClip!.StartPosition, SelectedClip!.EndPosition, percent => Percent = percent);
+            await CommonUtil.CopyFileAsync(SelectedClip!.InFileInfo, OutputPath!, SelectedClip!.StartPosition, SelectedClip!.EndPosition, percent => Percent = percent);
             DialogResult = true;
             RequestClose?.Invoke(this, EventArgs.Empty);
         }

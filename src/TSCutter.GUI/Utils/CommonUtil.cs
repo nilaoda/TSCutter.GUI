@@ -46,4 +46,16 @@ public static class CommonUtil
         // Final progress report (100%)
         progress?.Invoke(100);
     }
+    
+    public static string? FormatFileSize(double fileSize)
+    {
+        return fileSize switch
+        {
+            < 0 => throw new ArgumentOutOfRangeException(nameof(fileSize)),
+            >= 1024 * 1024 * 1024 => string.Format("{0:########0.00}GB", (double)fileSize / (1024 * 1024 * 1024)),
+            >= 1024 * 1024 => string.Format("{0:####0.00}MB", (double)fileSize / (1024 * 1024)),
+            >= 1024 => string.Format("{0:####0.00}KB", (double)fileSize / 1024),
+            _ => string.Format("{0:####0.00}B", fileSize)
+        };
+    }
 }

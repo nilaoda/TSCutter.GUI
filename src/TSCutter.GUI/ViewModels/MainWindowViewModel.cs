@@ -4,9 +4,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Threading.Tasks;
-using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -23,7 +21,17 @@ public partial class MainWindowViewModel : ViewModelBase
 {
     public IRelayCommand<DragEventArgs> DragOverCommand { get; }
     public IAsyncRelayCommand<DragEventArgs> DropCommand { get; }
-    public string WindowTitle => "TSCutter.GUI - v0.0.0";
+
+    public string WindowTitle
+    {
+        get
+        {
+            var defaultTitle = "TSCutter.GUI - Alpha.0826";
+            if (!string.IsNullOrEmpty(VideoPath))
+                return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
+            return defaultTitle;
+        }
+    }
     private VideoInstance? _videoInstance;
     private readonly IDialogService _dialogService;
     
@@ -52,7 +60,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         SelectedClip = new PickedClip()
         {
-            FilePath = new FileInfo(VideoPath),
+            InFileInfo = new FileInfo(VideoPath),
             StartTime = CurrentTime,
             StartPosition = PositionInFile,
             EndTime = DurationMax,
@@ -96,6 +104,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task SaveVideoClickAsync() => await SaveVideoAsync();
     
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WindowTitle))]
     private string _videoPath;
 
     [ObservableProperty]
@@ -129,19 +138,34 @@ public partial class MainWindowViewModel : ViewModelBase
                                     $"DecodeCost: {DecodeCost}ms";
 
     [RelayCommand]
-    private async Task LoadVideoClickAsync() => await LoadVideoAsync();
+    private async Task LoadVideoClickAsync()
+    {
+        var settings = new OpenFileDialogSettings()
+        {
+            Title = "Open TS file",
+            Filters = new List<FileFilter>()
+            {
+                new("MPEG2-TS Video", ["ts"]),
+            }
+        };
+        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+        if (!result.Any()) return;
+
+        VideoPath = result[0].LocalPath;
+        await LoadVideoAsync();
+    }
 
     [RelayCommand]
-    private async Task PrevGopClickAsync() => await DrawNextGopAsync(-1);
+    private async Task PrevGopClickAsync() => await DrawNextFrameAsync(-1);
 
     [RelayCommand]
-    private async Task NextGopClickAsync() => await DrawNextGopAsync(1);
+    private async Task NextGopClickAsync() => await DrawNextFrameAsync(1);
 
     [RelayCommand]
-    private async Task Prev10GopClickAsync() => await DrawNextGopAsync(-10);
+    private async Task Prev10GopClickAsync() => await DrawNextFrameAsync(-10);
 
     [RelayCommand]
-    private async Task Next10GopClickAsync() => await DrawNextGopAsync(10);
+    private async Task Next10GopClickAsync() => await DrawNextFrameAsync(10);
 
     [RelayCommand]
     private void ZoomIn() => ZoomFactor = Math.Min(1, ZoomFactor + 0.1);
@@ -157,13 +181,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public async Task SeekToTimeAsync(TimeSpan timeSpan) => await _videoInstance!.SeekToTimeAsync(timeSpan);
     
-    public async Task DrawNextGopAsync(int count)
+    public async Task DrawNextFrameAsync(int count = 1)
     {
         if (_videoInstance is not { Inited: true }) return;
         
         DecodeCost = 0;
         var stopwatch = Stopwatch.StartNew();
-        var decodeResult = await _videoInstance!.DecodeGopFrameAsync(count);
+        var decodeResult = await _videoInstance!.DecodeNextFrameAsync(count);
         DecodeCost = stopwatch.ElapsedMilliseconds;
         Console.WriteLine($"PositionInFile: {_videoInstance.PositionInFile}");
         stopwatch.Stop();
@@ -177,40 +201,18 @@ public partial class MainWindowViewModel : ViewModelBase
         Clips.Clear();
     }
 
-    private async Task LoadVideoAsync(string filePath = "")
+    private async Task LoadVideoAsync()
     {
         ClearVars();
         _videoInstance?.Close();
-
-        if (File.Exists(filePath))
-        {
-            VideoPath = filePath;
-        }
-        else
-        {
-            var settings = new OpenFileDialogSettings()
-            {
-                Title = "Open TS file",
-                Filters = new List<FileFilter>()
-                {
-                    new("MPEG2-TS Video", ["ts"]),
-                }
-            };
-            var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
-            if (!result.Any()) return;
-
-            VideoPath = result[0].LocalPath;
-        }
         
         _videoInstance = new VideoInstance(VideoPath);
         await _videoInstance.InitVideoAsync();
         VideoInfoText = _videoInstance.GetVideoInfoText();
         DurationMax = _videoInstance.GetVideoDurationInSeconds();
 
-        // seek
-        await _videoInstance.SeekToTimeAsync(TimeSpan.Zero);
         // decode
-        await DrawNextGopAsync(1);
+        await DrawNextFrameAsync(1);
     }
     
     private void DragOverHandler(DragEventArgs? e)
@@ -231,7 +233,8 @@ public partial class MainWindowViewModel : ViewModelBase
         var ext = Path.GetExtension(filePath);
         if (File.Exists(filePath) && ext is ".ts" && VideoPath != filePath)
         {
-            await LoadVideoAsync(filePath);
+            VideoPath = filePath;
+            await LoadVideoAsync();
         }
     }
 
@@ -258,12 +261,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private async Task SaveVideoAsync()
     {
-        var defaultName = Path.GetFileNameWithoutExtension(SelectedClip!.FilePath.FullName)
-            + $"_{CommonUtil.FormatSeconds(SelectedClip!.StartTime, true)}-{CommonUtil.FormatSeconds(SelectedClip!.EndTime, true)}";
+        var defaultName = Path.GetFileNameWithoutExtension(SelectedClip!.InFileInfo.FullName)
+            + $"_({CommonUtil.FormatSeconds(SelectedClip!.StartTime, true)}-{CommonUtil.FormatSeconds(SelectedClip!.EndTime, true)}).ts";
         var settings = new SaveFileDialogSettings
         {
             Title = "Save Your Clip",
-            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(SelectedClip!.FilePath.FullName)!),
+            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(SelectedClip!.InFileInfo.FullName)!),
             SuggestedFileName = defaultName,
             Filters = new List<FileFilter>()
             {
@@ -281,7 +284,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var success = await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
         if (success == true)
         {
-            SelectedClip!.OutputPath = dialogViewModel.OutputPath;
+            SelectedClip!.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
         }
     }
 }

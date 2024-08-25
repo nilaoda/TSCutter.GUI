@@ -8,7 +8,9 @@ using Sdcb.FFmpeg.Formats;
 using Sdcb.FFmpeg.Raw;
 using Sdcb.FFmpeg.Toolboxs.Extensions;
 using Sdcb.FFmpeg.Utils;
+using TSCutter.GUI.Extensions;
 using TSCutter.GUI.Utils;
+using static TSCutter.GUI.Utils.CommonUtil;
 
 namespace TSCutter.GUI.Models;
 
@@ -63,10 +65,12 @@ public class VideoInstance(string filePath) : IDisposable
         videoDecoder.Open();
 
         // calc KeyFrameGap
-        DecodeGopFrame();
+        DecodeNextFrame();
+        DecodeNextFrame();
         var firstKeyFramePts = currentKeyFramePts;
-        DecodeGopFrame();
+        DecodeNextFrame();
         keyFrameGap = currentKeyFramePts - firstKeyFramePts;
+        Console.WriteLine($"keyFrameGap: {keyFrameGap}");
         SeekToTime(TimeSpan.Zero);
 
         Inited = true;
@@ -81,59 +85,62 @@ public class VideoInstance(string filePath) : IDisposable
     {
         var targetTimestamp = TimeSpanToPts(timeSpan);
         targetTimestamp = Math.Min(maxPts, targetTimestamp);
-        lastSeekPts = targetTimestamp;
-        inFc.SeekFrame(targetTimestamp, videoStreamIndex);
+        Seek(targetTimestamp);
     }
 
-    public void Seek(long pts)
+    public void Seek(long pts, AVSEEK_FLAG flag = 0)
     {
         lastSeekPts = pts;
-        inFc.SeekFrame(pts, videoStreamIndex);
+        inFc.SeekFrame(pts, videoStreamIndex, flag);
     }
 
-    public async Task<DecodeResult> DecodeGopFrameAsync(int count = 1)
+    public async Task<DecodeResult> DecodeNextFrameAsync(int count = 1)
     {
-        return await Task.Run(() => DecodeGopFrame(count));
+        return await Task.Run(() => DecodeNextFrame(count));
     }
 
-    private DecodeResult DecodeGopFrame(int count = 1)
+    private DecodeResult DecodeNextFrame(int count = 1)
     {
-        var packetIndex = 1;
-
-        // Back forward
         if (count < 0)
         {
-            var timestamp = Math.Max(0, currentKeyFramePts - Math.Abs(keyFrameGap) * Math.Abs(count));
-            Seek(timestamp);
-            return DecodeGopFrame();
+            // Seek backward by keyframe gap * abs(count)
+            var targetPts = Math.Max(0, currentKeyFramePts - Math.Abs(keyFrameGap) * Math.Abs(count)) - 2;
+            Seek(targetPts, AVSEEK_FLAG.Backward);
+            return DecodeNextFrame();
+        }
+
+        if (count > 1)
+        {
+            // Seek forward by keyframe gap * abs(count)
+            var targetPts = Math.Min(maxPts, currentKeyFramePts + Math.Abs(keyFrameGap) * Math.Abs(count)) + 2;
+            Seek(targetPts);
+            return DecodeNextFrame();
         }
         
         foreach (var packet in inFc.ReadPackets(videoStreamIndex))
         {
-            // Find Key Frame
             if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
+            {
+                Console.WriteLine($"Skip[NonKey] packet: {packet.Pts}");
                 continue;
-            
-            if (packetIndex++ < count)
-                continue;
-            
-            // Current Position
+            }
+
+            Console.WriteLine($"Current packet: {packet.Pts}");
             PositionInFile = packet.Position;
-            
-            // Process packet and frames
+
             var result = DecodePacket(packet);
             if (result != null)
             {
                 return result;
             }
         }
-        
-        // back, retry
+
+        // No keyframe found, retry by seeking slightly earlier
         if (lastSeekPts - 1000 < 0)
             throw new Exception("Decode Failed!");
-        
+
         Seek(lastSeekPts - 1000);
-        return DecodeGopFrame();
+        return DecodeNextFrame();
     }
 
     public double GetVideoDurationInSeconds()
@@ -146,7 +153,8 @@ public class VideoInstance(string filePath) : IDisposable
         var width = inVideoStream.Codecpar!.Width;
         var height = inVideoStream.Codecpar.Height;
         var durationInSeconds = inVideoStream.GetDurationInSeconds();
-        return $"{inVideoStream.Codecpar.CodecId}, {width}x{height}, {CommonUtil.FormatSeconds(durationInSeconds)}";
+        var fileSize = inFc.GetFileSize();
+        return $"{inVideoStream.Codecpar.CodecId}, {width}x{height}, {FormatSeconds(durationInSeconds)}, {FormatFileSize(fileSize)}";
     }
 
     public void Close()
@@ -159,10 +167,7 @@ public class VideoInstance(string filePath) : IDisposable
 
     public void Dispose()
     {
-        inFc?.Close();
-        inFc?.Dispose();
-        videoDecoder?.Close();
-        videoDecoder?.Dispose();
+        Close();
     }
 
     private long TimeSpanToPts(TimeSpan timeSpan)
@@ -181,7 +186,7 @@ public class VideoInstance(string filePath) : IDisposable
     {
         using Frame destRef = new Frame();
         // 1 packet -> 0..N frame
-        foreach (var frame in videoDecoder.DecodePacket(packet, destRef).Take(1))
+        foreach (var frame in videoDecoder.DecodePacket(packet, destRef))
         {
             if (firstFrameTimestamp == -1)
             {
@@ -189,6 +194,7 @@ public class VideoInstance(string filePath) : IDisposable
                 maxPts = inVideoStream.Duration + firstFrameTimestamp;
             }
 
+            Console.WriteLine($"Current keyFrame: {frame.Pts}");
             currentKeyFramePts = frame.Pts;
 
             Bitmap decodedBitmap;
@@ -196,6 +202,7 @@ public class VideoInstance(string filePath) : IDisposable
             try
             {
                 decodedBitmap = ImageUtil.CreateBitmapFromFrame(frame);
+                videoDecoder.FlushBuffers();
             }
             catch (FFmpegException e)
             {
