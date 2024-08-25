@@ -7,7 +7,10 @@ Known issues:
 * keyframe seeking
 
 # Screen
-![img](img/Snipaste_2024-08-22_01-23-24.png)
+![img](img/SS1.png)
+
+# Thanks
+This project is inspired by an excellent editing software called [VidePub](https://sourceforge.net/projects/videpub/).
 
 # License
 ...
