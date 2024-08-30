@@ -143,7 +143,7 @@ jobs:
         uses: ncipollo/release-action@v1
         with:
           tag: alphabuild_${{ needs.set-date.outputs.date }}
-          name: TSCutter.GUI Alpha-Build (${{ steps.get_release_time.outputs.release_time }})
+          name: Alpha-Build (${{ steps.get_release_time.outputs.release_time }})
           artifacts: "TSCutter.GUI_linux-x64/*,TSCutter.GUI_osx-x64/*,TSCutter.GUI_win-x64/*"
           draft: false
           allowUpdates: true
