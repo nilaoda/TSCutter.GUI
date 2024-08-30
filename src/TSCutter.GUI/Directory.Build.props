@@ -27,13 +27,13 @@
         https://github.com/2ndlab/ANGLE.Static/releases
         https://github.com/2ndlab/SkiaSharp.Static/releases
     -->
-    <ItemGroup>
+    <ItemGroup Condition="'$(PublishAot)' == 'true' and '$(RuntimeIdentifier)' == 'win-x64'">
         <DirectPInvoke Include="libHarfBuzzSharp" />
-        <NativeLibrary Include="lib\libHarfBuzzSharp.lib" Condition="$(RuntimeIdentifier.StartsWith('win'))" />
+        <NativeLibrary Include="lib\libHarfBuzzSharp.lib"/>
         <DirectPInvoke Include="libSkiaSharp" />
-        <NativeLibrary Include="lib\libSkiaSharp.lib" Condition="$(RuntimeIdentifier.StartsWith('win'))" />
+        <NativeLibrary Include="lib\libSkiaSharp.lib"/>
         <DirectPInvoke Include="av_libglesv2" />
-        <NativeLibrary Include="lib\av_libglesv2.lib" Condition="$(RuntimeIdentifier.StartsWith('win'))" />
+        <NativeLibrary Include="lib\av_libglesv2.lib"/>
     </ItemGroup>
 
     <ItemGroup>
