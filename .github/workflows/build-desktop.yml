@@ -1,0 +1,150 @@
+name: Build and Release
+
+on:
+  workflow_dispatch:
+
+env:
+  DOTNET_SDK_VERSION: 8.x
+  ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
+
+jobs:
+  set-date:
+    runs-on: ubuntu-latest
+    outputs:
+      date: ${{ steps.get_date.outputs.date }}
+    steps:
+      - name: Get Date in UTC+8
+        id: get_date
+        run: echo "::set-output name=date::$(date -u -d '8 hours' +'%Y%m%d')"
+
+  build-win-x64:
+    runs-on: windows-latest
+    needs: set-date
+
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Set up dotnet
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
+      - name: Install 7zip and zip
+        run: |
+          choco install 7zip --no-progress --yes
+          choco install zip --no-progress --yes
+
+      - name: Download ANGLE.Static
+        run: |
+          cd src/TSCutter.GUI/lib
+          curl -L https://github.com/2ndlab/ANGLE.Static/releases/download/v1.1.0/av_libglesv2-10.0.22621.0.7z -o angle.7z
+          7z x angle.7z
+
+      - name: Download SkiaSharp.Static (HarfBuzz)
+        run: |
+          cd src/TSCutter.GUI/lib
+          curl -L https://github.com/2ndlab/SkiaSharp.Static/releases/download/v1.0.0/libHarfBuzzSharp.zip -o harfbuzz.zip
+          unzip -o harfbuzz.zip -d .
+          7z x libHarfBuzzSharp.7z
+
+      - name: Download SkiaSharp.Static (SkiaSharp)
+        run: |
+          cd src/TSCutter.GUI/lib
+          curl -L https://github.com/2ndlab/SkiaSharp.Static/releases/download/v1.0.0/libSkiaSharp.zip -o skiasharp.zip
+          unzip -o skiasharp.zip -d .
+          7z x libSkiaSharp.7z
+
+      - name: Publish [win-x64]
+        run: | 
+          cd src/TSCutter.GUI
+          dotnet publish -r win-x64 -c Release -o artifact
+
+      - name: Package [win-x64]
+        run: |
+          cd src/TSCutter.GUI/artifact
+          zip -r ../../../TSCutter.GUI_Alpha_win-x64_${{ needs.set-date.outputs.date }}.zip . -x "lib*" -x "av_*" -x "*.pdb"
+
+      - name: Upload Artifact [win-x64]
+        uses: actions/upload-artifact@v3.1.3
+        with:
+          name: TSCutter.GUI_win-x64
+          path: TSCutter.GUI_Alpha_win-x64_${{ needs.set-date.outputs.date }}.zip
+
+  build-linux-x64:
+    runs-on: ubuntu-latest
+    container: ubuntu:18.04
+    needs: set-date
+
+    steps:
+      - run: apt-get update
+      - run: apt-get install -y curl wget libicu-dev libcurl4-openssl-dev zlib1g-dev libkrb5-dev zip
+      - uses: actions/checkout@v1
+
+      - name: Set up dotnet
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
+      - name: Publish [linux-x64]
+        run: dotnet publish src/TSCutter.GUI -r linux-x64 -c Release -o artifact
+
+      - name: Package [linux-x64]
+        run: |
+          cd artifact
+          zip -r ../TSCutter.GUI_Alpha_linux-x64_${{ needs.set-date.outputs.date }}.zip . -x "*.dbg"
+
+      - name: Upload Artifact [linux-x64]
+        uses: actions/upload-artifact@v3.1.3
+        with:
+          name: TSCutter.GUI_linux-x64
+          path: TSCutter.GUI_Alpha_linux-x64_${{ needs.set-date.outputs.date }}.zip
+
+  build-mac-x64:
+    runs-on: macos-latest
+    needs: set-date
+
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Set up dotnet
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+
+      - name: Publish [osx-x64]
+        run: dotnet publish src/TSCutter.GUI -r osx-x64 -c Release -o artifact
+
+      - name: Package [osx-x64]
+        run: |
+          cd artifact
+          zip -r ../TSCutter.GUI_Alpha_osx-x64_${{ needs.set-date.outputs.date }}.zip . -x "*.dsym/*"
+
+      - name: Upload Artifact [osx-x64]
+        uses: actions/upload-artifact@v3.1.3
+        with:
+          name: TSCutter.GUI_osx-x64
+          path: TSCutter.GUI_Alpha_osx-x64_${{ needs.set-date.outputs.date }}.zip
+
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    needs: [build-win-x64, build-linux-x64, build-mac-x64, set-date]
+
+    steps:
+      - name: Fetch artifacts
+        uses: actions/download-artifact@v3
+
+      - name: Get Release Time
+        id: get_release_time
+        run: echo "::set-output name=release_time::$(date -u -d '8 hours' +'%Y-%m-%d %H:%M:%S')"
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: alphabuild_${{ needs.set-date.outputs.date }}
+          name: TSCutter.GUI Alpha-Build (${{ steps.get_release_time.outputs.release_time }})
+          artifacts: "TSCutter.GUI_linux-x64/*,TSCutter.GUI_osx-x64/*,TSCutter.GUI_win-x64/*"
+          draft: false
+          allowUpdates: true
+          generateReleaseNotes: true
