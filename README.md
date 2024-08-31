@@ -10,24 +10,22 @@ TSCutter.GUI is a lightweight tool designed to efficiently cut TS (Transport Str
 - **High Performance**: Leveraging direct binary data copying for maximum efficiency.
 
 ## Prerequisites
-This software depends on the dynamic libraries of FFmpeg.
+This software depends on the dynamic libraries of **FFmpeg 7.0**.
 ### Windows
 Run `.exe` directly. Bundled libraries: [Sdcb.FFmpeg.runtime.windows-x64](https://www.nuget.org/packages/Sdcb.FFmpeg.runtime.windows-x64/7.0.0)
+### Linux
+Installing FFmpeg on Linux depends on the distribution you are using.
+
+On Ubuntu 22.04:
+```bash
+sudo add-apt-repository ppa:ubuntuhandbook1/ffmpeg7
+sudo apt update
+sudo apt install ffmpeg
+```
 ### macOS
 ```bash
 brew install ffmpeg
 ```
-### Linux
-```plain
-sudo apt install ffmpeg         [On Debian, Ubuntu and Mint]
-sudo yum install ffmpeg         [On RHEL/CentOS/Fedora and Rocky/AlmaLinux]
-sudo emerge -a sys-apps/ffmpeg  [On Gentoo Linux]
-sudo apk add ffmpeg             [On Alpine Linux]
-sudo pacman -S ffmpeg           [On Arch Linux]
-sudo zypper install ffmpeg      [On OpenSUSE]    
-sudo pkg install ffmpeg         [On FreeBSD]
-```
-[ref.](https://www.tecmint.com/install-ffmpeg-in-linux/)
 
 ## Screen
 ![img](img/SS1.png)
