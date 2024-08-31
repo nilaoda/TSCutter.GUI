@@ -5,6 +5,8 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -26,7 +28,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.0826";
+            var defaultTitle = "TSCutter.GUI - Alpha.0901";
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
             return defaultTitle;
@@ -137,6 +139,15 @@ public partial class MainWindowViewModel : ViewModelBase
                                     $"Position: {CommonUtil.FormatSeconds(CurrentTime)} | " +
                                     $"DecodeCost: {DecodeCost}ms";
 
+    [RelayCommand]
+    private void ExitApplication()
+    {
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktopApp)
+        {
+            desktopApp.Shutdown();
+        }
+    }
+    
     [RelayCommand]
     private async Task LoadVideoClickAsync()
     {
