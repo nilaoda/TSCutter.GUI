@@ -4,6 +4,7 @@
              xmlns:local="using:TSCutter.GUI"
              xmlns:semi="https://irihi.tech/semi"
              xmlns:u-semi="https://irihi.tech/ursa/themes/semi"
+             Name="TSCutter.GUI"
              RequestedThemeVariant="Default">
     <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
@@ -36,5 +37,9 @@
         <FontWeight x:Key="TabItemSelectedFontWeight">500</FontWeight>
         <FontWeight x:Key="TextBlockTitleFontWeight">500</FontWeight>
         <FontWeight x:Key="ToggleButtonDefaultFontWeight">500</FontWeight>
+        
+        <!--  MenuItem  -->
+        <Thickness x:Key="MenuItemPadding">6 4</Thickness>
+        <Thickness x:Key="MenuFlyoutPadding">4 3</Thickness>
     </Application.Resources>
 </Application>
