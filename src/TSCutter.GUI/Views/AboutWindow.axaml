@@ -1,0 +1,59 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        mc:Ignorable="d"
+        Width="400" Height="260"
+        x:Class="TSCutter.GUI.Views.AboutWindow"
+        DataContext="{x:Static local:App.AboutDialog}"
+        x:DataType="viewModels:AboutWindowViewModel"
+        WindowStartupLocation="CenterOwner"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="{Binding Title}">
+    <Grid Margin="5" RowDefinitions="Auto, 4, *">
+        <StackPanel Grid.Row="0" Spacing="4">
+            <TextBlock FontWeight="Bold" FontSize="20" Text="{Binding ShortDesc}"/>
+            <HyperlinkButton NavigateUri="{Binding ProjectUrl}"
+                             Classes="WithIcon">
+                <TextBlock
+                    HorizontalAlignment="Center"
+                    Text="{Binding ProjectUrl}"
+                    TextDecorations="Underline"
+                    VerticalAlignment="Center" />
+            </HyperlinkButton>
+            <TextBlock Text="{Binding LibrariesDesc}"/>
+        </StackPanel>
+        <ScrollViewer Grid.Row="2"
+                      Theme="{DynamicResource StaticScrollViewer}"
+                      VerticalScrollBarVisibility="Auto"
+                      HorizontalScrollBarVisibility="Auto">
+            <ScrollViewer.Styles>
+                <Style Selector="TextBlock">
+                    <Setter Property="FontSize" Value="13" />
+                </Style>
+            </ScrollViewer.Styles>
+            <ItemsControl VerticalAlignment="Top" ItemsSource="{Binding AllLibraries}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock VerticalAlignment="Center">
+                                <Run FontWeight="Bold" Text="·" />
+                                <Run FontWeight="Bold" Text="{Binding Name}" />
+                                <Run Text=": " />
+                            </TextBlock>
+                            <HyperlinkButton NavigateUri="{Binding Url}" MinHeight="0">
+                                <TextBlock
+                                    HorizontalAlignment="Center"
+                                    Text="{Binding Url}"
+                                    TextDecorations="Underline"
+                                    VerticalAlignment="Center" />
+                            </HyperlinkButton>
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+    </Grid>
+</Window>

@@ -149,6 +149,13 @@ public partial class MainWindowViewModel : ViewModelBase
     }
     
     [RelayCommand]
+    private async Task ShowAboutDialogAsync()
+    {
+        var dialogViewModel = _dialogService.CreateViewModel<AboutWindowViewModel>();
+        await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
+    }
+    
+    [RelayCommand]
     private async Task LoadVideoClickAsync()
     {
         var settings = new OpenFileDialogSettings()
