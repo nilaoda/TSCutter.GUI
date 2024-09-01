@@ -27,6 +27,7 @@ public partial class App : Application
 
         SplatRegistrations.Register<MainWindowViewModel>();
         SplatRegistrations.Register<OutputWindowViewModel>();
+        SplatRegistrations.Register<AboutWindowViewModel>();
         SplatRegistrations.SetupIOC();
     }
 
@@ -40,6 +41,7 @@ public partial class App : Application
     
     public static MainWindowViewModel MainWindow => Locator.Current.GetService<MainWindowViewModel>()!;
     public static OutputWindowViewModel OutputDialog => Locator.Current.GetService<OutputWindowViewModel>()!;
+    public static AboutWindowViewModel AboutDialog => Locator.Current.GetService<AboutWindowViewModel>()!;
     public static IDialogService DialogService => Locator.Current.GetService<IDialogService>()!;
 
 }

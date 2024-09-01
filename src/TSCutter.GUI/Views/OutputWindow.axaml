@@ -11,6 +11,7 @@
         x:DataType="viewModels:OutputWindowViewModel"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
+        Icon="/Assets/avalonia-logo.ico"
         Title="Output File">
     <Interaction.Behaviors>
         <EventTriggerBehavior EventName="Loaded">

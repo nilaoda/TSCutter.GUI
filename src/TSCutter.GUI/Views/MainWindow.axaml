@@ -46,7 +46,8 @@
             </NativeMenuItem>
             <NativeMenuItem Header="_Help">
                 <NativeMenu>
-                    <NativeMenuItem Header="_About..." />
+                    <NativeMenuItem Header="_About..."
+                                    Command="{Binding ShowAboutDialogCommand}"/>
                 </NativeMenu>
             </NativeMenuItem>
         </NativeMenu>
