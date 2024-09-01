@@ -1,4 +1,6 @@
 # TSCutter.GUI
+English | [中文版](./README_CN.md)
+
 TSCutter.GUI is a lightweight tool designed to efficiently cut TS (Transport Stream) video files. It allows users to quickly navigate through keyframes and extract specific segments without modifying the original data.
 
 > The software is still under development and has not been officially released, so it may contain **MANY BUGS**.  
