@@ -109,8 +109,21 @@ public partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
     private string _videoPath;
 
-    [ObservableProperty]
     private Bitmap? _decodedBitmap;
+    public Bitmap? DecodedBitmap
+    {
+        get => _decodedBitmap;
+        set
+        {
+            if (!EqualityComparer<Bitmap?>.Default.Equals(_decodedBitmap, value))
+            {
+                _decodedBitmap?.Dispose();
+                _decodedBitmap = value;
+                OnPropertyChanged();
+            }
+        }
+    }
+    
     [ObservableProperty]
     private double _imageTranslateX;
     [ObservableProperty]
