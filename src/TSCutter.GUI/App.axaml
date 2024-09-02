@@ -16,7 +16,7 @@
         <semi:SemiTheme Locale="zh-cn" />
         <u-semi:SemiTheme Locale="zh-cn"/>
         <StyleInclude Source="avares://Semi.Avalonia.DataGrid/Index.axaml" />
-        <StyleInclude Source="avares://TSCutter.GUI/Icons.axaml" />
+        <StyleInclude Source="avares://TSCutterGUI/Icons.axaml" />
         
         <!--<Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Transitions">
