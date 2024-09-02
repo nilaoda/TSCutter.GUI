@@ -28,6 +28,12 @@
             <Setter Property="FontFamily" Value="Consolas, 'Courier New', monospace"></Setter>
         </Style>
     </Window.Styles>
+    
+    <!-- Don't why NativeMenuItem's Gesture only works on macOS, so here add KeyBindings -->
+    <Window.KeyBindings>
+        <KeyBinding Gesture="{OnPlatform Ctrl+O, macOS=⌘+O}" Command="{Binding LoadVideoClickCommand}"/>
+        <KeyBinding Gesture="{OnPlatform Ctrl+S, macOS=⌘+S}" Command="{Binding SaveVideoClickCommand}"/>
+    </Window.KeyBindings>
 
     <NativeMenu.Menu>
         <NativeMenu>
