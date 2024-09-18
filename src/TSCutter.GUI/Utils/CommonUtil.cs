@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace TSCutter.GUI.Utils;
@@ -13,7 +14,7 @@ public static class CommonUtil
         return $"{timeSpan.Hours:D2}{ch}{timeSpan.Minutes:D2}{ch}{timeSpan.Seconds:D2}.{timeSpan.Milliseconds:D3}";
     }
 
-    public static async Task CopyFileAsync(FileInfo startFile, string destinationFile, long start = 0, long end = -1, Action<double>? progress = null)
+    public static async Task CopyFileAsync(FileInfo startFile, string destinationFile, long start = 0, long end = -1, Action<double>? progress = null, CancellationToken cancellationToken = default)
     {
         if (end < 0 || end < start)
             end = startFile.Length;
@@ -31,12 +32,15 @@ public static class CommonUtil
 
         while (totalBytesRead < totalBytes)
         {
+            // Check if cancellation is requested
+            cancellationToken.ThrowIfCancellationRequested();
+
             var bytesToRead = (int)Math.Min(bufferSize, totalBytes - totalBytesRead);
-            bytesRead = await sourceStream.ReadAsync(buffer.AsMemory(0, bytesToRead));
+            bytesRead = await sourceStream.ReadAsync(buffer.AsMemory(0, bytesToRead), cancellationToken);
             if (bytesRead <= 0)
                 break;
 
-            await destinationStream.WriteAsync(buffer.AsMemory(0, bytesRead));
+            await destinationStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
             totalBytesRead += bytesRead;
 
             var progressPercentage = totalBytesRead * 100.0 / totalBytes;

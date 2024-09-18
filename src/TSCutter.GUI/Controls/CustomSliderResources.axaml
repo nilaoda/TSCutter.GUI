@@ -1,0 +1,38 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:system="clr-namespace:System;assembly=System.Runtime">
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+            <GridLength x:Key="SliderPreContentMargin">2</GridLength>
+            <GridLength x:Key="SliderPostContentMargin">0</GridLength>
+            <system:Double x:Key="SliderTrackThemeHeight">18</system:Double>
+            <system:Double x:Key="SliderTrackWidth">18</system:Double>
+            <system:Double x:Key="SliderThumbHeight">18</system:Double>
+            <system:Double x:Key="SliderThumbWidth">10</system:Double>
+            <CornerRadius x:Key="SliderThumbCornerRadius">0</CornerRadius>
+            <CornerRadius x:Key="SliderTrackCornerRadius">0</CornerRadius>
+            <SolidColorBrush x:Key="SliderTrackValueFill" Opacity="0.05" Color="#2E3238" />
+            <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Opacity="0.05" Color="#2E3238" />
+            <SolidColorBrush x:Key="SliderTrackValueFillPressed" Opacity="0.05" Color="#2E3238" />
+            <SolidColorBrush x:Key="SliderTrackFill" Opacity="0.05" Color="#2E3238" />
+            <SolidColorBrush x:Key="SliderTrackFillPointerOver" Opacity="0.05" Color="#2E3238" />
+            <SolidColorBrush x:Key="SliderTrackFillPressed" Opacity="0.05" Color="#2E3238" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+            <GridLength x:Key="SliderPreContentMargin">2</GridLength>
+            <GridLength x:Key="SliderPostContentMargin">0</GridLength>
+            <system:Double x:Key="SliderTrackThemeHeight">18</system:Double>
+            <system:Double x:Key="SliderTrackWidth">18</system:Double>
+            <system:Double x:Key="SliderThumbHeight">18</system:Double>
+            <system:Double x:Key="SliderThumbWidth">10</system:Double>
+            <CornerRadius x:Key="SliderThumbCornerRadius">0</CornerRadius>
+            <CornerRadius x:Key="SliderTrackCornerRadius">0</CornerRadius>
+            <SolidColorBrush x:Key="SliderTrackValueFill" Opacity="0.2" Color="#717174" />
+            <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Opacity="0.2" Color="#717174" />
+            <SolidColorBrush x:Key="SliderTrackValueFillPressed" Opacity="0.2" Color="#717174" />
+            <SolidColorBrush x:Key="SliderTrackFill" Opacity="0.2" Color="#717174" />
+            <SolidColorBrush x:Key="SliderTrackFillPointerOver" Opacity="0.2" Color="#717174" />
+            <SolidColorBrush x:Key="SliderTrackFillPressed" Opacity="0.2" Color="#717174" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

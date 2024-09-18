@@ -2,5 +2,7 @@
     <Application>
         <Assembly Name="Sdcb.FFmpeg" Dynamic="Required All"/>
         <Assembly Name="TSCutterGUI" Dynamic="Required All"/>
+        <!-- fix NativeMenuBar click event -->
+        <Assembly Name="Avalonia.Controls" Dynamic="Required All"/>
     </Application>
 </Directives>

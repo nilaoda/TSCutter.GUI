@@ -9,8 +9,10 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
+using Avalonia.Styling;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FluentAvalonia.Styling;
 using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.FileSystem;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
@@ -36,6 +38,8 @@ public partial class MainWindowViewModel : ViewModelBase
     }
     private VideoInstance? _videoInstance;
     private readonly IDialogService _dialogService;
+
+    public bool IsVideoInitialized => _videoInstance is { Inited: true };
     
     public MainWindowViewModel(IDialogService dialogService)
     {
@@ -123,11 +127,6 @@ public partial class MainWindowViewModel : ViewModelBase
             }
         }
     }
-    
-    [ObservableProperty]
-    private double _imageTranslateX;
-    [ObservableProperty]
-    private double _imageTranslateY;
 
     [ObservableProperty]
     private double _zoomFactor = 1.0;
@@ -210,11 +209,22 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void ZoomFill() => ResetDecodeBitmap();
 
+    [RelayCommand]
+    private void ToggleTheme()
+    {
+        var currentTheme = Application.Current!.RequestedThemeVariant;
+        // var fluentAvaloniaTheme = App.Current.Styles[0] as FluentAvaloniaTheme;
+        if (currentTheme == ThemeVariant.Dark)
+            Application.Current!.RequestedThemeVariant = ThemeVariant.Light;
+        else if (currentTheme == ThemeVariant.Light)
+            Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
+    }
+
     public async Task SeekToTimeAsync(TimeSpan timeSpan) => await _videoInstance!.SeekToTimeAsync(timeSpan);
     
     public async Task DrawNextFrameAsync(int count = 1)
     {
-        if (_videoInstance is not { Inited: true }) return;
+        if (!IsVideoInitialized) return;
         
         DecodeCost = 0;
         var stopwatch = Stopwatch.StartNew();
@@ -271,8 +281,6 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ResetDecodeBitmap()
     {
-        ImageTranslateX = 0;
-        ImageTranslateY = 0;
         if (DecodedBitmap is null) return;
 
         using var stream = new MemoryStream();

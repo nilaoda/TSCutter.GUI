@@ -16,7 +16,7 @@
         <StackPanel Grid.Row="0" Spacing="4">
             <TextBlock FontWeight="Bold" FontSize="20" Text="{Binding ShortDesc}"/>
             <HyperlinkButton NavigateUri="{Binding ProjectUrl}"
-                             Classes="WithIcon">
+                             Padding="4">
                 <TextBlock
                     HorizontalAlignment="Center"
                     Text="{Binding ProjectUrl}"
@@ -43,7 +43,7 @@
                                 <Run FontWeight="Bold" Text="{Binding Name}" />
                                 <Run Text=": " />
                             </TextBlock>
-                            <HyperlinkButton NavigateUri="{Binding Url}" MinHeight="0">
+                            <HyperlinkButton NavigateUri="{Binding Url}" Padding="2">
                                 <TextBlock
                                     HorizontalAlignment="Center"
                                     Text="{Binding Url}"
