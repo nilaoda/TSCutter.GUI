@@ -4,7 +4,7 @@ using Avalonia.Markup.Xaml;
 
 namespace TSCutter.GUI.Views;
 
-public partial class OutputWindow : Window
+public partial class OutputWindow : UserControl
 {
     public OutputWindow()
     {

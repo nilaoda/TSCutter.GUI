@@ -2,8 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="TSCutter.GUI.App"
              xmlns:local="using:TSCutter.GUI"
-             xmlns:semi="https://irihi.tech/semi"
-             xmlns:u-semi="https://irihi.tech/ursa/themes/semi"
+             xmlns:styling="clr-namespace:FluentAvalonia.Styling;assembly=FluentAvalonia"
              Name="TSCutter.GUI"
              RequestedThemeVariant="Default">
     <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
@@ -13,11 +12,8 @@
     </Application.DataTemplates>
 
     <Application.Styles>
-        <semi:SemiTheme Locale="zh-cn" />
-        <u-semi:SemiTheme Locale="zh-cn"/>
-        <StyleInclude Source="avares://Semi.Avalonia.DataGrid/Index.axaml" />
         <StyleInclude Source="avares://TSCutterGUI/Icons.axaml" />
-        
+        <styling:FluentAvaloniaTheme PreferSystemTheme="True" PreferUserAccentColor="True" />
         <!--<Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Transitions">
                 <Transitions>
@@ -26,20 +22,4 @@
             </Setter>
         </Style>-->
     </Application.Styles>
-
-    <Application.Resources>
-        <FontWeight x:Key="ButtonDefaultFontWeight">500</FontWeight>
-        <FontWeight x:Key="CalendarItemCalendarButtonSelectedFontWeight">500</FontWeight>
-        <FontWeight x:Key="ExpanderHeaderFontWeight">500</FontWeight>
-        <FontWeight x:Key="ListBoxItemRadioGroupButtonFontWeight">500</FontWeight>
-        <FontWeight x:Key="ProgressBarTextFontWeight">500</FontWeight>
-        <FontWeight x:Key="RadioButtonButtonFontWeight">500</FontWeight>
-        <FontWeight x:Key="TabItemSelectedFontWeight">500</FontWeight>
-        <FontWeight x:Key="TextBlockTitleFontWeight">500</FontWeight>
-        <FontWeight x:Key="ToggleButtonDefaultFontWeight">500</FontWeight>
-        
-        <!--  MenuItem  -->
-        <Thickness x:Key="MenuItemPadding">6 4</Thickness>
-        <Thickness x:Key="MenuFlyoutPadding">4 3</Thickness>
-    </Application.Resources>
 </Application>

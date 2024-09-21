@@ -4,14 +4,19 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
+using Avalonia.Styling;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using FluentAvalonia.Styling;
+using FluentAvalonia.UI.Controls;
 using HanumanInstitute.MvvmDialogs;
+using HanumanInstitute.MvvmDialogs.Avalonia.Fluent;
 using HanumanInstitute.MvvmDialogs.FileSystem;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models;
@@ -28,7 +33,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.0902";
+            var defaultTitle = "TSCutter.GUI - Alpha.0922";
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
             return defaultTitle;
@@ -55,9 +60,10 @@ public partial class MainWindowViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(MarkClipStartCommand))]
     [NotifyCanExecuteChangedFor(nameof(MarkClipEndCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveVideoClickCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CloseVideoClickCommand))]
     private PickedClip? _selectedClip;
 
-    [RelayCommand(CanExecute = nameof(HasInitialized))]
+    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
     private void AddClip()
     {
         SelectedClip = new PickedClip()
@@ -104,6 +110,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]
     private async Task SaveVideoClickAsync() => await SaveVideoAsync();
+
+    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    private void CloseVideoClick()
+    {
+        Close();
+        ClearVars();
+    }
     
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
@@ -123,15 +136,17 @@ public partial class MainWindowViewModel : ViewModelBase
             }
         }
     }
-    
-    [ObservableProperty]
-    private double _imageTranslateX;
-    [ObservableProperty]
-    private double _imageTranslateY;
 
     [ObservableProperty]
     private double _zoomFactor = 1.0;
-    
+    [ObservableProperty]
+    private double _offsetX = 0;
+    [ObservableProperty]
+    private double _offsetY = 0;
+
+    public double MaxZoomFactor => 3.0;
+    public double MinZoomFactor => 0.1;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusInfoText))]
     private string _videoInfoText = "Please Load Video";
@@ -165,7 +180,16 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task ShowAboutDialogAsync()
     {
         var dialogViewModel = _dialogService.CreateViewModel<AboutWindowViewModel>();
-        await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
+        TaskDialogSettings settings = new()
+        {
+            IconSource = new SymbolIconSource { Symbol = Symbol.Globe },
+            Content = dialogViewModel,
+            Title = dialogViewModel.Title,
+            Header = dialogViewModel.Header,
+            SubHeader = dialogViewModel.ShortDesc,
+            Buttons = [TaskDialogButton.OKButton],
+        };
+        await _dialogService.ShowTaskDialogAsync(this, settings);
     }
     
     [RelayCommand]
@@ -199,22 +223,48 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task Next10GopClickAsync() => await DrawNextFrameAsync(10);
 
     [RelayCommand]
-    private void ZoomIn() => ZoomFactor = Math.Min(1, ZoomFactor + 0.1);
+    private void ZoomIn() => ZoomFactor = Math.Min(MaxZoomFactor, ZoomFactor + 0.1);
     
     [RelayCommand]
-    private void ZoomOut() => ZoomFactor = Math.Max(0.1, ZoomFactor - 0.1);
-    
+    private void ZoomOut() => ZoomFactor = Math.Max(MinZoomFactor, ZoomFactor - 0.1);
+
     [RelayCommand]
-    private void ZoomNone() => ZoomFactor = 1.0;
-    
+    private void ZoomNone()
+    {
+        ZoomFactor = 1.0;
+        OffsetX = 0;
+        OffsetY = 0;
+    }
+
     [RelayCommand]
-    private void ZoomFill() => ResetDecodeBitmap();
+    private void ToggleThemeClick()
+    {
+        var currentTheme = Application.Current!.RequestedThemeVariant;
+        // var fluentAvaloniaTheme = App.Current.Styles[0] as FluentAvaloniaTheme;
+        if (currentTheme == ThemeVariant.Dark)
+            Application.Current!.RequestedThemeVariant = ThemeVariant.Light;
+        else if (currentTheme == ThemeVariant.Light)
+            Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
+    }
+
+    [RelayCommand]
+    private async Task SettingsClickAsync()
+    {
+        TaskDialogSettings settings = new()
+        {
+            IconSource = new SymbolIconSource { Symbol = Symbol.Settings },
+            Content = "The settings page is not yet fully developed.",
+            Header = "Settings",
+            Buttons = [TaskDialogButton.OKButton],
+        };
+        await _dialogService.ShowTaskDialogAsync(this, settings);
+    }
 
     public async Task SeekToTimeAsync(TimeSpan timeSpan) => await _videoInstance!.SeekToTimeAsync(timeSpan);
     
     public async Task DrawNextFrameAsync(int count = 1)
     {
-        if (_videoInstance is not { Inited: true }) return;
+        if (!IsVideoInitialized) return;
         
         DecodeCost = 0;
         var stopwatch = Stopwatch.StartNew();
@@ -228,8 +278,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ClearVars()
     {
-        SelectedClip = null;
+        VideoInfoText = "Please Load Video";
+        DecodedBitmap = null;
         Clips.Clear();
+        SelectedClip = null;
+        DurationMax = 0.0;
+        CurrentTime = 0.0;
+        DecodeCost = 0L;
     }
 
     private async Task LoadVideoAsync()
@@ -241,6 +296,8 @@ public partial class MainWindowViewModel : ViewModelBase
         await _videoInstance.InitVideoAsync();
         VideoInfoText = _videoInstance.GetVideoInfoText();
         DurationMax = _videoInstance.GetVideoDurationInSeconds();
+        
+        CloseVideoClickCommand.NotifyCanExecuteChanged();
 
         // decode
         await DrawNextFrameAsync(1);
@@ -269,27 +326,17 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private void ResetDecodeBitmap()
-    {
-        ImageTranslateX = 0;
-        ImageTranslateY = 0;
-        if (DecodedBitmap is null) return;
-
-        using var stream = new MemoryStream();
-        DecodedBitmap.Save(stream);
-        stream.Position = 0;
-        DecodedBitmap = new Bitmap(stream);
-    }
-
     public void Close()
     {
         _videoInstance?.Close();
         _videoInstance?.Dispose();
+        _videoInstance = null;
+        VideoPath = string.Empty;
     }
 
-    private bool HasSelectedClip() => SelectedClip is not null;
-    private bool HasInitialized() => _videoInstance is not null;
-
+    private bool HasSelectedClip => SelectedClip is not null;
+    public bool IsVideoInitialized => _videoInstance is { Inited: true };
+    
     private async Task SaveVideoAsync()
     {
         var defaultName = Path.GetFileNameWithoutExtension(SelectedClip!.InFileInfo.FullName)
@@ -312,10 +359,13 @@ public partial class MainWindowViewModel : ViewModelBase
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
         dialogViewModel.SelectedClip = SelectedClip;
         dialogViewModel.OutputPath = result!.Path!.LocalPath;
-        var success = await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
-        if (success == true)
+        await _dialogService.ShowTaskDialogAsync(this, new TaskDialogSettings(dialogViewModel)
         {
-            SelectedClip!.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
-        }
+            Header = "Output Clip",
+            SubHeader = dialogViewModel.OutputPath,
+            IconSource = new SymbolIconSource { Symbol = Symbol.SaveAs },
+            Buttons = [TaskDialogButton.CancelButton],
+        }).ConfigureAwait(true);
+        SelectedClip!.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
     }
 }

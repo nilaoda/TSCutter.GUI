@@ -159,6 +159,7 @@ public class VideoInstance(string filePath) : IDisposable
 
     public void Close()
     {
+        Inited = false;
         inFc?.Close();
         inFc?.Dispose();
         videoDecoder?.Close();

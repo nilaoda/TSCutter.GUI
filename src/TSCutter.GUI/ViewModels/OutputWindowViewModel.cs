@@ -1,4 +1,6 @@
 ﻿using System;
+using System.ComponentModel;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -8,25 +10,47 @@ using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.ViewModels;
 
-public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewModel, ICloseable
+public partial class OutputWindowViewModel : ViewModelBase, ICloseable, IViewClosing
 {
     [ObservableProperty]
     private bool? _dialogResult;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PercentStr))]
     private double _percent;
     
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SpeedStr))]
+    private double _speed;
+
+    public string PercentStr => $"{Percent:0.00}%";
+    public string SpeedStr => $"{CommonUtil.FormatFileSize(Speed)}/s";
     public PickedClip? SelectedClip { get; set; }
     public string? OutputPath { get; set; }
+    
+    private CancellationTokenSource _cts = new();
+    private DateTime _lastUpdateTime;
+    private long _bytesCopied = 0;
 
     [RelayCommand]
     private async Task OutputAsync()
     {
         try
         {
-            await CommonUtil.CopyFileAsync(SelectedClip!.InFileInfo, OutputPath!, SelectedClip!.StartPosition, SelectedClip!.EndPosition, percent => Percent = percent);
+            _lastUpdateTime = DateTime.Now;
+            await CommonUtil.CopyFileAsync(SelectedClip!.InFileInfo, OutputPath!, SelectedClip!.StartPosition, SelectedClip!.EndPosition,
+                (percent, bytesCopied) =>
+                {
+                    Percent = percent;
+                    _bytesCopied += bytesCopied;
+                    UpdateSpeed();
+                }, _cts.Token);
             DialogResult = true;
             RequestClose?.Invoke(this, EventArgs.Empty);
+        } 
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine("File copy was canceled.");
         }
         catch (Exception e)
         {
@@ -35,5 +59,30 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         }
     }
     
+    private void UpdateSpeed()
+    {
+        var elapsedTime = (DateTime.Now - _lastUpdateTime).TotalSeconds;
+        if (elapsedTime < 1) return; // per second
+        Speed = _bytesCopied / elapsedTime;
+        _lastUpdateTime = DateTime.Now;
+        _bytesCopied = 0;
+    }
+
+    [RelayCommand]
+    private void CancelOutput()
+    {
+        if (DialogResult is not null) return;
+        
+        _cts.Cancel();
+        DialogResult = true;
+        RequestClose?.Invoke(this, EventArgs.Empty);
+    }
+    
+    public void OnClosing(CancelEventArgs e)
+    {
+        CancelOutput();
+    }
+
+    public Task OnClosingAsync(CancelEventArgs e) => Task.CompletedTask;
     public event EventHandler? RequestClose;
 }
