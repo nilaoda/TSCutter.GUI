@@ -14,7 +14,7 @@ public static class CommonUtil
         return $"{timeSpan.Hours:D2}{ch}{timeSpan.Minutes:D2}{ch}{timeSpan.Seconds:D2}.{timeSpan.Milliseconds:D3}";
     }
 
-    public static async Task CopyFileAsync(FileInfo startFile, string destinationFile, long start = 0, long end = -1, Action<double>? progress = null, CancellationToken cancellationToken = default)
+    public static async Task CopyFileAsync(FileInfo startFile, string destinationFile, long start = 0, long end = -1, Action<double, long>? progress = null, CancellationToken cancellationToken = default)
     {
         if (end < 0 || end < start)
             end = startFile.Length;
@@ -44,11 +44,11 @@ public static class CommonUtil
             totalBytesRead += bytesRead;
 
             var progressPercentage = totalBytesRead * 100.0 / totalBytes;
-            progress?.Invoke(progressPercentage);
+            progress?.Invoke(progressPercentage, bytesRead);
         }
 
         // Final progress report (100%)
-        progress?.Invoke(100);
+        progress?.Invoke(100, bytesRead);
     }
     
     public static string? FormatFileSize(double fileSize)

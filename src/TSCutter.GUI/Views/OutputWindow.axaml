@@ -1,35 +1,37 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:TSCutter.GUI"
-        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
-        xmlns:system="clr-namespace:System;assembly=System.Runtime"
-        mc:Ignorable="d"
-        Width="300" Height="100"
-        x:Class="TSCutter.GUI.Views.OutputWindow"
-        DataContext="{x:Static local:App.OutputDialog}"
-        x:DataType="viewModels:OutputWindowViewModel"
-        WindowStartupLocation="CenterOwner"
-        CanResize="False"
-        Icon="/Assets/avalonia-logo.ico"
-        Title="{Binding Title}">
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:local="clr-namespace:TSCutter.GUI"
+             xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+             xmlns:system="clr-namespace:System;assembly=System.Runtime"
+             mc:Ignorable="d"
+             Height="50"
+             x:Class="TSCutter.GUI.Views.OutputWindow"
+             d:DataContext="{x:Static local:App.OutputDialog}"
+             x:DataType="viewModels:OutputWindowViewModel">
     <Interaction.Behaviors>
         <EventTriggerBehavior EventName="Loaded">
             <InvokeCommandAction Command="{Binding OutputCommand}" />
         </EventTriggerBehavior>
-        <EventTriggerBehavior EventName="Closing">
-            <InvokeCommandAction Command="{Binding CancelOutputCommand}" />
-        </EventTriggerBehavior>
     </Interaction.Behaviors>
-    <Window.Resources>
-        <system:Double x:Key="ProgressBarMinHeight">30</system:Double>
-        <system:Double x:Key="ProgressBarTrackHeight">30</system:Double>
-    </Window.Resources>
-    <Panel HorizontalAlignment="Center" VerticalAlignment="Center">
-        <ProgressBar ShowProgressText="True"
+    <UserControl.Resources>
+        <system:Double x:Key="ProgressBarMinHeight">20</system:Double>
+        <system:Double x:Key="ProgressBarTrackHeight">20</system:Double>
+    </UserControl.Resources>
+    <StackPanel Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
+        <StackPanel Orientation="Horizontal">
+            <TextBlock VerticalAlignment="Center"
+                       Text="{Binding PercentStr}"/>
+            <TextBlock VerticalAlignment="Center"
+                       Text=" | " />
+            <TextBlock VerticalAlignment="Center"
+                       Text="{Binding SpeedStr}"/>
+        </StackPanel>
+        <ProgressBar ShowProgressText="False"
+                     VerticalAlignment="Center"
                      Minimum="0" Maximum="100"
-                     Width="250"
+                     Width="380"
                      Value="{Binding Percent}"/>
-    </Panel>
-</Window>
+    </StackPanel>
+</UserControl>

@@ -1,20 +1,17 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+﻿<UserControl xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TSCutter.GUI"
         xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        xmlns:ui="clr-namespace:FluentAvalonia.UI.Controls;assembly=FluentAvalonia"
         mc:Ignorable="d"
-        Width="400" Height="260"
         x:Class="TSCutter.GUI.Views.AboutWindow"
         DataContext="{x:Static local:App.AboutDialog}"
-        x:DataType="viewModels:AboutWindowViewModel"
-        WindowStartupLocation="CenterOwner"
-        Icon="/Assets/avalonia-logo.ico"
-        Title="{Binding Title}">
-    <Grid Margin="5" RowDefinitions="Auto, 4, *">
-        <StackPanel Grid.Row="0" Spacing="4">
-            <TextBlock FontWeight="Bold" FontSize="20" Text="{Binding ShortDesc}"/>
+        x:DataType="viewModels:AboutWindowViewModel">
+    <Grid Margin="5" RowDefinitions="Auto, Auto, 4, *">
+        <StackPanel Grid.Row="0" Spacing="4" Orientation="Horizontal">
+            <ui:SymbolIcon Symbol="Link" FontSize="18" VerticalAlignment="Center" />
             <HyperlinkButton NavigateUri="{Binding ProjectUrl}"
                              Padding="4">
                 <TextBlock
@@ -23,9 +20,9 @@
                     TextDecorations="Underline"
                     VerticalAlignment="Center" />
             </HyperlinkButton>
-            <TextBlock Text="{Binding LibrariesDesc}"/>
         </StackPanel>
-        <ScrollViewer Grid.Row="2"
+        <TextBlock Grid.Row="1" Text="{Binding LibrariesDesc}"/>
+        <ScrollViewer Grid.Row="3"
                       Theme="{DynamicResource StaticScrollViewer}"
                       VerticalScrollBarVisibility="Auto"
                       HorizontalScrollBarVisibility="Auto">
@@ -56,4 +53,4 @@
             </ItemsControl>
         </ScrollViewer>
     </Grid>
-</Window>
+</UserControl>

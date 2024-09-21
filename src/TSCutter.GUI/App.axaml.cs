@@ -22,7 +22,7 @@ public partial class App : Application
         build.RegisterLazySingleton(() => (IDialogService)new DialogService(
             new DialogManager(
                 viewLocator: new ViewLocator(),
-                dialogFactory: new DialogFactory().AddMessageBox()),
+                dialogFactory: new DialogFactory().AddFluent(FluentMessageBoxType.ContentDialog)),
             viewModelFactory: x => Locator.Current.GetService(x)));
 
         SplatRegistrations.Register<MainWindowViewModel>();

@@ -2,7 +2,7 @@
 
 namespace TSCutter.GUI.Views;
 
-public partial class AboutWindow : Window
+public partial class AboutWindow : UserControl
 {
     public AboutWindow()
     {

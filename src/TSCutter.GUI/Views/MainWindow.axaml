@@ -8,7 +8,7 @@
         xmlns:local="clr-namespace:TSCutter.GUI"
         xmlns:ui="clr-namespace:FluentAvalonia.UI.Controls;assembly=FluentAvalonia"
         mc:Ignorable="d"
-        Width="860" Height="620"
+        Width="880" Height="670"
         x:Class="TSCutter.GUI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         x:Name="CutterMainWindow"
@@ -45,6 +45,8 @@
                                     Command="{Binding SaveVideoClickCommand}"
                                     Gesture="{OnPlatform Ctrl+S, macOS=⌘+S}" />
                     <NativeMenuItemSeparator />
+                    <NativeMenuItem Header="_Close Video"
+                                    Command="{Binding CloseVideoClickCommand}"/>
                     <NativeMenuItem Header="_Exit" 
                                     Command="{Binding ExitApplicationCommand}"/>
                 </NativeMenu>
@@ -65,7 +67,7 @@
               Background="Transparent">
             <Grid.IsVisible>
                 <OnPlatform Default="False">
-                    <On Options="Windows" Content="True" />
+                    <On Options="Windows, Linux" Content="True" />
                 </OnPlatform>
             </Grid.IsVisible>
             <TextBlock Text="{Binding Title, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}"
@@ -85,19 +87,20 @@
             <Grid Grid.Row="0" ColumnDefinitions="*, Auto, Auto" VerticalAlignment="Center">
                 <Grid.IsVisible>
                     <OnPlatform Default="False">
-                        <On Options="Windows" Content="True" />
+                        <On Options="Windows, Linux" Content="True" />
                     </OnPlatform>
                 </Grid.IsVisible>
                 <NativeMenuBar Grid.Column="0" />
                 <Button Grid.Column="1"
                         ToolTip.Tip="Toggle Theme"
-                        Command="{Binding ToggleThemeCommand}"
+                        Command="{Binding ToggleThemeClickCommand}"
                         Theme="{StaticResource TransparentButton}"
                         Padding="8 4">
                     <PathIcon Height="18" Data="{StaticResource swap_theme_icon}" />
                 </Button>
                 <Button Grid.Column="2"
                         ToolTip.Tip="Settings"
+                        Command="{Binding SettingsClickCommand}"
                         Margin="0,0,5,0"
                         Theme="{StaticResource TransparentButton}"
                         HorizontalAlignment="Right">
@@ -135,7 +138,7 @@
                         <ui:SymbolIcon Symbol="FullScreenMinimize"/>
                     </Button>
                     <Button ToolTip.Tip="Fit"
-                            Command="{Binding ZoomFillCommand}">
+                            Command="{Binding FitCommand, ElementName=ImageViewer}">
                         <ui:SymbolIcon Symbol="FullScreenMaximize"/>
                     </Button>
                     <TextBlock VerticalAlignment="Center"
@@ -143,24 +146,25 @@
                 </StackPanel>
                 <Button Grid.Column="1"
                         ToolTip.Tip="Toggle Theme"
-                        Command="{Binding ToggleThemeCommand}"
+                        Command="{Binding ToggleThemeClickCommand}"
                         Theme="{StaticResource TransparentButton}"
                         Padding="8 4">
                     <Button.IsVisible>
                         <OnPlatform Default="True">
-                            <On Options="Windows" Content="False" />
+                            <On Options="Windows, Linux" Content="False" />
                         </OnPlatform>
                     </Button.IsVisible>
                     <PathIcon Height="18" Data="{StaticResource swap_theme_icon}" />
                 </Button>
                 <Button Grid.Column="2"
                         ToolTip.Tip="Settings"
+                        Command="{Binding SettingsClickCommand}"
                         Margin="0,0,5,0"
                         Theme="{StaticResource TransparentButton}"
                         HorizontalAlignment="Right">
                     <Button.IsVisible>
                         <OnPlatform Default="True">
-                            <On Options="Windows" Content="False" />
+                            <On Options="Windows, Linux" Content="False" />
                         </OnPlatform>
                     </Button.IsVisible>
                     <ui:SymbolIcon Symbol="Settings" FontSize="18" />
@@ -169,8 +173,13 @@
             <Grid Grid.Row="2" RowDefinitions="*, Auto, 150">
                 <Grid Grid.Row="0" RowDefinitions="*, Auto, Auto, Auto">
                     <controls:ImageViewer Grid.Row="0"
-                                          ImageSource="{Binding DecodedBitmap}"
-                                          ZoomFactor="{Binding ZoomFactor, Mode=TwoWay}"/>
+                                          Name="ImageViewer"
+                                          MaxZoomFactor="{Binding MaxZoomFactor}"
+                                          MinZoomFactor="{Binding MinZoomFactor}"
+                                          OffsetX="{Binding OffsetX, Mode=TwoWay}"
+                                          OffsetY="{Binding OffsetY, Mode=TwoWay}"
+                                          Image="{Binding DecodedBitmap}"
+                                          Zoom="{Binding ZoomFactor, Mode=TwoWay}"/>
                     <controls:CustomSlider Grid.Row="1"
                                            Name="CustomSlider"
                                            Margin="0, 2"
@@ -278,6 +287,11 @@
                           CanUserResizeColumns="True"
                           CanUserSortColumns="False"
                           AutoGenerateColumns="False">
+                    <DataGrid.Styles>
+                        <Style Selector="TextBlock">
+                            <Setter Property="FontSize" Value="14" />
+                        </Style>
+                    </DataGrid.Styles>
                     <DataGrid.Columns>
                         <DataGridTextColumn Header="Start Time" Width="120" Binding="{Binding StartTimeStr}" />
                         <DataGridTextColumn Header="End Time" Width="120" Binding="{Binding EndTimeStr}" />
