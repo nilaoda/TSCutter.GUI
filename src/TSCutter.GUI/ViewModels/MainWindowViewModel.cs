@@ -33,7 +33,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.0922";
+            var defaultTitle = "TSCutter.GUI - Alpha.1124";
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
             return defaultTitle;
@@ -50,9 +50,9 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     private long PositionInFile => _videoInstance!.PositionInFile;
-    
+
     [ObservableProperty]
-    private ObservableCollection<PickedClip> _clips = new();
+    public partial ObservableCollection<PickedClip> Clips { get; set; } = new();
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddClipCommand))]
@@ -61,7 +61,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(nameof(MarkClipEndCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveVideoClickCommand))]
     [NotifyCanExecuteChangedFor(nameof(CloseVideoClickCommand))]
-    private PickedClip? _selectedClip;
+    public partial PickedClip? SelectedClip { get; set; }
 
     [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
     private void AddClip()
@@ -117,10 +117,10 @@ public partial class MainWindowViewModel : ViewModelBase
         Close();
         ClearVars();
     }
-    
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
-    private string _videoPath;
+    public partial string VideoPath { get; set; }
 
     private Bitmap? _decodedBitmap;
     public Bitmap? DecodedBitmap
@@ -138,30 +138,30 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [ObservableProperty]
-    private double _zoomFactor = 1.0;
+    public partial double ZoomFactor { get; set; } = 1.0;
     [ObservableProperty]
-    private double _offsetX = 0;
+    public partial double OffsetX { get; set; } = 0;
     [ObservableProperty]
-    private double _offsetY = 0;
+    public partial double OffsetY { get; set; } = 0;
 
     public double MaxZoomFactor => 3.0;
     public double MinZoomFactor => 0.1;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusInfoText))]
-    private string _videoInfoText = "Please Load Video";
-    
+    public partial string VideoInfoText { get; set; } = "Please Load Video";
+
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddClipCommand))]
-    private double _durationMax = 0.0;
-    
+    public partial double DurationMax { get; set; } = 0.0;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusInfoText))]
-    private double _currentTime = 0.0;
-    
+    public partial double CurrentTime { get; set; } = 0.0;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusInfoText))]
-    private long _decodeCost = 0L;
+    public partial long DecodeCost { get; set; } = 0L;
 
     public string StatusInfoText => $"{VideoInfoText} | " +
                                     $"Position: {CommonUtil.FormatSeconds(CurrentTime)} | " +
