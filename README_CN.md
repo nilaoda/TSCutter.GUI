@@ -29,6 +29,29 @@ sudo apt install ffmpeg
 brew install ffmpeg
 ```
 
+<details>
+<summary>more</summary>
+
+如果程序闪退, 你可能需要手动创建软链接来让程序正常工作:
+
+```
+sudo mkdir /usr/local/lib
+
+sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libavcodec.61.19.100.dylib /usr/local/lib/libavcodec.61.dylib
+sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libavdevice.61.3.100.dylib /usr/local/lib/libavdevice.61.dylib
+sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libavfilter.10.4.100.dylib /usr/local/lib/libavfilter.10.dylib
+sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libavformat.61.7.100.dylib /usr/local/lib/libavformat.61.dylib
+sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libavutil.59.39.100.dylib /usr/local/lib/libavutil.59.dylib
+sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libpostproc.58.3.100.dylib /usr/local/lib/libpostproc.58.dylib
+sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libswresample.5.3.100.dylib /usr/local/lib/libswresample.5.dylib
+sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libswscale.8.3.100.dylib /usr/local/lib/libswscale.8.dylib
+
+echo 'export DYLD_LIBRARY_PATH=/usr/local/lib:$DYLD_LIBRARY_PATH' >> ~/.zshrc
+source ~/.zshr
+```
+
+</details>
+
 ## 截图
 ![img](img/SS1.png)
 
