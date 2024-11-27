@@ -146,9 +146,10 @@ public class ImageViewer : Control
     {
         base.Render(dc);
         
-        // Draw the black background
+        // Draw the background
         var backgroundRect = new Rect(0, 0, Bounds.Width, Bounds.Height);
-        dc.FillRectangle(Brushes.Black, backgroundRect);
+        var customColorBrush = new SolidColorBrush(Color.FromRgb(40, 40, 44));
+        dc.FillRectangle(customColorBrush, backgroundRect);
         
         if (Image is null) return;
 

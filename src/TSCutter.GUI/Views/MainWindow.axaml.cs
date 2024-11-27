@@ -1,7 +1,6 @@
 using System;
 using Avalonia;
 using Avalonia.Controls;
-using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Avalonia.Styling;
@@ -24,21 +23,6 @@ public partial class MainWindow : AppWindow
         TitleBar.ExtendsContentIntoTitleBar = true;
         TitleBar.TitleBarHitTestType = TitleBarHitTestType.Complex;
         Application.Current.ActualThemeVariantChanged += OnActualThemeVariantChanged;
-        
-        // FFmpegLogger.LogWriter = (level, msg) => Console.Write(msg);
-        
-        CutterMainWindow.AddHandler(DragDrop.DragOverEvent, DragOverHandler);
-        CutterMainWindow.AddHandler(DragDrop.DropEvent, DropHandler);
-    }
-    
-    private void DragOverHandler(object? sender, DragEventArgs e)
-    {
-        ViewModel!.DragOverCommand.Execute(e);
-    }
-
-    private void DropHandler(object? sender, DragEventArgs e)
-    {
-        ViewModel!.DropCommand.Execute(e);
     }
 
     private void Window_OnClosing(object? sender, WindowClosingEventArgs e)

@@ -26,14 +26,11 @@ namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
-    public IRelayCommand<DragEventArgs> DragOverCommand { get; }
-    public IAsyncRelayCommand<DragEventArgs> DropCommand { get; }
-
     public string WindowTitle
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.1124";
+            var defaultTitle = "TSCutter.GUI - Alpha.1127";
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
             return defaultTitle;
@@ -45,8 +42,6 @@ public partial class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel(IDialogService dialogService)
     {
         _dialogService = dialogService;
-        DragOverCommand = new RelayCommand<DragEventArgs>(DragOverHandler);
-        DropCommand = new AsyncRelayCommand<DragEventArgs>(DropHandler);
     }
 
     private long PositionInFile => _videoInstance!.PositionInFile;
@@ -303,27 +298,38 @@ public partial class MainWindowViewModel : ViewModelBase
         await DrawNextFrameAsync(1);
     }
     
-    private void DragOverHandler(DragEventArgs? e)
+    [RelayCommand]
+    private void DragOver(DragEventArgs? e)
     {
-        if (e is null) return;
-        e.DragEffects = e.Data.Contains(DataFormats.Files) ? DragDropEffects.Copy : DragDropEffects.None;
+        var filePath = CheckDropDataIsTsFile(e);
+        e!.DragEffects = filePath is not null ? DragDropEffects.Copy : DragDropEffects.None;
     }
 
-    private async Task DropHandler(DragEventArgs? e)
+    [RelayCommand]
+    private async Task Drop(DragEventArgs? e)
     {
-        if (e is null) return;
-        if (!e.Data.Contains(DataFormats.Files)) return;
-        
-        var fileNames = e.Data.GetFiles()?.ToArray();
-        if (fileNames is not { Length: > 0 }) return;
-        
-        var filePath = fileNames[0].Path.LocalPath;
-        var ext = Path.GetExtension(filePath);
-        if (File.Exists(filePath) && ext is ".ts" && VideoPath != filePath)
+        var filePath = CheckDropDataIsTsFile(e);
+        if (filePath is not null)
         {
             VideoPath = filePath;
             await LoadVideoAsync();
         }
+    }
+
+    private string? CheckDropDataIsTsFile(DragEventArgs? e)
+    {
+        if (e is null) return null;
+        if (!e.Data.Contains(DataFormats.Files)) return null;
+        
+        var fileNames = e.Data.GetFiles()?.ToArray();
+        if (fileNames is not { Length: > 0 }) return null;
+        var filePath = fileNames[0].Path.LocalPath;
+        var ext = Path.GetExtension(filePath);
+        if (File.Exists(filePath) && ext.ToLower() is ".ts" && VideoPath != filePath)
+        {
+            return filePath;
+        }
+        return null;
     }
 
     public void Close()
