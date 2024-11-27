@@ -13,15 +13,15 @@ namespace TSCutter.GUI.ViewModels;
 public partial class OutputWindowViewModel : ViewModelBase, ICloseable, IViewClosing
 {
     [ObservableProperty]
-    private bool? _dialogResult;
+    public partial bool? DialogResult { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PercentStr))]
-    private double _percent;
-    
+    public partial double Percent { get; set; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SpeedStr))]
-    private double _speed;
+    public partial double Speed { get; set; }
 
     public string PercentStr => $"{Percent:0.00}%";
     public string SpeedStr => $"{CommonUtil.FormatFileSize(Speed)}/s";

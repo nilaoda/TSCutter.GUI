@@ -33,6 +33,7 @@ public class CustomSlider: Slider, IStyleable
 
     protected virtual void OnValueChangedAfterMouseUp(double newValue)
     {
-        ValueChangedAfterMouseUp?.Invoke(this, newValue);
+        if (!_isDragging)
+            ValueChangedAfterMouseUp?.Invoke(this, newValue);
     }
 }
