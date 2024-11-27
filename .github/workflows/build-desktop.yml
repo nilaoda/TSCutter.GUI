@@ -72,12 +72,11 @@ jobs:
 
   build-linux-x64:
     runs-on: ubuntu-latest
-    container: ubuntu:18.04
     needs: set-date
 
     steps:
-      - run: apt-get update
-      - run: apt-get install -y curl wget libicu-dev libcurl4-openssl-dev zlib1g-dev libkrb5-dev zip
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y curl wget libicu-dev libcurl4-openssl-dev zlib1g-dev libkrb5-dev zip
       - uses: actions/checkout@v1
 
       - name: Set up dotnet
