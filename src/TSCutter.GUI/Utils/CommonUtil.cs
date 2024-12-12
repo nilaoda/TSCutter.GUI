@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -56,10 +58,37 @@ public static class CommonUtil
         return fileSize switch
         {
             < 0 => throw new ArgumentOutOfRangeException(nameof(fileSize)),
-            >= 1024 * 1024 * 1024 => string.Format("{0:########0.00}GB", (double)fileSize / (1024 * 1024 * 1024)),
-            >= 1024 * 1024 => string.Format("{0:####0.00}MB", (double)fileSize / (1024 * 1024)),
-            >= 1024 => string.Format("{0:####0.00}KB", (double)fileSize / 1024),
-            _ => string.Format("{0:####0.00}B", fileSize)
+            >= 1024 * 1024 * 1024 => $"{fileSize / (1024 * 1024 * 1024):########0.00}GB",
+            >= 1024 * 1024 => $"{fileSize / (1024 * 1024):####0.00}MB",
+            >= 1024 => $"{fileSize / 1024:####0.00}KB",
+            _ => $"{fileSize:####0.00}B"
         };
+    }
+
+    public static void OpenFileLocation(string filePath)
+    {
+        if (!File.Exists(filePath))
+        {
+            return;
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            Win32Util.OpenFolderInExplorer(filePath);
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            // macOS
+            Process.Start("open", $"-R \"{filePath}\"");
+        }
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            // Linux
+            Process.Start("xdg-open", $"\"{Path.GetDirectoryName(filePath)}\"");
+        }
+        else
+        {
+            throw new PlatformNotSupportedException("Not supported");
+        }
     }
 }

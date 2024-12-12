@@ -9,21 +9,40 @@
         xmlns:ui="clr-namespace:FluentAvalonia.UI.Controls;assembly=FluentAvalonia"
         mc:Ignorable="d"
         Width="880" Height="670"
+        MinWidth="600"
         x:Class="TSCutter.GUI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         x:Name="CutterMainWindow"
         Closing="Window_OnClosing"
         Icon="/Assets/avalonia-logo.ico"
         DataContext="{x:Static local:App.MainWindow}"
+        WindowStartupLocation="CenterScreen"
         Title="{Binding WindowTitle}">
 
     <Window.Resources>
         <converters:ClipToBrushConverter x:Key="ClipToBrushConverter" />
+        <converters:SecondsToStringConverter x:Key="SecondsConverter" />
     </Window.Resources>
 
     <Window.Styles>
         <Style Selector="TextBlock.MonoFont">
             <Setter Property="FontFamily" Value="Consolas, 'Courier New', monospace" />
+        </Style>
+        <Style Selector="Button.hyperlink">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <TextBlock TextTrimming="CharacterEllipsis" Text="{TemplateBinding Content}" Classes="MonoFont">
+                    <TextBlock.Styles>
+                        <Style Selector="TextBlock:pointerover">
+                            <Setter Property="Foreground" Value="{StaticResource SystemAccentColorLight1}"/>
+                            <Setter Property="Cursor" Value="Hand"/>
+                        </Style>
+                    </TextBlock.Styles>
+                    </TextBlock>
+                </ControlTemplate>
+            </Setter>
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
         </Style>
     </Window.Styles>
     
@@ -63,11 +82,11 @@
         <Grid.Resources>
             <ResourceDictionary>
                 <ResourceDictionary.ThemeDictionaries>
-                    <ResourceDictionary x:Key='Light'>
-                        <SolidColorBrush x:Key='MaskBackgroundBrush'>White</SolidColorBrush>
+                    <ResourceDictionary x:Key="Light">
+                        <SolidColorBrush x:Key="MaskBackgroundBrush">White</SolidColorBrush>
                     </ResourceDictionary>
-                    <ResourceDictionary x:Key='Dark'>
-                        <SolidColorBrush x:Key='MaskBackgroundBrush'>Black</SolidColorBrush>
+                    <ResourceDictionary x:Key="Dark">
+                        <SolidColorBrush x:Key="MaskBackgroundBrush">Black</SolidColorBrush>
                     </ResourceDictionary>
                 </ResourceDictionary.ThemeDictionaries>
             </ResourceDictionary>
@@ -113,13 +132,21 @@
                         Grid.Column="0">
                 </TextBlock>
             </Grid>
-            <TextBlock DockPanel.Dock="Bottom"
-                    Margin="4,0"
-                    Classes="MonoFont"
-                    FontSize="12"
-                    VerticalAlignment="Center"
-                    Text="{Binding StatusInfoText}">
-            </TextBlock>
+            <StackPanel DockPanel.Dock="Bottom"
+                        Orientation="Horizontal"
+                        VerticalAlignment="Center">
+                    <TextBlock Margin="4,0,0,0"
+                               Classes="MonoFont"
+                               FontSize="12"
+                               VerticalAlignment="Center"
+                               Text="{Binding StatusInfoText}">
+                    </TextBlock>
+                    <Button Command="{Binding OpenFileInExplorerCommand}"
+                            FontSize="12"
+                            Classes="hyperlink"
+                            ToolTip.Tip="Find File"
+                            Content="{Binding VideoPath}"/>
+            </StackPanel>
             <Grid RowDefinitions="Auto, 40, *">
                 <Grid Grid.Row="0" ColumnDefinitions="*, Auto, Auto" VerticalAlignment="Center">
                     <Grid.IsVisible>
@@ -178,8 +205,12 @@
                                 Command="{Binding FitCommand, ElementName=ImageViewer}">
                             <ui:SymbolIcon Symbol="FullScreenMaximize"/>
                         </Button>
+                        <Button ToolTip.Tip="Save Frame"
+                                Command="{Binding SaveFrameClickCommand}">
+                            <ui:SymbolIcon Symbol="Image"/>
+                        </Button>
                         <TextBlock VerticalAlignment="Center"
-                                Text="{Binding ZoomFactor, StringFormat=\{0:Scale: 0.00\}}" />
+                                Text="{Binding ZoomFactorStr}" />
                     </StackPanel>
                     <Button Grid.Column="1"
                             ToolTip.Tip="Toggle Theme"
@@ -210,12 +241,13 @@
                 <Grid Grid.Row="2" RowDefinitions="*, Auto, 150">
                     <Grid Grid.Row="0" RowDefinitions="*, Auto, Auto, Auto">
                         <controls:ImageViewer Name="ImageViewer"
-                                                MaxZoomFactor="{Binding MaxZoomFactor}"
-                                                MinZoomFactor="{Binding MinZoomFactor}"
-                                                OffsetX="{Binding OffsetX, Mode=TwoWay}"
-                                                OffsetY="{Binding OffsetY, Mode=TwoWay}"
-                                                Image="{Binding DecodedBitmap}"
-                                                Zoom="{Binding ZoomFactor, Mode=TwoWay}"/>
+                                              MaxZoomFactor="{Binding MaxZoomFactor}"
+                                              MinZoomFactor="{Binding MinZoomFactor}"
+                                              OffsetX="{Binding OffsetX, Mode=TwoWay}"
+                                              OffsetY="{Binding OffsetY, Mode=TwoWay}"
+                                              Image="{Binding DecodedBitmap}"
+                                              Zoom="{Binding ZoomFactor, Mode=TwoWay}">
+                        </controls:ImageViewer>
                         <controls:CustomSlider Grid.Row="1"
                                             Name="CustomSlider"
                                             Margin="0, 2"
@@ -249,66 +281,83 @@
                                 </MultiBinding>
                             </Rectangle.Fill>
                         </Rectangle>
-                        <Grid Grid.Row="3" ColumnDefinitions="*, *, *">
+                        <Grid Grid.Row="3" ColumnDefinitions="*, Auto, *">
                             <Grid.Styles>
-                                <Style Selector="TextBlock.CenterBtn">
+                                <Style Selector="TextBlock.LeftBtn">
                                     <Setter Property="FontSize" Value="14" />
                                     <Setter Property="FontWeight" Value="Bold" />
                                     <Setter Property="VerticalAlignment" Value="Center" />
+                                </Style>
+                                <Style Selector="Button.CenterBtn">
+                                    <Setter Property="Padding" Value="4,6" />
                                 </Style>
                                 <Style Selector="Button">
                                     <Setter Property="VerticalContentAlignment" Value="Stretch" />
                                 </Style>
                             </Grid.Styles>
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" Margin="4, 4">
+                                <Button Command="{Binding MarkClipStartCommand}"
+                                        ToolTip.Tip="Mark Start">
+                                    <TextBlock Classes="LeftBtn MonoFont">[</TextBlock>
+                                </Button>
+                                <Button Command="{Binding MarkClipEndCommand}"
+                                        ToolTip.Tip="Mark End">
+                                    <TextBlock Classes="LeftBtn MonoFont">]</TextBlock>
+                                </Button>
+                                <Button Command="{Binding AddClipCommand}"
+                                        ToolTip.Tip="Add Clip">
+                                    <TextBlock Classes="LeftBtn MonoFont">+</TextBlock>
+                                </Button>
+                                <Button Command="{Binding RemoveClipCommand}"
+                                        ToolTip.Tip="Remove Clip">
+                                    <TextBlock Classes="LeftBtn MonoFont">-</TextBlock>
+                                </Button>
+                            </StackPanel>
+                            <StackPanel Grid.Column="1" HorizontalAlignment="Center" Orientation="Horizontal" Spacing="4"
+                                        Margin="4, 4">
+                                <!-- LEFT -->
                                 <Button Command="{Binding Prev10GopClickCommand}"
+                                        Classes="CenterBtn"
                                         ToolTip.Tip="Previous 10">
-                                    <PathIcon Height="14" Data="{StaticResource fast_forward_regular}">
+                                    <PathIcon Height="12" Data="{StaticResource fast_forward_regular}">
                                         <PathIcon.RenderTransform>
                                             <ScaleTransform ScaleX="-1" />
                                         </PathIcon.RenderTransform>
                                     </PathIcon>
                                 </Button>
                                 <Button Command="{Binding PrevGopClickCommand}"
+                                        Classes="CenterBtn"
                                         ToolTip.Tip="Previous">
-                                    <PathIcon Height="14" Data="{StaticResource caret_left_regular}" />
+                                    <PathIcon Height="12" Data="{StaticResource caret_left_regular}" />
                                 </Button>
+                                <!-- CENTER -->
+                                <TextBlock Text="{Binding CurrentTime, Converter={StaticResource SecondsConverter}}" 
+                                           VerticalAlignment="Center"
+                                           FontWeight="Bold"
+                                           FontSize="22"
+                                           Margin="4,0"
+                                           Classes="MonoFont"/>
+                                <!-- RIGHT -->
                                 <Button Command="{Binding NextGopClickCommand}"
+                                        Classes="CenterBtn"
                                         ToolTip.Tip="Next">
-                                    <PathIcon Height="14" Data="{StaticResource caret_right_regular}" />
+                                    <PathIcon Height="12" Data="{StaticResource caret_right_regular}" />
                                 </Button>
                                 <Button Command="{Binding Next10GopClickCommand}"
+                                        Classes="CenterBtn"
                                         ToolTip.Tip="Next 10">
-                                    <PathIcon Height="14" Data="{StaticResource fast_forward_regular}" />
-                                </Button>
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" HorizontalAlignment="Center" Orientation="Horizontal" Spacing="4"
-                                        Margin="4, 4">
-                                <Button Command="{Binding MarkClipStartCommand}"
-                                        ToolTip.Tip="Mark Start">
-                                    <TextBlock Classes="CenterBtn MonoFont">[</TextBlock>
-                                </Button>
-                                <Button Command="{Binding MarkClipEndCommand}"
-                                        ToolTip.Tip="Mark End">
-                                    <TextBlock Classes="CenterBtn MonoFont">]</TextBlock>
-                                </Button>
-                                <Button Command="{Binding AddClipCommand}"
-                                        ToolTip.Tip="Add Clip">
-                                    <TextBlock Classes="CenterBtn MonoFont">+</TextBlock>
-                                </Button>
-                                <Button Command="{Binding RemoveClipCommand}"
-                                        ToolTip.Tip="Remove Clip">
-                                    <TextBlock Classes="CenterBtn MonoFont">-</TextBlock>
+                                    <PathIcon Height="12" Data="{StaticResource fast_forward_regular}" />
                                 </Button>
                             </StackPanel>
                             <StackPanel Grid.Column="2" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="4"
                                         Margin="4, 4">
                                 <Button Command="{Binding SaveVideoClickCommand}"
+                                        Classes="accent"
                                         VerticalContentAlignment="Center"
-                                        ToolTip.Tip="Save Clip">
+                                        ToolTip.Tip="Save Current Clip">
                                     <StackPanel Orientation="Horizontal">
                                         <ui:SymbolIcon Symbol="SaveAs" FontSize="18" />
-                                        <TextBlock VerticalAlignment="Center" Text="Save" Margin="4,0,0,0"/>
+                                        <TextBlock VerticalAlignment="Center" Text="Save Clip" Margin="4,0,0,0"/>
                                     </StackPanel>
                                 </Button>
                             </StackPanel>

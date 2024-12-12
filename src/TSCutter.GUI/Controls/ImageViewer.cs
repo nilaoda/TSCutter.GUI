@@ -10,6 +10,11 @@ using CommunityToolkit.Mvvm.Input;
 
 namespace TSCutter.GUI.Controls;
 
+/// <summary>
+/// This class provides image display functionality, 
+/// supporting mouse drag for movement, mouse wheel for zooming in and out, 
+/// and intelligent image scaling for high-DPI scenarios.
+/// </summary>
 public class ImageViewer : Control
 {
     static ImageViewer()
@@ -71,9 +76,10 @@ public class ImageViewer : Control
     {
         if (Image is null) return;
 
-        Zoom = Math.Min(Bounds.Width / Image.PixelSize.Width, Bounds.Height / Image.PixelSize.Height);
+        var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
+        Zoom = Math.Min(Bounds.Width / Image.PixelSize.Width, Bounds.Height / Image.PixelSize.Height) * scalingFactor;
 
-        OffsetX = (Bounds.Width - Image.PixelSize.Width * Zoom) / 2;
+        OffsetX = (Bounds.Width - Image.PixelSize.Width * Zoom / scalingFactor) / 2;
         OffsetY = 0;
     }
 
@@ -87,6 +93,11 @@ public class ImageViewer : Control
         AddHandler(PointerReleasedEvent, OnPointerReleased, RoutingStrategies.Tunnel);
         AddHandler(PointerMovedEvent, OnPointerMoved, RoutingStrategies.Tunnel);
         AddHandler(PointerWheelChangedEvent, OnPointerWheelChanged, RoutingStrategies.Tunnel);
+        Application.Current!.ActualThemeVariantChanged += (sender, e) =>
+        {
+            // Re-Render after theme changed
+            InvalidateVisual();
+        };
     }
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -147,34 +158,40 @@ public class ImageViewer : Control
         base.Render(dc);
         
         // Draw the background
+        var isDarkMode = Application.Current!.RequestedThemeVariant == Avalonia.Styling.ThemeVariant.Dark;
+        var backgroundColor = isDarkMode ? Color.FromRgb(45, 45, 45) : Color.FromRgb(240, 240, 240);
         var backgroundRect = new Rect(0, 0, Bounds.Width, Bounds.Height);
-        var customColorBrush = new SolidColorBrush(Color.FromRgb(40, 40, 44));
+        var customColorBrush = new SolidColorBrush(backgroundColor);
         dc.FillRectangle(customColorBrush, backgroundRect);
         
         if (Image is null) return;
 
-        var imgWidth = Image.PixelSize.Width * Zoom;
-        var imgHeight = Image.PixelSize.Height * Zoom;
+        // Need calc with current System Scaling
+        var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
+        var imgWidth = (int)(Image.PixelSize.Width * Zoom / scalingFactor);
+        var imgHeight = (int)(Image.PixelSize.Height * Zoom / scalingFactor);
 
         // Define the destination rectangle where the image will be drawn
         var destRect = new Rect(OffsetX, OffsetY, imgWidth, imgHeight);
 
         // Get the bounds of the ImageViewer control
         var viewerBounds = new Rect(0, 0, Bounds.Width, Bounds.Height);
-
-        // Calculate the intersection of the image rectangle with the viewer bounds
         var visibleRect = viewerBounds.Intersect(destRect);
 
         if (visibleRect is not { Width: > 0, Height: > 0 }) return;
         
         // Define the source rectangle based on the visible area
         var srcRect = new Rect(
-            (visibleRect.X - OffsetX) / Zoom,
-            (visibleRect.Y - OffsetY) / Zoom,
-            visibleRect.Width / Zoom,
-            visibleRect.Height / Zoom);
+            (visibleRect.X - OffsetX) * scalingFactor / Zoom,
+            (visibleRect.Y - OffsetY) * scalingFactor / Zoom,
+            visibleRect.Width * scalingFactor / Zoom,
+            visibleRect.Height * scalingFactor / Zoom);
 
         // Draw the image using DrawImage
+        // dc.PushRenderOptions(new()
+        // {
+        //     BitmapInterpolationMode = BitmapInterpolationMode.HighQuality,
+        // });
         dc.DrawImage(Image, srcRect, visibleRect);
     }
 }

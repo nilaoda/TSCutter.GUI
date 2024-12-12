@@ -4,7 +4,6 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -13,7 +12,6 @@ using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using FluentAvalonia.Styling;
 using FluentAvalonia.UI.Controls;
 using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.Avalonia.Fluent;
@@ -26,11 +24,12 @@ namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
+    private const string PleaseLoadTip = "Please Load Video ";
     public string WindowTitle
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.1127";
+            var defaultTitle = "TSCutter.GUI - Alpha.1212";
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
             return defaultTitle;
@@ -50,12 +49,11 @@ public partial class MainWindowViewModel : ViewModelBase
     public partial ObservableCollection<PickedClip> Clips { get; set; } = new();
 
     [ObservableProperty]
-    [NotifyCanExecuteChangedFor(nameof(AddClipCommand))]
-    [NotifyCanExecuteChangedFor(nameof(RemoveClipCommand))]
-    [NotifyCanExecuteChangedFor(nameof(MarkClipStartCommand))]
-    [NotifyCanExecuteChangedFor(nameof(MarkClipEndCommand))]
-    [NotifyCanExecuteChangedFor(nameof(SaveVideoClickCommand))]
-    [NotifyCanExecuteChangedFor(nameof(CloseVideoClickCommand))]
+    [NotifyCanExecuteChangedFor(
+        nameof(AddClipCommand), nameof(RemoveClipCommand), nameof(MarkClipStartCommand),
+        nameof(MarkClipEndCommand), nameof(SaveVideoClickCommand), nameof(CloseVideoClickCommand),
+        nameof(SaveFrameClickCommand)
+    )]
     public partial PickedClip? SelectedClip { get; set; }
 
     [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
@@ -113,26 +111,46 @@ public partial class MainWindowViewModel : ViewModelBase
         ClearVars();
     }
 
+    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    private async Task SaveFrameClickAsync()
+    {
+        var defaultName = Path.GetFileNameWithoutExtension(VideoPath) + $"_{CommonUtil.FormatSeconds(CurrentTime, true)}.png";
+        var settings = new SaveFileDialogSettings
+        {
+            Title = "Save a frame",
+            SuggestedStartLocation =  new DesktopDialogStorageFolder(Path.GetDirectoryName(VideoPath)!),
+            SuggestedFileName = defaultName,
+            Filters = [new("PNG Images", ["png"])],
+            DefaultExtension = "png"
+        };
+        var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+        if (result is null) return;
+
+        using var stream = File.Create(result!.Path!.LocalPath);
+        DecodedBitmap?.Save(stream);
+    }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
     public partial string VideoPath { get; set; }
 
-    private Bitmap? _decodedBitmap;
     public Bitmap? DecodedBitmap
     {
-        get => _decodedBitmap;
+        get => field;
         set
         {
-            if (!EqualityComparer<Bitmap?>.Default.Equals(_decodedBitmap, value))
+            if (!EqualityComparer<Bitmap?>.Default.Equals(field, value))
             {
-                _decodedBitmap?.Dispose();
-                _decodedBitmap = value;
+                field?.Dispose();
+                field = value;
                 OnPropertyChanged();
+                SaveFrameClickCommand.NotifyCanExecuteChanged();
             }
         }
     }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ZoomFactorStr))]
     public partial double ZoomFactor { get; set; } = 1.0;
     [ObservableProperty]
     public partial double OffsetX { get; set; } = 0;
@@ -144,23 +162,27 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusInfoText))]
-    public partial string VideoInfoText { get; set; } = "Please Load Video";
+    public partial string VideoInfoText { get; set; } = PleaseLoadTip;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AddClipCommand))]
     public partial double DurationMax { get; set; } = 0.0;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusInfoText))]
     public partial double CurrentTime { get; set; } = 0.0;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusInfoText))]
     public partial long DecodeCost { get; set; } = 0L;
 
-    public string StatusInfoText => $"{VideoInfoText} | " +
-                                    $"Position: {CommonUtil.FormatSeconds(CurrentTime)} | " +
-                                    $"DecodeCost: {DecodeCost}ms";
+    public string StatusInfoText => IsVideoInitialized ? $"{VideoInfoText} | {DecodeCost,3}ms | " : PleaseLoadTip;
+    public string ZoomFactorStr => $"Scale: {ZoomFactor * 100.0:0}%";
+
+    [RelayCommand]
+    private void OpenFileInExplorer()
+    {
+        CommonUtil.OpenFileLocation(VideoPath);
+    }
 
     [RelayCommand]
     private void ExitApplication()
@@ -293,6 +315,7 @@ public partial class MainWindowViewModel : ViewModelBase
         DurationMax = _videoInstance.GetVideoDurationInSeconds();
         
         CloseVideoClickCommand.NotifyCanExecuteChanged();
+        SaveFrameClickCommand.NotifyCanExecuteChanged();
 
         // decode
         await DrawNextFrameAsync(1);
