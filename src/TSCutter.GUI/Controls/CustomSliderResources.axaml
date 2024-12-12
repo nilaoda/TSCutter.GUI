@@ -6,11 +6,14 @@
             <GridLength x:Key="SliderPreContentMargin">2</GridLength>
             <GridLength x:Key="SliderPostContentMargin">0</GridLength>
             <system:Double x:Key="SliderTrackThemeHeight">18</system:Double>
+            <system:Double x:Key="SliderHorizontalThumbWidth">8</system:Double>
             <system:Double x:Key="SliderTrackWidth">18</system:Double>
             <system:Double x:Key="SliderThumbHeight">18</system:Double>
-            <system:Double x:Key="SliderThumbWidth">10</system:Double>
+            <system:Double x:Key="SliderThumbWidth">6</system:Double>
+            <system:Double x:Key="SliderInnerThumbWidth">0</system:Double>
             <CornerRadius x:Key="SliderThumbCornerRadius">0</CornerRadius>
             <CornerRadius x:Key="SliderTrackCornerRadius">0</CornerRadius>
+            <SolidColorBrush x:Key="SliderThumbBorderBrush" Color="#0091f8" />
             <SolidColorBrush x:Key="SliderTrackValueFill" Opacity="0.05" Color="#2E3238" />
             <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Opacity="0.05" Color="#2E3238" />
             <SolidColorBrush x:Key="SliderTrackValueFillPressed" Opacity="0.05" Color="#2E3238" />
@@ -22,11 +25,14 @@
             <GridLength x:Key="SliderPreContentMargin">2</GridLength>
             <GridLength x:Key="SliderPostContentMargin">0</GridLength>
             <system:Double x:Key="SliderTrackThemeHeight">18</system:Double>
+            <system:Double x:Key="SliderHorizontalThumbWidth">8</system:Double>
             <system:Double x:Key="SliderTrackWidth">18</system:Double>
             <system:Double x:Key="SliderThumbHeight">18</system:Double>
-            <system:Double x:Key="SliderThumbWidth">10</system:Double>
+            <system:Double x:Key="SliderThumbWidth">6</system:Double>
+            <system:Double x:Key="SliderInnerThumbWidth">0</system:Double>
             <CornerRadius x:Key="SliderThumbCornerRadius">0</CornerRadius>
             <CornerRadius x:Key="SliderTrackCornerRadius">0</CornerRadius>
+            <SolidColorBrush x:Key="SliderThumbBorderBrush" Color="#0091f8" />
             <SolidColorBrush x:Key="SliderTrackValueFill" Opacity="0.2" Color="#717174" />
             <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Opacity="0.2" Color="#717174" />
             <SolidColorBrush x:Key="SliderTrackValueFillPressed" Opacity="0.2" Color="#717174" />

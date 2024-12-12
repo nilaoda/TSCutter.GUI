@@ -25,23 +25,19 @@ public class ClipToBrushConverter : IMultiValueConverter
             values[2] is not double endTime ||
             durationMax <= 0)
         {
-            gradient.GradientStops.Add(new GradientStop(Colors.Transparent, 0));
-            gradient.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
-            return gradient;
+            return new SolidColorBrush(Colors.Transparent);
         }
 
         // scale to 0-1
-        var highlightStart = startTime;
-        var highlightEnd = endTime < 0 ? durationMax : endTime;
-        var normalizedHighlightStart = highlightStart / durationMax;
-        var normalizedHighlightEnd = highlightEnd / durationMax;
+        var highlightStart = Math.Clamp(startTime / durationMax, 0, 1);
+        var highlightEnd = Math.Clamp(endTime / durationMax, 0, 1);
 
         // GradientStops
         gradient.GradientStops.Add(new GradientStop(Colors.Transparent, 0));
-        gradient.GradientStops.Add(new GradientStop(Colors.Transparent, normalizedHighlightStart));
-        gradient.GradientStops.Add(new GradientStop(Colors.Green, normalizedHighlightStart));
-        gradient.GradientStops.Add(new GradientStop(Colors.Green, normalizedHighlightEnd));
-        gradient.GradientStops.Add(new GradientStop(Colors.Transparent, normalizedHighlightEnd));
+        gradient.GradientStops.Add(new GradientStop(Colors.Transparent, highlightStart));
+        gradient.GradientStops.Add(new GradientStop(Colors.Green, highlightStart));
+        gradient.GradientStops.Add(new GradientStop(Colors.Green, highlightEnd));
+        gradient.GradientStops.Add(new GradientStop(Colors.Transparent, highlightEnd));
         gradient.GradientStops.Add(new GradientStop(Colors.Transparent, 1));
             
         return gradient;
