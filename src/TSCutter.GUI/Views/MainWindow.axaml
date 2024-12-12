@@ -23,6 +23,12 @@
         <converters:ClipToBrushConverter x:Key="ClipToBrushConverter" />
         <converters:SecondsToStringConverter x:Key="SecondsConverter" />
     </Window.Resources>
+    
+    <Interaction.Behaviors>
+        <EventTriggerBehavior EventName="Loaded">
+            <InvokeCommandAction Command="{Binding ProcessCommandLineCommand}" />
+        </EventTriggerBehavior>
+    </Interaction.Behaviors>
 
     <Window.Styles>
         <Style Selector="TextBlock.MonoFont">

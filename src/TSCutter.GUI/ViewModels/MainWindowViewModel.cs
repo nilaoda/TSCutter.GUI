@@ -56,6 +56,17 @@ public partial class MainWindowViewModel : ViewModelBase
     )]
     public partial PickedClip? SelectedClip { get; set; }
 
+    [RelayCommand]
+    private async Task ProcessCommandLineAsync()
+    {
+        var args = Environment.GetCommandLineArgs();
+        if (args.Length > 1 && File.Exists(args[1]) && Path.GetExtension(args[1]).ToLower() is ".ts")
+        {
+            VideoPath = args[1];
+            await LoadVideoAsync();
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
     private void AddClip()
     {
