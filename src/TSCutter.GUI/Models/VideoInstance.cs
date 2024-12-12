@@ -71,7 +71,7 @@ public class VideoInstance(string filePath) : IDisposable
         DecodeNextFrame();
         keyFrameGap = currentKeyFramePts - firstKeyFramePts;
         Console.WriteLine($"keyFrameGap: {keyFrameGap}");
-        SeekToTime(TimeSpan.Zero);
+        Seek(firstFrameTimestamp);
 
         Inited = true;
     }
@@ -90,8 +90,13 @@ public class VideoInstance(string filePath) : IDisposable
 
     public void Seek(long pts, AVSEEK_FLAG flag = 0)
     {
+        if (lastSeekPts == pts)
+            return;
+        Console.WriteLine($"lastSeekPts: {lastSeekPts}, targetPts: {pts}, flag: {flag}");
         lastSeekPts = pts;
         inFc.SeekFrame(pts, videoStreamIndex, flag);
+        // flush
+        videoDecoder.FlushBuffers();
     }
 
     public async Task<DecodeResult> DecodeNextFrameAsync(int count = 1)
@@ -104,9 +109,8 @@ public class VideoInstance(string filePath) : IDisposable
         if (count < 0)
         {
             // Seek backward by keyframe gap * abs(count)
-            var targetPts = Math.Max(0, currentKeyFramePts - Math.Abs(keyFrameGap) * Math.Abs(count)) - 2;
+            var targetPts = Math.Max(0, currentKeyFramePts - Math.Abs(keyFrameGap) * (Math.Abs(count) + 1)) - 2;
             Seek(targetPts, AVSEEK_FLAG.Backward);
-            return DecodeNextFrame();
         }
 
         if (count > 1)
@@ -114,32 +118,33 @@ public class VideoInstance(string filePath) : IDisposable
             // Seek forward by keyframe gap * abs(count)
             var targetPts = Math.Min(maxPts, currentKeyFramePts + Math.Abs(keyFrameGap) * Math.Abs(count)) + 2;
             Seek(targetPts);
-            return DecodeNextFrame();
         }
-        
+
         foreach (var packet in inFc.ReadPackets(videoStreamIndex))
         {
             if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
             {
-                Console.WriteLine($"Skip[NonKey] packet: {packet.Pts}");
+                // Console.WriteLine($"Skip[NonKey] packet: {packet.Pts}");
                 continue;
             }
 
             Console.WriteLine($"Current packet: {packet.Pts}");
-            PositionInFile = packet.Position;
+            // PositionInFile = packet.Position;
+            // Console.WriteLine($"Current packet positon: {packet.Position}");
 
             var result = DecodePacket(packet);
             if (result != null)
             {
                 return result;
             }
+            Console.WriteLine("result is null");
         }
 
         // No keyframe found, retry by seeking slightly earlier
         if (lastSeekPts - 1000 < 0)
             throw new Exception("Decode Failed!");
 
-        Seek(lastSeekPts - 1000);
+        Seek(lastSeekPts - keyFrameGap / 2);
         return DecodeNextFrame();
     }
 
@@ -197,13 +202,16 @@ public class VideoInstance(string filePath) : IDisposable
 
             Console.WriteLine($"Current keyFrame: {frame.Pts}");
             currentKeyFramePts = frame.Pts;
+#pragma warning disable CS0618 // Obsolete
+            PositionInFile = frame.PktPosition;
+            Console.WriteLine($"Current keyFrame PktPosition: {frame.PktPosition}");
+#pragma warning restore CS0618 // Obsolete
 
             Bitmap decodedBitmap;
 
             try
             {
                 decodedBitmap = ImageUtil.CreateBitmapFromFrame(frame);
-                videoDecoder.FlushBuffers();
             }
             catch (FFmpegException e)
             {
@@ -220,6 +228,7 @@ public class VideoInstance(string filePath) : IDisposable
         }
 
         // If no frames were successfully processed
+        Console.WriteLine("no frames were successfully processed");
         return null;
     }
 }
