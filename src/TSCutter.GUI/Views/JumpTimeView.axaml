@@ -1,0 +1,25 @@
+﻿<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:local="clr-namespace:TSCutter.GUI"
+             xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+             mc:Ignorable="d"
+             Height="50"
+             x:Class="TSCutter.GUI.Views.JumpTimeView"
+             d:DataContext="{x:Static local:App.JumpTimeDialog}"
+             x:DataType="viewModels:JumpTimeViewModel">
+    <Grid>
+        <TextBox Text="{Binding InputText}"
+                 Name="InputTextBox"
+                 FontSize="20"
+                 HorizontalContentAlignment="Center"
+                 VerticalAlignment="Center">
+            <Interaction.Behaviors>
+                <EventTriggerBehavior EventName="Loaded">
+                    <InvokeCommandAction Command="{Binding DelayFocusCommand}" PassEventArgsToCommand="True" />
+                </EventTriggerBehavior>
+            </Interaction.Behaviors>
+        </TextBox>
+    </Grid>
+</UserControl>

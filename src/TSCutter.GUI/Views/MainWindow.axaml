@@ -31,8 +31,11 @@
     </Interaction.Behaviors>
 
     <Window.Styles>
+        <Style Selector="ToolTip">
+            <Setter Property="FontWeight" Value="Normal" />
+        </Style>
         <Style Selector="TextBlock.MonoFont">
-            <Setter Property="FontFamily" Value="Consolas, 'Courier New', monospace" />
+            <Setter Property="FontFamily" Value="Consolas, Monaco, monospace" />
         </Style>
         <Style Selector="Button.hyperlink">
             <Setter Property="Template">
@@ -337,12 +340,14 @@
                                     <PathIcon Height="12" Data="{StaticResource caret_left_regular}" />
                                 </Button>
                                 <!-- CENTER -->
-                                <TextBlock Text="{Binding CurrentTime, Converter={StaticResource SecondsConverter}}" 
-                                           VerticalAlignment="Center"
-                                           FontWeight="Bold"
-                                           FontSize="22"
-                                           Margin="4,0"
-                                           Classes="MonoFont"/>
+                                <Button Content="{Binding CurrentTime, Converter={StaticResource SecondsConverter}}" 
+                                        Command="{Binding JumpToClickCommand}"
+                                        ToolTip.Tip="Jump to..."
+                                        VerticalAlignment="Center"
+                                        FontWeight="Bold"
+                                        FontSize="22"
+                                        Margin="4,0"
+                                        Classes="hyperlink"/>
                                 <!-- RIGHT -->
                                 <Button Command="{Binding NextGopClickCommand}"
                                         Classes="CenterBtn"

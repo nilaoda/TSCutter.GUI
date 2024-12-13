@@ -15,6 +15,9 @@ namespace TSCutter.GUI;
 /// </summary>
 public class ViewLocatorBase : IDataTemplate, IViewLocator, IViewLocatorNavigation
 {
+    private const string ViewModel = "ViewModel";
+    private const string Window = "Window";
+
     /// <inheritdoc />
     public bool ForceSinglePageNavigation { get; set; }
 
@@ -25,11 +28,14 @@ public class ViewLocatorBase : IDataTemplate, IViewLocator, IViewLocatorNavigati
     /// <returns>The view type name.</returns>
     protected virtual string GetViewName(object viewModel)
     {
-        const string ViewModel = "ViewModel";
         var result = viewModel.GetType().FullName!.Replace(".ViewModels.", ".Views.");
         if (result.EndsWith(ViewModel))
         {
             result = result.Remove(result.Length - ViewModel.Length) + (UseSinglePageNavigation ? "View" : "");
+        }
+        if (!result.EndsWith(Window))
+        {
+            result += "View";
         }
         return result;
     }
