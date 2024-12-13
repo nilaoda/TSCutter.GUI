@@ -14,7 +14,7 @@
         x:DataType="vm:MainWindowViewModel"
         x:Name="CutterMainWindow"
         Closing="Window_OnClosing"
-        Icon="/Assets/avalonia-logo.ico"
+        Icon="/Assets/logo.ico"
         DataContext="{x:Static local:App.MainWindow}"
         WindowStartupLocation="CenterScreen"
         Title="{Binding WindowTitle}">
