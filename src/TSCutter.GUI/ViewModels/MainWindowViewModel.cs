@@ -29,7 +29,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.1212";
+            var defaultTitle = "TSCutter.GUI - Alpha.1213";
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
             return defaultTitle;
@@ -55,6 +55,49 @@ public partial class MainWindowViewModel : ViewModelBase
         nameof(SaveFrameClickCommand)
     )]
     public partial PickedClip? SelectedClip { get; set; }
+
+    [RelayCommand]
+    private async Task JumpToClickAsync()
+    {
+        if (!IsVideoInitialized)
+        {
+            await _dialogService.ShowMessageBoxAsync(
+                    this,
+                    "Please load a video",
+                    "Video Not Initialized",
+                    MessageBoxButton.Ok,
+                    MessageBoxImage.Information);
+            return;
+        }
+
+        var vm = _dialogService.CreateViewModel<JumpTimeViewModel>();
+        var currentTimeStr = CommonUtil.FormatSeconds(CurrentTime);
+        vm.InputText = currentTimeStr;
+        ContentDialogSettings settings = new()
+        {
+            Content = vm,
+            Title = "Jump to Time",
+            PrimaryButtonText = "OK",
+            SecondaryButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary
+        };
+        var result = await _dialogService.ShowContentDialogAsync(this, settings);
+        if (result != ContentDialogResult.Primary || currentTimeStr == vm.InputText) return;
+        
+        if (CommonUtil.TryParseFormattedTime(vm.InputText, out var newTime) && newTime < DurationMax)
+        {
+            await SeekToTimeAsync(TimeSpan.FromSeconds(Math.Max(0, newTime - 1)));
+            await DrawNextFrameAsync(1);
+            return;
+        }
+
+        await _dialogService.ShowMessageBoxAsync(
+            this,
+            "Please input a valid time",
+            "Wrong Format",
+            MessageBoxButton.Ok,
+            MessageBoxImage.Error);
+    }
 
     [RelayCommand]
     private async Task ProcessCommandLineAsync()
@@ -215,7 +258,7 @@ public partial class MainWindowViewModel : ViewModelBase
             Title = dialogViewModel.Title,
             Header = dialogViewModel.Header,
             SubHeader = dialogViewModel.ShortDesc,
-            Buttons = [TaskDialogButton.OKButton],
+            Buttons = [TaskDialogButton.CloseButton],
         };
         await _dialogService.ShowTaskDialogAsync(this, settings);
     }
@@ -283,7 +326,7 @@ public partial class MainWindowViewModel : ViewModelBase
             IconSource = new SymbolIconSource { Symbol = Symbol.Settings },
             Content = "The settings page is not yet fully developed.",
             Header = "Settings",
-            Buttons = [TaskDialogButton.OKButton],
+            Buttons = [TaskDialogButton.CloseButton],
         };
         await _dialogService.ShowTaskDialogAsync(this, settings);
     }
