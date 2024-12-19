@@ -3,7 +3,6 @@
     <PropertyGroup>
         <PublishAot>true</PublishAot>
         <PublishTrimmed>true</PublishTrimmed>
-        <DebuggerSupport>false</DebuggerSupport>
         <StripSymbols>true</StripSymbols>
         <IlcOptimizationPreference>Speed</IlcOptimizationPreference>
         <IlcFoldIdenticalMethodBodies>true</IlcFoldIdenticalMethodBodies>
@@ -15,6 +14,11 @@
 <!--    <ItemGroup Condition="'$(PublishAot)' == 'true' and '$(RuntimeIdentifier)' != 'win-arm64' and '$(RuntimeIdentifier)' != 'linux-arm64' and '$(RuntimeIdentifier)' != 'osx-arm64' and '$(RuntimeIdentifier)' != 'osx-x64'">
         <PackageReference Include="PublishAotCompressed" Version="1.0.0" />
     </ItemGroup>-->
+
+    <PropertyGroup Condition="'$(PublishAot)' == 'true' and '$(Configuration)' == 'Release'">
+        <DebugType>None</DebugType>
+        <DebuggerSupport>false</DebuggerSupport>
+    </PropertyGroup>
 
     <ItemGroup>
         <AvaloniaResource Include="Assets\**" />

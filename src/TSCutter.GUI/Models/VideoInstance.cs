@@ -41,7 +41,9 @@ public class VideoInstance(string filePath) : IDisposable
 
     public void InitVideo()
     {
-        inFc = FormatContext.OpenInputUrl(videoPath);
+        var options = new MediaDictionary();
+        options.Set("scan_all_pmts", "1"); // Scan and combine all PMTs
+        inFc = FormatContext.OpenInputUrl(videoPath, options: options);
         inFc.LoadStreamInfo();
 
         inVideoStream = inFc.GetVideoStream();
