@@ -12,6 +12,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Styling;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using CommunityToolkit.Mvvm.Messaging;
 using FluentAvalonia.UI.Controls;
 using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.Avalonia.Fluent;
@@ -91,12 +92,7 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        await _dialogService.ShowMessageBoxAsync(
-            this,
-            "Please input a valid time",
-            "Wrong Format",
-            MessageBoxButton.Ok,
-            MessageBoxImage.Error);
+        await ShowMessageAsync("Please input a valid time", "Wrong Format", MessageBoxImage.Error);
     }
 
     [RelayCommand]
@@ -360,19 +356,39 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private async Task LoadVideoAsync()
     {
-        ClearVars();
-        _videoInstance?.Close();
+        try
+        {
+            ClearVars();
+            _videoInstance?.Close();
         
-        _videoInstance = new VideoInstance(VideoPath);
-        await _videoInstance.InitVideoAsync();
-        VideoInfoText = _videoInstance.GetVideoInfoText();
-        DurationMax = _videoInstance.GetVideoDurationInSeconds();
+            _videoInstance = new VideoInstance(VideoPath);
+            await _videoInstance.InitVideoAsync();
+            VideoInfoText = _videoInstance.GetVideoInfoText();
+            DurationMax = _videoInstance.GetVideoDurationInSeconds();
         
-        CloseVideoClickCommand.NotifyCanExecuteChanged();
-        SaveFrameClickCommand.NotifyCanExecuteChanged();
+            CloseVideoClickCommand.NotifyCanExecuteChanged();
+            SaveFrameClickCommand.NotifyCanExecuteChanged();
 
-        // decode
-        await DrawNextFrameAsync(1);
+            // decode
+            await DrawNextFrameAsync(1);
+            // 发送消息通知 View 执行 FitCommand
+            WeakReferenceMessenger.Default.Send(new FitMessage());
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine($"Failed to load video: {e}");
+            await ShowMessageAsync(e.Message, "Failed to load video", MessageBoxImage.Error);
+        }
+    }
+
+    private async Task ShowMessageAsync(string message, string title = "TSCutter", MessageBoxImage icon = MessageBoxImage.None)
+    {
+        await _dialogService.ShowMessageBoxAsync(
+            this,
+            message,
+            title,
+            MessageBoxButton.Ok,
+            icon);
     }
     
     [RelayCommand]
@@ -449,6 +465,12 @@ public partial class MainWindowViewModel : ViewModelBase
             IconSource = new SymbolIconSource { Symbol = Symbol.SaveAs },
             Buttons = [TaskDialogButton.CancelButton],
         }).ConfigureAwait(true);
+        if (dialogViewModel.Exception is not null)
+        {
+            await ShowMessageAsync(dialogViewModel.Exception.Message, "Error", MessageBoxImage.Error);
+            Console.WriteLine(dialogViewModel.Exception);
+            return;
+        }
         SelectedClip!.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
     }
 }

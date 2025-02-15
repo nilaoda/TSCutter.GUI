@@ -27,6 +27,7 @@ public partial class OutputWindowViewModel : ViewModelBase, ICloseable, IViewClo
     public string SpeedStr => $"{CommonUtil.FormatFileSize(Speed)}/s";
     public PickedClip? SelectedClip { get; set; }
     public string? OutputPath { get; set; }
+    public Exception? Exception { get; private set; }
     
     private CancellationTokenSource _cts = new();
     private DateTime _lastUpdateTime;
@@ -54,6 +55,7 @@ public partial class OutputWindowViewModel : ViewModelBase, ICloseable, IViewClo
         }
         catch (Exception e)
         {
+            Exception = e;
             DialogResult = false;
             RequestClose?.Invoke(this, EventArgs.Empty);
         }

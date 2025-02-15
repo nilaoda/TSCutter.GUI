@@ -4,9 +4,11 @@ using Avalonia.Controls;
 using Avalonia.Media;
 using Avalonia.Media.Immutable;
 using Avalonia.Styling;
+using CommunityToolkit.Mvvm.Messaging;
 using FluentAvalonia.Styling;
 using FluentAvalonia.UI.Media;
 using FluentAvalonia.UI.Windowing;
+using TSCutter.GUI.Models;
 using TSCutter.GUI.ViewModels;
 
 namespace TSCutter.GUI.Views;
@@ -23,6 +25,15 @@ public partial class MainWindow : AppWindow
         TitleBar.ExtendsContentIntoTitleBar = true;
         TitleBar.TitleBarHitTestType = TitleBarHitTestType.Complex;
         Application.Current.ActualThemeVariantChanged += OnActualThemeVariantChanged;
+        
+        // 监听 ViewModel 发送的 FitMessage
+        WeakReferenceMessenger.Default.Register<FitMessage>(this, (r, m) =>
+        {
+            if (ImageViewer.FitCommand.CanExecute(null))
+            {
+                ImageViewer.FitCommand.Execute(null);
+            }
+        });
     }
 
     private void Window_OnClosing(object? sender, WindowClosingEventArgs e)
