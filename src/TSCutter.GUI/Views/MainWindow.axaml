@@ -40,10 +40,10 @@
         <Style Selector="Button.hyperlink">
             <Setter Property="Template">
                 <ControlTemplate>
-                    <TextBlock TextTrimming="CharacterEllipsis" Text="{TemplateBinding Content}" Classes="MonoFont">
+                    <TextBlock TextTrimming="CharacterEllipsis" Text="{TemplateBinding Content}">
                     <TextBlock.Styles>
                         <Style Selector="TextBlock:pointerover">
-                            <Setter Property="Foreground" Value="{StaticResource SystemAccentColorLight1}"/>
+                            <Setter Property="TextDecorations" Value="Underline"/>
                             <Setter Property="Cursor" Value="Hand"/>
                         </Style>
                     </TextBlock.Styles>
@@ -376,23 +376,53 @@
                     </Grid>
                     <GridSplitter Grid.Row="1" />
                     <DataGrid Grid.Row="2"
-                            SelectionMode="Single"
-                            SelectedItem="{Binding SelectedClip}"
-                            ItemsSource="{Binding Clips}"
-                            IsReadOnly="True"
-                            CanUserResizeColumns="True"
-                            CanUserSortColumns="False"
-                            AutoGenerateColumns="False">
+                              x:Name="MyDataGrid"
+                              SelectionMode="Single"
+                              SelectedItem="{Binding SelectedClip}"
+                              ItemsSource="{Binding Clips}"
+                              IsReadOnly="True"
+                              CanUserResizeColumns="True"
+                              CanUserSortColumns="False"
+                              AutoGenerateColumns="False">
                         <DataGrid.Styles>
                             <Style Selector="TextBlock">
                                 <Setter Property="FontSize" Value="14" />
                             </Style>
                         </DataGrid.Styles>
                         <DataGrid.Columns>
-                            <DataGridTextColumn Header="Start Time" Width="120" Binding="{Binding StartTimeStr}" />
-                            <DataGridTextColumn Header="End Time" Width="120" Binding="{Binding EndTimeStr}" />
+                            <DataGridTemplateColumn Header="Start Time" Width="120">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding StartTimeStr}"
+                                                HorizontalAlignment="Center"
+                                                Classes="hyperlink"
+                                                Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).JumpToTimeCommand}"
+                                                CommandParameter="{Binding StartTime}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTemplateColumn Header="End Time" Width="120">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding EndTimeStr}" 
+                                                HorizontalAlignment="Center"
+                                                Classes="hyperlink"
+                                                Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).JumpToTimeCommand}"
+                                                CommandParameter="{Binding EndTime}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="Output Size" Width="120" Binding="{Binding OutputFileSizeStr}" />
-                            <DataGridTextColumn Header="Output Path" Width="*" Binding="{Binding OutputFileInfo.FullName}" />
+                            <DataGridTemplateColumn Header="Output Path" Width="*" >
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <Button Content="{Binding OutputFileInfo.FullName}"
+                                                Classes="hyperlink"
+                                                Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).FindFileCommand}"
+                                                CommandParameter="{Binding OutputFileInfo}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
                         </DataGrid.Columns>
                     </DataGrid>
                 </Grid>

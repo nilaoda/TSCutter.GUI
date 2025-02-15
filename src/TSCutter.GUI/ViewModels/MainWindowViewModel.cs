@@ -56,6 +56,25 @@ public partial class MainWindowViewModel : ViewModelBase
         nameof(SaveFrameClickCommand)
     )]
     public partial PickedClip? SelectedClip { get; set; }
+    
+    [RelayCommand]
+    private async Task JumpToTimeAsync(object? time)
+    {
+        if (time is double targetTime)
+        {
+            await SeekToTimeAsync(TimeSpan.FromSeconds(targetTime));
+            await DrawNextFrameAsync(1);
+        }
+    }
+
+    [RelayCommand]
+    private void FindFile(object? fileInfo)
+    {
+        if (fileInfo is FileInfo file)
+        {
+            CommonUtil.OpenFileLocation(file.FullName);
+        }
+    }
 
     [RelayCommand]
     private async Task JumpToClickAsync()
@@ -109,14 +128,15 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
     private void AddClip()
     {
-        SelectedClip = new PickedClip()
+        var newClip = new PickedClip()
         {
             InFileInfo = new FileInfo(VideoPath),
             StartTime = CurrentTime,
             StartPosition = PositionInFile,
             EndTime = DurationMax,
         };
-        Clips.Add(SelectedClip);
+        Clips.Add(newClip);
+        SelectedClip = newClip;
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]
