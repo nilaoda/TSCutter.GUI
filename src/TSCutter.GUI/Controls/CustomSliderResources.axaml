@@ -6,7 +6,7 @@
             <GridLength x:Key="SliderPreContentMargin">2</GridLength>
             <GridLength x:Key="SliderPostContentMargin">0</GridLength>
             <system:Double x:Key="SliderTrackThemeHeight">18</system:Double>
-            <system:Double x:Key="SliderHorizontalThumbWidth">8</system:Double>
+            <system:Double x:Key="SliderHorizontalThumbWidth">4</system:Double>
             <system:Double x:Key="SliderTrackWidth">18</system:Double>
             <system:Double x:Key="SliderThumbHeight">18</system:Double>
             <system:Double x:Key="SliderThumbWidth">6</system:Double>
@@ -25,7 +25,7 @@
             <GridLength x:Key="SliderPreContentMargin">2</GridLength>
             <GridLength x:Key="SliderPostContentMargin">0</GridLength>
             <system:Double x:Key="SliderTrackThemeHeight">18</system:Double>
-            <system:Double x:Key="SliderHorizontalThumbWidth">8</system:Double>
+            <system:Double x:Key="SliderHorizontalThumbWidth">4</system:Double>
             <system:Double x:Key="SliderTrackWidth">18</system:Double>
             <system:Double x:Key="SliderThumbHeight">18</system:Double>
             <system:Double x:Key="SliderThumbWidth">6</system:Double>
