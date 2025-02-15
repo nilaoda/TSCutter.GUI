@@ -378,6 +378,8 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             Console.WriteLine($"Failed to load video: {e}");
             await ShowMessageAsync(e.Message, "Failed to load video", MessageBoxImage.Error);
+            ClearVars();
+            _videoInstance?.Close();
         }
     }
 
