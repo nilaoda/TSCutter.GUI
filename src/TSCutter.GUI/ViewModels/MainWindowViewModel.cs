@@ -352,15 +352,23 @@ public partial class MainWindowViewModel : ViewModelBase
     public async Task DrawNextFrameAsync(int count = 1)
     {
         if (!IsVideoInitialized) return;
-        
-        DecodeCost = 0;
-        var stopwatch = Stopwatch.StartNew();
-        var decodeResult = await _videoInstance!.DecodeNextFrameAsync(count);
-        DecodeCost = stopwatch.ElapsedMilliseconds;
-        Console.WriteLine($"PositionInFile: {_videoInstance.PositionInFile}");
-        stopwatch.Stop();
-        DecodedBitmap = decodeResult.Bitmap;
-        CurrentTime = decodeResult.FrameTimestamp.TotalSeconds;
+
+        try
+        {
+            DecodeCost = 0;
+            var stopwatch = Stopwatch.StartNew();
+            var decodeResult = await _videoInstance!.DecodeNextFrameAsync(count);
+            DecodeCost = stopwatch.ElapsedMilliseconds;
+            Console.WriteLine($"PositionInFile: {_videoInstance.PositionInFile}");
+            stopwatch.Stop();
+            DecodedBitmap = decodeResult.Bitmap;
+            CurrentTime = decodeResult.FrameTimestamp.TotalSeconds;
+        }
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            await ShowMessageAsync(e.Message, "Failed to decode", MessageBoxImage.Error);
+        }
     }
 
     private void ClearVars()
@@ -396,10 +404,11 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception e)
         {
-            Console.WriteLine($"Failed to load video: {e}");
-            await ShowMessageAsync(e.Message, "Failed to load video", MessageBoxImage.Error);
+            VideoPath = string.Empty;
             ClearVars();
             _videoInstance?.Close();
+            Console.WriteLine($"Failed to load video: {e}");
+            await ShowMessageAsync(e.Message, "Failed to load video", MessageBoxImage.Error);
         }
     }
 
