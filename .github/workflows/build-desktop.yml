@@ -65,7 +65,7 @@ jobs:
           zip -r ../../../TSCutter.GUI_Alpha_win-x64_${{ needs.set-date.outputs.date }}.zip . -x "lib*" -x "av_*" -x "*.pdb"
 
       - name: Upload Artifact [win-x64]
-        uses: actions/upload-artifact@v3.1.3
+        uses: actions/upload-artifact@v4
         with:
           name: TSCutter.GUI_win-x64
           path: TSCutter.GUI_Alpha_win-x64_${{ needs.set-date.outputs.date }}.zip
@@ -93,7 +93,7 @@ jobs:
           zip -r ../TSCutter.GUI_Alpha_linux-x64_${{ needs.set-date.outputs.date }}.zip . -x "*.dbg"
 
       - name: Upload Artifact [linux-x64]
-        uses: actions/upload-artifact@v3.1.3
+        uses: actions/upload-artifact@v4
         with:
           name: TSCutter.GUI_linux-x64
           path: TSCutter.GUI_Alpha_linux-x64_${{ needs.set-date.outputs.date }}.zip
@@ -119,7 +119,7 @@ jobs:
           zip -r ../TSCutter.GUI_Alpha_osx-x64_${{ needs.set-date.outputs.date }}.zip . -x "*.dSYM/*"
 
       - name: Upload Artifact [osx-x64]
-        uses: actions/upload-artifact@v3.1.3
+        uses: actions/upload-artifact@v4
         with:
           name: TSCutter.GUI_osx-x64
           path: TSCutter.GUI_Alpha_osx-x64_${{ needs.set-date.outputs.date }}.zip
@@ -145,7 +145,7 @@ jobs:
           zip -r ../TSCutter.GUI_Alpha_osx-arm64_${{ needs.set-date.outputs.date }}.zip . -x "*.dSYM/*"
 
       - name: Upload Artifact [osx-arm64]
-        uses: actions/upload-artifact@v3.1.3
+        uses: actions/upload-artifact@v4
         with:
           name: TSCutter.GUI_osx-arm64
           path: TSCutter.GUI_Alpha_osx-arm64_${{ needs.set-date.outputs.date }}.zip
@@ -158,7 +158,7 @@ jobs:
 
     steps:
       - name: Fetch artifacts
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
 
       - name: Get Release Time
         id: get_release_time
