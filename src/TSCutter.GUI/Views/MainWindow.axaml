@@ -59,6 +59,10 @@
     <Window.KeyBindings>
         <KeyBinding Gesture="{OnPlatform Ctrl+O, macOS=⌘+O}" Command="{Binding LoadVideoClickCommand}"/>
         <KeyBinding Gesture="{OnPlatform Ctrl+S, macOS=⌘+S}" Command="{Binding SaveVideoClickCommand}"/>
+        <KeyBinding Gesture="Left" Command="{Binding PrevGopClickCommand}"/>
+        <KeyBinding Gesture="Shift+Left" Command="{Binding Prev10GopClickCommand}"/>
+        <KeyBinding Gesture="Right" Command="{Binding NextGopClickCommand}"/>
+        <KeyBinding Gesture="Shift+Right" Command="{Binding Next10GopClickCommand}"/>
     </Window.KeyBindings>
 
     <NativeMenu.Menu>
@@ -126,10 +130,11 @@
             <Rectangle Stroke="Gray" StrokeThickness="2" StrokeDashArray="3, 4" Width="200" Height="100" RadiusX="10" RadiusY="10"/>
         </Grid>
         <DockPanel>
+            <!-- Windows/Linux的菜单栏 -->
             <Grid DockPanel.Dock="Top"
-                Margin="6"
-                ColumnDefinitions="Auto" 
-                Background="Transparent">
+                  Margin="6"
+                  ColumnDefinitions="Auto" 
+                  Background="Transparent">
                 <Grid.IsVisible>
                     <OnPlatform Default="False">
                         <On Options="Windows, Linux" Content="True" />
@@ -141,6 +146,7 @@
                         Grid.Column="0">
                 </TextBlock>
             </Grid>
+            <!-- 状态栏 -->
             <StackPanel DockPanel.Dock="Bottom"
                         Orientation="Horizontal"
                         VerticalAlignment="Center">
@@ -156,6 +162,7 @@
                             ToolTip.Tip="Find File"
                             Content="{Binding VideoPath}"/>
             </StackPanel>
+            <!-- 主界面 -->
             <Grid RowDefinitions="Auto, 40, *">
                 <Grid Grid.Row="0" ColumnDefinitions="*, Auto, Auto" VerticalAlignment="Center">
                     <Grid.IsVisible>
