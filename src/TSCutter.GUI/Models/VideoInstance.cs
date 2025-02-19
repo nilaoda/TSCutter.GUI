@@ -16,9 +16,11 @@ namespace TSCutter.GUI.Models;
 
 public class VideoInstance(string filePath) : IDisposable
 {
+    private const int MAX_FAILURE_COUT = 100;
     private const int AV_PKT_FLAG_KEY_FRAME = 0x0001;
     public long PositionInFile { get; private set; } = 0;
     public bool Inited { get; private set; } = false;
+    private bool AudioMode { get; set; } = false;
     
     private FormatContext inFc;
     private CodecContext videoDecoder;
@@ -52,8 +54,8 @@ public class VideoInstance(string filePath) : IDisposable
             throw new Exception("Read Failed!");
         }
 
-        var decoders = Codec.FindDecoders(inVideoStream.Codecpar!.CodecId);
-        if (!decoders.Any())
+        var decoders = Codec.FindDecoders(inVideoStream.Codecpar!.CodecId).ToList();
+        if (decoders.Count == 0)
         {
             throw new Exception("Cant find decoder!");
         }
@@ -66,16 +68,51 @@ public class VideoInstance(string filePath) : IDisposable
         videoDecoder.FillParameters(inVideoStream.Codecpar!);
         videoDecoder.Open();
 
-        // calc KeyFrameGap
-        DecodeNextFrame();
-        DecodeNextFrame();
-        var firstKeyFramePts = currentKeyFramePts;
-        DecodeNextFrame();
-        keyFrameGap = currentKeyFramePts - firstKeyFramePts;
-        Console.WriteLine($"keyFrameGap: {keyFrameGap}");
-        Seek(firstFrameTimestamp);
-
+        try
+        {
+            // calc KeyFrameGap
+            DecodeNextFrame();
+            DecodeNextFrame();
+            var firstKeyFramePts = currentKeyFramePts;
+            DecodeNextFrame();
+            keyFrameGap = currentKeyFramePts - firstKeyFramePts;
+            Console.WriteLine($"keyFrameGap: {keyFrameGap}");
+            Seek(firstFrameTimestamp);
+        }
+        catch (TooManyDecodeFailuresException e)
+        {
+            Console.WriteLine(e);
+            Console.WriteLine("Try Audio Mode...");
+            InitAudio(inFc);
+        }
+        
         Inited = true;
+    }
+
+    private void InitAudio(FormatContext inFc)
+    {
+        inVideoStream = inFc.GetAudioStream();
+        if (inVideoStream.Codecpar?.CodecId is null)
+        {
+            throw new Exception("Read Failed!");
+        }
+
+        var decoders = Codec.FindDecoders(inVideoStream.Codecpar!.CodecId).ToList();
+        if (decoders.Count == 0)
+        {
+            throw new Exception("Cant find decoder!");
+        }
+
+        videoStreamIndex = inVideoStream.Index;
+        timeBase = inVideoStream.TimeBase;
+
+        var firstDecoder = decoders.First();
+        videoDecoder = new(Codec.FindDecoderById(firstDecoder.Id));
+        videoDecoder.FillParameters(inVideoStream.Codecpar!);
+        videoDecoder.Open();
+
+        keyFrameGap = 90000;
+        AudioMode = true;
     }
     
     public async Task SeekToTimeAsync(TimeSpan timeSpan)
@@ -108,6 +145,8 @@ public class VideoInstance(string filePath) : IDisposable
 
     private DecodeResult DecodeNextFrame(int count = 1)
     {
+        var failureCount = 0;
+        
         if (count < 0)
         {
             // Seek backward by keyframe gap * abs(count)
@@ -124,6 +163,10 @@ public class VideoInstance(string filePath) : IDisposable
 
         foreach (var packet in inFc.ReadPackets(videoStreamIndex))
         {
+            if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
+            {
+                continue;
+            }
             if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
             {
                 // Console.WriteLine($"Skip[NonKey] packet: {packet.Pts}");
@@ -139,11 +182,15 @@ public class VideoInstance(string filePath) : IDisposable
             {
                 return result;
             }
+            if (failureCount++ > MAX_FAILURE_COUT)
+            {
+                throw new TooManyDecodeFailuresException("Too many failed packets!");
+            }
             Console.WriteLine("result is null");
         }
 
         // No keyframe found, retry by seeking slightly earlier
-        if (lastSeekPts - 1000 < 0)
+        if (!AudioMode && lastSeekPts - 1000 < 0)
             throw new Exception("Decode Failed!");
 
         Seek(lastSeekPts - keyFrameGap / 2);
@@ -192,43 +239,43 @@ public class VideoInstance(string filePath) : IDisposable
     
     private DecodeResult? DecodePacket(Packet packet)
     {
-        using Frame destRef = new Frame();
-        // 1 packet -> 0..N frame
-        foreach (var frame in videoDecoder.DecodePacket(packet, destRef))
+        try
         {
-            if (firstFrameTimestamp == -1)
+            using Frame destRef = new Frame();
+            // 1 packet -> 0..N frame
+            foreach (var frame in videoDecoder.DecodePacket(packet, destRef))
             {
-                firstFrameTimestamp = frame.BestEffortTimestamp;
-                maxPts = inVideoStream.Duration + firstFrameTimestamp;
-            }
+                if (firstFrameTimestamp == -1)
+                {
+                    firstFrameTimestamp = frame.BestEffortTimestamp;
+                    maxPts = inVideoStream.Duration + firstFrameTimestamp;
+                }
 
-            Console.WriteLine($"Current keyFrame: {frame.Pts}");
-            currentKeyFramePts = frame.Pts;
+                Console.WriteLine($"Current keyFrame: {frame.Pts}");
+                currentKeyFramePts = frame.Pts;
 #pragma warning disable CS0618 // Obsolete
-            PositionInFile = frame.PktPosition;
-            Console.WriteLine($"Current keyFrame PktPosition: {frame.PktPosition}");
+                PositionInFile = frame.PktPosition;
+                Console.WriteLine($"Current keyFrame PktPosition: {frame.PktPosition}");
+                if (AudioMode && frame.PktPosition == -1)
+                    continue;
 #pragma warning restore CS0618 // Obsolete
 
-            Bitmap decodedBitmap;
-
-            try
-            {
-                decodedBitmap = ImageUtil.CreateBitmapFromFrame(frame);
+                // 音频模式无法解码 返回固定图片
+                var bitmap = AudioMode ? ImageUtil.BlankImage : ImageUtil.CreateBitmapFromFrame(frame);
+                return new DecodeResult()
+                {
+                    Bitmap = bitmap,
+                    FrameTimestamp = PtsToTimeSpan(frame.Pts),
+                };
             }
-            catch (FFmpegException e)
-            {
-                Console.WriteLine(e);
-                // Return null to indicate failure and continue with the next packet
-                return null;
-            }
-
-            return new DecodeResult()
-            {
-                Bitmap = decodedBitmap,
-                FrameTimestamp = PtsToTimeSpan(frame.Pts),
-            };
         }
-
+        catch (Exception e)
+        {
+            Console.WriteLine(e);
+            // Return null to indicate failure and continue with the next packet
+            return null;
+        }
+        
         // If no frames were successfully processed
         Console.WriteLine("no frames were successfully processed");
         return null;

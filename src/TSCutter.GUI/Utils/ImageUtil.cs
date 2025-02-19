@@ -1,5 +1,8 @@
-﻿using System.Runtime.InteropServices;
+﻿using System;
+using System.Globalization;
+using System.Runtime.InteropServices;
 using Avalonia;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Sdcb.FFmpeg.Raw;
@@ -10,6 +13,9 @@ namespace TSCutter.GUI.Utils;
 
 public static class ImageUtil
 {
+    // 每次都创建一张纯黑图片作为音频的图
+    public static Bitmap BlankImage => CreateAudioBitmap();
+    
     public static Bitmap CreateBitmapFromFrame(Frame frame, int dpi = 96)
     {
         var width = frame.Width;
@@ -48,5 +54,32 @@ public static class ImageUtil
         }
         
         return writableBitmap;
+    }
+
+    private static Bitmap CreateAudioBitmap(int width = 1920, int height = 1080)
+    {
+        var bitmap = new RenderTargetBitmap(new PixelSize(width, height), new Vector(96, 96));
+        using var ctx = bitmap.CreateDrawingContext(true);
+        // 黑色背景
+        ctx.FillRectangle(Brushes.Black, new Rect(0, 0, width, height));
+        // 文字部分
+        var formattedText = new FormattedText(
+            $"Video decoding failed!{Environment.NewLine}{Environment.NewLine}" +
+            $"You can still continue editing based on the audio track.",
+            CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight,
+            Typeface.Default,
+            60.0,
+            Brushes.White
+        );
+        // 计算居中位置
+        var textPosition = new Point(
+            (width - formattedText.Width) / 2,
+            (height - formattedText.Height) / 2
+        );
+        // 绘制文字
+        ctx.DrawText(formattedText, textPosition);
+
+        return bitmap;
     }
 }
