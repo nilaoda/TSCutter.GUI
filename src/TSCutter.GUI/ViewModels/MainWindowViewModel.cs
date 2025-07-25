@@ -30,7 +30,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.250219";
+            var defaultTitle = "TSCutter.GUI - Alpha.250725";
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
             return defaultTitle;
@@ -90,6 +90,9 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        // 禁用快捷键绑定 防止副作用
+        CanNavigateTime = false;
+        
         var vm = _dialogService.CreateViewModel<JumpTimeViewModel>();
         var currentTimeStr = CommonUtil.FormatSeconds(CurrentTime);
         vm.InputText = currentTimeStr;
@@ -102,6 +105,10 @@ public partial class MainWindowViewModel : ViewModelBase
             DefaultButton = ContentDialogButton.Primary
         };
         var result = await _dialogService.ShowContentDialogAsync(this, settings);
+        
+        // 启用快捷键绑定
+        CanNavigateTime = true;
+        
         if (result != ContentDialogResult.Primary || currentTimeStr == vm.InputText) return;
         
         if (CommonUtil.TryParseFormattedTime(vm.InputText, out var newTime) && newTime < DurationMax)
@@ -226,6 +233,8 @@ public partial class MainWindowViewModel : ViewModelBase
     public partial double OffsetX { get; set; } = 0;
     [ObservableProperty]
     public partial double OffsetY { get; set; } = 0;
+    [ObservableProperty]
+    public partial bool CanNavigateTime { get; set; } = true;
 
     public double MaxZoomFactor => 3.0;
     public double MinZoomFactor => 0.1;
@@ -297,16 +306,16 @@ public partial class MainWindowViewModel : ViewModelBase
         await LoadVideoAsync();
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanNavigateTime))]
     private async Task PrevGopClickAsync() => await DrawNextFrameAsync(-1);
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanNavigateTime))]
     private async Task NextGopClickAsync() => await DrawNextFrameAsync(1);
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanNavigateTime))]
     private async Task Prev10GopClickAsync() => await DrawNextFrameAsync(-10);
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanNavigateTime))]
     private async Task Next10GopClickAsync() => await DrawNextFrameAsync(10);
 
     [RelayCommand]

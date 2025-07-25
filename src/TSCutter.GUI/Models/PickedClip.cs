@@ -18,13 +18,15 @@ public partial class PickedClip : ObservableObject
     private double _endTime = -1.0;
     
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EstimatedSizeStr))]
     private long _startPosition = 0;
     
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EstimatedSizeStr))]
     private long _endPosition = -1;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(OutputFileSizeStr))]
+    [NotifyPropertyChangedFor(nameof(OutputFileSizeStr), nameof(EstimatedSizeStr))]
     private FileInfo? _outputFileInfo;
     
     public required FileInfo InFileInfo { get; init; }
@@ -32,4 +34,7 @@ public partial class PickedClip : ObservableObject
     public string StartTimeStr => CommonUtil.FormatSeconds(StartTime);
     public string? OutputFileSizeStr => OutputFileInfo == null ? null : CommonUtil.FormatFileSize(OutputFileInfo.Length);
     public string EndTimeStr => EndTime < 0 ? "Inf." : CommonUtil.FormatSeconds(EndTime);
+    public string? EstimatedSizeStr => "Size: " + CommonUtil.FormatFileSize(
+        (EndPosition > 0 ? EndPosition : InFileInfo.Length) - StartPosition
+    );
 }
