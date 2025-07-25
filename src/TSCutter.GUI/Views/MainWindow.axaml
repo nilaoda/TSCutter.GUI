@@ -40,13 +40,16 @@
         <Style Selector="Button.hyperlink">
             <Setter Property="Template">
                 <ControlTemplate>
-                    <TextBlock TextTrimming="CharacterEllipsis" Text="{TemplateBinding Content}">
-                    <TextBlock.Styles>
-                        <Style Selector="TextBlock:pointerover">
-                            <Setter Property="TextDecorations" Value="Underline"/>
-                            <Setter Property="Cursor" Value="Hand"/>
-                        </Style>
-                    </TextBlock.Styles>
+                    <TextBlock TextTrimming="CharacterEllipsis"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center"
+                               Text="{TemplateBinding Content}">
+                        <TextBlock.Styles>
+                            <Style Selector="TextBlock:pointerover">
+                                <Setter Property="TextDecorations" Value="Underline" />
+                                <Setter Property="Cursor" Value="Hand" />
+                            </Style>
+                        </TextBlock.Styles>
                     </TextBlock>
                 </ControlTemplate>
             </Setter>
@@ -256,6 +259,7 @@
                 </Grid>
                 <Grid Grid.Row="2" RowDefinitions="*, Auto, 150">
                     <Grid Grid.Row="0" RowDefinitions="*, Auto, Auto, Auto">
+                        <!-- 图片预览区域 -->
                         <controls:ImageViewer Name="ImageViewer"
                                               MaxZoomFactor="{Binding MaxZoomFactor}"
                                               MinZoomFactor="{Binding MinZoomFactor}"
@@ -264,6 +268,7 @@
                                               Image="{Binding DecodedBitmap}"
                                               Zoom="{Binding ZoomFactor, Mode=TwoWay}">
                         </controls:ImageViewer>
+                        <!-- 滑块 -->
                         <controls:CustomSlider Grid.Row="1"
                                             Name="CustomSlider"
                                             Margin="0, 2"
@@ -287,6 +292,7 @@
                                 </ResourceDictionary>
                             </controls:CustomSlider.Resources>
                         </controls:CustomSlider>
+                        <!-- 选中范围展示 -->
                         <Rectangle Grid.Row="2"
                                 Height="5">
                             <Rectangle.Fill>
@@ -297,6 +303,7 @@
                                 </MultiBinding>
                             </Rectangle.Fill>
                         </Rectangle>
+                        <!-- 导航等控制键的一行 -->
                         <Grid Grid.Row="3" ColumnDefinitions="*, Auto, *">
                             <Grid.Styles>
                                 <Style Selector="TextBlock.LeftBtn">
@@ -354,6 +361,7 @@
                                         FontWeight="Bold"
                                         FontSize="22"
                                         Margin="4,0"
+                                        Width="150"
                                         Classes="hyperlink"/>
                                 <!-- RIGHT -->
                                 <Button Command="{Binding NextGopClickCommand}"
@@ -369,6 +377,10 @@
                             </StackPanel>
                             <StackPanel Grid.Column="2" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="4"
                                         Margin="4, 4">
+                                <!-- Estimated Size -->
+                                <TextBlock Text="{Binding SelectedClip.EstimatedSizeStr, Mode=OneWay}"
+                                           VerticalAlignment="Center"/>
+                                <!-- Save Video Button -->
                                 <Button Command="{Binding SaveVideoClickCommand}"
                                         Classes="accent"
                                         VerticalContentAlignment="Center"

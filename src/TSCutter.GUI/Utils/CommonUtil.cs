@@ -85,7 +85,7 @@ public static partial class CommonUtil
         progress?.Invoke(100, bytesRead);
     }
     
-    public static string? FormatFileSize(double fileSize)
+    public static string FormatFileSize(double fileSize)
     {
         return fileSize switch
         {
