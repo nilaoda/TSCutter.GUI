@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <AssemblyName>TSCutterGUI</AssemblyName>
-        <Version>0.0.1.8</Version>
+        <Version>0.0.1.9</Version>
         <OutputType>WinExe</OutputType>
         <ApplicationIcon>Assets/logo.ico</ApplicationIcon>
         <TargetFramework>net9.0</TargetFramework>
