@@ -21,5 +21,20 @@
                 </Transitions>
             </Setter>
         </Style>-->
+        <!-- DataGrid紧凑布局 -->
+        <Style Selector="DataGrid">
+            <Setter Property="RowHeight" Value="28"/>
+        </Style>
+        <Style Selector="DataGridRow">
+            <Setter Property="Height" Value="28"/>
+            <Setter Property="MinHeight" Value="28"/>
+            <Setter Property="Padding" Value="4"/>
+        </Style>
+        <Style Selector="DataGridCell">
+            <Setter Property="Padding" Value="4"/>
+        </Style>
+        <Style Selector="DataGridCell Rectangle">
+            <Setter Property="IsVisible" Value="False"/>
+        </Style>
     </Application.Styles>
 </Application>
