@@ -318,6 +318,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanNavigateTime))]
     private async Task Next10GopClickAsync() => await DrawNextFrameAsync(10);
 
+    [RelayCommand(CanExecute = nameof(CanNavigateTime))]
+    private async Task Prev20GopClickAsync() => await DrawNextFrameAsync(-20);
+
+    [RelayCommand(CanExecute = nameof(CanNavigateTime))]
+    private async Task Next20GopClickAsync() => await DrawNextFrameAsync(20);
+
     [RelayCommand]
     private void ZoomIn() => ZoomFactor = Math.Min(MaxZoomFactor, ZoomFactor + 0.1);
     

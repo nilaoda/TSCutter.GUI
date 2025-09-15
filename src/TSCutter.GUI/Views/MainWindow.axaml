@@ -339,6 +339,15 @@
                             <StackPanel Grid.Column="1" HorizontalAlignment="Center" Orientation="Horizontal" Spacing="4"
                                         Margin="4, 4">
                                 <!-- LEFT -->
+                                <Button Command="{Binding Prev20GopClickCommand}"
+                                        Classes="CenterBtn"
+                                        ToolTip.Tip="Previous 20">
+                                    <PathIcon Height="12" Data="{StaticResource fast_forward_triple}">
+                                        <PathIcon.RenderTransform>
+                                            <ScaleTransform ScaleX="-1" />
+                                        </PathIcon.RenderTransform>
+                                    </PathIcon>
+                                </Button>
                                 <Button Command="{Binding Prev10GopClickCommand}"
                                         Classes="CenterBtn"
                                         ToolTip.Tip="Previous 10">
@@ -373,6 +382,11 @@
                                         Classes="CenterBtn"
                                         ToolTip.Tip="Next 10">
                                     <PathIcon Height="12" Data="{StaticResource fast_forward_regular}" />
+                                </Button>
+                                <Button Command="{Binding Next20GopClickCommand}"
+                                        Classes="CenterBtn"
+                                        ToolTip.Tip="Next 20">
+                                    <PathIcon Height="12" Data="{StaticResource fast_forward_triple}" />
                                 </Button>
                             </StackPanel>
                             <StackPanel Grid.Column="2" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="4"
