@@ -44,10 +44,22 @@ public partial class MainWindow : AppWindow
     private async void CustomSlider_OnValueChangedAfterMouseUp(object? sender, double e)
     {
         if (!ViewModel.IsVideoInitialized) return;
-        
-        Console.WriteLine($"Seek to {e}");
-        await ViewModel.SeekToTimeAsync(TimeSpan.FromSeconds(e));
-        await ViewModel.DrawNextFrameAsync(1);
+
+        try
+        {
+            CustomSlider.IsEnabled = false;
+            Console.WriteLine($"Seek to {e}");
+            await ViewModel.SeekToTimeAsync(TimeSpan.FromSeconds(e));
+            await ViewModel.DrawNextFrameAsync(1);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine(ex);
+        }
+        finally
+        {
+            CustomSlider.IsEnabled = true;
+        }
     }
     
     private void OnActualThemeVariantChanged(object sender, EventArgs e)
