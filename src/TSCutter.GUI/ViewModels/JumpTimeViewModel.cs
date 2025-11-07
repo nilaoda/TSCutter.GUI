@@ -1,15 +1,30 @@
-﻿using System.Threading.Tasks;
+﻿using System;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using HanumanInstitute.MvvmDialogs;
 
 namespace TSCutter.GUI.ViewModels;
 
-public partial class JumpTimeViewModel : ViewModelBase
+public partial class JumpTimeViewModel : ViewModelBase, IModalDialogViewModel
 {
     [ObservableProperty]
     public partial string? InputText { get; set; }
+
+    [RelayCommand]
+    private void Cancel()
+    {
+        RequestClose?.Invoke();
+    }
+
+    [RelayCommand]
+    private void Confirm()
+    {
+        DialogResult = true;
+        RequestClose?.Invoke();
+    }
 
     [RelayCommand]
     private async Task DelayFocusAsync(RoutedEventArgs e)
@@ -29,4 +44,8 @@ public partial class JumpTimeViewModel : ViewModelBase
         (e.Source as TextBox)?.Focus();
         (e.Source as TextBox)?.SelectAll();
     }
+
+    public bool? DialogResult { get; private set; }
+
+    public event Action? RequestClose;
 }

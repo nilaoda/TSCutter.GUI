@@ -1,25 +1,52 @@
-﻿<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:local="clr-namespace:TSCutter.GUI"
-             xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
-             mc:Ignorable="d"
-             Height="50"
-             x:Class="TSCutter.GUI.Views.JumpTimeView"
-             d:DataContext="{x:Static local:App.JumpTimeDialog}"
-             x:DataType="viewModels:JumpTimeViewModel">
-    <Grid>
-        <TextBox Text="{Binding InputText}"
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ia="using:Avalonia.Xaml.Interactivity"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.JumpTimeView"
+        d:DataContext="{x:Static local:App.JumpTimeDialog}"
+        x:DataType="viewModels:JumpTimeViewModel"
+        Width="280" Height="150"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Title="Jump to Time">
+    
+    <Grid Margin="12" RowDefinitions="*,Auto" ColumnDefinitions="*">
+        <!-- 输入框 -->
+        <TextBox Grid.Row="0"
+                 Text="{Binding InputText}"
                  Name="InputTextBox"
                  FontSize="20"
+                 Margin="0,0,0,8"
                  HorizontalContentAlignment="Center"
-                 VerticalAlignment="Center">
-            <Interaction.Behaviors>
-                <EventTriggerBehavior EventName="Loaded">
+                 VerticalContentAlignment="Center"
+                 VerticalAlignment="Center"
+                 HorizontalAlignment="Stretch"
+                 Watermark="00:00:00"
+                 Focusable="True">
+            <ia:Interaction.Behaviors>
+                <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
                     <InvokeCommandAction Command="{Binding DelayFocusCommand}" PassEventArgsToCommand="True" />
-                </EventTriggerBehavior>
-            </Interaction.Behaviors>
+                </RoutedEventTriggerBehavior>
+            </ia:Interaction.Behaviors>
         </TextBox>
+
+        <!-- 按钮区 -->
+        <StackPanel Grid.Row="1"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="6">
+            <Button Content="_Cancel"
+                    Width="70"
+                    Command="{Binding CancelCommand}"
+                    IsCancel="True"/>
+            <Button Content="_OK"
+                    Width="70"
+                    Command="{Binding ConfirmCommand}"
+                    IsDefault="True"/>
+        </StackPanel>
     </Grid>
-</UserControl>
+</Window>
