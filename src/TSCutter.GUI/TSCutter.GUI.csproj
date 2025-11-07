@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <AssemblyName>TSCutterGUI</AssemblyName>
-        <Version>0.0.1.9</Version>
+        <Version>0.0.2.0</Version>
         <OutputType>WinExe</OutputType>
         <ApplicationIcon>Assets/logo.ico</ApplicationIcon>
         <TargetFramework>net9.0</TargetFramework>
@@ -18,21 +18,21 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Avalonia" Version="11.3.2" />
-        <PackageReference Include="Avalonia.Desktop" Version="11.3.2" />
-        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.2" />
+        <PackageReference Include="Avalonia" Version="11.3.8" />
+        <PackageReference Include="Avalonia.Desktop" Version="11.3.8" />
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.8" />
         <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
-        <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.3.2" />
-        <PackageReference Include="Avalonia.ReactiveUI" Version="11.3.2" />
+        <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.3.8" />
+        <PackageReference Include="Avalonia.ReactiveUI" Version="11.3.8" />
     </ItemGroup>
 
     <ItemGroup>
         <PackageReference Include="Avalonia.Xaml.Behaviors" Version="11.3.0.6" />
+        <PackageReference Include="Classic.Avalonia.Theme" Version="11.3.0.1" />
+        <PackageReference Include="Classic.Avalonia.Theme.DataGrid" Version="11.3.0.1" />
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-        <PackageReference Include="FluentAvaloniaUI" Version="2.4.0" />
         <PackageReference Include="HanumanInstitute.MvvmDialogs" Version="2.1.0" />
         <PackageReference Include="HanumanInstitute.MvvmDialogs.Avalonia" Version="2.1.0" />
-        <PackageReference Include="HanumanInstitute.MvvmDialogs.Avalonia.Fluent" Version="2.1.0" />
         <PackageReference Include="Sdcb.FFmpeg" Version="7.0.0" />
         <PackageReference Include="Splat.DependencyInjection.SourceGenerator" Version="1.2.3">
             <PrivateAssets>all</PrivateAssets>

@@ -1,56 +1,81 @@
-﻿<UserControl xmlns="https://github.com/avaloniaui"
+﻿<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TSCutter.GUI"
         xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
-        xmlns:ui="clr-namespace:FluentAvalonia.UI.Controls;assembly=FluentAvalonia"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
         mc:Ignorable="d"
         x:Class="TSCutter.GUI.Views.AboutWindow"
         DataContext="{x:Static local:App.AboutDialog}"
-        x:DataType="viewModels:AboutWindowViewModel">
-    <Grid Margin="5" RowDefinitions="Auto, Auto, 4, *">
-        <StackPanel Grid.Row="0" Spacing="4" Orientation="Horizontal">
-            <ui:SymbolIcon Symbol="Link" FontSize="18" VerticalAlignment="Center" />
-            <HyperlinkButton NavigateUri="{Binding ProjectUrl}"
-                             Padding="4">
-                <TextBlock
-                    HorizontalAlignment="Center"
-                    Text="{Binding ProjectUrl}"
-                    TextDecorations="Underline"
-                    VerticalAlignment="Center" />
+        x:DataType="viewModels:AboutWindowViewModel"
+        Width="400" Height="300"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Title="{Binding Title}">
+    
+    <Grid Margin="10" RowDefinitions="Auto,Auto,Auto,*,Auto" ColumnDefinitions="Auto,*">
+        <Grid.Styles>
+            <Style Selector="HyperlinkButton">
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.HotTrackColorKey}}"/> 
+            </Style>
+        </Grid.Styles>
+        <!-- 图标 -->
+        <Image Source="/Assets/logo.ico"
+               Width="32" Height="32"
+               Margin="6,0,12,0"
+               Grid.Row="0" Grid.Column="0"
+               VerticalAlignment="Top" />
+
+        <!-- 应用标题区 -->
+        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Vertical" Spacing="2">
+            <TextBlock Text="{Binding AppName}" FontWeight="Bold" />
+            <TextBlock Text="{Binding AppVersion}" />
+            <TextBlock Text="{Binding Copyright}" />
+        </StackPanel>
+
+        <!-- 分隔间距 -->
+        <Rectangle Grid.Row="1" Grid.ColumnSpan="2" Height="12" Fill="Transparent" />
+
+        <!-- 项目链接 -->
+        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6">
+            <TextBlock Text="Project:" VerticalAlignment="Center" />
+            <HyperlinkButton NavigateUri="{Binding ProjectUrl}" Padding="0">
+                <TextBlock Text="{Binding ProjectUrl}"
+                           TextDecorations="Underline"
+                           VerticalAlignment="Center" />
             </HyperlinkButton>
         </StackPanel>
-        <TextBlock Grid.Row="1" Text="{Binding LibrariesDesc}"/>
-        <ScrollViewer Grid.Row="3"
-                      Theme="{DynamicResource StaticScrollViewer}"
-                      VerticalScrollBarVisibility="Auto"
-                      HorizontalScrollBarVisibility="Auto">
-            <ScrollViewer.Styles>
-                <Style Selector="TextBlock">
-                    <Setter Property="FontSize" Value="13" />
-                </Style>
-            </ScrollViewer.Styles>
-            <ItemsControl VerticalAlignment="Top" ItemsSource="{Binding AllLibraries}">
-                <ItemsControl.ItemTemplate>
-                    <DataTemplate>
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <TextBlock VerticalAlignment="Center">
-                                <Run FontWeight="Bold" Text="·" />
-                                <Run FontWeight="Bold" Text="{Binding Name}" />
-                                <Run Text=": " />
-                            </TextBlock>
-                            <HyperlinkButton NavigateUri="{Binding Url}" Padding="2">
-                                <TextBlock
-                                    HorizontalAlignment="Center"
-                                    Text="{Binding Url}"
-                                    TextDecorations="Underline"
-                                    VerticalAlignment="Center" />
-                            </HyperlinkButton>
-                        </StackPanel>
-                    </DataTemplate>
-                </ItemsControl.ItemTemplate>
-            </ItemsControl>
-        </ScrollViewer>
+
+        <!-- 库列表 -->
+        <Border Grid.Row="3" Grid.ColumnSpan="2" BorderThickness="1" BorderBrush="#808080" Margin="0,10,0,10">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="4">
+                <ItemsControl ItemsSource="{Binding AllLibraries}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,2">
+                                <TextBlock>
+                                    <Run FontWeight="Bold" Text="· " />
+                                    <Run FontWeight="Bold" Text="{Binding Name}" />
+                                    <Run Text=": " />
+                                </TextBlock>
+                                <HyperlinkButton NavigateUri="{Binding Url}" Padding="0">
+                                    <TextBlock Text="{Binding Url}" TextDecorations="Underline" />
+                                </HyperlinkButton>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <!-- 底部按钮 -->
+        <Button Grid.Row="4" Grid.ColumnSpan="2"
+                Width="80" Height="26"
+                HorizontalAlignment="Right"
+                Content="OK"
+                IsDefault="True"
+                IsCancel="True"
+                Click="Button_OnClick" />
     </Grid>
-</UserControl>
+</Window>

@@ -2,9 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              x:Class="TSCutter.GUI.App"
              xmlns:local="using:TSCutter.GUI"
-             xmlns:styling="clr-namespace:FluentAvalonia.Styling;assembly=FluentAvalonia"
-             Name="TSCutter.GUI"
-             RequestedThemeVariant="Default">
+             Name="TSCutter.GUI">
     <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
     <Application.DataTemplates>
@@ -12,29 +10,9 @@
     </Application.DataTemplates>
 
     <Application.Styles>
-        <StyleInclude Source="avares://TSCutterGUI/Icons.axaml" />
-        <styling:FluentAvaloniaTheme PreferSystemTheme="True" PreferUserAccentColor="True" />
-        <!--<Style Selector="Button /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Transitions">
-                <Transitions>
-                    <BrushTransition Property="Background" Duration="0:0:0.2"/>
-                </Transitions>
-            </Setter>
-        </Style>-->
-        <!-- DataGrid紧凑布局 -->
-        <Style Selector="DataGrid">
-            <Setter Property="RowHeight" Value="28"/>
-        </Style>
-        <Style Selector="DataGridRow">
-            <Setter Property="Height" Value="28"/>
-            <Setter Property="MinHeight" Value="28"/>
-            <Setter Property="Padding" Value="4"/>
-        </Style>
-        <Style Selector="DataGridCell">
-            <Setter Property="Padding" Value="4"/>
-        </Style>
-        <Style Selector="DataGridCell Rectangle">
-            <Setter Property="IsVisible" Value="False"/>
-        </Style>
+        <ClassicTheme FontAliasing="False"/>
+        <StyleInclude Source="avares://Classic.Avalonia.Theme.DataGrid/Classic.axaml"/>
+        <!-- 自定义主题 -->
+        <StyleInclude Source="avares://TSCutterGUI/Themes/CustomTheme.axaml" />
     </Application.Styles>
 </Application>

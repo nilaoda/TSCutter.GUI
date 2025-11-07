@@ -1,13 +1,10 @@
 using System;
 using Avalonia;
-using Avalonia.Controls.ApplicationLifetimes;
-using Avalonia.Data.Core.Plugins;
 using Avalonia.Markup.Xaml;
 using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.Avalonia;
 using Splat;
 using TSCutter.GUI.ViewModels;
-using TSCutter.GUI.Views;
 
 namespace TSCutter.GUI;
 
@@ -22,7 +19,7 @@ public partial class App : Application
         build.RegisterLazySingleton(() => (IDialogService)new DialogService(
             new DialogManager(
                 viewLocator: new ViewLocator(),
-                dialogFactory: new DialogFactory().AddFluent(FluentMessageBoxType.ContentDialog)),
+                dialogFactory: new DialogFactory()),
             viewModelFactory: x => Locator.Current.GetService(x)));
 
         SplatRegistrations.Register<MainWindowViewModel>();

@@ -6,7 +6,7 @@
         xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
         xmlns:converters="clr-namespace:TSCutter.GUI.Converters"
         xmlns:local="clr-namespace:TSCutter.GUI"
-        xmlns:ui="clr-namespace:FluentAvalonia.UI.Controls;assembly=FluentAvalonia"
+        xmlns:commonControls="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
         mc:Ignorable="d"
         Width="880" Height="670"
         MinWidth="600"
@@ -25,24 +25,21 @@
     </Window.Resources>
     
     <Interaction.Behaviors>
-        <EventTriggerBehavior EventName="Loaded">
+        <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
             <InvokeCommandAction Command="{Binding ProcessCommandLineCommand}" />
-        </EventTriggerBehavior>
+        </RoutedEventTriggerBehavior>
     </Interaction.Behaviors>
 
     <Window.Styles>
         <Style Selector="ToolTip">
             <Setter Property="FontWeight" Value="Normal" />
         </Style>
-        <Style Selector="TextBlock.MonoFont">
-            <Setter Property="FontFamily" Value="Consolas, Monaco, monospace" />
-        </Style>
         <Style Selector="Button.hyperlink">
             <Setter Property="Template">
                 <ControlTemplate>
                     <TextBlock TextTrimming="CharacterEllipsis"
                                VerticalAlignment="Center"
-                               HorizontalAlignment="Center"
+                               HorizontalAlignment="Left"
                                Text="{TemplateBinding Content}">
                         <TextBlock.Styles>
                             <Style Selector="TextBlock:pointerover">
@@ -70,31 +67,10 @@
 
     <NativeMenu.Menu>
         <NativeMenu>
-            <NativeMenuItem Header="_File">
-                <NativeMenu>
-                    <NativeMenuItem Header="_Open Video..."
-                                    Command="{Binding LoadVideoClickCommand}"
-                                    Gesture="{OnPlatform Ctrl+O, macOS=⌘+O}" />
-                    <NativeMenuItem Header="_Save Clip..."
-                                    Command="{Binding SaveVideoClickCommand}"
-                                    Gesture="{OnPlatform Ctrl+S, macOS=⌘+S}" />
-                    <NativeMenuItemSeparator />
-                    <NativeMenuItem Header="_Close Video"
-                                    Command="{Binding CloseVideoClickCommand}"/>
-                    <NativeMenuItem Header="_Exit" 
-                                    Command="{Binding ExitApplicationCommand}"/>
-                </NativeMenu>
-            </NativeMenuItem>
-            <NativeMenuItem Header="_Help">
-                <NativeMenu>
-                    <NativeMenuItem Header="_About..."
-                                    Command="{Binding ShowAboutDialogCommand}"/>
-                </NativeMenu>
-            </NativeMenuItem>
         </NativeMenu>
     </NativeMenu.Menu>
 
-    <Grid DragDrop.AllowDrop="True">
+    <Grid DragDrop.AllowDrop="True" RowDefinitions="Auto, *">
         <Grid.Resources>
             <ResourceDictionary>
                 <ResourceDictionary.ThemeDictionaries>
@@ -115,7 +91,47 @@
                 <ChangePropertyAction TargetObject="{Binding ElementName=DropMask}" PropertyName="IsVisible" Value="False" />
             </RoutedEventTriggerBehavior>
         </Interaction.Behaviors>
-        <Grid ZIndex="2"
+        <ClassicBorderDecorator Grid.Row="0" DockPanel.Dock="Top" BorderThickness="2" BorderStyle="Etched">
+            <DockPanel Margin="0, 2">
+                <commonControls:RebarHandle />
+                <Menu>
+                    <MenuItem Header="_File">
+                        <MenuItem Header="_Open Video..."
+                                  Command="{Binding LoadVideoClickCommand}"
+                                  InputGesture="{OnPlatform Ctrl+O, macOS=⌘+O}" />
+                        <MenuItem Header="_Save Clip..."
+                                  Command="{Binding SaveVideoClickCommand}"
+                                  InputGesture="{OnPlatform Ctrl+S, macOS=⌘+S}" />
+                        <Separator />
+                        <MenuItem Header="_Close Video"
+                                  Command="{Binding CloseVideoClickCommand}"/>
+                        <MenuItem Header="_Exit" 
+                                  Command="{Binding ExitApplicationCommand}"/>
+                    </MenuItem>
+                    <MenuItem Header="_Tools">
+                        <MenuItem Header="_Settings..."
+                                  Command="{Binding SettingsClickCommand}" />
+                    </MenuItem>
+                    <MenuItem Header="_View">
+                        <MenuItem Header="Zoom In" Command="{Binding ZoomInCommand}"/>
+                        <MenuItem Header="Zoom Out" Command="{Binding ZoomOutCommand}"/>
+                        <MenuItem Header="Original Size" Command="{Binding ZoomNoneCommand}"/>
+                        <MenuItem Header="Fit" Command="{Binding FitCommand, ElementName=ImageViewer}"/>
+                        <Separator />
+                        <MenuItem Header="Theme" ItemsSource="{Binding ThemeMenuItems}" />
+                    </MenuItem>
+                    <MenuItem Header="_Help">
+                        <MenuItem Header="_Check Update"
+                                  Command="{Binding CheckUpdateCommand}"/>
+                        <Separator />
+                        <MenuItem Header="_About..."
+                                  Command="{Binding ShowAboutDialogCommand}"/>
+                    </MenuItem>
+                </Menu>
+            </DockPanel>
+        </ClassicBorderDecorator>
+        <!-- DropMask -->
+        <Grid Grid.Row="1" ZIndex="2"
               IsVisible="False"
               DragDrop.AllowDrop="True"
               x:Name="DropMask">
@@ -132,334 +148,261 @@
             <TextBlock Text="Drop to load video" VerticalAlignment="Center" HorizontalAlignment="Center" />
             <Rectangle Stroke="Gray" StrokeThickness="2" StrokeDashArray="3, 4" Width="200" Height="100" RadiusX="10" RadiusY="10"/>
         </Grid>
-        <DockPanel>
-            <!-- Windows/Linux的菜单栏 -->
-            <Grid DockPanel.Dock="Top"
-                  Margin="6"
-                  ColumnDefinitions="Auto" 
-                  Background="Transparent">
-                <Grid.IsVisible>
-                    <OnPlatform Default="False">
-                        <On Options="Windows, Linux" Content="True" />
-                    </OnPlatform>
-                </Grid.IsVisible>
-                <TextBlock Text="{Binding Title, RelativeSource={RelativeSource FindAncestor, AncestorType=Window}}"
-                        IsHitTestVisible="False"
-                        VerticalAlignment="Center"
-                        Grid.Column="0">
-                </TextBlock>
-            </Grid>
+        <DockPanel Grid.Row="1">
             <!-- 状态栏 -->
-            <StackPanel DockPanel.Dock="Bottom"
-                        Orientation="Horizontal"
-                        VerticalAlignment="Center">
+            <commonControls:StatusBar DockPanel.Dock="Bottom"
+                                      VerticalAlignment="Center">
+                <commonControls:StatusBarItem>
                     <TextBlock Margin="4,0,0,0"
-                               Classes="MonoFont"
-                               FontSize="12"
                                VerticalAlignment="Center"
                                Text="{Binding StatusInfoText}">
                     </TextBlock>
+                </commonControls:StatusBarItem>
+                <commonControls:StatusBarItem commonControls:StatusBar.Size="*">
                     <Button Command="{Binding OpenFileInExplorerCommand}"
-                            FontSize="12"
                             Classes="hyperlink"
                             ToolTip.Tip="Find File"
+                            HorizontalAlignment="Left"
                             Content="{Binding VideoPath}"/>
-            </StackPanel>
+                </commonControls:StatusBarItem>
+            </commonControls:StatusBar>
             <!-- 主界面 -->
-            <Grid RowDefinitions="Auto, 40, *">
-                <Grid Grid.Row="0" ColumnDefinitions="*, Auto, Auto" VerticalAlignment="Center">
-                    <Grid.IsVisible>
-                        <OnPlatform Default="False">
-                            <On Options="Windows, Linux" Content="True" />
-                        </OnPlatform>
-                    </Grid.IsVisible>
-                    <NativeMenuBar Grid.Column="0" />
-                    <Button Grid.Column="1"
-                            ToolTip.Tip="Toggle Theme"
-                            Command="{Binding ToggleThemeClickCommand}"
-                            Theme="{StaticResource TransparentButton}"
-                            Padding="8 4">
-                        <PathIcon Height="18" Data="{StaticResource swap_theme_icon}" />
-                    </Button>
-                    <Button Grid.Column="2"
-                            ToolTip.Tip="Settings"
-                            Command="{Binding SettingsClickCommand}"
-                            Margin="0,0,5,0"
-                            Theme="{StaticResource TransparentButton}"
-                            HorizontalAlignment="Right">
-                        <ui:SymbolIcon Symbol="Settings" FontSize="18" />
-                    </Button>
-                </Grid>
-                <Grid Grid.Row="1" ColumnDefinitions="*, Auto, Auto">
-                    <StackPanel Grid.Column="0"
-                                Orientation="Horizontal"
-                                VerticalAlignment="Center"
-                                Margin="4"
-                                Spacing="2">
-                        <StackPanel.Styles>
-                            <Style Selector="Button">
-                                <Setter Property="Padding" Value="6,4" />
-                            </Style>
-                            <Style Selector="ui|SymbolIcon">
-                                <Setter Property="FontSize" Value="18" />
-                            </Style>
-                        </StackPanel.Styles>
-                        <Button ToolTip.Tip="Open Video..."
-                                Command="{Binding LoadVideoClickCommand}">
-                            <ui:SymbolIcon Symbol="OpenFile"/>
-                        </Button>
-                        <Button ToolTip.Tip="Zoom In"
-                                Command="{Binding ZoomInCommand}">
-                            <ui:SymbolIcon Symbol="ZoomIn"/>
-                        </Button>
-                        <Button ToolTip.Tip="Zoom Out"
-                                Command="{Binding ZoomOutCommand}">
-                            <ui:SymbolIcon Symbol="ZoomOut"/>
-                        </Button>
-                        <Button ToolTip.Tip="1:1"
-                                Command="{Binding ZoomNoneCommand}">
-                            <ui:SymbolIcon Symbol="FullScreenMinimize"/>
-                        </Button>
-                        <Button ToolTip.Tip="Fit"
-                                Command="{Binding FitCommand, ElementName=ImageViewer}">
-                            <ui:SymbolIcon Symbol="FullScreenMaximize"/>
-                        </Button>
-                        <Button ToolTip.Tip="Save Frame"
-                                Command="{Binding SaveFrameClickCommand}">
-                            <ui:SymbolIcon Symbol="Image"/>
-                        </Button>
+            <ClassicBorderDecorator BorderThickness="2" BorderStyle="Etched">
+                <Grid RowDefinitions="Auto, *" Margin="0,2">
+                    <commonControls:ToolBar Grid.Row="0" Margin="0,0,0,2" TextPlacement="Down" Size="Large">
+                        <commonControls:RebarHandle />
+                        <commonControls:ToolBarButton ToolTip.Tip="Open Video..."
+                                                      LargeIcon="/Assets/directory_movie-3.png"
+                                                      Text="Open"
+                                                      Command="{Binding LoadVideoClickCommand}" />
+                        <Separator />
+                        <commonControls:ToolBarButton ToolTip.Tip="Zoom In"
+                                                      LargeIcon="/Assets/magnifying_glass_4-zoom-in.png"
+                                                      Text="Zoom In"
+                                                      Command="{Binding ZoomInCommand}" />
+                        <commonControls:ToolBarButton ToolTip.Tip="Zoom Out"
+                                                      LargeIcon="/Assets/magnifying_glass_4-zoom-out.png"
+                                                      Text="Zoom Out"
+                                                      Command="{Binding ZoomOutCommand}" />
+                        <commonControls:ToolBarButton ToolTip.Tip="1:1"
+                                                      LargeIcon="/Assets/original.png"
+                                                      Text="1:1"
+                                                      Command="{Binding ZoomNoneCommand}" />
+                        <commonControls:ToolBarButton ToolTip.Tip="Fit"
+                                                      LargeIcon="/Assets/fit.png"
+                                                      Text="Fit"
+                                                      Command="{Binding FitCommand, ElementName=ImageViewer}" />
+                        <Separator />
+                        <commonControls:ToolBarButton ToolTip.Tip="Save Frame"
+                                                      LargeIcon="/Assets/kodak_imaging-0.png"
+                                                      Text="Capture"
+                                                      Command="{Binding SaveFrameClickCommand}" />
                         <TextBlock VerticalAlignment="Center"
-                                Text="{Binding ZoomFactorStr}" />
-                    </StackPanel>
-                    <Button Grid.Column="1"
-                            ToolTip.Tip="Toggle Theme"
-                            Command="{Binding ToggleThemeClickCommand}"
-                            Theme="{StaticResource TransparentButton}"
-                            Padding="8 4">
-                        <Button.IsVisible>
-                            <OnPlatform Default="True">
-                                <On Options="Windows, Linux" Content="False" />
-                            </OnPlatform>
-                        </Button.IsVisible>
-                        <PathIcon Height="18" Data="{StaticResource swap_theme_icon}" />
-                    </Button>
-                    <Button Grid.Column="2"
-                            ToolTip.Tip="Settings"
-                            Command="{Binding SettingsClickCommand}"
-                            Margin="0,0,5,0"
-                            Theme="{StaticResource TransparentButton}"
-                            HorizontalAlignment="Right">
-                        <Button.IsVisible>
-                            <OnPlatform Default="True">
-                                <On Options="Windows, Linux" Content="False" />
-                            </OnPlatform>
-                        </Button.IsVisible>
-                        <ui:SymbolIcon Symbol="Settings" FontSize="18" />
-                    </Button>
-                </Grid>
-                <Grid Grid.Row="2" RowDefinitions="*, Auto, 150">
-                    <Grid Grid.Row="0" RowDefinitions="*, Auto, Auto, Auto">
-                        <!-- 图片预览区域 -->
-                        <controls:ImageViewer Name="ImageViewer"
-                                              MaxZoomFactor="{Binding MaxZoomFactor}"
-                                              MinZoomFactor="{Binding MinZoomFactor}"
-                                              OffsetX="{Binding OffsetX, Mode=TwoWay}"
-                                              OffsetY="{Binding OffsetY, Mode=TwoWay}"
-                                              Image="{Binding DecodedBitmap}"
-                                              Zoom="{Binding ZoomFactor, Mode=TwoWay}">
-                        </controls:ImageViewer>
-                        <!-- 滑块 -->
-                        <controls:CustomSlider Grid.Row="1"
-                                            Name="CustomSlider"
-                                            Margin="0, 2"
-                                            HorizontalAlignment="Stretch"
+                                   Text="{Binding ZoomFactorStr}" />
+                    </commonControls:ToolBar>
+                    <Grid Grid.Row="1" RowDefinitions="*, Auto, 120">
+                        <Grid Grid.Row="0" RowDefinitions="*, Auto, Auto, Auto">
+                            <!-- 图片预览区域 -->
+                            <ClassicBorderDecorator BorderThickness="0, 2" BorderStyle="Etched">
+                                <controls:ImageViewer Name="ImageViewer"
+                                                      MaxZoomFactor="{Binding MaxZoomFactor}"
+                                                      MinZoomFactor="{Binding MinZoomFactor}"
+                                                      OffsetX="{Binding OffsetX, Mode=TwoWay}"
+                                                      OffsetY="{Binding OffsetY, Mode=TwoWay}"
+                                                      Image="{Binding DecodedBitmap}"
+                                                      Zoom="{Binding ZoomFactor, Mode=TwoWay}">
+                                </controls:ImageViewer>
+                            </ClassicBorderDecorator>
+                            <!-- 滑块 -->
+                            <controls:CustomSlider Grid.Row="1"
+                                                Name="CustomSlider"
+                                                Margin="0, 2"
+                                                HorizontalAlignment="Stretch"
+                                                VerticalAlignment="Center"
+                                                Minimum="0"
+                                                Maximum="{Binding DurationMax}"
+                                                Value="{Binding CurrentTime, Mode=TwoWay}"
+                                                ValueChangedAfterMouseUp="CustomSlider_OnValueChangedAfterMouseUp">
+                                <controls:CustomSlider.Styles>
+                                    <Style Selector="Thumb:pointerover /template/ Ellipse#SliderInnerThumb">
+                                        <Setter Property="RenderTransform" Value="scaleX(0.86) scaleY(0.86)" />
+                                    </Style>
+                                </controls:CustomSlider.Styles>
+                                <controls:CustomSlider.Resources>
+                                    <ResourceDictionary>
+                                        <!-- Reference to shared resources -->
+                                        <ResourceDictionary.MergedDictionaries>
+                                            <MergeResourceInclude Source="avares://TSCutterGUI/Controls/CustomSliderResources.axaml"/>
+                                        </ResourceDictionary.MergedDictionaries>
+                                    </ResourceDictionary>
+                                </controls:CustomSlider.Resources>
+                            </controls:CustomSlider>
+                            <!-- 选中范围展示 -->
+                            <Rectangle Grid.Row="2"
+                                    Height="5">
+                                <Rectangle.Fill>
+                                    <MultiBinding Converter="{StaticResource ClipToBrushConverter}">
+                                        <Binding Path="DurationMax" />
+                                        <Binding Path="SelectedClip.StartTime" FallbackValue="null" />
+                                        <Binding Path="SelectedClip.EndTime" FallbackValue="null" />
+                                    </MultiBinding>
+                                </Rectangle.Fill>
+                            </Rectangle>
+                            <!-- 导航等控制键的一行 -->
+                            <Grid Grid.Row="3" ColumnDefinitions="*, Auto, *">
+                                <Grid.Styles>
+                                    <Style Selector="TextBlock.LeftBtn">
+                                        <Setter Property="FontSize" Value="14" />
+                                        <Setter Property="FontWeight" Value="Bold" />
+                                        <Setter Property="VerticalAlignment" Value="Center" />
+                                    </Style>
+                                    <Style Selector="Button.CenterBtn">
+                                        <Setter Property="FontWeight" Value="Bold" />
+                                        <Setter Property="Padding" Value="4,6" />
+                                    </Style>
+                                    <Style Selector="Button">
+                                        <Setter Property="VerticalContentAlignment" Value="Stretch" />
+                                    </Style>
+                                </Grid.Styles>
+                                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" Margin="4, 4">
+                                    <Button Command="{Binding MarkClipStartCommand}"
+                                            ToolTip.Tip="Mark Start">
+                                        <TextBlock Classes="LeftBtn">[</TextBlock>
+                                    </Button>
+                                    <Button Command="{Binding MarkClipEndCommand}"
+                                            ToolTip.Tip="Mark End">
+                                        <TextBlock Classes="LeftBtn">]</TextBlock>
+                                    </Button>
+                                    <Button Command="{Binding AddClipCommand}"
+                                            ToolTip.Tip="Add Clip">
+                                        <TextBlock Classes="LeftBtn">+</TextBlock>
+                                    </Button>
+                                    <Button Command="{Binding RemoveClipCommand}"
+                                            ToolTip.Tip="Remove Clip">
+                                        <TextBlock Classes="LeftBtn">-</TextBlock>
+                                    </Button>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" HorizontalAlignment="Center" Orientation="Horizontal" Spacing="4"
+                                            Margin="4, 4">
+                                    <!-- LEFT -->
+                                    <Button Command="{Binding Prev20GopClickCommand}"
+                                            Classes="CenterBtn"
+                                            ToolTip.Tip="Previous 20">
+                                        &lt;&lt;&lt;
+                                    </Button>
+                                    <Button Command="{Binding Prev10GopClickCommand}"
+                                            Classes="CenterBtn"
+                                            ToolTip.Tip="Previous 10">
+                                        &lt;&lt;
+                                    </Button>
+                                    <Button Command="{Binding PrevGopClickCommand}"
+                                            Classes="CenterBtn"
+                                            ToolTip.Tip="Previous">
+                                        &lt;
+                                    </Button>
+                                    <!-- CENTER -->
+                                    <Button Content="{Binding CurrentTime, Converter={StaticResource SecondsConverter}}" 
+                                            Command="{Binding JumpToClickCommand}"
+                                            ToolTip.Tip="Jump to..."
                                             VerticalAlignment="Center"
-                                            Minimum="0"
-                                            Maximum="{Binding DurationMax}"
-                                            Value="{Binding CurrentTime, Mode=TwoWay}"
-                                            ValueChangedAfterMouseUp="CustomSlider_OnValueChangedAfterMouseUp">
-                            <controls:CustomSlider.Styles>
-                                <Style Selector="Thumb:pointerover /template/ Ellipse#SliderInnerThumb">
-                                    <Setter Property="RenderTransform" Value="scaleX(0.86) scaleY(0.86)" />
-                                </Style>
-                            </controls:CustomSlider.Styles>
-                            <controls:CustomSlider.Resources>
-                                <ResourceDictionary>
-                                    <!-- Reference to shared resources -->
-                                    <ResourceDictionary.MergedDictionaries>
-                                        <MergeResourceInclude Source="avares://TSCutterGUI/Controls/CustomSliderResources.axaml"/>
-                                    </ResourceDictionary.MergedDictionaries>
-                                </ResourceDictionary>
-                            </controls:CustomSlider.Resources>
-                        </controls:CustomSlider>
-                        <!-- 选中范围展示 -->
-                        <Rectangle Grid.Row="2"
-                                Height="5">
-                            <Rectangle.Fill>
-                                <MultiBinding Converter="{StaticResource ClipToBrushConverter}">
-                                    <Binding Path="DurationMax" />
-                                    <Binding Path="SelectedClip.StartTime" FallbackValue="null" />
-                                    <Binding Path="SelectedClip.EndTime" FallbackValue="null" />
-                                </MultiBinding>
-                            </Rectangle.Fill>
-                        </Rectangle>
-                        <!-- 导航等控制键的一行 -->
-                        <Grid Grid.Row="3" ColumnDefinitions="*, Auto, *">
-                            <Grid.Styles>
-                                <Style Selector="TextBlock.LeftBtn">
-                                    <Setter Property="FontSize" Value="14" />
-                                    <Setter Property="FontWeight" Value="Bold" />
-                                    <Setter Property="VerticalAlignment" Value="Center" />
-                                </Style>
-                                <Style Selector="Button.CenterBtn">
-                                    <Setter Property="Padding" Value="4,6" />
-                                </Style>
-                                <Style Selector="Button">
-                                    <Setter Property="VerticalContentAlignment" Value="Stretch" />
-                                </Style>
-                            </Grid.Styles>
-                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" Margin="4, 4">
-                                <Button Command="{Binding MarkClipStartCommand}"
-                                        ToolTip.Tip="Mark Start">
-                                    <TextBlock Classes="LeftBtn MonoFont">[</TextBlock>
-                                </Button>
-                                <Button Command="{Binding MarkClipEndCommand}"
-                                        ToolTip.Tip="Mark End">
-                                    <TextBlock Classes="LeftBtn MonoFont">]</TextBlock>
-                                </Button>
-                                <Button Command="{Binding AddClipCommand}"
-                                        ToolTip.Tip="Add Clip">
-                                    <TextBlock Classes="LeftBtn MonoFont">+</TextBlock>
-                                </Button>
-                                <Button Command="{Binding RemoveClipCommand}"
-                                        ToolTip.Tip="Remove Clip">
-                                    <TextBlock Classes="LeftBtn MonoFont">-</TextBlock>
-                                </Button>
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" HorizontalAlignment="Center" Orientation="Horizontal" Spacing="4"
-                                        Margin="4, 4">
-                                <!-- LEFT -->
-                                <Button Command="{Binding Prev20GopClickCommand}"
-                                        Classes="CenterBtn"
-                                        ToolTip.Tip="Previous 20">
-                                    <PathIcon Height="12" Data="{StaticResource fast_forward_triple}">
-                                        <PathIcon.RenderTransform>
-                                            <ScaleTransform ScaleX="-1" />
-                                        </PathIcon.RenderTransform>
-                                    </PathIcon>
-                                </Button>
-                                <Button Command="{Binding Prev10GopClickCommand}"
-                                        Classes="CenterBtn"
-                                        ToolTip.Tip="Previous 10">
-                                    <PathIcon Height="12" Data="{StaticResource fast_forward_regular}">
-                                        <PathIcon.RenderTransform>
-                                            <ScaleTransform ScaleX="-1" />
-                                        </PathIcon.RenderTransform>
-                                    </PathIcon>
-                                </Button>
-                                <Button Command="{Binding PrevGopClickCommand}"
-                                        Classes="CenterBtn"
-                                        ToolTip.Tip="Previous">
-                                    <PathIcon Height="12" Data="{StaticResource caret_left_regular}" />
-                                </Button>
-                                <!-- CENTER -->
-                                <Button Content="{Binding CurrentTime, Converter={StaticResource SecondsConverter}}" 
-                                        Command="{Binding JumpToClickCommand}"
-                                        ToolTip.Tip="Jump to..."
-                                        VerticalAlignment="Center"
-                                        FontWeight="Bold"
-                                        FontSize="22"
-                                        Margin="4,0"
-                                        Width="150"
-                                        Classes="hyperlink"/>
-                                <!-- RIGHT -->
-                                <Button Command="{Binding NextGopClickCommand}"
-                                        Classes="CenterBtn"
-                                        ToolTip.Tip="Next">
-                                    <PathIcon Height="12" Data="{StaticResource caret_right_regular}" />
-                                </Button>
-                                <Button Command="{Binding Next10GopClickCommand}"
-                                        Classes="CenterBtn"
-                                        ToolTip.Tip="Next 10">
-                                    <PathIcon Height="12" Data="{StaticResource fast_forward_regular}" />
-                                </Button>
-                                <Button Command="{Binding Next20GopClickCommand}"
-                                        Classes="CenterBtn"
-                                        ToolTip.Tip="Next 20">
-                                    <PathIcon Height="12" Data="{StaticResource fast_forward_triple}" />
-                                </Button>
-                            </StackPanel>
-                            <StackPanel Grid.Column="2" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="4"
-                                        Margin="4, 4">
-                                <!-- Estimated Size -->
-                                <TextBlock Text="{Binding SelectedClip.EstimatedSizeStr, Mode=OneWay}"
-                                           VerticalAlignment="Center"/>
-                                <!-- Save Video Button -->
-                                <Button Command="{Binding SaveVideoClickCommand}"
-                                        Classes="accent"
-                                        VerticalContentAlignment="Center"
-                                        ToolTip.Tip="Save Current Clip">
-                                    <StackPanel Orientation="Horizontal">
-                                        <ui:SymbolIcon Symbol="SaveAs" FontSize="18" />
-                                        <TextBlock VerticalAlignment="Center" Text="Save Clip" Margin="4,0,0,0"/>
-                                    </StackPanel>
-                                </Button>
-                            </StackPanel>
+                                            FontWeight="Bold"
+                                            FontSize="22"
+                                            Margin="4,0"
+                                            Width="150"
+                                            Classes="hyperlink"/>
+                                    <!-- RIGHT -->
+                                    <Button Command="{Binding NextGopClickCommand}"
+                                            Classes="CenterBtn"
+                                            ToolTip.Tip="Next">
+                                        &gt;
+                                    </Button>
+                                    <Button Command="{Binding Next10GopClickCommand}"
+                                            Classes="CenterBtn"
+                                            ToolTip.Tip="Next 10">
+                                        &gt;&gt;
+                                    </Button>
+                                    <Button Command="{Binding Next20GopClickCommand}"
+                                            Classes="CenterBtn"
+                                            ToolTip.Tip="Next 20">
+                                        &gt;&gt;&gt;
+                                    </Button>
+                                </StackPanel>
+                                <StackPanel Grid.Column="2" HorizontalAlignment="Right" Orientation="Horizontal" Spacing="4"
+                                            Margin="4, 4">
+                                    <StackPanel.Styles>
+                                        <Style Selector="Button:disabled Image">
+                                            <Setter Property="Opacity" Value="0.3" />
+                                        </Style>
+                                    </StackPanel.Styles>
+                                    <!-- Estimated Size -->
+                                    <TextBlock Text="{Binding SelectedClip.EstimatedSizeStr, Mode=OneWay}"
+                                               VerticalAlignment="Center"/>
+                                    <!-- Save Video Button -->
+                                    <Button Command="{Binding SaveVideoClickCommand}"
+                                            Classes="accent"
+                                            VerticalContentAlignment="Center"
+                                            ToolTip.Tip="Save Current Clip">
+                                        <StackPanel Orientation="Horizontal">
+                                            <Image Height="16" Source="/Assets/trust0-0.png" />
+                                            <TextBlock VerticalAlignment="Center" Text="Save Clip" Margin="4,0,0,0"/>
+                                        </StackPanel>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
                         </Grid>
+                        <GridSplitter Grid.Row="1" />
+                        <DataGrid Grid.Row="2"
+                                  x:Name="MyDataGrid"
+                                  SelectionMode="Single"
+                                  SelectedItem="{Binding SelectedClip}"
+                                  ItemsSource="{Binding Clips}"
+                                  IsReadOnly="True"
+                                  CanUserResizeColumns="True"
+                                  CanUserSortColumns="False"
+                                  AutoGenerateColumns="False">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="Start Time" Width="120">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <!-- 需要让Button继承DataGridCell的Foreground -->
+                                            <Button Content="{Binding StartTimeStr}"
+                                                    HorizontalAlignment="Center"
+                                                    Classes="hyperlink"
+                                                    Foreground="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=Foreground}"
+                                                    Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).JumpToTimeCommand}"
+                                                    CommandParameter="{Binding StartTime}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="End Time" Width="120">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Button Content="{Binding EndTimeStr}" 
+                                                    HorizontalAlignment="Center"
+                                                    Classes="hyperlink"
+                                                    Foreground="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=Foreground}"
+                                                    Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).JumpToTimeCommand}"
+                                                    CommandParameter="{Binding EndTime}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Output Size" Width="120" Binding="{Binding OutputFileSizeStr}" />
+                                <DataGridTemplateColumn Header="Output Path" Width="*" >
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <Button Content="{Binding OutputFileInfo.FullName}"
+                                                    Classes="hyperlink"
+                                                    Foreground="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=Foreground}"
+                                                    Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).FindFileCommand}"
+                                                    CommandParameter="{Binding OutputFileInfo}" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                            </DataGrid.Columns>
+                        </DataGrid>
                     </Grid>
-                    <GridSplitter Grid.Row="1" />
-                    <DataGrid Grid.Row="2"
-                              x:Name="MyDataGrid"
-                              SelectionMode="Single"
-                              SelectedItem="{Binding SelectedClip}"
-                              ItemsSource="{Binding Clips}"
-                              IsReadOnly="True"
-                              CanUserResizeColumns="True"
-                              CanUserSortColumns="False"
-                              AutoGenerateColumns="False">
-                        <DataGrid.Styles>
-                            <Style Selector="TextBlock">
-                                <Setter Property="FontSize" Value="14" />
-                            </Style>
-                        </DataGrid.Styles>
-                        <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="Start Time" Width="120">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <Button Content="{Binding StartTimeStr}"
-                                                HorizontalAlignment="Center"
-                                                Classes="hyperlink"
-                                                Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).JumpToTimeCommand}"
-                                                CommandParameter="{Binding StartTime}" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="End Time" Width="120">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <Button Content="{Binding EndTimeStr}" 
-                                                HorizontalAlignment="Center"
-                                                Classes="hyperlink"
-                                                Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).JumpToTimeCommand}"
-                                                CommandParameter="{Binding EndTime}" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="Output Size" Width="120" Binding="{Binding OutputFileSizeStr}" />
-                            <DataGridTemplateColumn Header="Output Path" Width="*" >
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <Button Content="{Binding OutputFileInfo.FullName}"
-                                                Classes="hyperlink"
-                                                Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).FindFileCommand}"
-                                                CommandParameter="{Binding OutputFileInfo}" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                        </DataGrid.Columns>
-                    </DataGrid>
                 </Grid>
-            </Grid>
+            </ClassicBorderDecorator>
         </DockPanel>
     </Grid>
 </Window>

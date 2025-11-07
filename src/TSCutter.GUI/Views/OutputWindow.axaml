@@ -1,38 +1,75 @@
-﻿<UserControl xmlns="https://github.com/avaloniaui"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-             xmlns:local="clr-namespace:TSCutter.GUI"
-             xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
-             xmlns:system="clr-namespace:System;assembly=System.Runtime"
-             mc:Ignorable="d"
-             Height="50"
-             x:Class="TSCutter.GUI.Views.OutputWindow"
-             d:DataContext="{x:Static local:App.OutputDialog}"
-             x:DataType="viewModels:OutputWindowViewModel">
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        mc:Ignorable="d"
+        Height="180" Width="420"
+        x:Class="TSCutter.GUI.Views.OutputWindow"
+        d:DataContext="{x:Static local:App.OutputDialog}"
+        CanMaximize="False"
+        CanMinimize="False"
+        WindowStartupLocation="CenterOwner"
+        x:DataType="viewModels:OutputWindowViewModel"
+        Title="Output...">
+
     <Interaction.Behaviors>
-        <EventTriggerBehavior EventName="Loaded">
+        <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
             <InvokeCommandAction Command="{Binding OutputCommand}" />
-        </EventTriggerBehavior>
+        </RoutedEventTriggerBehavior>
     </Interaction.Behaviors>
-    <UserControl.Resources>
-        <system:Double x:Key="ProgressBarMinHeight">20</system:Double>
-        <system:Double x:Key="ProgressBarTrackHeight">20</system:Double>
-    </UserControl.Resources>
-    <StackPanel Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
-        <StackPanel Orientation="Horizontal">
-            <TextBlock VerticalAlignment="Center"
-                       Width="50"
-                       Text="{Binding PercentStr}"/>
-            <TextBlock VerticalAlignment="Center"
-                       Text=" | " />
-            <TextBlock VerticalAlignment="Center"
-                       Text="{Binding SpeedStr}"/>
-        </StackPanel>
-        <ProgressBar ShowProgressText="False"
-                     VerticalAlignment="Center"
-                     Minimum="0" Maximum="100"
-                     Width="380"
-                     Value="{Binding Percent}"/>
-    </StackPanel>
-</UserControl>
+
+    <Border BorderThickness="2" Padding="8">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <!-- 顶部路径 -->
+            <TextBlock Grid.Row="0"
+                       Text="{Binding OutputPath}"
+                       Margin="0,0,0,8"
+                       TextWrapping="Wrap"
+                       MaxWidth="400" />
+
+            <!-- 中部内容：进度条 + 状态 -->
+            <StackPanel Grid.Row="1" Spacing="8" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <ProgressBar Minimum="0" Maximum="100"
+                             ShowProgressText="False"
+                             Value="{Binding Percent}"
+                             Height="20" />
+                <Grid ColumnDefinitions="80,Auto,100"
+                      HorizontalAlignment="Center">
+                    <!-- 百分比 -->
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding PercentStr}"
+                               HorizontalAlignment="Right" />
+                    <!-- 分隔符 -->
+                    <TextBlock Grid.Column="1"
+                               Text=" | "
+                               HorizontalAlignment="Center"
+                               Margin="4,0" />
+                    <!-- 速度 -->
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding SpeedStr}"
+                               HorizontalAlignment="Left" />
+                </Grid>
+            </StackPanel>
+
+            <!-- 底部分隔线 + 按钮区 -->
+            <StackPanel Grid.Row="2" Orientation="Vertical">
+                <Border Height="1" Margin="0,8,0,8" Background="{DynamicResource SystemBaseLowColor}" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                        <Button Content="Cancel"
+                                Width="80"
+                                HorizontalAlignment="Right"
+                                Command="{Binding CancelOutputCommand}" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

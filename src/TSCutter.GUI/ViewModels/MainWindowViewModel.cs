@@ -6,31 +6,37 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
 using Avalonia.Styling;
+using Classic.Avalonia.Theme;
+using Classic.CommonControls.Dialogs;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CommunityToolkit.Mvvm.Messaging;
-using FluentAvalonia.UI.Controls;
 using HanumanInstitute.MvvmDialogs;
-using HanumanInstitute.MvvmDialogs.Avalonia.Fluent;
 using HanumanInstitute.MvvmDialogs.FileSystem;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models;
+using TSCutter.GUI.Themes;
 using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
+    // 初始化主题列表
+    private static ThemeModel DarkTheme = new("Standard (Dark)", CustomTheme.DarkStandard);
+    private static List<ThemeModel> Themes = [..ClassicTheme.AllVariants.Select(x => new ThemeModel(x)), DarkTheme];
+
     private const string PleaseLoadTip = "Please Load Video ";
     public string WindowTitle
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.250915";
+            var defaultTitle = "TSCutter.GUI - Alpha.251107";
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
             return defaultTitle;
@@ -42,9 +48,30 @@ public partial class MainWindowViewModel : ViewModelBase
     public MainWindowViewModel(IDialogService dialogService)
     {
         _dialogService = dialogService;
+        var actualThemeVariant = Application.Current?.ActualThemeVariant;
+        var isDarkMode = actualThemeVariant == ThemeVariant.Dark
+                         || actualThemeVariant?.InheritVariant == ThemeVariant.Dark;
+        SelectedTheme = isDarkMode ? DarkTheme : Themes.First();
+        // 构造菜单项
+        BuildThemeMenuItems();
     }
 
     private long PositionInFile => _videoInstance!.PositionInFile;
+
+    [ObservableProperty]
+    private ThemeModel _selectedTheme;
+
+    partial void OnSelectedThemeChanged(ThemeModel value)
+    {
+        if (value != null)
+        {
+            // 切换主题
+            Application.Current!.RequestedThemeVariant = value.Variant;
+        }
+    }
+    
+    [ObservableProperty]
+    private ObservableCollection<MenuItem> _themeMenuItems = new();
 
     [ObservableProperty]
     public partial ObservableCollection<PickedClip> Clips { get; set; } = new();
@@ -81,35 +108,16 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (!IsVideoInitialized)
         {
-            await _dialogService.ShowMessageBoxAsync(
-                    this,
-                    "Please load a video",
-                    "Video Not Initialized",
-                    MessageBoxButton.Ok,
-                    MessageBoxImage.Information);
+            await ShowMessageAsync("Please load a video", "Video Not Initialized", MessageBoxIcon.Information);
             return;
         }
-
-        // 禁用快捷键绑定 防止副作用
-        CanNavigateTime = false;
         
         var vm = _dialogService.CreateViewModel<JumpTimeViewModel>();
         var currentTimeStr = CommonUtil.FormatSeconds(CurrentTime);
         vm.InputText = currentTimeStr;
-        ContentDialogSettings settings = new()
-        {
-            Content = vm,
-            Title = "Jump to Time",
-            PrimaryButtonText = "OK",
-            SecondaryButtonText = "Cancel",
-            DefaultButton = ContentDialogButton.Primary
-        };
-        var result = await _dialogService.ShowContentDialogAsync(this, settings);
+        var result = await _dialogService.ShowDialogAsync(this, vm);
         
-        // 启用快捷键绑定
-        CanNavigateTime = true;
-        
-        if (result != ContentDialogResult.Primary || currentTimeStr == vm.InputText) return;
+        if (result is false || result is null || currentTimeStr == vm.InputText) return;
         
         if (CommonUtil.TryParseFormattedTime(vm.InputText, out var newTime) && newTime < DurationMax)
         {
@@ -118,7 +126,7 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        await ShowMessageAsync("Please input a valid time", "Wrong Format", MessageBoxImage.Error);
+        await ShowMessageAsync("Please input a valid time", "Wrong Format", MessageBoxIcon.Error);
     }
 
     [RelayCommand]
@@ -233,8 +241,6 @@ public partial class MainWindowViewModel : ViewModelBase
     public partial double OffsetX { get; set; } = 0;
     [ObservableProperty]
     public partial double OffsetY { get; set; } = 0;
-    [ObservableProperty]
-    public partial bool CanNavigateTime { get; set; } = true;
 
     public double MaxZoomFactor => 3.0;
     public double MinZoomFactor => 0.1;
@@ -254,7 +260,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(StatusInfoText))]
     public partial long DecodeCost { get; set; } = 0L;
 
-    public string StatusInfoText => IsVideoInitialized ? $"{VideoInfoText} | {DecodeCost,3}ms | " : PleaseLoadTip;
+    public string StatusInfoText => IsVideoInitialized ? $"{VideoInfoText} | {DecodeCost,3}ms" : PleaseLoadTip;
     public string ZoomFactorStr => $"Scale: {ZoomFactor * 100.0:0}%";
 
     [RelayCommand]
@@ -273,19 +279,16 @@ public partial class MainWindowViewModel : ViewModelBase
     }
     
     [RelayCommand]
+    private void CheckUpdate()
+    {
+        Process.Start(new ProcessStartInfo("https://github.com/nilaoda/TSCutter.GUI/releases") { UseShellExecute = true });
+    }
+    
+    [RelayCommand]
     private async Task ShowAboutDialogAsync()
     {
         var dialogViewModel = _dialogService.CreateViewModel<AboutWindowViewModel>();
-        TaskDialogSettings settings = new()
-        {
-            IconSource = new SymbolIconSource { Symbol = Symbol.Globe },
-            Content = dialogViewModel,
-            Title = dialogViewModel.Title,
-            Header = dialogViewModel.Header,
-            SubHeader = dialogViewModel.ShortDesc,
-            Buttons = [TaskDialogButton.CloseButton],
-        };
-        await _dialogService.ShowTaskDialogAsync(this, settings);
+        await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
     
     [RelayCommand]
@@ -306,22 +309,22 @@ public partial class MainWindowViewModel : ViewModelBase
         await LoadVideoAsync();
     }
 
-    [RelayCommand(CanExecute = nameof(CanNavigateTime))]
+    [RelayCommand]
     private async Task PrevGopClickAsync() => await DrawNextFrameAsync(-1);
 
-    [RelayCommand(CanExecute = nameof(CanNavigateTime))]
+    [RelayCommand]
     private async Task NextGopClickAsync() => await DrawNextFrameAsync(1);
 
-    [RelayCommand(CanExecute = nameof(CanNavigateTime))]
+    [RelayCommand]
     private async Task Prev10GopClickAsync() => await DrawNextFrameAsync(-10);
 
-    [RelayCommand(CanExecute = nameof(CanNavigateTime))]
+    [RelayCommand]
     private async Task Next10GopClickAsync() => await DrawNextFrameAsync(10);
 
-    [RelayCommand(CanExecute = nameof(CanNavigateTime))]
+    [RelayCommand]
     private async Task Prev20GopClickAsync() => await DrawNextFrameAsync(-20);
 
-    [RelayCommand(CanExecute = nameof(CanNavigateTime))]
+    [RelayCommand]
     private async Task Next20GopClickAsync() => await DrawNextFrameAsync(20);
 
     [RelayCommand]
@@ -352,14 +355,12 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task SettingsClickAsync()
     {
-        TaskDialogSettings settings = new()
-        {
-            IconSource = new SymbolIconSource { Symbol = Symbol.Settings },
-            Content = "The settings page is not yet fully developed.",
-            Header = "Settings",
-            Buttons = [TaskDialogButton.CloseButton],
-        };
-        await _dialogService.ShowTaskDialogAsync(this, settings);
+        await ShowMessageAsync("The settings page is not yet fully developed", "Settings", MessageBoxIcon.Warning);
+    }
+
+    public void SwitchToDarkMode()
+    {
+        SelectedTheme = DarkTheme;
     }
 
     public async Task SeekToTimeAsync(TimeSpan timeSpan) => await _videoInstance!.SeekToTimeAsync(timeSpan);
@@ -382,7 +383,7 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception e)
         {
             Console.WriteLine(e);
-            await ShowMessageAsync(e.Message, "Failed to decode", MessageBoxImage.Error);
+            await ShowMessageAsync(e.Message, "Failed to decode", MessageBoxIcon.Error);
         }
     }
 
@@ -423,18 +424,16 @@ public partial class MainWindowViewModel : ViewModelBase
             ClearVars();
             _videoInstance?.Close();
             Console.WriteLine($"Failed to load video: {e}");
-            await ShowMessageAsync(e.Message, "Failed to load video", MessageBoxImage.Error);
+            await ShowMessageAsync(e.Message, "Failed to load video", MessageBoxIcon.Error);
         }
     }
 
-    private async Task ShowMessageAsync(string message, string title = "TSCutter", MessageBoxImage icon = MessageBoxImage.None)
+    private async Task ShowMessageAsync(string message, string title = "TSCutter", MessageBoxIcon icon = MessageBoxIcon.None)
     {
-        await _dialogService.ShowMessageBoxAsync(
-            this,
-            message,
-            title,
-            MessageBoxButton.Ok,
-            icon);
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktopApp)
+        {
+            await MessageBox.ShowDialog(desktopApp.MainWindow!, message, title, MessageBoxButtons.Ok, icon);
+        }
     }
     
     [RelayCommand]
@@ -504,19 +503,29 @@ public partial class MainWindowViewModel : ViewModelBase
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
         dialogViewModel.SelectedClip = SelectedClip;
         dialogViewModel.OutputPath = result!.Path!.LocalPath;
-        await _dialogService.ShowTaskDialogAsync(this, new TaskDialogSettings(dialogViewModel)
-        {
-            Header = "Output Clip",
-            SubHeader = dialogViewModel.OutputPath,
-            IconSource = new SymbolIconSource { Symbol = Symbol.SaveAs },
-            Buttons = [TaskDialogButton.CancelButton],
-        }).ConfigureAwait(true);
+        await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
         if (dialogViewModel.Exception is not null)
         {
-            await ShowMessageAsync(dialogViewModel.Exception.Message, "Error", MessageBoxImage.Error);
+            await ShowMessageAsync(dialogViewModel.Exception.Message, "Error", MessageBoxIcon.Error);
             Console.WriteLine(dialogViewModel.Exception);
             return;
         }
         SelectedClip!.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
+    }
+    
+    private void BuildThemeMenuItems()
+    {
+        ThemeMenuItems.Clear();
+        foreach (var theme in Themes)
+        {
+            var menuItem = new MenuItem()
+            {
+                Header = theme.Name,
+                ToggleType = MenuItemToggleType.Radio,
+                IsChecked = SelectedTheme == theme
+            };
+            menuItem.Click += (r, s) => SelectedTheme = theme;;
+            ThemeMenuItems.Add(menuItem);
+        }
     }
 }

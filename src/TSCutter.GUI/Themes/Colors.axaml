@@ -1,0 +1,11 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:theme="clr-namespace:TSCutter.GUI.Themes">
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.DarkStandard}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/DarkStandardWindows.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

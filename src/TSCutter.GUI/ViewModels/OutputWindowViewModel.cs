@@ -10,7 +10,7 @@ using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.ViewModels;
 
-public partial class OutputWindowViewModel : ViewModelBase, ICloseable, IViewClosing
+public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
     [ObservableProperty]
     public partial bool? DialogResult { get; set; }
@@ -47,7 +47,7 @@ public partial class OutputWindowViewModel : ViewModelBase, ICloseable, IViewClo
                     UpdateSpeed();
                 }, _cts.Token);
             DialogResult = true;
-            RequestClose?.Invoke(this, EventArgs.Empty);
+            RequestClose?.Invoke();
         } 
         catch (OperationCanceledException)
         {
@@ -57,7 +57,7 @@ public partial class OutputWindowViewModel : ViewModelBase, ICloseable, IViewClo
         {
             Exception = e;
             DialogResult = false;
-            RequestClose?.Invoke(this, EventArgs.Empty);
+            RequestClose?.Invoke();
         }
     }
     
@@ -77,7 +77,7 @@ public partial class OutputWindowViewModel : ViewModelBase, ICloseable, IViewClo
         
         _cts.Cancel();
         DialogResult = true;
-        RequestClose?.Invoke(this, EventArgs.Empty);
+        RequestClose?.Invoke();
     }
     
     public void OnClosing(CancelEventArgs e)
@@ -85,6 +85,5 @@ public partial class OutputWindowViewModel : ViewModelBase, ICloseable, IViewClo
         CancelOutput();
     }
 
-    public Task OnClosingAsync(CancelEventArgs e) => Task.CompletedTask;
-    public event EventHandler? RequestClose;
+    public event Action? RequestClose;
 }

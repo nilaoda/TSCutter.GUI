@@ -158,10 +158,8 @@ public class ImageViewer : Control
         base.Render(dc);
         
         // Draw the background
-        var isDarkMode = Application.Current!.RequestedThemeVariant == Avalonia.Styling.ThemeVariant.Dark;
-        var backgroundColor = isDarkMode ? Color.FromRgb(45, 45, 45) : Color.FromRgb(240, 240, 240);
         var backgroundRect = new Rect(0, 0, Bounds.Width, Bounds.Height);
-        var customColorBrush = new SolidColorBrush(backgroundColor);
+        var customColorBrush = new SolidColorBrush(Colors.Transparent);
         dc.FillRectangle(customColorBrush, backgroundRect);
         
         if (Image is null) return;
