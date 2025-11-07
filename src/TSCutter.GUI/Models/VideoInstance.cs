@@ -19,6 +19,7 @@ public class VideoInstance(string filePath) : IDisposable
     private const int MAX_FAILURE_COUT = 100;
     private const int AV_PKT_FLAG_KEY_FRAME = 0x0001;
     public long PositionInFile { get; private set; } = 0;
+    public long CurrentPts => currentKeyFramePts;
     public bool Inited { get; private set; } = false;
     private bool AudioMode { get; set; } = false;
     
@@ -65,6 +66,7 @@ public class VideoInstance(string filePath) : IDisposable
 
         var firstDecoder = decoders.First();
         videoDecoder = new(Codec.FindDecoderById(firstDecoder.Id));
+        videoDecoder.SkipFrame = AVDiscard.Nonkey;
         videoDecoder.FillParameters(inVideoStream.Codecpar!);
         videoDecoder.Open();
 
@@ -119,6 +121,11 @@ public class VideoInstance(string filePath) : IDisposable
     {
         await Task.Run(() => SeekToTime(timeSpan));
     }
+    
+    public async Task SeekFileAsync(long pts)
+    {
+        await Task.Run(() => SeekFile(pts));
+    }
 
     public void SeekToTime(TimeSpan timeSpan)
     {
@@ -127,10 +134,21 @@ public class VideoInstance(string filePath) : IDisposable
         Seek(targetTimestamp);
     }
 
+    public void SeekFile(long pts)
+    {
+        // if (lastSeekPts == pts)
+        //     return;
+        Console.WriteLine($"SeekFile lastSeekPts: {lastSeekPts}, targetPts: {pts}");
+        lastSeekPts = pts;
+        inFc.SeekFile(pts - keyFrameGap * 3 - 2, pts - keyFrameGap * 4, pts, videoStreamIndex);
+        // flush
+        videoDecoder.FlushBuffers();
+    }
+
     public void Seek(long pts, AVSEEK_FLAG flag = 0)
     {
-        if (lastSeekPts == pts)
-            return;
+        // if (lastSeekPts == pts)
+        //     return;
         Console.WriteLine($"lastSeekPts: {lastSeekPts}, targetPts: {pts}, flag: {flag}");
         lastSeekPts = pts;
         inFc.SeekFrame(pts, videoStreamIndex, flag);
@@ -251,9 +269,11 @@ public class VideoInstance(string filePath) : IDisposable
                     maxPts = inVideoStream.Duration + firstFrameTimestamp;
                 }
 
+#pragma warning disable CS0618 // Obsolete
+                if (frame.KeyFrame == 0)
+                    continue;
                 Console.WriteLine($"Current keyFrame: {frame.Pts}");
                 currentKeyFramePts = frame.Pts;
-#pragma warning disable CS0618 // Obsolete
                 PositionInFile = frame.PktPosition;
                 Console.WriteLine($"Current keyFrame PktPosition: {frame.PktPosition}");
                 if (AudioMode && frame.PktPosition == -1)
