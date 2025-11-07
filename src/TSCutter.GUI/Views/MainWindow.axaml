@@ -199,6 +199,11 @@
                                                       Command="{Binding SaveFrameClickCommand}" />
                         <TextBlock VerticalAlignment="Center"
                                    Text="{Binding ZoomFactorStr}" />
+                        <commonControls:ToolBarButton ToolTip.Tip="Show Media Info"
+                                                      LargeIcon="/Assets/file_eye.png"
+                                                      Text="Info"
+                                                      HorizontalAlignment="Right"
+                                                      Command="{Binding ShowMediaInfoClickCommand}" />
                     </commonControls:ToolBar>
                     <Grid Grid.Row="1" RowDefinitions="*, Auto, 120">
                         <Grid Grid.Row="0" RowDefinitions="*, Auto, Auto, Auto">

@@ -1,0 +1,55 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.MediainfoWindow"
+        x:DataType="viewModels:MediainfoWindowViewModel"
+        DataContext="{x:Static local:App.MediainfoDialog}"
+        Title="MediaInfo (Estimated)"
+        Width="640"
+        Height="480"
+        MinWidth="480"
+        MinHeight="320"
+        WindowStartupLocation="CenterOwner"
+        CanMinimize="False"
+        CanResize="True">
+
+    <Interaction.Behaviors>
+        <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
+            <InvokeCommandAction Command="{Binding BuildInfoCommand}" />
+        </RoutedEventTriggerBehavior>
+    </Interaction.Behaviors>
+
+    <DockPanel Margin="8" LastChildFill="True">
+
+        <!-- 按钮区 -->
+        <StackPanel DockPanel.Dock="Bottom"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Margin="0,6,0,0">
+            <Button Content="{Binding BtnContent}"
+                    Width="100"
+                    Command="{Binding CopyCommand}" />
+        </StackPanel>
+
+        <!-- 主显示区 -->
+        <ClassicBorderDecorator BorderThickness="1" BorderStyle="Etched">
+            <ScrollViewer VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Auto">
+                <TextBox Text="{Binding InfoText}"
+                         FontSize="13"
+                         FontFamily="Consolas, Menlo, Courier New"
+                         IsReadOnly="True"
+                         AcceptsReturn="True"
+                         AcceptsTab="True"
+                         BorderThickness="0"
+                         Background="Transparent"
+                         Padding="6"
+                         TextWrapping="NoWrap" />
+            </ScrollViewer>
+        </ClassicBorderDecorator>
+    </DockPanel>
+</Window>

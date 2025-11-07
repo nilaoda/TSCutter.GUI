@@ -36,7 +36,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.251107";
+            var defaultTitle = "TSCutter.GUI - Alpha.251108";
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
             return defaultTitle;
@@ -81,7 +81,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(
         nameof(AddClipCommand), nameof(RemoveClipCommand), nameof(MarkClipStartCommand),
         nameof(MarkClipEndCommand), nameof(SaveVideoClickCommand), nameof(CloseVideoClickCommand),
-        nameof(SaveFrameClickCommand)
+        nameof(SaveFrameClickCommand), nameof(ShowMediaInfoClickCommand)
     )]
     public partial PickedClip? SelectedClip { get; set; }
     
@@ -220,6 +220,14 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    private async Task ShowMediaInfoClickAsync()
+    {
+        var dialogViewModel = _dialogService.CreateViewModel<MediainfoWindowViewModel>();
+        dialogViewModel.FilePath = VideoPath;
+        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+    }
+    
+    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
     private async Task SaveFrameClickAsync()
     {
         var defaultName = Path.GetFileNameWithoutExtension(VideoPath) + $"_{CommonUtil.FormatSeconds(CurrentTime, true)}.png";
@@ -253,6 +261,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 field = value;
                 OnPropertyChanged();
                 SaveFrameClickCommand.NotifyCanExecuteChanged();
+                ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
             }
         }
     }
@@ -436,6 +445,7 @@ public partial class MainWindowViewModel : ViewModelBase
         
             CloseVideoClickCommand.NotifyCanExecuteChanged();
             SaveFrameClickCommand.NotifyCanExecuteChanged();
+            ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
 
             // decode
             await DrawNextFrameAsync(1);
