@@ -26,6 +26,7 @@ public partial class App : Application
         SplatRegistrations.Register<OutputWindowViewModel>();
         SplatRegistrations.Register<AboutWindowViewModel>();
         SplatRegistrations.Register<JumpTimeViewModel>();
+        SplatRegistrations.Register<MediainfoWindowViewModel>();
         SplatRegistrations.SetupIOC();
     }
 
@@ -41,6 +42,7 @@ public partial class App : Application
     public static OutputWindowViewModel OutputDialog => Locator.Current.GetService<OutputWindowViewModel>()!;
     public static JumpTimeViewModel JumpTimeDialog => Locator.Current.GetService<JumpTimeViewModel>()!;
     public static AboutWindowViewModel AboutDialog => Locator.Current.GetService<AboutWindowViewModel>()!;
+    public static MediainfoWindowViewModel MediainfoDialog => Locator.Current.GetService<MediainfoWindowViewModel>()!;
     public static IDialogService DialogService => Locator.Current.GetService<IDialogService>()!;
 
 }

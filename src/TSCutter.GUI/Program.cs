@@ -1,5 +1,6 @@
 ﻿using Avalonia;
 using System;
+using Classic.CommonControls;
 
 namespace TSCutter.GUI;
 
@@ -16,6 +17,7 @@ sealed class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .UseMessageBoxSounds()
             .WithInterFont()
             .LogToTrace();
 }
