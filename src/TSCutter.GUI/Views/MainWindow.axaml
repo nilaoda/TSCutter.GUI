@@ -369,8 +369,8 @@
                                                     HorizontalAlignment="Center"
                                                     Classes="hyperlink"
                                                     Foreground="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=Foreground}"
-                                                    Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).JumpToTimeCommand}"
-                                                    CommandParameter="{Binding StartTime}" />
+                                                    Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).JumpToStartTimeCommand}"
+                                                    CommandParameter="{Binding}" />
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>
@@ -381,8 +381,8 @@
                                                     HorizontalAlignment="Center"
                                                     Classes="hyperlink"
                                                     Foreground="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=Foreground}"
-                                                    Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).JumpToTimeCommand}"
-                                                    CommandParameter="{Binding EndTime}" />
+                                                    Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).JumpToEndTimeCommand}"
+                                                    CommandParameter="{Binding}" />
                                         </DataTemplate>
                                     </DataGridTemplateColumn.CellTemplate>
                                 </DataGridTemplateColumn>

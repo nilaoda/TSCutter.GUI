@@ -57,6 +57,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     private long PositionInFile => _videoInstance!.PositionInFile;
+    private long CurrentPts => _videoInstance!.CurrentPts;
 
     [ObservableProperty]
     private ThemeModel _selectedTheme;
@@ -85,15 +86,34 @@ public partial class MainWindowViewModel : ViewModelBase
     public partial PickedClip? SelectedClip { get; set; }
     
     [RelayCommand]
-    private async Task JumpToTimeAsync(object? time)
+    private async Task JumpToStartTimeAsync(object? time)
     {
-        if (time is double targetTime)
+        if (time is PickedClip { StartTime: > -1 } pickedClip)
         {
-            await SeekToTimeAsync(TimeSpan.FromSeconds(targetTime));
-            await DrawNextFrameAsync(1);
+            await JumpToTimeAsync(pickedClip.StartPts);
+        }
+    }
+    
+    [RelayCommand]
+    private async Task JumpToEndTimeAsync(object? time)
+    {
+        if (time is PickedClip { EndTime: > -1 } pickedClip)
+        {
+            await JumpToTimeAsync(pickedClip.EndPts);
         }
     }
 
+    private async Task JumpToTimeAsync(long time)
+    {
+        await SeekFileAsync(time);
+        // 解码至目标关键帧
+        await DrawNextFrameAsync(1);
+        while (CurrentPts < time)
+        {
+            await DrawNextFrameAsync(1);
+        }
+    }
+    
     [RelayCommand]
     private void FindFile(object? fileInfo)
     {
@@ -148,6 +168,7 @@ public partial class MainWindowViewModel : ViewModelBase
             InFileInfo = new FileInfo(VideoPath),
             StartTime = CurrentTime,
             StartPosition = PositionInFile,
+            StartPts = CurrentPts,
             EndTime = DurationMax,
         };
         Clips.Add(newClip);
@@ -168,6 +189,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private void MarkClipStart()
     {
         SelectedClip!.StartTime = CurrentTime;
+        SelectedClip!.StartPts = CurrentPts;
         SelectedClip!.StartPosition = PositionInFile;
         if (!(SelectedClip!.EndTime <= CurrentTime)) return;
         
@@ -179,6 +201,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private void MarkClipEnd()
     {
         SelectedClip!.EndTime = CurrentTime;
+        SelectedClip!.EndPts = CurrentPts;
         SelectedClip!.EndPosition = PositionInFile;
         if (!(SelectedClip!.StartTime >= CurrentTime)) return;
         
@@ -364,6 +387,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     public async Task SeekToTimeAsync(TimeSpan timeSpan) => await _videoInstance!.SeekToTimeAsync(timeSpan);
+    public async Task SeekFileAsync(long pts) => await _videoInstance!.SeekFileAsync(pts);
     
     public async Task DrawNextFrameAsync(int count = 1)
     {
