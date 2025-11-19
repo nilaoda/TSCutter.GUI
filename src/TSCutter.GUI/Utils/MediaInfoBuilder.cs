@@ -95,7 +95,7 @@ public static class MediaInfoBuilder
             AppendField(sb, "Format profile", Marshal.PtrToStringAnsi((IntPtr)descriptor->long_name)!);
 
         AppendField(sb, "Codec ID", ((int)cp.CodecId).ToString());
-        AppendField(sb, "Duration", FormatDuration(stream.Duration));
+        AppendField(sb, "Duration", FormatDuration(stream));
 
         if (cp.BitRate > 0)
         {
@@ -150,7 +150,7 @@ public static class MediaInfoBuilder
     #endregion
 
     #region ----- Audio -----
-    private static void WriteAudio(StringBuilder sb, MediaStream stream, CodecParameters cp, FormatContext fc, FileInfo fi)
+    private static unsafe void WriteAudio(StringBuilder sb, MediaStream stream, CodecParameters cp, FormatContext fc, FileInfo fi)
     {
         AppendSection(sb, "Audio");
 
@@ -163,7 +163,7 @@ public static class MediaInfoBuilder
         if (codec == "Ac3") AppendField(sb, "Commercial name", "Dolby Digital");
         AppendField(sb, "Codec ID", ((int)cp.CodecId).ToString());
 
-        AppendField(sb, "Duration", FormatDuration(stream.Duration));
+        AppendField(sb, "Duration", FormatDuration(stream));
 
         if (cp.BitRate > 0)
         {
@@ -237,6 +237,19 @@ public static class MediaInfoBuilder
     {
         if (avTs <= 0) return "Unknown";
         var ts = TimeSpan.FromSeconds(avTs / 1_000_000.0);
+        return ts.Hours > 0
+            ? ts.Hours.ToString("D2") + " h " + ts.Minutes.ToString("D2") + " min " + ts.Seconds.ToString("D2") + " s"
+            : ((int)ts.TotalMinutes) + " min " + ts.Seconds.ToString("D2") + " s";
+    }
+
+    private static unsafe string FormatDuration(AVStream* stream)
+    {
+        if (stream->duration <= 0) return "Unknown";
+    
+        // 将微秒转换为秒
+        var seconds = stream->duration * ffmpeg.av_q2d(stream->time_base);
+        var ts = TimeSpan.FromSeconds(seconds);
+
         return ts.Hours > 0
             ? ts.Hours.ToString("D2") + " h " + ts.Minutes.ToString("D2") + " min " + ts.Seconds.ToString("D2") + " s"
             : ((int)ts.TotalMinutes) + " min " + ts.Seconds.ToString("D2") + " s";
