@@ -36,7 +36,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.251108";
+            var defaultTitle = "TSCutter.GUI - Alpha.251119";
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
             return defaultTitle;
