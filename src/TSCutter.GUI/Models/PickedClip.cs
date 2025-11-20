@@ -1,5 +1,6 @@
 ﻿using System;
 using System.IO;
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using TSCutter.GUI.Utils;
 
@@ -7,7 +8,8 @@ namespace TSCutter.GUI.Models;
 
 public partial class PickedClip : ObservableObject
 {
-    public string ClipID { get; } = Guid.NewGuid().ToString();
+    private static long _idCounter = 0; // 跨所有实例计数
+    public long ClipID { get; } = Interlocked.Increment(ref _idCounter);
     
     public long StartPts {get; set;}
     public long EndPts {get; set;}

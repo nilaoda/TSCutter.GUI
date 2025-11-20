@@ -80,7 +80,7 @@ public class ImageViewer : Control
         Zoom = Math.Min(Bounds.Width / Image.PixelSize.Width, Bounds.Height / Image.PixelSize.Height) * scalingFactor;
 
         OffsetX = (Bounds.Width - Image.PixelSize.Width * Zoom / scalingFactor) / 2;
-        OffsetY = 0;
+        OffsetY = (Bounds.Height - Image.PixelSize.Height * Zoom / scalingFactor) / 2;
     }
 
     private Point _lastDragPoint;
@@ -159,7 +159,7 @@ public class ImageViewer : Control
         
         // Draw the background
         var backgroundRect = new Rect(0, 0, Bounds.Width, Bounds.Height);
-        var customColorBrush = new SolidColorBrush(Colors.Transparent);
+        var customColorBrush = new SolidColorBrush(Colors.Black);
         dc.FillRectangle(customColorBrush, backgroundRect);
         
         if (Image is null) return;
