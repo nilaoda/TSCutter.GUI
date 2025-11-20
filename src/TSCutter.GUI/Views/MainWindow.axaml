@@ -206,7 +206,7 @@
                                                       Command="{Binding ShowMediaInfoClickCommand}" />
                     </commonControls:ToolBar>
                     <Grid Grid.Row="1" RowDefinitions="*, Auto, Auto, Auto">
-                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto, 180">
+                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto, 190">
                             <!-- 图片预览区域 -->
                             <ClassicBorderDecorator Grid.Column="0" BorderThickness="0, 2" BorderStyle="Etched">
                                 <controls:ImageViewer Name="ImageViewer"
@@ -237,7 +237,7 @@
                                         <DataGridTextColumn Width="25"
                                                             Header="ID"
                                                             Binding="{Binding ClipID}" />
-                                        <DataGridTemplateColumn Header="Start Time" MinWidth="80">
+                                        <DataGridTemplateColumn Header="Start Time" MinWidth="85">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <!-- 需要让Button继承DataGridCell的Foreground -->
@@ -250,7 +250,7 @@
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
-                                        <DataGridTemplateColumn Header="End Time" MinWidth="80">
+                                        <DataGridTemplateColumn Header="End Time" MinWidth="85">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <Button Content="{Binding EndTimeStr}"
@@ -262,9 +262,9 @@
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
-                                        <DataGridTextColumn Header="Output Size" MinWidth="80"
+                                        <DataGridTextColumn Header="Output Size" MinWidth="85"
                                                             Binding="{Binding OutputFileSizeStr}" />
-                                        <DataGridTemplateColumn Header="Output Path" MinWidth="80" Width="*">
+                                        <DataGridTemplateColumn Header="Output Path" MinWidth="85" Width="*">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <Button Content="{Binding OutputFileInfo.FullName}"
