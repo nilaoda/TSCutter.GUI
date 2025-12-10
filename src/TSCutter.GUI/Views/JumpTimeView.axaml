@@ -12,7 +12,7 @@
         Width="280" Height="150"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
-        Title="Jump to Time">
+        Title="{DynamicResource String.Jump.Title}">
     
     <Grid Margin="12" RowDefinitions="*,Auto" ColumnDefinitions="*">
         <!-- 输入框 -->
@@ -39,11 +39,11 @@
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     Spacing="6">
-            <Button Content="_Cancel"
+            <Button Content="{DynamicResource String.Jump.Cancel}"
                     Width="70"
                     Command="{Binding CancelCommand}"
                     IsCancel="True"/>
-            <Button Content="_OK"
+            <Button Content="{DynamicResource String.Jump.Ok}"
                     Width="70"
                     Command="{Binding ConfirmCommand}"
                     IsDefault="True"/>

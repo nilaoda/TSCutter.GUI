@@ -31,12 +31,12 @@ public partial class MainWindowViewModel : ViewModelBase
     private static ThemeModel DarkTheme = new("Standard (Dark)", CustomTheme.DarkStandard);
     private static List<ThemeModel> Themes = [..ClassicTheme.AllVariants.Select(x => new ThemeModel(x)), DarkTheme];
 
-    private const string PleaseLoadTip = "Please Load Video ";
+    private static string PleaseLoadTip = LocalizationManager.Instance.String_PleaseLoadVideo;
     public string WindowTitle
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.251120";
+            var defaultTitle = "TSCutter.GUI - Alpha.251210";
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
             return defaultTitle;
@@ -128,7 +128,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (!IsVideoInitialized)
         {
-            await ShowMessageAsync("Please load a video", "Video Not Initialized", MessageBoxIcon.Information);
+            await ShowMessageAsync(LocalizationManager.Instance.String_PleaseLoadAVideo,
+                LocalizationManager.Instance.String_VideoNotInit, MessageBoxIcon.Information);
             return;
         }
         
@@ -146,7 +147,8 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
-        await ShowMessageAsync("Please input a valid time", "Wrong Format", MessageBoxIcon.Error);
+        await ShowMessageAsync(LocalizationManager.Instance.String_PleaseInputValidTime,
+            LocalizationManager.Instance.String_WrongFormat, MessageBoxIcon.Error);
     }
 
     [RelayCommand]
@@ -233,10 +235,10 @@ public partial class MainWindowViewModel : ViewModelBase
         var defaultName = Path.GetFileNameWithoutExtension(VideoPath) + $"_{CommonUtil.FormatSeconds(CurrentTime, true)}.png";
         var settings = new SaveFileDialogSettings
         {
-            Title = "Save a frame",
+            Title = LocalizationManager.Instance.String_SaveFrame,
             SuggestedStartLocation =  new DesktopDialogStorageFolder(Path.GetDirectoryName(VideoPath)!),
             SuggestedFileName = defaultName,
-            Filters = [new("PNG Images", ["png"])],
+            Filters = [new(LocalizationManager.Instance.String_PngImages, ["png"])],
             DefaultExtension = "png"
         };
         var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
@@ -293,7 +295,8 @@ public partial class MainWindowViewModel : ViewModelBase
     public partial long DecodeCost { get; set; } = 0L;
 
     public string StatusInfoText => IsVideoInitialized ? $"{VideoInfoText} | {DecodeCost,3}ms" : PleaseLoadTip;
-    public string ZoomFactorStr => $"Scale: {ZoomFactor * 100.0:0}%";
+
+    public string ZoomFactorStr => string.Format(LocalizationManager.Instance.String_ZoomFactor, $"{ZoomFactor * 100.0:0}");
 
     [RelayCommand]
     private void OpenFileInExplorer()
@@ -328,10 +331,10 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var settings = new OpenFileDialogSettings()
         {
-            Title = "Open TS file",
+            Title = LocalizationManager.Instance.String_OpenTsFile,
             Filters = new List<FileFilter>()
             {
-                new("MPEG2-TS Video", ["ts"]),
+                new(LocalizationManager.Instance.String_TsFiles, ["ts"]),
             }
         };
         var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
@@ -387,7 +390,8 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task SettingsClickAsync()
     {
-        await ShowMessageAsync("The settings page is not yet fully developed", "Settings", MessageBoxIcon.Warning);
+        await ShowMessageAsync(LocalizationManager.Instance.String_SettingsNotDeveloped,
+            LocalizationManager.Instance.String_Settings, MessageBoxIcon.Warning);
     }
 
     public void SwitchToDarkMode()
@@ -416,13 +420,13 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception e)
         {
             Console.WriteLine(e);
-            await ShowMessageAsync(e.Message, "Failed to decode", MessageBoxIcon.Error);
+            await ShowMessageAsync(e.Message, LocalizationManager.Instance.String_FailedToDecode, MessageBoxIcon.Error);
         }
     }
 
     private void ClearVars()
     {
-        VideoInfoText = "Please Load Video";
+        VideoInfoText = PleaseLoadTip;
         DecodedBitmap = null;
         Clips.Clear();
         SelectedClip = null;
@@ -458,7 +462,7 @@ public partial class MainWindowViewModel : ViewModelBase
             ClearVars();
             _videoInstance?.Close();
             Console.WriteLine($"Failed to load video: {e}");
-            await ShowMessageAsync(e.Message, "Failed to load video", MessageBoxIcon.Error);
+            await ShowMessageAsync(e.Message, LocalizationManager.Instance.String_FailedToLoadVideo, MessageBoxIcon.Error);
         }
     }
 
@@ -521,13 +525,13 @@ public partial class MainWindowViewModel : ViewModelBase
             + $"_({CommonUtil.FormatSeconds(SelectedClip!.StartTime, true)}-{CommonUtil.FormatSeconds(SelectedClip!.EndTime, true)}).ts";
         var settings = new SaveFileDialogSettings
         {
-            Title = "Save Your Clip",
+            Title = LocalizationManager.Instance.String_SaveYourClip,
             SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(SelectedClip!.InFileInfo.FullName)!),
             SuggestedFileName = defaultName,
             Filters = new List<FileFilter>()
             {
-                new("MPEG2-TS", new[] { "ts" }),
-                new("All Files", "*")
+                new(LocalizationManager.Instance.String_TsFiles, new[] { "ts" }),
+                new(LocalizationManager.Instance.String_AllFiles, "*")
             },
             DefaultExtension = "ts"
         };
@@ -540,7 +544,7 @@ public partial class MainWindowViewModel : ViewModelBase
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
         if (dialogViewModel.Exception is not null)
         {
-            await ShowMessageAsync(dialogViewModel.Exception.Message, "Error", MessageBoxIcon.Error);
+            await ShowMessageAsync(dialogViewModel.Exception.Message, LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
             Console.WriteLine(dialogViewModel.Exception);
             return;
         }

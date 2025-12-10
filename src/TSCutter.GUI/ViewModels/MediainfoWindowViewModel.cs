@@ -16,10 +16,10 @@ public partial class MediainfoWindowViewModel : ViewModelBase, IModalDialogViewM
     public bool? DialogResult { get; }
     
     [ObservableProperty]
-    private string _infoText = "Loading...";
+    private string _infoText = LocalizationManager.Instance.String_MediaInfo_Loading;
     
     [ObservableProperty]
-    private string _btnContent = "_Copy All";
+    private string _btnContent = LocalizationManager.Instance.String_MediaInfo_CopyAll;
 
     [RelayCommand]
     private async Task CopyAsync()
@@ -36,10 +36,10 @@ public partial class MediainfoWindowViewModel : ViewModelBase, IModalDialogViewM
             {
                 if (success)
                 {
-                    BtnContent = "Copied!";
+                    BtnContent = LocalizationManager.Instance.String_MediaInfo_Copied;
                     _ = Task.Delay(1000).ContinueWith(_ =>
                     {
-                        Dispatcher.UIThread.Post(() => BtnContent = "_Copy All");
+                        Dispatcher.UIThread.Post(() => BtnContent = LocalizationManager.Instance.String_MediaInfo_CopyAll);
                     });
                 }
             }
@@ -49,7 +49,7 @@ public partial class MediainfoWindowViewModel : ViewModelBase, IModalDialogViewM
     [RelayCommand]
     private async Task BuildInfoAsync()
     {
-        InfoText = "Loading...";
+        InfoText = LocalizationManager.Instance.String_MediaInfo_Loading;
         await Task.Run(() =>
         {
             try
@@ -59,7 +59,7 @@ public partial class MediainfoWindowViewModel : ViewModelBase, IModalDialogViewM
             }
             catch (Exception ex)
             {
-                Dispatcher.UIThread.Post(() => InfoText = $"Failed to load media info:\n{ex}");
+                Dispatcher.UIThread.Post(() => InfoText = string.Format(LocalizationManager.Instance.String_MediaInfo_Failed, ex.Message));
             }
         });
     }

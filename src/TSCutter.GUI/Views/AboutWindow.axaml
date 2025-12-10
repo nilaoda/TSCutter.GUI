@@ -39,7 +39,7 @@
 
         <!-- 项目链接 -->
         <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6">
-            <TextBlock Text="Project:" VerticalAlignment="Center" />
+            <TextBlock Text="{DynamicResource String.About.Project}" VerticalAlignment="Center" />
             <HyperlinkButton NavigateUri="{Binding ProjectUrl}" Padding="0">
                 <TextBlock Text="{Binding ProjectUrl}"
                            TextDecorations="Underline"
@@ -73,7 +73,7 @@
         <Button Grid.Row="4" Grid.ColumnSpan="2"
                 Width="80" Height="26"
                 HorizontalAlignment="Right"
-                Content="OK"
+                Content="{DynamicResource String.Ok}"
                 IsDefault="True"
                 IsCancel="True"
                 Click="Button_OnClick" />
