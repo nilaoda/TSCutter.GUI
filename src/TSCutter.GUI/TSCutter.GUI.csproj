@@ -1,7 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <AssemblyName>TSCutterGUI</AssemblyName>
-        <Version>0.0.2.1</Version>
+        <Version>0.0.2.2</Version>
         <OutputType>WinExe</OutputType>
         <ApplicationIcon>Assets/logo.ico</ApplicationIcon>
         <TargetFramework>net10.0</TargetFramework>
@@ -45,5 +45,17 @@
         <None Update="$(NuGetPackageRoot)sdcb.ffmpeg.runtime.windows-x64\**\*.dll">
             <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
         </None>
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- 引用生成器项目 -->
+        <ProjectReference Include="..\TSCutter.GUI.Generators\TSCutter.GUI.Generators.csproj"
+                          OutputItemType="Analyzer"
+                          ReferenceOutputAssembly="false" />
+    </ItemGroup>
+
+    <ItemGroup>
+        <!-- 将语言文件作为附加文件暴露给生成器 -->
+        <AdditionalFiles Include="Lang\en-US.axaml" />
     </ItemGroup>
 </Project>

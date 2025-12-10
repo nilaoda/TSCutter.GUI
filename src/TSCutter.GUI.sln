@@ -2,6 +2,8 @@
 Microsoft Visual Studio Solution File, Format Version 12.00
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TSCutter.GUI", "TSCutter.GUI\TSCutter.GUI.csproj", "{88388EA7-DE1C-4C90-9505-DF85D8E2E83F}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TSCutter.GUI.Generators", "TSCutter.GUI.Generators\TSCutter.GUI.Generators.csproj", "{7EF1585C-04F0-4FC6-8307-7B1B21B88058}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -12,5 +14,9 @@ Global
 		{88388EA7-DE1C-4C90-9505-DF85D8E2E83F}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{88388EA7-DE1C-4C90-9505-DF85D8E2E83F}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{88388EA7-DE1C-4C90-9505-DF85D8E2E83F}.Release|Any CPU.Build.0 = Release|Any CPU
+		{7EF1585C-04F0-4FC6-8307-7B1B21B88058}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{7EF1585C-04F0-4FC6-8307-7B1B21B88058}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{7EF1585C-04F0-4FC6-8307-7B1B21B88058}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{7EF1585C-04F0-4FC6-8307-7B1B21B88058}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal

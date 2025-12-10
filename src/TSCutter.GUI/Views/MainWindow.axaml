@@ -95,36 +95,36 @@
             <DockPanel Margin="0, 2">
                 <commonControls:RebarHandle />
                 <Menu>
-                    <MenuItem Header="_File">
-                        <MenuItem Header="_Open Video..."
+                    <MenuItem Header="{DynamicResource String.Menu.File}">
+                        <MenuItem Header="{DynamicResource String.Menu.OpenVideo}"
                                   Command="{Binding LoadVideoClickCommand}"
                                   InputGesture="{OnPlatform Ctrl+O, macOS=⌘+O}" />
-                        <MenuItem Header="_Save Clip..."
+                        <MenuItem Header="{DynamicResource String.Menu.SaveClip}"
                                   Command="{Binding SaveVideoClickCommand}"
                                   InputGesture="{OnPlatform Ctrl+S, macOS=⌘+S}" />
                         <Separator />
-                        <MenuItem Header="_Close Video"
+                        <MenuItem Header="{DynamicResource String.Menu.CloseVideo}"
                                   Command="{Binding CloseVideoClickCommand}"/>
-                        <MenuItem Header="_Exit" 
+                        <MenuItem Header="{DynamicResource String.Menu.Exit}" 
                                   Command="{Binding ExitApplicationCommand}"/>
                     </MenuItem>
-                    <MenuItem Header="_Tools">
-                        <MenuItem Header="_Settings..."
+                    <MenuItem Header="{DynamicResource String.Menu.Tools}">
+                        <MenuItem Header="{DynamicResource String.Menu.Settings}"
                                   Command="{Binding SettingsClickCommand}" />
                     </MenuItem>
-                    <MenuItem Header="_View">
-                        <MenuItem Header="Zoom In" Command="{Binding ZoomInCommand}"/>
-                        <MenuItem Header="Zoom Out" Command="{Binding ZoomOutCommand}"/>
-                        <MenuItem Header="Original Size" Command="{Binding ZoomNoneCommand}"/>
-                        <MenuItem Header="Fit" Command="{Binding FitCommand, ElementName=ImageViewer}"/>
+                    <MenuItem Header="{DynamicResource String.Menu.View}">
+                        <MenuItem Header="{DynamicResource String.Menu.ZoomIn}" Command="{Binding ZoomInCommand}"/>
+                        <MenuItem Header="{DynamicResource String.Menu.ZoomOut}" Command="{Binding ZoomOutCommand}"/>
+                        <MenuItem Header="{DynamicResource String.Menu.OriginalSize}" Command="{Binding ZoomNoneCommand}"/>
+                        <MenuItem Header="{DynamicResource String.Menu.Fit}" Command="{Binding FitCommand, ElementName=ImageViewer}"/>
                         <Separator />
-                        <MenuItem Header="Theme" ItemsSource="{Binding ThemeMenuItems}" />
+                        <MenuItem Header="{DynamicResource String.Menu.Theme}" ItemsSource="{Binding ThemeMenuItems}" />
                     </MenuItem>
-                    <MenuItem Header="_Help">
-                        <MenuItem Header="_Check Update"
+                    <MenuItem Header="{DynamicResource String.Menu.Help}">
+                        <MenuItem Header="{DynamicResource String.Menu.CheckUpdate}"
                                   Command="{Binding CheckUpdateCommand}"/>
                         <Separator />
-                        <MenuItem Header="_About..."
+                        <MenuItem Header="{DynamicResource String.Menu.About}"
                                   Command="{Binding ShowAboutDialogCommand}"/>
                     </MenuItem>
                 </Menu>
@@ -145,7 +145,7 @@
                   </RoutedEventTriggerBehavior>
               </Interaction.Behaviors>
             <Border Background="{DynamicResource MaskBackgroundBrush}" Opacity="0.9" />
-            <TextBlock Text="Drop to load video" VerticalAlignment="Center" HorizontalAlignment="Center" />
+            <TextBlock Text="{DynamicResource String.DropToolTip}" VerticalAlignment="Center" HorizontalAlignment="Center" />
             <Rectangle Stroke="Gray" StrokeThickness="2" StrokeDashArray="3, 4" Width="200" Height="100" RadiusX="10" RadiusY="10"/>
         </Grid>
         <DockPanel Grid.Row="1">
@@ -161,7 +161,7 @@
                 <commonControls:StatusBarItem commonControls:StatusBar.Size="*">
                     <Button Command="{Binding OpenFileInExplorerCommand}"
                             Classes="hyperlink"
-                            ToolTip.Tip="Find File"
+                            ToolTip.Tip="{DynamicResource String.FindFile}"
                             HorizontalAlignment="Left"
                             Content="{Binding VideoPath}"/>
                 </commonControls:StatusBarItem>
@@ -171,37 +171,37 @@
                 <Grid RowDefinitions="Auto, *" Margin="0,2">
                     <commonControls:ToolBar Grid.Row="0" Margin="0,0,0,2" TextPlacement="Down" Size="Large">
                         <commonControls:RebarHandle />
-                        <commonControls:ToolBarButton ToolTip.Tip="Open Video..."
+                        <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.OpenVideoTip}"
                                                       LargeIcon="/Assets/directory_movie-3.png"
-                                                      Text="Open"
+                                                      Text="{DynamicResource String.ToolBar.Open}"
                                                       Command="{Binding LoadVideoClickCommand}" />
                         <Separator />
-                        <commonControls:ToolBarButton ToolTip.Tip="Zoom In"
+                        <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.ZoomIn}"
                                                       LargeIcon="/Assets/magnifying_glass_4-zoom-in.png"
-                                                      Text="Zoom In"
+                                                      Text="{DynamicResource String.ToolBar.ZoomIn}"
                                                       Command="{Binding ZoomInCommand}" />
-                        <commonControls:ToolBarButton ToolTip.Tip="Zoom Out"
+                        <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.ZoomOut}"
                                                       LargeIcon="/Assets/magnifying_glass_4-zoom-out.png"
-                                                      Text="Zoom Out"
+                                                      Text="{DynamicResource String.ToolBar.ZoomOut}"
                                                       Command="{Binding ZoomOutCommand}" />
-                        <commonControls:ToolBarButton ToolTip.Tip="1:1"
+                        <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.OriginalSize}"
                                                       LargeIcon="/Assets/original.png"
-                                                      Text="1:1"
+                                                      Text="{DynamicResource String.ToolBar.OriginalSize}"
                                                       Command="{Binding ZoomNoneCommand}" />
-                        <commonControls:ToolBarButton ToolTip.Tip="Fit"
+                        <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.Fit}"
                                                       LargeIcon="/Assets/fit.png"
-                                                      Text="Fit"
+                                                      Text="{DynamicResource String.ToolBar.Fit}"
                                                       Command="{Binding FitCommand, ElementName=ImageViewer}" />
                         <Separator />
-                        <commonControls:ToolBarButton ToolTip.Tip="Save Frame"
+                        <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.SaveFrameTip}"
                                                       LargeIcon="/Assets/kodak_imaging-0.png"
-                                                      Text="Capture"
+                                                      Text="{DynamicResource String.ToolBar.SaveFrame}"
                                                       Command="{Binding SaveFrameClickCommand}" />
                         <TextBlock VerticalAlignment="Center"
                                    Text="{Binding ZoomFactorStr}" />
-                        <commonControls:ToolBarButton ToolTip.Tip="Show Media Info"
+                        <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.MediaInfoTip}"
                                                       LargeIcon="/Assets/file_eye.png"
-                                                      Text="Info"
+                                                      Text="{DynamicResource String.ToolBar.MediaInfo}"
                                                       HorizontalAlignment="Right"
                                                       Command="{Binding ShowMediaInfoClickCommand}" />
                     </commonControls:ToolBar>
@@ -237,7 +237,7 @@
                                         <DataGridTextColumn Width="25"
                                                             Header="ID"
                                                             Binding="{Binding ClipID}" />
-                                        <DataGridTemplateColumn Header="Start Time" MinWidth="85">
+                                        <DataGridTemplateColumn Header="{DynamicResource String.Table.StartTime}" MinWidth="85">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <!-- 需要让Button继承DataGridCell的Foreground -->
@@ -250,7 +250,7 @@
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
-                                        <DataGridTemplateColumn Header="End Time" MinWidth="85">
+                                        <DataGridTemplateColumn Header="{DynamicResource String.Table.EndTime}" MinWidth="85">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <Button Content="{Binding EndTimeStr}"
@@ -262,9 +262,9 @@
                                                 </DataTemplate>
                                             </DataGridTemplateColumn.CellTemplate>
                                         </DataGridTemplateColumn>
-                                        <DataGridTextColumn Header="Output Size" MinWidth="85"
+                                        <DataGridTextColumn Header="{DynamicResource String.Table.OutputSize}" MinWidth="85"
                                                             Binding="{Binding OutputFileSizeStr}" />
-                                        <DataGridTemplateColumn Header="Output Path" MinWidth="85" Width="*">
+                                        <DataGridTemplateColumn Header="{DynamicResource String.Table.OutputPath}" MinWidth="85" Width="*">
                                             <DataGridTemplateColumn.CellTemplate>
                                                 <DataTemplate>
                                                     <Button Content="{Binding OutputFileInfo.FullName}"
@@ -333,22 +333,22 @@
                             <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" Margin="4, 4">
                                 <Button Command="{Binding MarkClipStartCommand}"
                                         Classes="LeftBtn"
-                                        ToolTip.Tip="Mark Start">
+                                        ToolTip.Tip="{DynamicResource String.Navigate.MarkStart}">
                                     [
                                 </Button>
                                 <Button Command="{Binding MarkClipEndCommand}"
                                         Classes="LeftBtn"
-                                        ToolTip.Tip="Mark End">
+                                        ToolTip.Tip="{DynamicResource String.Navigate.MarkEnd}">
                                     ]
                                 </Button>
                                 <Button Command="{Binding AddClipCommand}"
                                         Classes="LeftBtn"
-                                        ToolTip.Tip="Add Clip">
+                                        ToolTip.Tip="{DynamicResource String.Navigate.AddClip}">
                                     +
                                 </Button>
                                 <Button Command="{Binding RemoveClipCommand}"
                                         Classes="LeftBtn"
-                                        ToolTip.Tip="Remove Clip">
+                                        ToolTip.Tip="{DynamicResource String.Navigate.RemoveClip}">
                                     -
                                 </Button>
                             </StackPanel>
@@ -358,24 +358,24 @@
                                 <!-- LEFT -->
                                 <Button Command="{Binding Prev20GopClickCommand}"
                                         Classes="CenterBtn"
-                                        ToolTip.Tip="Previous 20">
+                                        ToolTip.Tip="{DynamicResource String.Navigate.Previous20}">
                                     &lt;&lt;&lt;
                                 </Button>
                                 <Button Command="{Binding Prev10GopClickCommand}"
                                         Classes="CenterBtn"
-                                        ToolTip.Tip="Previous 10">
+                                        ToolTip.Tip="{DynamicResource String.Navigate.Previous10}">
                                     &lt;&lt;
                                 </Button>
                                 <Button Command="{Binding PrevGopClickCommand}"
                                         Classes="CenterBtn"
-                                        ToolTip.Tip="Previous">
+                                        ToolTip.Tip="{DynamicResource String.Navigate.Previous}">
                                     &lt;
                                 </Button>
                                 <!-- CENTER -->
                                 <Button
                                     Content="{Binding CurrentTime, Converter={StaticResource SecondsConverter}}"
                                     Command="{Binding JumpToClickCommand}"
-                                    ToolTip.Tip="Jump to..."
+                                    ToolTip.Tip="{DynamicResource String.Navigate.JumpTo}"
                                     VerticalAlignment="Center"
                                     FontWeight="Bold"
                                     FontSize="22"
@@ -385,17 +385,17 @@
                                 <!-- RIGHT -->
                                 <Button Command="{Binding NextGopClickCommand}"
                                         Classes="CenterBtn"
-                                        ToolTip.Tip="Next">
+                                        ToolTip.Tip="{DynamicResource String.Navigate.Next}">
                                     &gt;
                                 </Button>
                                 <Button Command="{Binding Next10GopClickCommand}"
                                         Classes="CenterBtn"
-                                        ToolTip.Tip="Next 10">
+                                        ToolTip.Tip="{DynamicResource String.Navigate.Next10}">
                                     &gt;&gt;
                                 </Button>
                                 <Button Command="{Binding Next20GopClickCommand}"
                                         Classes="CenterBtn"
-                                        ToolTip.Tip="Next 20">
+                                        ToolTip.Tip="{DynamicResource String.Navigate.Next20}">
                                     &gt;&gt;&gt;
                                 </Button>
                             </StackPanel>
@@ -414,10 +414,10 @@
                                 <Button Command="{Binding SaveVideoClickCommand}"
                                         Classes="accent"
                                         VerticalContentAlignment="Center"
-                                        ToolTip.Tip="Save Current Clip">
+                                        ToolTip.Tip="{DynamicResource String.SaveClipTip}">
                                     <StackPanel Orientation="Horizontal">
                                         <Image Height="16" Source="/Assets/save.gif" />
-                                        <TextBlock VerticalAlignment="Center" Text="Save Clip" Margin="4,0,0,0" />
+                                        <TextBlock VerticalAlignment="Center" Text="{DynamicResource String.SaveClip}" Margin="4,0,0,0" />
                                     </StackPanel>
                                 </Button>
                             </StackPanel>

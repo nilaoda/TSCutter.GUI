@@ -1,6 +1,7 @@
 ﻿using System.Collections.Generic;
 using System.Reflection;
 using HanumanInstitute.MvvmDialogs;
+using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.ViewModels;
 
@@ -12,7 +13,7 @@ public record LibraryDesc
 
 public partial class AboutWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
-    public string Title => $"About {AppName}";
+    public string Title => string.Format(LocalizationManager.Instance.String_About_Title, AppName);
     public string ProjectUrl => "https://github.com/nilaoda/TSCutter.GUI";
     public string AppName => "TSCutter.GUI";
     public string AppVersion => $"v{Assembly.GetExecutingAssembly().GetName().Version}";

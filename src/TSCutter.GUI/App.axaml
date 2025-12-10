@@ -9,6 +9,15 @@
         <local:ViewLocator />
     </Application.DataTemplates>
 
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- 语言包 -->
+                <ResourceInclude Source="avares://TSCutterGUI/Lang/en-US.axaml"/>
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Application.Resources>
+
     <Application.Styles>
         <ClassicTheme FontAliasing="False"/>
         <StyleInclude Source="avares://Classic.Avalonia.Theme.DataGrid/Classic.axaml"/>

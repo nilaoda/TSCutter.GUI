@@ -12,7 +12,7 @@
         CanMinimize="False"
         WindowStartupLocation="CenterOwner"
         x:DataType="viewModels:OutputWindowViewModel"
-        Title="Output...">
+        Title="{DynamicResource String.Output.Title}">
 
     <Interaction.Behaviors>
         <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
@@ -63,7 +63,7 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
-                        <Button Content="Cancel"
+                        <Button Content="{DynamicResource String.Cancel}"
                                 Width="80"
                                 HorizontalAlignment="Right"
                                 Command="{Binding CancelOutputCommand}" />
