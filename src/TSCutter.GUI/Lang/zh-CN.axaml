@@ -14,7 +14,6 @@
     <x:String x:Key="String.OpenTsFile">打开 TS 文件</x:String>
     <x:String x:Key="String.ZoomFactor">缩放: {0}%</x:String>
     <x:String x:Key="String.FindFile">查找文件</x:String>
-    <x:String x:Key="String.SettingsNotDeveloped">设置页面尚未完全开发</x:String>
     <x:String x:Key="String.Settings">设置</x:String>
     <x:String x:Key="String.FailedToDecode">解码失败</x:String>
     <x:String x:Key="String.FailedToLoadVideo">无法加载视频</x:String>
@@ -64,6 +63,7 @@
     <x:String x:Key="String.SaveClip">保存片段</x:String>
     <x:String x:Key="String.Ok">确定</x:String>
     <x:String x:Key="String.Cancel">取消</x:String>
+    <x:String x:Key="String.Apply">应用</x:String>
     <x:String x:Key="String.About.Project">项目:</x:String>
     <x:String x:Key="String.About.Title">关于 {0}</x:String>
     <x:String x:Key="String.Jump.Title">跳转到时间</x:String>
@@ -75,4 +75,12 @@
     <x:String x:Key="String.MediaInfo.Copied">已复制!</x:String>
     <x:String x:Key="String.MediaInfo.Failed">无法加载媒体信息:</x:String>
     <x:String x:Key="String.Output.Title">输出...</x:String>
+    <x:String x:Key="String.Settings.Title">设置</x:String>
+    <x:String x:Key="String.Settings.General">常规</x:String>
+    <x:String x:Key="String.Settings.Language">语言</x:String>
+    <x:String x:Key="String.Settings.AutoDetectLanguage">自动检测语言</x:String>
+    <x:String x:Key="String.Settings.CurrentLanguage">当前语言</x:String>
+    <x:String x:Key="String.Settings.Theme">主题</x:String>
+    <x:String x:Key="String.Settings.AutoDetectDarkMode">自动检测系统深色模式</x:String>
+    <x:String x:Key="String.Settings.CurrentTheme">当前主题</x:String>
 </ResourceDictionary>

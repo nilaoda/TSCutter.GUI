@@ -10,8 +10,6 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Media.Imaging;
-using Avalonia.Styling;
-using Classic.Avalonia.Theme;
 using Classic.CommonControls.Dialogs;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -20,23 +18,19 @@ using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.FileSystem;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models;
-using TSCutter.GUI.Themes;
+using TSCutter.GUI.Services;
 using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
-    // 初始化主题列表
-    private static ThemeModel DarkTheme = new("Standard (Dark)", CustomTheme.DarkStandard);
-    private static List<ThemeModel> Themes = [..ClassicTheme.AllVariants.Select(x => new ThemeModel(x)), DarkTheme];
-
     private static string PleaseLoadTip = LocalizationManager.Instance.String_PleaseLoadVideo;
     public string WindowTitle
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.251210";
+            var defaultTitle = "TSCutter.GUI - Alpha.251213";
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
             return defaultTitle;
@@ -44,16 +38,16 @@ public partial class MainWindowViewModel : ViewModelBase
     }
     private VideoInstance? _videoInstance;
     private readonly IDialogService _dialogService;
+    private readonly IConfigurationService _configService;
     
-    public MainWindowViewModel(IDialogService dialogService)
+    public MainWindowViewModel(IDialogService dialogService, IConfigurationService configService)
     {
         _dialogService = dialogService;
-        var actualThemeVariant = Application.Current?.ActualThemeVariant;
-        var isDarkMode = actualThemeVariant == ThemeVariant.Dark
-                         || actualThemeVariant?.InheritVariant == ThemeVariant.Dark;
-        SelectedTheme = isDarkMode ? DarkTheme : Themes.First();
+        _configService = configService;
         // 构造菜单项
         BuildThemeMenuItems();
+        Application.Current!.ActualThemeVariantChanged += (_, __)
+            => Task.Delay(100).ConfigureAwait(true).GetAwaiter().OnCompleted(BuildThemeMenuItems);
     }
 
     private long PositionInFile => _videoInstance!.PositionInFile;
@@ -67,7 +61,8 @@ public partial class MainWindowViewModel : ViewModelBase
         if (value != null)
         {
             // 切换主题
-            Application.Current!.RequestedThemeVariant = value.Variant;
+            _configService.ApplyTheme(value.Name);
+            _configService.Save();
         }
     }
     
@@ -377,26 +372,10 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void ToggleThemeClick()
-    {
-        var currentTheme = Application.Current!.RequestedThemeVariant;
-        // var fluentAvaloniaTheme = App.Current.Styles[0] as FluentAvaloniaTheme;
-        if (currentTheme == ThemeVariant.Dark)
-            Application.Current!.RequestedThemeVariant = ThemeVariant.Light;
-        else if (currentTheme == ThemeVariant.Light)
-            Application.Current!.RequestedThemeVariant = ThemeVariant.Dark;
-    }
-
-    [RelayCommand]
     private async Task SettingsClickAsync()
     {
-        await ShowMessageAsync(LocalizationManager.Instance.String_SettingsNotDeveloped,
-            LocalizationManager.Instance.String_Settings, MessageBoxIcon.Warning);
-    }
-
-    public void SwitchToDarkMode()
-    {
-        SelectedTheme = DarkTheme;
+        var dialogViewModel = _dialogService.CreateViewModel<SettingsWindowViewModel>();
+        await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
 
     public async Task SeekToTimeAsync(TimeSpan timeSpan) => await _videoInstance!.SeekToTimeAsync(timeSpan);
@@ -554,15 +533,15 @@ public partial class MainWindowViewModel : ViewModelBase
     private void BuildThemeMenuItems()
     {
         ThemeMenuItems.Clear();
-        foreach (var theme in Themes)
+        foreach (var theme in AppConfig.AllThemes)
         {
             var menuItem = new MenuItem()
             {
                 Header = theme.Name,
                 ToggleType = MenuItemToggleType.Radio,
-                IsChecked = SelectedTheme == theme
+                IsChecked = _configService.CurrentConfig.ThemeModel == theme
             };
-            menuItem.Click += (r, s) => SelectedTheme = theme;;
+            menuItem.Click += (r, s) => SelectedTheme = theme;
             ThemeMenuItems.Add(menuItem);
         }
     }

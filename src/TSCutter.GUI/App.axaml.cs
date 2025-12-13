@@ -1,12 +1,10 @@
 using System;
-using System.Globalization;
-using System.Threading;
 using Avalonia;
 using Avalonia.Markup.Xaml;
 using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.Avalonia;
 using Splat;
-using TSCutter.GUI.Utils;
+using TSCutter.GUI.Services;
 using TSCutter.GUI.ViewModels;
 
 namespace TSCutter.GUI;
@@ -30,15 +28,22 @@ public partial class App : Application
         SplatRegistrations.Register<AboutWindowViewModel>();
         SplatRegistrations.Register<JumpTimeViewModel>();
         SplatRegistrations.Register<MediainfoWindowViewModel>();
+        SplatRegistrations.Register<SettingsWindowViewModel>();
+        // --- 注册单例服务 ---
+        var localizationService = new LocalizationService();
+        SplatRegistrations.RegisterConstant<ILocalizationService>(localizationService);
+        var configurationService = new ConfigurationService(localizationService);
+        SplatRegistrations.RegisterConstant<IConfigurationService>(configurationService);
         SplatRegistrations.SetupIOC();
     }
 
     public override void OnFrameworkInitializationCompleted()
     {
+        Locator.Current.GetService<IConfigurationService>()!.Load();
+
         GC.KeepAlive(typeof(DialogService));
         DialogService.Show(null, MainWindow);
 
-        DetectLanguage();
         base.OnFrameworkInitializationCompleted();
     }
     
@@ -47,21 +52,7 @@ public partial class App : Application
     public static JumpTimeViewModel JumpTimeDialog => Locator.Current.GetService<JumpTimeViewModel>()!;
     public static AboutWindowViewModel AboutDialog => Locator.Current.GetService<AboutWindowViewModel>()!;
     public static MediainfoWindowViewModel MediainfoDialog => Locator.Current.GetService<MediainfoWindowViewModel>()!;
+    public static SettingsWindowViewModel SettingsDialog => Locator.Current.GetService<SettingsWindowViewModel>()!;
     public static IDialogService DialogService => Locator.Current.GetService<IDialogService>()!;
-
-    private static void DetectLanguage()
-    {
-        var currLoc = Thread.CurrentThread.CurrentUICulture.Name;
-        var loc = currLoc switch
-        {
-            "zh-CN" or "zh-SG" => "zh-CN",
-            _ when currLoc.StartsWith("zh-") => "zh-TW",
-            _ => "en-US"
-        };
-        
-        CultureInfo.DefaultThreadCurrentCulture = new CultureInfo(loc);
-        Thread.CurrentThread.CurrentUICulture = CultureInfo.GetCultureInfo(loc);
-        Thread.CurrentThread.CurrentCulture = CultureInfo.GetCultureInfo(loc);
-        LocalizationManager.Instance.SwitchLanguage(loc);
-    } 
+    public static ILocalizationService LocalizationService => Locator.Current.GetService<ILocalizationService>()!;
 }
