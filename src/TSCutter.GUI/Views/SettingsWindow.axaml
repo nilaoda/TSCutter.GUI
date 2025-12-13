@@ -39,7 +39,7 @@
         </StackPanel>
         <TabControl SelectedIndex="0">
             <TabItem Header="{DynamicResource String.Settings.General}">
-                <StackPanel Orientation="Vertical" Spacing="4">
+                <StackPanel Orientation="Vertical" Spacing="8">
                     <HeaderedContentControl Header="{DynamicResource String.Settings.Language}">
                         <StackPanel Orientation="Vertical" Spacing="4">
                             <CheckBox IsChecked="{Binding AutoDetectLanguage}"
@@ -77,6 +77,8 @@
                             </Grid>
                         </StackPanel>
                     </HeaderedContentControl>
+                    <CheckBox IsChecked="{Binding AutoCheckForUpdates}"
+                              Content="{DynamicResource String.Settings.AutoCheckForUpdates}" />
                 </StackPanel>
             </TabItem>
         </TabControl>

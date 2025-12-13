@@ -1,0 +1,20 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        mc:Ignorable="d"
+        DataContext="{x:Static local:App.UpdatesInfoDialog}"
+        x:DataType="viewModels:UpdatesInfoWindowViewModel"
+        Width="400" Height="300"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        x:Class="TSCutter.GUI.Views.UpdatesInfoWindow"
+        Title="{DynamicResource String.UpdatesInfo.Title}">
+    <Border BorderThickness="1" BorderBrush="#808080" Margin="0,10,0,10">
+        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="4">
+            TODO
+        </ScrollViewer>
+    </Border>
+</Window>

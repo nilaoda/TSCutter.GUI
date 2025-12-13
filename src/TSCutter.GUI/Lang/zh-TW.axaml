@@ -83,4 +83,9 @@
     <x:String x:Key="String.Settings.Theme">佈景主題</x:String>
     <x:String x:Key="String.Settings.AutoDetectDarkMode">自動偵測系統深色模式</x:String>
     <x:String x:Key="String.Settings.CurrentTheme">目前佈景主題</x:String>
+    <x:String x:Key="String.Settings.AutoCheckForUpdates">程式啟動後自動檢查更新</x:String>
+    <x:String x:Key="String.UpdatesInfo.Title">更新資訊</x:String>
+    <x:String x:Key="String.UpdatesInfo.NewVersionTitle">發現新版本</x:String>
+    <x:String x:Key="String.UpdatesInfo.NewVersionInfo">目前版本: {0}, 新版本: {1}</x:String>
+    <x:String x:Key="String.UpdatesInfo.NewVersionAlert">是否開啟下載頁面？</x:String>
 </ResourceDictionary>

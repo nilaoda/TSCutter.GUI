@@ -25,15 +25,16 @@ namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
+    private string TitleInfo => $"TSCutter.GUI - Alpha.{App.CurrentTag.Split('_').Last()}";
+
     private static string PleaseLoadTip = LocalizationManager.Instance.String_PleaseLoadVideo;
     public string WindowTitle
     {
         get
         {
-            var defaultTitle = "TSCutter.GUI - Alpha.251213";
             if (!string.IsNullOrEmpty(VideoPath))
-                return $"{defaultTitle} - {Path.GetFileName(VideoPath)}";
-            return defaultTitle;
+                return $"{TitleInfo} - {Path.GetFileName(VideoPath)}";
+            return TitleInfo;
         }
     }
     private VideoInstance? _videoInstance;
