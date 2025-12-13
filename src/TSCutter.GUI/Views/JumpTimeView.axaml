@@ -39,14 +39,14 @@
                     Orientation="Horizontal"
                     HorizontalAlignment="Right"
                     Spacing="6">
-            <Button Content="{DynamicResource String.Jump.Cancel}"
-                    Width="70"
-                    Command="{Binding CancelCommand}"
-                    IsCancel="True"/>
             <Button Content="{DynamicResource String.Jump.Ok}"
                     Width="70"
                     Command="{Binding ConfirmCommand}"
                     IsDefault="True"/>
+            <Button Content="{DynamicResource String.Jump.Cancel}"
+                    Width="70"
+                    Command="{Binding CancelCommand}"
+                    IsCancel="True"/>
         </StackPanel>
     </Grid>
 </Window>

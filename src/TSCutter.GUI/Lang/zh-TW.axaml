@@ -14,7 +14,6 @@
     <x:String x:Key="String.OpenTsFile">開啟 TS 檔案</x:String>
     <x:String x:Key="String.ZoomFactor">縮放: {0}%</x:String>
     <x:String x:Key="String.FindFile">尋找檔案</x:String>
-    <x:String x:Key="String.SettingsNotDeveloped">設定頁面尚未完全開發</x:String>
     <x:String x:Key="String.Settings">設定</x:String>
     <x:String x:Key="String.FailedToDecode">解碼失敗</x:String>
     <x:String x:Key="String.FailedToLoadVideo">無法載入影片</x:String>
@@ -64,6 +63,7 @@
     <x:String x:Key="String.SaveClip">儲存片段</x:String>
     <x:String x:Key="String.Ok">確定</x:String>
     <x:String x:Key="String.Cancel">取消</x:String>
+    <x:String x:Key="String.Apply">套用</x:String>
     <x:String x:Key="String.About.Project">專案:</x:String>
     <x:String x:Key="String.About.Title">關於 {0}</x:String>
     <x:String x:Key="String.Jump.Title">跳轉到時間</x:String>
@@ -75,4 +75,12 @@
     <x:String x:Key="String.MediaInfo.Copied">已複製!</x:String>
     <x:String x:Key="String.MediaInfo.Failed">無法載入媒體資訊:</x:String>
     <x:String x:Key="String.Output.Title">輸出...</x:String>
+    <x:String x:Key="String.Settings.Title">設定</x:String>
+    <x:String x:Key="String.Settings.General">一般</x:String>
+    <x:String x:Key="String.Settings.Language">語言</x:String>
+    <x:String x:Key="String.Settings.AutoDetectLanguage">自動偵測語言</x:String>
+    <x:String x:Key="String.Settings.CurrentLanguage">目前語言</x:String>
+    <x:String x:Key="String.Settings.Theme">佈景主題</x:String>
+    <x:String x:Key="String.Settings.AutoDetectDarkMode">自動偵測系統深色模式</x:String>
+    <x:String x:Key="String.Settings.CurrentTheme">目前佈景主題</x:String>
 </ResourceDictionary>

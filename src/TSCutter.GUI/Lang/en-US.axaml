@@ -14,7 +14,6 @@
     <x:String x:Key="String.OpenTsFile">Open TS file</x:String>
     <x:String x:Key="String.ZoomFactor">Scale: {0}%</x:String>
     <x:String x:Key="String.FindFile">Find File</x:String>
-    <x:String x:Key="String.SettingsNotDeveloped">The settings page is not yet fully developed</x:String>
     <x:String x:Key="String.Settings">Settings</x:String>
     <x:String x:Key="String.FailedToDecode">Failed to decode</x:String>
     <x:String x:Key="String.FailedToLoadVideo">Failed to load video</x:String>
@@ -64,6 +63,7 @@
     <x:String x:Key="String.SaveClip">Save Clip</x:String>
     <x:String x:Key="String.Ok">OK</x:String>
     <x:String x:Key="String.Cancel">Cancel</x:String>
+    <x:String x:Key="String.Apply">Apply</x:String>
     <x:String x:Key="String.About.Project">Project:</x:String>
     <x:String x:Key="String.About.Title">About {0}</x:String>
     <x:String x:Key="String.Jump.Title">Jump to Time</x:String>
@@ -75,4 +75,12 @@
     <x:String x:Key="String.MediaInfo.Copied">Copied!</x:String>
     <x:String x:Key="String.MediaInfo.Failed">Failed to load media info:</x:String>
     <x:String x:Key="String.Output.Title">Output...</x:String>
+    <x:String x:Key="String.Settings.Title">Settings</x:String>
+    <x:String x:Key="String.Settings.General">General</x:String>
+    <x:String x:Key="String.Settings.Language">Language</x:String>
+    <x:String x:Key="String.Settings.AutoDetectLanguage">Auto detect language</x:String>
+    <x:String x:Key="String.Settings.CurrentLanguage">Current language</x:String>
+    <x:String x:Key="String.Settings.Theme">Theme</x:String>
+    <x:String x:Key="String.Settings.AutoDetectDarkMode">Auto detect system dark mode</x:String>
+    <x:String x:Key="String.Settings.CurrentTheme">Current theme</x:String>
 </ResourceDictionary>

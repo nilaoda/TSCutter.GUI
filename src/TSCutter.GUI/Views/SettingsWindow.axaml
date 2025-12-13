@@ -1,0 +1,84 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        mc:Ignorable="d"
+        d:DesignWidth="380" d:DesignHeight="426"
+        Width="380" Height="426"
+        x:Class="TSCutter.GUI.Views.SettingsWindow"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        DataContext="{x:Static local:App.SettingsDialog}"
+        x:DataType="viewModels:SettingsWindowViewModel"
+        Title="{DynamicResource String.Settings.Title}">
+    <Window.Styles>
+        <Style Selector="HeaderedContentControl">
+            <Setter Property="Padding" Value="10,15,10,10" />
+        </Style>
+    </Window.Styles>
+    <DockPanel Margin="6">
+        <StackPanel Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    DockPanel.Dock="Bottom"
+                    Margin="0,6,0,0"
+                    Spacing="6">
+            <Button Content="{DynamicResource String.Ok}"
+                    Command="{Binding OkCommand}"
+                    Width="70"
+                    IsDefault="True"/>
+            <Button Content="{DynamicResource String.Cancel}"
+                    Command="{Binding CancelCommand}"
+                    Width="70"
+                    IsCancel="True"/>
+            <Button Content="{DynamicResource String.Apply}"
+                    Command="{Binding ApplyCommand}"
+                    Width="70"
+                    IsCancel="True"/>
+        </StackPanel>
+        <TabControl SelectedIndex="0">
+            <TabItem Header="{DynamicResource String.Settings.General}">
+                <StackPanel Orientation="Vertical" Spacing="4">
+                    <HeaderedContentControl Header="{DynamicResource String.Settings.Language}">
+                        <StackPanel Orientation="Vertical" Spacing="4">
+                            <CheckBox IsChecked="{Binding AutoDetectLanguage}"
+                                      Content="{DynamicResource String.Settings.AutoDetectLanguage}" />
+                            <Grid ColumnDefinitions="100, *" VerticalAlignment="Center">
+                                <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                           Text="{DynamicResource String.Settings.CurrentLanguage}" />
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding Languages}" 
+                                          SelectedItem="{Binding SelectedLanguage}"
+                                          IsEnabled="{Binding IsLanguageEnable}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Description}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </Grid>
+                        </StackPanel>
+                    </HeaderedContentControl>
+                    <HeaderedContentControl Header="{DynamicResource String.Settings.Theme}">
+                        <StackPanel Orientation="Vertical" Spacing="4">
+                            <CheckBox IsChecked="{Binding AutoDetectDarkMode}"
+                                      Content="{DynamicResource String.Settings.AutoDetectDarkMode}" />
+                            <Grid ColumnDefinitions="100, *" VerticalAlignment="Center">
+                                <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                           Text="{DynamicResource String.Settings.CurrentTheme}" />
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding Themes}" 
+                                          SelectedItem="{Binding SelectedTheme}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Name}"/>
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                            </Grid>
+                        </StackPanel>
+                    </HeaderedContentControl>
+                </StackPanel>
+            </TabItem>
+        </TabControl>
+    </DockPanel>
+</Window>
