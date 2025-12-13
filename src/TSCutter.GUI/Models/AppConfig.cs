@@ -19,4 +19,5 @@ public class AppConfig
     public string ThemeName { get; set; } = ClassicTheme.AllVariants[0].Key.ToString()!;
     public bool AutoDetectDarkMode { get; set; } = true;
     public bool AutoDetectLanguage { get; set; } = true;
+    public bool AutoCheckForUpdates { get; set; } = true;
 }

@@ -83,4 +83,9 @@
     <x:String x:Key="String.Settings.Theme">Theme</x:String>
     <x:String x:Key="String.Settings.AutoDetectDarkMode">Auto detect system dark mode</x:String>
     <x:String x:Key="String.Settings.CurrentTheme">Current theme</x:String>
+    <x:String x:Key="String.Settings.AutoCheckForUpdates">Auto check for updates after app started</x:String>
+    <x:String x:Key="String.UpdatesInfo.Title">Updates Info</x:String>
+    <x:String x:Key="String.UpdatesInfo.NewVersionTitle">New version found</x:String>
+    <x:String x:Key="String.UpdatesInfo.NewVersionInfo">Current: {0}, New: {1}</x:String>
+    <x:String x:Key="String.UpdatesInfo.NewVersionAlert">Do you want to open the download page?</x:String>
 </ResourceDictionary>

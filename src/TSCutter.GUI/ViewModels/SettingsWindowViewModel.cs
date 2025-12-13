@@ -22,6 +22,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     [ObservableProperty]
     private bool _autoDetectDarkMode;
     [ObservableProperty]
+    private bool _autoCheckForUpdates;
+    [ObservableProperty]
     private ThemeModel _selectedTheme;
     [ObservableProperty]
     private SupportedLang _selectedLanguage;
@@ -36,6 +38,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _locService = localizationService;
         AutoDetectLanguage = _configService.CurrentConfig.AutoDetectLanguage;
         AutoDetectDarkMode = _configService.CurrentConfig.AutoDetectDarkMode;
+        AutoCheckForUpdates = _configService.CurrentConfig.AutoCheckForUpdates;
         SelectedTheme = _configService.CurrentConfig.ThemeModel;
         var selectedLanguage = _locService.SupportedLanguages.Find(x => x.Code == _configService.CurrentConfig.Language);
         if (selectedLanguage != null)
@@ -71,6 +74,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.CurrentConfig.Language = SelectedLanguage.Code;
         _configService.CurrentConfig.AutoDetectLanguage = AutoDetectLanguage;
         _configService.CurrentConfig.AutoDetectDarkMode = AutoDetectDarkMode;
+        _configService.CurrentConfig.AutoCheckForUpdates = AutoCheckForUpdates;
 
         // 应用
         _configService.ApplyTheme(SelectedTheme.Name);
