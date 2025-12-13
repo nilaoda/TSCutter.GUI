@@ -15,9 +15,17 @@ public static class VersionChecker
 
     public static async Task<string> GetLatestTagAsync()
     {
-        var redirctUrl = await Get302Async(ReleaseUrl);
-        var latestTag = redirctUrl.Replace(ReleaseUrlPrefix, "");
-        return latestTag;
+        try
+        {
+            var redirctUrl = await Get302Async(ReleaseUrl);
+            var latestTag = redirctUrl.Replace(ReleaseUrlPrefix, "");
+            return latestTag;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to get latest tag: {ex.Message}");
+            return "";
+        }
     }
 
     public static async Task<GitHubVersionInfo?> CheckUpdateAsync()

@@ -69,7 +69,7 @@ public partial class App : Application
         //     await _dialogService.ShowDialogAsync(this, viewModel);
         // }
         var latestTag = await VersionChecker.GetLatestTagAsync();
-        if (latestTag != CurrentTag && Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktopApp)
+        if (latestTag.Length > 0 && latestTag != CurrentTag && Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktopApp)
         {
             var result = await MessageBox.ShowDialog(desktopApp.MainWindow!,
                 string.Format(LocalizationManager.Instance.String_UpdatesInfo_NewVersionInfo, CurrentTag, latestTag)
