@@ -20,16 +20,19 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     [NotifyPropertyChangedFor(nameof(IsLanguageEnable))]
     private bool _autoDetectLanguage;
     [ObservableProperty]
-    private bool _autoDetectDarkMode;
-    [ObservableProperty]
     private bool _autoCheckForUpdates;
     [ObservableProperty]
     private ThemeModel _selectedTheme;
     [ObservableProperty]
+    private ThemeModel _selectedDarkTheme;
+    [ObservableProperty]
     private SupportedLang _selectedLanguage;
+    [ObservableProperty]
+    private ThemeVariantMode _selectedThemeVariantMode;
 
     public bool IsLanguageEnable => !AutoDetectLanguage;
-    public List<ThemeModel> Themes => AppConfig.AllThemes;
+    public List<ThemeModel> Themes => ThemeModel.AllThemes;
+    public List<ThemeModel> DarkThemes => ThemeModel.AllDarkThemes;
     public List<SupportedLang> Languages => _locService.SupportedLanguages;
 
     public SettingsWindowViewModel(IConfigurationService configurationService, ILocalizationService localizationService)
@@ -37,9 +40,10 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService = configurationService;
         _locService = localizationService;
         AutoDetectLanguage = _configService.CurrentConfig.AutoDetectLanguage;
-        AutoDetectDarkMode = _configService.CurrentConfig.AutoDetectDarkMode;
         AutoCheckForUpdates = _configService.CurrentConfig.AutoCheckForUpdates;
         SelectedTheme = _configService.CurrentConfig.ThemeModel;
+        SelectedDarkTheme = _configService.CurrentConfig.DarkThemeModel;
+        SelectedThemeVariantMode = _configService.CurrentConfig.ThemeVariantMode;
         var selectedLanguage = _locService.SupportedLanguages.Find(x => x.Code == _configService.CurrentConfig.Language);
         if (selectedLanguage != null)
             SelectedLanguage = selectedLanguage;
@@ -70,15 +74,31 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     private void CommitChanges()
     {
         // 更新配置
-        _configService.CurrentConfig.ThemeName = SelectedTheme.Name;
-        _configService.CurrentConfig.Language = SelectedLanguage.Code;
         _configService.CurrentConfig.AutoDetectLanguage = AutoDetectLanguage;
-        _configService.CurrentConfig.AutoDetectDarkMode = AutoDetectDarkMode;
         _configService.CurrentConfig.AutoCheckForUpdates = AutoCheckForUpdates;
+        _configService.CurrentConfig.ThemeVariantMode = SelectedThemeVariantMode;
 
-        // 应用
-        _configService.ApplyTheme(SelectedTheme.Name);
-        _configService.ApplyLanguage(SelectedLanguage.Code);
+        // 应用主题
+        if (AppConfig.IsSystemDarkMode && SelectedThemeVariantMode == ThemeVariantMode.Automatic)
+        {
+            // 当前系统处于深色模式，且主题模式为自动，则切换到深色主题
+            _configService.ApplyTheme(SelectedDarkTheme.Name);
+        }
+        else switch (SelectedThemeVariantMode)
+        {
+            case ThemeVariantMode.Light:
+                _configService.ApplyTheme(SelectedTheme.Name);
+                break;
+            case ThemeVariantMode.Dark:
+                _configService.ApplyTheme(SelectedDarkTheme.Name);
+                break;
+            case ThemeVariantMode.Automatic:
+                break;
+            default:
+                throw new ArgumentOutOfRangeException();
+        }
+        // 应用语言
+        _configService.ApplyLanguage(AutoDetectLanguage ? "" : SelectedLanguage.Code);
 
         // 保存
         _configService.Save();

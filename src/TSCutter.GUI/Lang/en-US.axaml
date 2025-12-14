@@ -81,9 +81,13 @@
     <x:String x:Key="String.Settings.AutoDetectLanguage">Auto detect language</x:String>
     <x:String x:Key="String.Settings.CurrentLanguage">Current language</x:String>
     <x:String x:Key="String.Settings.Theme">Theme</x:String>
-    <x:String x:Key="String.Settings.AutoDetectDarkMode">Auto detect system dark mode</x:String>
-    <x:String x:Key="String.Settings.CurrentTheme">Current theme</x:String>
+    <x:String x:Key="String.Settings.CurrentLightTheme">Light theme</x:String>
+    <x:String x:Key="String.Settings.CurrentDarkTheme">Dark theme</x:String>
     <x:String x:Key="String.Settings.AutoCheckForUpdates">Auto check for updates after app started</x:String>
+    <x:String x:Key="String.Settings.Theme.ThemeVariantMode">Theme mode</x:String>
+    <x:String x:Key="String.Settings.Theme.AutoDetect">Auto detect</x:String>
+    <x:String x:Key="String.Settings.Theme.Light">Light</x:String>
+    <x:String x:Key="String.Settings.Theme.Dark">Dark</x:String>
     <x:String x:Key="String.UpdatesInfo.Title">Updates Info</x:String>
     <x:String x:Key="String.UpdatesInfo.NewVersionTitle">New version found</x:String>
     <x:String x:Key="String.UpdatesInfo.NewVersionInfo">Current: {0}, New: {1}</x:String>

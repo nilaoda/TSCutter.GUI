@@ -1,10 +1,10 @@
 using System;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using Avalonia;
-using Avalonia.Styling;
 using TSCutter.GUI.Models;
 using TSCutter.GUI.Utils;
 
@@ -17,12 +17,6 @@ public class ConfigurationService : IConfigurationService
         Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
         "TSCutter.GUI", 
         "config.json");
-
-    private readonly JsonSerializerOptions _serializerOptions = new()
-    {
-        WriteIndented = true,
-        TypeInfoResolver = AppJsonContext.Default
-    };
     
     private readonly ILocalizationService _locService;
 
@@ -68,7 +62,7 @@ public class ConfigurationService : IConfigurationService
             var dir = Path.GetDirectoryName(_configPath);
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir!);
 
-            var json = JsonSerializer.Serialize(CurrentConfig, _serializerOptions);
+            var json = JsonSerializer.Serialize(CurrentConfig, AppJsonContext.Default.AppConfig);
             File.WriteAllText(_configPath, json);
             Console.WriteLine($"Saved {_configPath}");
         }
@@ -87,23 +81,21 @@ public class ConfigurationService : IConfigurationService
             language = AutoDetectLanguage();
         }
         ApplyLanguage(language);
+
         // 主题
-        var theme = CurrentConfig.ThemeName;
-        if (CurrentConfig.AutoDetectDarkMode)
+        var theme = CurrentConfig.ThemeVariantMode switch
         {
-            var actualThemeVariant = Application.Current?.ActualThemeVariant;
-            var isDarkMode = actualThemeVariant == ThemeVariant.Dark
-                             || actualThemeVariant?.InheritVariant == ThemeVariant.Dark;
-            if (isDarkMode)
-            {
-                theme = AppConfig.DarkTheme.Name;
-            }
-        }
+            ThemeVariantMode.Automatic when AppConfig.IsSystemDarkMode => CurrentConfig.DarkThemeName,
+            ThemeVariantMode.Dark => CurrentConfig.DarkThemeName,
+            _ => CurrentConfig.ThemeName
+        };
         ApplyTheme(theme);
     }
 
     public void ApplyLanguage(string language)
     {
+        if (string.IsNullOrEmpty(language))
+            language = AutoDetectLanguage();
         CultureInfo.DefaultThreadCurrentCulture = new CultureInfo(language);
         Thread.CurrentThread.CurrentUICulture = CultureInfo.GetCultureInfo(language);
         Thread.CurrentThread.CurrentCulture = CultureInfo.GetCultureInfo(language);
@@ -113,16 +105,27 @@ public class ConfigurationService : IConfigurationService
 
     public void ApplyTheme(string theme)
     {
-        var themeModel = AppConfig.AllThemes.Find(x => x.Name == theme);
+        if (string.IsNullOrWhiteSpace(theme)) return;
+
+        var themeModel = ThemeModel.AllThemes.Concat(ThemeModel.AllDarkThemes).FirstOrDefault(x => x.Name == theme);
+
         if (themeModel == null) return;
 
         Application.Current!.RequestedThemeVariant = themeModel.Variant;
-        CurrentConfig.ThemeName = theme;
+
+        if (themeModel.IsDarkTheme)
+        {
+            CurrentConfig.DarkThemeName = theme;
+        }
+        else
+        {
+            CurrentConfig.ThemeName = theme;
+        }
     }
 
     private static string AutoDetectLanguage()
     {
-        var currLoc = Thread.CurrentThread.CurrentUICulture.Name;
+        var currLoc = AppConfig.SystemLocName;
         var loc = currLoc switch
         {
             "zh-CN" or "zh-SG" => "zh-CN",
