@@ -534,13 +534,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private void BuildThemeMenuItems()
     {
         ThemeMenuItems.Clear();
-        foreach (var theme in AppConfig.AllThemes)
+        foreach (var theme in ThemeModel.AllThemes.Concat(ThemeModel.AllDarkThemes))
         {
             var menuItem = new MenuItem()
             {
                 Header = theme.Name,
                 ToggleType = MenuItemToggleType.Radio,
-                IsChecked = _configService.CurrentConfig.ThemeModel == theme
+                IsChecked = Application.Current!.ActualThemeVariant == theme.Variant
             };
             menuItem.Click += (r, s) => SelectedTheme = theme;
             ThemeMenuItems.Add(menuItem);

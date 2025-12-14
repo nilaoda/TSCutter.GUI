@@ -1,23 +1,26 @@
-using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
-using Classic.Avalonia.Theme;
-using TSCutter.GUI.Themes;
 
 namespace TSCutter.GUI.Models;
 
 public class AppConfig
 {
+    // 系统当前是否处于深色模式
     [JsonIgnore]
-    public static ThemeModel DarkTheme { get; } = new("Standard (Dark)", CustomTheme.DarkStandard);
+    public static bool IsSystemDarkMode { get; set; }
+    // 系统当前是否处于深色模式
     [JsonIgnore]
-    public static List<ThemeModel> AllThemes { get; } = [..ClassicTheme.AllVariants.Select(x => new ThemeModel(x)), DarkTheme];
+    public static string SystemLocName { get; set; }
+
     [JsonIgnore]
-    public ThemeModel ThemeModel => AllThemes.FirstOrDefault(x => x.Name == ThemeName)!;
+    public ThemeModel ThemeModel => ThemeModel.AllThemes.FirstOrDefault(x => x.Name == ThemeName)!;
+    [JsonIgnore]
+    public ThemeModel DarkThemeModel => ThemeModel.AllDarkThemes.FirstOrDefault(x => x.Name == DarkThemeName)!;
 
     public string Language { get; set; } = "en-US";
-    public string ThemeName { get; set; } = ClassicTheme.AllVariants[0].Key.ToString()!;
-    public bool AutoDetectDarkMode { get; set; } = true;
+    public string ThemeName { get; set; } = ThemeModel.AllThemes[0].Name;
+    public string DarkThemeName { get; set; } = ThemeModel.AllDarkThemes[0].Name;
+    public ThemeVariantMode ThemeVariantMode { get; set; } = ThemeVariantMode.Automatic;
     public bool AutoDetectLanguage { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;
 }

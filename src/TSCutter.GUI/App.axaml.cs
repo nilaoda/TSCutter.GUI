@@ -1,12 +1,15 @@
 using System;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
+using Avalonia.Styling;
 using Classic.CommonControls.Dialogs;
 using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.Avalonia;
 using Splat;
+using TSCutter.GUI.Models;
 using TSCutter.GUI.Services;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.ViewModels;
@@ -45,6 +48,19 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        // 检测深色模式
+        var actualThemeVariant = Current?.ActualThemeVariant;
+        var isDarkMode = actualThemeVariant == ThemeVariant.Dark
+                         || actualThemeVariant?.InheritVariant == ThemeVariant.Dark;
+        if (isDarkMode)
+        {
+            AppConfig.IsSystemDarkMode = true;
+        }
+        
+        // 记录系统当前本地化名称
+        AppConfig.SystemLocName = Thread.CurrentThread.CurrentUICulture.Name;
+
+        // 加载配置
         var configService = Locator.Current.GetService<IConfigurationService>()!;
         configService.Load();
 
