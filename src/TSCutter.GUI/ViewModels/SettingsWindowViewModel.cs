@@ -79,12 +79,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.CurrentConfig.ThemeVariantMode = SelectedThemeVariantMode;
 
         // 应用主题
-        if (AppConfig.IsSystemDarkMode && SelectedThemeVariantMode == ThemeVariantMode.Automatic)
-        {
-            // 当前系统处于深色模式，且主题模式为自动，则切换到深色主题
-            _configService.ApplyTheme(SelectedDarkTheme.Name);
-        }
-        else switch (SelectedThemeVariantMode)
+        switch (SelectedThemeVariantMode)
         {
             case ThemeVariantMode.Light:
                 _configService.ApplyTheme(SelectedTheme.Name);
@@ -93,6 +88,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
                 _configService.ApplyTheme(SelectedDarkTheme.Name);
                 break;
             case ThemeVariantMode.Automatic:
+                _configService.ApplyTheme(AppConfig.IsSystemDarkMode ? SelectedDarkTheme.Name : SelectedTheme.Name);
                 break;
             default:
                 throw new ArgumentOutOfRangeException();
