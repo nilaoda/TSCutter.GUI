@@ -1,9 +1,8 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Avalonia.Media.Imaging;
 using Sdcb.FFmpeg.Codecs;
-using Sdcb.FFmpeg.Common;
 using Sdcb.FFmpeg.Formats;
 using Sdcb.FFmpeg.Raw;
 using Sdcb.FFmpeg.Toolboxs.Extensions;
@@ -16,6 +15,11 @@ namespace TSCutter.GUI.Models;
 
 public class VideoInstance(string filePath) : IDisposable
 {
+    private static readonly HashSet<string> HardwareTags = new() 
+    { 
+        "cuvid", "qsv", "vaapi", "dxva2", "d3d11va", "videotoolbox", "mediacodec", "nvdec", "amf" 
+    };
+
     private const int MAX_FAILURE_COUT = 100;
     private const int AV_PKT_FLAG_KEY_FRAME = 0x0001;
     public long PositionInFile { get; private set; } = 0;
@@ -55,17 +59,29 @@ public class VideoInstance(string filePath) : IDisposable
             throw new Exception("Read Failed!");
         }
 
-        var decoders = Codec.FindDecoders(inVideoStream.Codecpar!.CodecId).ToList();
+        var decoders = Codec.FindDecoders(inVideoStream.Codecpar!.CodecId)
+            .Where(x =>
+            {
+                var name = x.Name;
+                // 排除名称中有硬件标识符的解码器
+                return HardwareTags.All(tag => !name.Contains(tag, StringComparison.OrdinalIgnoreCase));
+            })
+            .ToList();
         if (decoders.Count == 0)
         {
             throw new Exception("Cant find decoder!");
         }
 
+        foreach (var decoder in decoders)
+        {
+            Console.WriteLine($"Found decoder: {decoder.Name}");
+        }
+        
         videoStreamIndex = inVideoStream.Index;
         timeBase = inVideoStream.TimeBase;
 
-        var firstDecoder = decoders.First();
-        videoDecoder = new(Codec.FindDecoderById(firstDecoder.Id));
+        var firstDecoder = decoders.Last();
+        videoDecoder = new(firstDecoder);
         videoDecoder.SkipFrame = AVDiscard.Nonkey;
         videoDecoder.FillParameters(inVideoStream.Codecpar!);
         videoDecoder.Open();
@@ -195,7 +211,7 @@ public class VideoInstance(string filePath) : IDisposable
             // PositionInFile = packet.Position;
             // Console.WriteLine($"Current packet positon: {packet.Position}");
 
-            var result = DecodePacket(packet);
+            var result = DecodePacket(packet, packet.Position);
             if (result != null)
             {
                 return result;
@@ -255,7 +271,7 @@ public class VideoInstance(string filePath) : IDisposable
         return TimeSpan.FromSeconds((pts - firstFrameTimestamp) / t);
     }
     
-    private DecodeResult? DecodePacket(Packet packet)
+    private DecodeResult? DecodePacket(Packet packet, long packetPosition)
     {
         try
         {
@@ -270,13 +286,21 @@ public class VideoInstance(string filePath) : IDisposable
                 }
 
 #pragma warning disable CS0618 // Obsolete
-                if (frame.KeyFrame == 0)
-                    continue;
-                Console.WriteLine($"Current keyFrame: {frame.Pts}");
-                currentKeyFramePts = frame.Pts;
-                PositionInFile = frame.PktPosition;
-                Console.WriteLine($"Current keyFrame PktPosition: {frame.PktPosition}");
-                if (AudioMode && frame.PktPosition == -1)
+                // if (frame.KeyFrame == 0)
+                //     continue;
+                var pts = frame.Pts;
+                if (!AudioMode && pts < 0)
+                    pts = frame.BestEffortTimestamp;
+                
+                Console.WriteLine($"Current keyFrame: {pts}");
+                currentKeyFramePts = pts;
+                var pktPosition = frame.PktPosition;
+                if (!AudioMode && pktPosition == -1)
+                    pktPosition = packetPosition;
+                
+                PositionInFile = pktPosition;
+                Console.WriteLine($"Current keyFrame PktPosition: {pktPosition}");
+                if (AudioMode && pktPosition == -1)
                     continue;
 #pragma warning restore CS0618 // Obsolete
 
@@ -285,7 +309,7 @@ public class VideoInstance(string filePath) : IDisposable
                 return new DecodeResult()
                 {
                     Bitmap = bitmap,
-                    FrameTimestamp = PtsToTimeSpan(frame.Pts),
+                    FrameTimestamp = PtsToTimeSpan(pts),
                 };
             }
         }
