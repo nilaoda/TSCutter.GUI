@@ -50,6 +50,15 @@ public static class FFmpegNativeBootstrapper
             }
 
             _initialized = true;
+            if (TryProbeDirectory(AppContext.BaseDirectory, "bundle:app-base", out var bundledResult, out _))
+            {
+                _probeResult = bundledResult;
+                _diagnosticSummary = $"FFmpeg dylibs resolved from '{bundledResult.RootPath}' ({bundledResult.Source}).";
+                Console.WriteLine(_diagnosticSummary);
+                PreloadLibraries(bundledResult);
+                return;
+            }
+
             var probeNotes = new List<string>();
             foreach (var candidate in BuildCandidateDirectories(config))
             {
