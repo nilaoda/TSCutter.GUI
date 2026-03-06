@@ -1,0 +1,41 @@
+name: Build macOS FFmpeg Runtime
+
+on:
+  workflow_dispatch:
+    inputs:
+      ffmpeg_version:
+        description: FFmpeg 7.x version to build
+        required: true
+        default: 7.1.3
+      license_flavor:
+        description: Runtime license flavor
+        required: true
+        type: choice
+        default: gpl
+        options:
+          - gpl
+          - lgpl
+
+jobs:
+  build-osx-arm64-runtime:
+    name: Build FFmpeg Runtime [osx-arm64]
+    runs-on: macos-14
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build runtime
+        run: |
+          chmod +x tools/build_ffmpeg_runtime_macos.sh
+          tools/build_ffmpeg_runtime_macos.sh \
+            "${{ github.event.inputs.ffmpeg_version }}" \
+            "${{ github.event.inputs.license_flavor }}" \
+            "$RUNNER_TEMP/ffmpeg-runtime-build"
+
+      - name: Upload runtime artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-runtime-osx-arm64-${{ github.event.inputs.license_flavor }}-shared-${{ github.event.inputs.ffmpeg_version }}
+          path: ${{ runner.temp }}/ffmpeg-runtime-build/artifacts/*.zip
+          if-no-files-found: error
+          retention-days: 14
