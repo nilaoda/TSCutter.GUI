@@ -18,6 +18,11 @@ Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilao
 
 The macOS arm64 release archive now extracts to `TSCutter.GUI.app`, so users can launch the app directly after unzipping.
 
+If macOS blocks the app with a quarantine warning, run:
+```bash
+xattr -dr com.apple.quarantine TSCutter.GUI.app
+```
+
 If you are building or running the app from source without those bundled runtimes, you still need a compatible FFmpeg 7 installation.
 
 ### Linux source builds
