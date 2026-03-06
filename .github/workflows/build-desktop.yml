@@ -2,6 +2,12 @@ name: Build and Release
 
 on:
   workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Publish GitHub release after build
+        required: true
+        type: boolean
+        default: true
 
 env:
   DOTNET_SDK_VERSION: 10.x
@@ -128,16 +134,63 @@ jobs:
       - name: Publish [osx-arm64]
         run: dotnet publish src/TSCutter.GUI -r osx-arm64 -c Release -o artifact
 
-      - name: Download FFmpeg Runtime [osx-arm64]
+      - name: Assemble .app [osx-arm64]
         run: |
-          mkdir -p artifact/runtimes/osx/native
+          APP_NAME="TSCutter.GUI.app"
+          APP_ROOT="$RUNNER_TEMP/$APP_NAME"
+          CONTENTS_DIR="$APP_ROOT/Contents"
+          MACOS_DIR="$CONTENTS_DIR/MacOS"
+          RESOURCES_DIR="$CONTENTS_DIR/Resources"
+          ICON_SOURCE="$GITHUB_WORKSPACE/src/TSCutter.GUI/Assets/logo.png"
+          APP_VERSION="$(grep -m1 '<Version>' src/TSCutter.GUI/TSCutter.GUI.csproj | sed -E 's/.*<Version>([^<]+)<\/Version>.*/\1/')"
+
+          rm -rf "$APP_ROOT"
+          mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
+
+          cp -R artifact/. "$MACOS_DIR/"
           curl -L "${{ env.FFMPEG_RUNTIME_OSX_ARM64_URL }}" -o "$RUNNER_TEMP/ffmpeg-runtime-osx-arm64.zip"
-          unzip -o "$RUNNER_TEMP/ffmpeg-runtime-osx-arm64.zip" -d artifact/runtimes/osx/native
+          unzip -o "$RUNNER_TEMP/ffmpeg-runtime-osx-arm64.zip" -d "$MACOS_DIR"
+          find "$MACOS_DIR" -maxdepth 1 -name '*.dSYM' -prune -exec rm -rf {} +
+
+          sips -s format icns "$ICON_SOURCE" --out "$RESOURCES_DIR/logo.icns" >/dev/null
+
+          cat > "$CONTENTS_DIR/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>en</string>
+            <key>CFBundleDisplayName</key>
+            <string>TSCutter.GUI</string>
+            <key>CFBundleExecutable</key>
+            <string>TSCutterGUI</string>
+            <key>CFBundleIconFile</key>
+            <string>logo.icns</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.nilaoda.tscuttergui</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>TSCutter.GUI</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>$APP_VERSION</string>
+            <key>CFBundleVersion</key>
+            <string>${{ needs.set-date.outputs.date }}</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>13.0</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
 
       - name: Package [osx-arm64]
         run: |
-          cd artifact
-          zip -r ../TSCutter.GUI_Alpha_osx-arm64_${{ needs.set-date.outputs.date }}.zip . -x "*.dSYM/*"
+          cd "$RUNNER_TEMP"
+          ditto -c -k --sequesterRsrc --keepParent "TSCutter.GUI.app" "$GITHUB_WORKSPACE/TSCutter.GUI_Alpha_osx-arm64_${{ needs.set-date.outputs.date }}.zip"
 
       - name: Upload Artifact [osx-arm64]
         uses: actions/upload-artifact@v4
@@ -146,6 +199,7 @@ jobs:
           path: TSCutter.GUI_Alpha_osx-arm64_${{ needs.set-date.outputs.date }}.zip
 
   release:
+    if: ${{ github.event.inputs.publish_release != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

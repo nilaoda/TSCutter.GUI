@@ -16,6 +16,8 @@ Official release packages bundle the required **FFmpeg 7.1.3** shared libraries.
 
 Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries/releases/tag/20260306). The Windows x64, Linux x64, and macOS arm64 FFmpeg shared libraries used by TSCutter.GUI releases are all maintained in that repository.
 
+The macOS arm64 release archive now extracts to `TSCutter.GUI.app`, so users can launch the app directly after unzipping.
+
 If you are building or running the app from source without those bundled runtimes, you still need a compatible FFmpeg 7 installation.
 
 ### Linux source builds
