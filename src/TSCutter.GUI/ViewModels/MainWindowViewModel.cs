@@ -442,7 +442,10 @@ public partial class MainWindowViewModel : ViewModelBase
             ClearVars();
             _videoInstance?.Close();
             Console.WriteLine($"Failed to load video: {e}");
-            await ShowMessageAsync(e.Message, LocalizationManager.Instance.String_FailedToLoadVideo, MessageBoxIcon.Error);
+            await ShowMessageAsync(
+                FFmpegNativeBootstrapper.BuildLoadFailureMessage(e),
+                LocalizationManager.Instance.String_FailedToLoadVideo,
+                MessageBoxIcon.Error);
         }
     }
 

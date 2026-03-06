@@ -23,4 +23,5 @@ public class AppConfig
     public ThemeVariantMode ThemeVariantMode { get; set; } = ThemeVariantMode.Automatic;
     public bool AutoDetectLanguage { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;
+    public string? FFmpegRootPath { get; set; }
 }

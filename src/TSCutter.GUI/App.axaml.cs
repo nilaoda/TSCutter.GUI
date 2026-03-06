@@ -63,6 +63,7 @@ public partial class App : Application
         // 加载配置
         var configService = Locator.Current.GetService<IConfigurationService>()!;
         configService.Load();
+        FFmpegNativeBootstrapper.Initialize(configService.CurrentConfig);
 
         GC.KeepAlive(typeof(DialogService));
         DialogService.Show(null, MainWindow);
