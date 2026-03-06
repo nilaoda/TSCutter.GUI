@@ -53,6 +53,4 @@ If your FFmpeg 7 installation lives somewhere else, you can set `FFmpegRootPath`
 This project is inspired by an excellent editing software called [VidePub](https://sourceforge.net/projects/videpub/).
 
 ## License
-This project is licensed under the LGPL-3.0 License.
-
-Official binary releases additionally bundle GPL FFmpeg shared libraries from `FFmpegSharedLibraries`. See that runtime repository for the corresponding build artifacts and source-distribution details.
+This project is licensed under the GPL-3.0 License.

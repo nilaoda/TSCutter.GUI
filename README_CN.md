@@ -53,6 +53,4 @@ brew install ffmpeg@7
 此项目灵感来自一个出色的DVB视频剪辑软件 [VidePub](https://sourceforge.net/projects/videpub/)。
 
 ## 许可证
-本项目采用 LGPL-3.0 许可证。
-
-官方二进制发布包额外内置了来自 `FFmpegSharedLibraries` 的 GPL 版 FFmpeg 共享库；对应运行时构建产物和源码分发信息请以该运行时仓库为准。
+本项目采用 GPL-3.0 许可证。
