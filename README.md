@@ -11,11 +11,14 @@ TSCutter.GUI is a lightweight tool designed to efficiently cut TS (Transport Str
 - **Multi-Platform Support**: Available for Windows, Linux, and macOS.
 - **High Performance**: Leveraging direct binary data copying for maximum efficiency.
 
-## Prerequisites
-This software depends on the dynamic libraries of **FFmpeg 7.0**.
-### Windows
-Run `.exe` directly. Bundled libraries: [Sdcb.FFmpeg.runtime.windows-x64](https://www.nuget.org/packages/Sdcb.FFmpeg.runtime.windows-x64/7.0.0)
-### Linux
+## FFmpeg Runtime
+Official release packages bundle the required **FFmpeg 7.1.3** shared libraries. End users do not need to install FFmpeg manually anymore.
+
+Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries/releases/tag/20260306). The Windows x64, Linux x64, and macOS arm64 FFmpeg shared libraries used by TSCutter.GUI releases are all maintained in that repository.
+
+If you are building or running the app from source without those bundled runtimes, you still need a compatible FFmpeg 7 installation.
+
+### Linux source builds
 Installing FFmpeg on Linux depends on the distribution you are using.
 
 On Ubuntu 22.04:
@@ -24,34 +27,15 @@ sudo add-apt-repository ppa:ubuntuhandbook1/ffmpeg7
 sudo apt update
 sudo apt install ffmpeg
 ```
-### macOS
+
+### macOS source builds
 ```bash
-brew install ffmpeg
+brew install ffmpeg@7
 ```
 
-<details>
-<summary>more</summary>
+The app first looks for bundled dylibs in the release package. If they are not present, it will automatically probe common Homebrew locations such as `/opt/homebrew/opt/ffmpeg@7/lib` and `/usr/local/opt/ffmpeg@7/lib`.
 
-If the program crashes, you may need to manually create a symbolic link to ensure the program works properly:
-
-```
-sudo mkdir /usr/local/lib
-
-sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libavcodec.61.19.100.dylib /usr/local/lib/libavcodec.61.dylib
-sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libavdevice.61.3.100.dylib /usr/local/lib/libavdevice.61.dylib
-sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libavfilter.10.4.100.dylib /usr/local/lib/libavfilter.10.dylib
-sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libavformat.61.7.100.dylib /usr/local/lib/libavformat.61.dylib
-sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libavutil.59.39.100.dylib /usr/local/lib/libavutil.59.dylib
-sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libpostproc.58.3.100.dylib /usr/local/lib/libpostproc.58.dylib
-sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libswresample.5.3.100.dylib /usr/local/lib/libswresample.5.dylib
-sudo ln -s /opt/homebrew/Cellar/ffmpeg/7.1_3/lib/libswscale.8.3.100.dylib /usr/local/lib/libswscale.8.dylib
-
-echo 'export DYLD_LIBRARY_PATH=/usr/local/lib:$DYLD_LIBRARY_PATH' >> ~/.zshrc
-source ~/.zshr
-```
-
-</details>
-
+If your FFmpeg 7 installation lives somewhere else, you can set `FFmpegRootPath` in `~/Library/Application Support/TSCutter.GUI/config.json` to either the FFmpeg root directory or its `lib` directory.
 
 ## Screen
 ![img](img/SS1.png)
@@ -68,3 +52,5 @@ This project is inspired by an excellent editing software called [VidePub](https
 
 ## License
 This project is licensed under the LGPL-3.0 License.
+
+Official binary releases additionally bundle GPL FFmpeg shared libraries from `FFmpegSharedLibraries`. See that runtime repository for the corresponding build artifacts and source-distribution details.

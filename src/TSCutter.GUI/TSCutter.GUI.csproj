@@ -39,13 +39,6 @@
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
     </ItemGroup>
-    
-    <ItemGroup Condition="'$(OS)' == 'Windows_NT'">
-        <PackageReference Include="Sdcb.FFmpeg.runtime.windows-x64" Version="7.0.0" />
-        <None Update="$(NuGetPackageRoot)sdcb.ffmpeg.runtime.windows-x64\**\*.dll">
-            <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-        </None>
-    </ItemGroup>
 
     <ItemGroup>
         <!-- 引用生成器项目 -->
