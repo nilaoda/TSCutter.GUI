@@ -93,7 +93,7 @@ public class VideoInstance(string filePath) : IDisposable
             DecodeNextFrame();
             var firstKeyFramePts = currentKeyFramePts;
             DecodeNextFrame();
-            keyFrameGap = currentKeyFramePts - firstKeyFramePts;
+            keyFrameGap = Math.Abs(currentKeyFramePts - firstKeyFramePts);
             Console.WriteLine($"keyFrameGap: {keyFrameGap}");
             Seek(firstFrameTimestamp);
         }
