@@ -179,16 +179,25 @@ public class VideoInstance(string filePath) : IDisposable
 
     private DecodeResult DecodeNextFrame(int count = 1)
     {
+        return DecodeNextFrame(count, currentKeyFramePts, true, 0);
+    }
+
+    private DecodeResult DecodeNextFrame(int count, long anchorPts, bool applyInitialSeek, int retryCount)
+    {
         var failureCount = 0;
+        var backward = count < 0;
+
+        if (retryCount > MAX_FAILURE_COUT)
+            throw new TooManyDecodeFailuresException("Too many failed packets!");
         
-        if (count < 0)
+        if (applyInitialSeek && count < 0)
         {
             // Seek backward by keyframe gap * abs(count)
             var targetPts = Math.Max(0, currentKeyFramePts - Math.Abs(keyFrameGap) * (Math.Abs(count) + 1)) - 2;
             Seek(targetPts, AVSEEK_FLAG.Backward);
         }
 
-        if (count > 1)
+        if (applyInitialSeek && count > 1)
         {
             // Seek forward by keyframe gap * abs(count)
             var targetPts = Math.Min(maxPts, currentKeyFramePts + Math.Abs(keyFrameGap) * Math.Abs(count)) + 2;
@@ -214,7 +223,13 @@ public class VideoInstance(string filePath) : IDisposable
             var result = DecodePacket(packet, packet.Position);
             if (result != null)
             {
-                return result;
+                if (!backward || currentKeyFramePts < anchorPts)
+                {
+                    return result;
+                }
+
+                Console.WriteLine($"Skip[SameOrLaterFrame] keyFrame: {currentKeyFramePts}, anchorPts: {anchorPts}");
+                break;
             }
             if (failureCount++ > MAX_FAILURE_COUT)
             {
@@ -223,12 +238,13 @@ public class VideoInstance(string filePath) : IDisposable
             Console.WriteLine("result is null");
         }
 
-        // No keyframe found, retry by seeking slightly earlier
+        // No suitable keyframe found, retry by seeking slightly earlier
         if (!AudioMode && lastSeekPts - 1000 < 0)
             throw new Exception("Decode Failed!");
 
-        Seek(lastSeekPts - keyFrameGap / 2);
-        return DecodeNextFrame();
+        var retryStep = backward ? keyFrameGap : keyFrameGap / 2;
+        Seek(lastSeekPts - retryStep, backward ? AVSEEK_FLAG.Backward : 0);
+        return DecodeNextFrame(backward ? -1 : 1, anchorPts, false, retryCount + 1);
     }
 
     public double GetVideoDurationInSeconds()
