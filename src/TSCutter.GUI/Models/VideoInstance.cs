@@ -156,7 +156,7 @@ public class VideoInstance(string filePath) : IDisposable
         //     return;
         Console.WriteLine($"SeekFile lastSeekPts: {lastSeekPts}, targetPts: {pts}");
         lastSeekPts = pts;
-        inFc.SeekFile(pts - keyFrameGap * 3 - 2, pts - keyFrameGap * 4, pts, videoStreamIndex);
+        inFc.SeekFrame(pts - keyFrameGap * 4, videoStreamIndex);
         // flush
         videoDecoder.FlushBuffers();
     }
