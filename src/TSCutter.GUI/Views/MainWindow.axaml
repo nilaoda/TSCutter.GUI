@@ -426,5 +426,9 @@
                 </Grid>
             </ClassicBorderDecorator>
         </DockPanel>
+        <Grid Grid.RowSpan="2"
+              ZIndex="99"
+              IsVisible="{Binding IsDecoding}"
+              Background="Transparent" />
     </Grid>
 </Window>

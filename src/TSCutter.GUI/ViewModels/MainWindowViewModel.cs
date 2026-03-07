@@ -101,13 +101,17 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private async Task JumpToTimeAsync(long time)
     {
-        await SeekFileAsync(time);
-        // 解码至目标关键帧
-        await DrawNextFrameAsync(1);
-        while (CurrentPts < time)
+        if (!IsVideoInitialized || IsDecoding) return;
+        await RunDecodeOperationAsync(async () =>
         {
-            await DrawNextFrameAsync(1);
-        }
+            await SeekFileAsync(time, true);
+            // 解码至目标关键帧
+            await DrawNextFrameCoreAsync(1);
+            while (CurrentPts < time)
+            {
+                await DrawNextFrameCoreAsync(1);
+            }
+        });
     }
     
     [RelayCommand]
@@ -289,8 +293,13 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusInfoText))]
     public partial long DecodeCost { get; set; } = 0L;
+    
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsDecoding))]
+    public partial int DecodingOpCount { get; set; } = 0;
 
     public string StatusInfoText => IsVideoInitialized ? $"{VideoInfoText} | {DecodeCost,3}ms" : PleaseLoadTip;
+    public bool IsDecoding => DecodingOpCount > 0;
 
     public string ZoomFactorStr => string.Format(LocalizationManager.Instance.String_ZoomFactor, $"{ZoomFactor * 100.0:0}");
 
@@ -379,13 +388,36 @@ public partial class MainWindowViewModel : ViewModelBase
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
 
-    public async Task SeekToTimeAsync(TimeSpan timeSpan) => await _videoInstance!.SeekToTimeAsync(timeSpan);
-    public async Task SeekFileAsync(long pts) => await _videoInstance!.SeekFileAsync(pts);
+    public async Task SeekToTimeAsync(TimeSpan timeSpan)
+    {
+        if (!IsVideoInitialized || IsDecoding) return;
+        await RunDecodeOperationAsync(() => _videoInstance!.SeekToTimeAsync(timeSpan));
+    }
+    
+    public async Task SeekFileAsync(long pts)
+    {
+        await SeekFileAsync(pts, false);
+    }
+
+    private async Task SeekFileAsync(long pts, bool bypassBusyCheck)
+    {
+        if (!IsVideoInitialized || (!bypassBusyCheck && IsDecoding)) return;
+        if (bypassBusyCheck)
+        {
+            await SeekFileCoreAsync(pts);
+            return;
+        }
+        await RunDecodeOperationAsync(() => SeekFileCoreAsync(pts));
+    }
     
     public async Task DrawNextFrameAsync(int count = 1)
     {
-        if (!IsVideoInitialized) return;
+        if (!IsVideoInitialized || IsDecoding) return;
+        await RunDecodeOperationAsync(() => DrawNextFrameCoreAsync(count));
+    }
 
+    private async Task DrawNextFrameCoreAsync(int count = 1)
+    {
         try
         {
             DecodeCost = 0;
@@ -421,20 +453,22 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             ClearVars();
             _videoInstance?.Close();
+            await RunDecodeOperationAsync(async () =>
+            {
+                _videoInstance = new VideoInstance(VideoPath);
+                await _videoInstance.InitVideoAsync();
+                VideoInfoText = _videoInstance.GetVideoInfoText();
+                DurationMax = _videoInstance.GetVideoDurationInSeconds();
         
-            _videoInstance = new VideoInstance(VideoPath);
-            await _videoInstance.InitVideoAsync();
-            VideoInfoText = _videoInstance.GetVideoInfoText();
-            DurationMax = _videoInstance.GetVideoDurationInSeconds();
-        
-            CloseVideoClickCommand.NotifyCanExecuteChanged();
-            SaveFrameClickCommand.NotifyCanExecuteChanged();
-            ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
+                CloseVideoClickCommand.NotifyCanExecuteChanged();
+                SaveFrameClickCommand.NotifyCanExecuteChanged();
+                ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
 
-            // decode
-            await DrawNextFrameAsync(1);
-            // 发送消息通知 View 执行 FitCommand
-            WeakReferenceMessenger.Default.Send(new FitMessage());
+                // decode
+                await DrawNextFrameCoreAsync(1);
+                // 发送消息通知 View 执行 FitCommand
+                WeakReferenceMessenger.Default.Send(new FitMessage());
+            });
         }
         catch (Exception e)
         {
@@ -447,6 +481,24 @@ public partial class MainWindowViewModel : ViewModelBase
                 LocalizationManager.Instance.String_FailedToLoadVideo,
                 MessageBoxIcon.Error);
         }
+    }
+
+    private async Task RunDecodeOperationAsync(Func<Task> action)
+    {
+        DecodingOpCount++;
+        try
+        {
+            await action();
+        }
+        finally
+        {
+            DecodingOpCount = Math.Max(0, DecodingOpCount - 1);
+        }
+    }
+    
+    private async Task SeekFileCoreAsync(long pts)
+    {
+        await _videoInstance!.SeekFileAsync(pts);
     }
 
     private async Task ShowMessageAsync(string message, string title = "TSCutter", MessageBoxIcon icon = MessageBoxIcon.None)
