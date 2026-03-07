@@ -14,7 +14,7 @@ TSCutter.GUI is a lightweight tool designed to efficiently cut TS (Transport Str
 ## FFmpeg Runtime
 Official release packages bundle the required **FFmpeg 7.1.3** shared libraries. End users do not need to install FFmpeg manually anymore.
 
-Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries/releases/tag/20260306). The Windows x64, Linux x64, and macOS arm64 FFmpeg shared libraries used by TSCutter.GUI releases are all maintained in that repository.
+Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries/releases/latest). The Windows x64, Linux x64, and macOS arm64 FFmpeg shared libraries used by TSCutter.GUI releases are all maintained in that repository.
 
 The macOS arm64 release archive now extracts to `TSCutter.GUI.app`, so users can launch the app directly after unzipping.
 
