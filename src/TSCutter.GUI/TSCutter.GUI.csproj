@@ -18,11 +18,11 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Avalonia" Version="11.3.9" />
-        <PackageReference Include="Avalonia.Desktop" Version="11.3.9" />
-        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.9" />
+        <PackageReference Include="Avalonia" Version="11.3.12" />
+        <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
         <!--Condition below is needed to remove Avalonia.Diagnostics package from build output in Release configuration.-->
-        <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.3.9" />
+        <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.3.12" />
         <PackageReference Include="Avalonia.ReactiveUI" Version="11.3.8" />
     </ItemGroup>
 
@@ -31,10 +31,10 @@
         <PackageReference Include="Classic.Avalonia.Theme" Version="11.3.0.3" />
         <PackageReference Include="Classic.Avalonia.Theme.DataGrid" Version="11.3.0.3" />
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
-        <PackageReference Include="HanumanInstitute.MvvmDialogs" Version="2.1.0" />
-        <PackageReference Include="HanumanInstitute.MvvmDialogs.Avalonia" Version="2.1.0" />
+        <PackageReference Include="HanumanInstitute.MvvmDialogs" Version="2.2.0" />
+        <PackageReference Include="HanumanInstitute.MvvmDialogs.Avalonia" Version="2.2.0" />
         <PackageReference Include="Sdcb.FFmpeg" Version="7.0.0" />
-        <PackageReference Include="Splat.DependencyInjection.SourceGenerator" Version="1.2.3">
+        <PackageReference Include="Splat.DependencyInjection.SourceGenerator" Version="2.2.2">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
