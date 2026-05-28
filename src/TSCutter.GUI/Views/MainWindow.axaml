@@ -20,7 +20,6 @@
         Title="{Binding WindowTitle}">
 
     <Window.Resources>
-        <converters:ClipToBrushConverter x:Key="ClipToBrushConverter" />
         <converters:SecondsToStringConverter x:Key="SecondsConverter" />
     </Window.Resources>
     
@@ -288,6 +287,8 @@
                                                Minimum="0"
                                                Maximum="{Binding DurationMax}"
                                                Value="{Binding CurrentTime, Mode=TwoWay}"
+                                               RangeStart="{Binding SelectedClip.StartTime, FallbackValue=-1}"
+                                               RangeEnd="{Binding SelectedClip.EndTime, FallbackValue=-1}"
                                                ValueChangedAfterMouseUp="CustomSlider_OnValueChangedAfterMouseUp">
                             <controls:CustomSlider.Styles>
                                 <Style Selector="Thumb:pointerover /template/ Ellipse#SliderInnerThumb">
@@ -304,17 +305,6 @@
                                 </ResourceDictionary>
                             </controls:CustomSlider.Resources>
                         </controls:CustomSlider>
-                        <!-- 选中范围展示 -->
-                        <Rectangle Grid.Row="2"
-                                   Height="5">
-                            <Rectangle.Fill>
-                                <MultiBinding Converter="{StaticResource ClipToBrushConverter}">
-                                    <Binding Path="DurationMax" />
-                                    <Binding Path="SelectedClip.StartTime" FallbackValue="null" />
-                                    <Binding Path="SelectedClip.EndTime" FallbackValue="null" />
-                                </MultiBinding>
-                            </Rectangle.Fill>
-                        </Rectangle>
                         <!-- 导航等控制键的一行 -->
                         <Grid Grid.Row="3" ColumnDefinitions="*, Auto, *" Margin="0,2,0,0">
                             <Grid.Styles>
