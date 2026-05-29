@@ -6,6 +6,7 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 
 namespace TSCutter.GUI.Controls;
@@ -14,6 +15,7 @@ namespace TSCutter.GUI.Controls;
 /// This class provides image display functionality, 
 /// supporting mouse drag for movement, mouse wheel for zooming in and out, 
 /// and intelligent image scaling for high-DPI scenarios.
+/// When AutoFit is enabled, the image automatically scales to fit the control size.
 /// </summary>
 public class ImageViewer : Control
 {
@@ -33,6 +35,12 @@ public class ImageViewer : Control
     public static readonly StyledProperty<double> MaxZoomFactorProperty = AvaloniaProperty.Register<ImageViewer, double>(nameof(MaxZoomFactor));
     
     public static readonly StyledProperty<double> MinZoomFactorProperty = AvaloniaProperty.Register<ImageViewer, double>(nameof(MinZoomFactor));
+
+    /// <summary>
+    /// When true, the image automatically scales to fit the control bounds when the control is resized.
+    /// Set to false when user manually zooms or drags, restored to true when FitToView is called.
+    /// </summary>
+    public static readonly StyledProperty<bool> AutoFitProperty = AvaloniaProperty.Register<ImageViewer, bool>(nameof(AutoFit), true);
 
     public Bitmap? Image
     {
@@ -70,6 +78,12 @@ public class ImageViewer : Control
         set => SetValue(MinZoomFactorProperty, value);
     }
 
+    public bool AutoFit
+    {
+        get => GetValue(AutoFitProperty);
+        set => SetValue(AutoFitProperty, value);
+    }
+
     public ICommand FitCommand => new RelayCommand(FitToView, () => true);
     
     private void FitToView()
@@ -81,6 +95,34 @@ public class ImageViewer : Control
 
         OffsetX = (Bounds.Width - Image.PixelSize.Width * Zoom / scalingFactor) / 2;
         OffsetY = (Bounds.Height - Image.PixelSize.Height * Zoom / scalingFactor) / 2;
+
+        // Re-enable auto-fit when user manually triggers fit
+        AutoFit = true;
+    }
+
+    private Size _previousBounds;
+
+    /// <summary>
+    /// Override ArrangeOverride to detect size changes and auto-fit the image.
+    /// </summary>
+    protected override Size ArrangeOverride(Size finalSize)
+    {
+        var result = base.ArrangeOverride(finalSize);
+
+        if (AutoFit && Image is not null && finalSize != _previousBounds && finalSize.Width > 0 && finalSize.Height > 0)
+        {
+            _previousBounds = finalSize;
+            // Use Dispatcher to defer the fit call, ensuring Bounds is updated
+            Dispatcher.UIThread.Post(() =>
+            {
+                var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
+                Zoom = Math.Min(Bounds.Width / Image.PixelSize.Width, Bounds.Height / Image.PixelSize.Height) * scalingFactor;
+                OffsetX = (Bounds.Width - Image.PixelSize.Width * Zoom / scalingFactor) / 2;
+                OffsetY = (Bounds.Height - Image.PixelSize.Height * Zoom / scalingFactor) / 2;
+            });
+        }
+
+        return result;
     }
 
     private Point _lastDragPoint;
@@ -125,6 +167,7 @@ public class ImageViewer : Control
         OffsetX += currentPoint.X - _lastDragPoint.X;
         OffsetY += currentPoint.Y - _lastDragPoint.Y;
         _lastDragPoint = currentPoint;
+        AutoFit = false;
         InvalidateVisual();
         e.Handled = true;
     }
@@ -148,6 +191,7 @@ public class ImageViewer : Control
         OffsetX -= (zoomCenter.X - OffsetX) * (zoomDelta - 1);
         OffsetY -= (zoomCenter.Y - OffsetY) * (zoomDelta - 1);
 
+        AutoFit = false;
         InvalidateVisual();
         _lastZoomTime = DateTime.Now;
         e.Handled = true;
