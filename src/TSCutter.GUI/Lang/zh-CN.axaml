@@ -8,6 +8,7 @@
     <x:String x:Key="String.WrongFormat">格式错误</x:String>
     <x:String x:Key="String.SaveFrame">保存帧</x:String>
     <x:String x:Key="String.PngImages">PNG 图片</x:String>
+    <x:String x:Key="String.JpgImages">JPG 图片</x:String>
     <x:String x:Key="String.TsFiles">MPEG2-TS 视频</x:String>
     <x:String x:Key="String.AllFiles">所有文件</x:String>
     <x:String x:Key="String.Error">错误</x:String>
@@ -109,4 +110,9 @@
     <x:String x:Key="String.RawCutter.InvalidRange">无效的范围，请检查起始和结束值。</x:String>
     <x:String x:Key="String.RawCutter.RangeBytes">范围:</x:String>
     <x:String x:Key="String.RawCutter.OutputSuccess">输出完成！</x:String>
+    <x:String x:Key="String.CaptureFrame.Title">截图</x:String>
+    <x:String x:Key="String.CaptureFrame.Action">操作</x:String>
+    <x:String x:Key="String.CaptureFrame.CopyToClipboard">复制到剪贴板</x:String>
+    <x:String x:Key="String.CaptureFrame.SaveToFile">保存到文件</x:String>
+    <x:String x:Key="String.CaptureFrame.Format">格式</x:String>
 </ResourceDictionary>

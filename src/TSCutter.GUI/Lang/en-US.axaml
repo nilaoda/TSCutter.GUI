@@ -8,6 +8,7 @@
     <x:String x:Key="String.WrongFormat">Wrong Format</x:String>
     <x:String x:Key="String.SaveFrame">Save a frame</x:String>
     <x:String x:Key="String.PngImages">PNG Images</x:String>
+    <x:String x:Key="String.JpgImages">JPG Images</x:String>
     <x:String x:Key="String.TsFiles">MPEG2-TS Videos</x:String>
     <x:String x:Key="String.AllFiles">All Files</x:String>
     <x:String x:Key="String.Error">Error</x:String>
@@ -109,4 +110,9 @@
     <x:String x:Key="String.RawCutter.InvalidRange">Invalid range. Please check start and end values.</x:String>
     <x:String x:Key="String.RawCutter.RangeBytes">Range:</x:String>
     <x:String x:Key="String.RawCutter.OutputSuccess">Output completed successfully!</x:String>
+    <x:String x:Key="String.CaptureFrame.Title">Capture Frame</x:String>
+    <x:String x:Key="String.CaptureFrame.Action">Action</x:String>
+    <x:String x:Key="String.CaptureFrame.CopyToClipboard">Copy to Clipboard</x:String>
+    <x:String x:Key="String.CaptureFrame.SaveToFile">Save to File</x:String>
+    <x:String x:Key="String.CaptureFrame.Format">Format</x:String>
 </ResourceDictionary>

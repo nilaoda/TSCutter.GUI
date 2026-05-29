@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
@@ -263,20 +263,41 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
     private async Task SaveFrameClickAsync()
     {
-        var defaultName = Path.GetFileNameWithoutExtension(VideoPath) + $"_{CommonUtil.FormatSeconds(CurrentTime, true)}.png";
-        var settings = new SaveFileDialogSettings
-        {
-            Title = LocalizationManager.Instance.String_SaveFrame,
-            SuggestedStartLocation =  new DesktopDialogStorageFolder(Path.GetDirectoryName(VideoPath)!),
-            SuggestedFileName = defaultName,
-            Filters = [new(LocalizationManager.Instance.String_PngImages, ["png"])],
-            DefaultExtension = "png"
-        };
-        var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
-        if (result is null) return;
+        if (DecodedBitmap is null) return;
 
-        using var stream = File.Create(result!.Path!.LocalPath);
-        DecodedBitmap?.Save(stream);
+        var captureVm = _dialogService.CreateViewModel<CaptureFrameViewModel>();
+        var dialogResult = await _dialogService.ShowDialogAsync(this, captureVm);
+        if (dialogResult != true) return;
+
+        if (captureVm.IsSaveToFile)
+        {
+            var defaultName = Path.GetFileNameWithoutExtension(VideoPath) + $"_{CommonUtil.FormatSeconds(CurrentTime, true)}";
+            var isPng = captureVm.IsPngFormat;
+            var ext = isPng ? "png" : "jpg";
+            var filterName = isPng
+                ? LocalizationManager.Instance.String_PngImages
+                : LocalizationManager.Instance.String_JpgImages;
+            var settings = new SaveFileDialogSettings
+            {
+                Title = LocalizationManager.Instance.String_SaveFrame,
+                SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(VideoPath)!),
+                SuggestedFileName = defaultName + "." + ext,
+                Filters = [new(filterName, [ext])],
+                DefaultExtension = ext
+            };
+            var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+            if (result is null) return;
+
+            using var stream = File.Create(result!.Path!.LocalPath);
+            if (isPng)
+                DecodedBitmap.Save(stream);
+            else
+                ImageUtil.SaveAsJpeg(DecodedBitmap, stream);
+        }
+        else
+        {
+            ImageUtil.CopyBitmapToClipboard(DecodedBitmap, captureVm.IsPngFormat);
+        }
     }
 
     [ObservableProperty]

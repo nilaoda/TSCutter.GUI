@@ -1,13 +1,17 @@
-﻿using System;
+using System;
 using System.Globalization;
+using System.IO;
 using System.Runtime.InteropServices;
 using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using Sdcb.FFmpeg.Raw;
 using Sdcb.FFmpeg.Swscales;
 using Sdcb.FFmpeg.Utils;
+using SkiaSharp;
 
 namespace TSCutter.GUI.Utils;
 
@@ -81,5 +85,40 @@ public static class ImageUtil
         ctx.DrawText(formattedText, textPosition);
 
         return bitmap;
+    }
+
+    public static void SaveAsJpeg(Bitmap bitmap, Stream stream, int quality = 90)
+    {
+        using var pngStream = new MemoryStream();
+        bitmap.Save(pngStream);
+        pngStream.Position = 0;
+        using var skBitmap = SKBitmap.Decode(pngStream);
+        using var skImage = SKImage.FromBitmap(skBitmap);
+        using var data = skImage.Encode(SKEncodedImageFormat.Jpeg, quality);
+        data.SaveTo(stream);
+    }
+
+    public static void CopyBitmapToClipboard(Bitmap bitmap, bool isPng)
+    {
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktopApp
+            && desktopApp.MainWindow?.Clipboard is { } clipboard)
+        {
+            var dt = new DataTransfer();
+            if (isPng)
+            {
+                var bitmapItem = new DataTransferItem();
+                bitmapItem.SetBitmap(bitmap);
+                dt.Add(bitmapItem);
+            }
+            else
+            {
+                using var jpgStream = new MemoryStream();
+                SaveAsJpeg(bitmap, jpgStream);
+                var jpgItem = new DataTransferItem();
+                jpgItem.Set(DataFormat.CreateBytesPlatformFormat("public.jpeg"), jpgStream.ToArray());
+                dt.Add(jpgItem);
+            }
+            _ = clipboard.SetDataAsync(dt);
+        }
     }
 }

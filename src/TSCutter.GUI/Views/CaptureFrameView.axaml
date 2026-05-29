@@ -1,0 +1,57 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.CaptureFrameView"
+        d:DataContext="{x:Static local:App.CaptureFrameDialog}"
+        x:DataType="viewModels:CaptureFrameViewModel"
+        Width="320" Height="240"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Title="{DynamicResource String.CaptureFrame.Title}">
+
+    <Grid Margin="12" RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*">
+        <Border Grid.Row="0" BorderBrush="Gray" BorderThickness="1"
+                Margin="0,0,0,8" Padding="8">
+            <StackPanel Spacing="6">
+                <TextBlock FontWeight="Bold" Text="{DynamicResource String.CaptureFrame.Action}" />
+                <RadioButton Content="{DynamicResource String.CaptureFrame.CopyToClipboard}"
+                             IsChecked="{Binding IsSaveToFile, Converter={x:Static local:App.InverseBoolConverter}}"
+                             GroupName="ActionGroup" />
+                <RadioButton Content="{DynamicResource String.CaptureFrame.SaveToFile}"
+                             IsChecked="{Binding IsSaveToFile}"
+                             GroupName="ActionGroup" />
+            </StackPanel>
+        </Border>
+
+        <Border Grid.Row="1" BorderBrush="Gray" BorderThickness="1"
+                Margin="0,0,0,8" Padding="8">
+            <StackPanel Spacing="6">
+                <TextBlock FontWeight="Bold" Text="{DynamicResource String.CaptureFrame.Format}" />
+                <RadioButton Content="PNG"
+                             IsChecked="{Binding IsPngFormat}"
+                             GroupName="FormatGroup" />
+                <RadioButton Content="JPG"
+                             IsChecked="{Binding IsPngFormat, Converter={x:Static local:App.InverseBoolConverter}}"
+                             GroupName="FormatGroup" />
+            </StackPanel>
+        </Border>
+
+        <StackPanel Grid.Row="2"
+                    Orientation="Horizontal"
+                    HorizontalAlignment="Right"
+                    Spacing="6">
+            <Button Content="{DynamicResource String.Ok}"
+                    Width="70"
+                    Command="{Binding ConfirmCommand}"
+                    IsDefault="True"/>
+            <Button Content="{DynamicResource String.Cancel}"
+                    Width="70"
+                    Command="{Binding CancelCommand}"
+                    IsCancel="True"/>
+        </StackPanel>
+    </Grid>
+</Window>
