@@ -24,6 +24,7 @@
     <x:String x:Key="String.Menu.CloseVideo">_Close Video</x:String>
     <x:String x:Key="String.Menu.Exit">_Exit</x:String>
     <x:String x:Key="String.Menu.Tools">_Tools</x:String>
+    <x:String x:Key="String.Menu.RawCutter">_Raw Cutter...</x:String>
     <x:String x:Key="String.Menu.Settings">_Settings...</x:String>
     <x:String x:Key="String.Menu.View">_View</x:String>
     <x:String x:Key="String.Menu.ZoomIn">Zoom In</x:String>
@@ -92,4 +93,20 @@
     <x:String x:Key="String.UpdatesInfo.NewVersionTitle">New version found</x:String>
     <x:String x:Key="String.UpdatesInfo.NewVersionInfo">Current: {0}, New: {1}</x:String>
     <x:String x:Key="String.UpdatesInfo.NewVersionAlert">Do you want to open the download page?</x:String>
+    <x:String x:Key="String.RawCutter.Title">Raw Cutter</x:String>
+    <x:String x:Key="String.RawCutter.FilePath">File Path:</x:String>
+    <x:String x:Key="String.RawCutter.SyncOffset">Sync Offset: {0} bytes</x:String>
+    <x:String x:Key="String.RawCutter.FileSize">File Size:</x:String>
+    <x:String x:Key="String.RawCutter.TotalPackets">Total Packets:</x:String>
+    <x:String x:Key="String.RawCutter.PacketMode">Packet Mode</x:String>
+    <x:String x:Key="String.RawCutter.OffsetMode">Offset Mode</x:String>
+    <x:String x:Key="String.RawCutter.StartPacket">Start Packet:</x:String>
+    <x:String x:Key="String.RawCutter.EndPacket">End Packet:</x:String>
+    <x:String x:Key="String.RawCutter.StartOffset">Start Offset (bytes):</x:String>
+    <x:String x:Key="String.RawCutter.EndOffset">End Offset (bytes):</x:String>
+    <x:String x:Key="String.RawCutter.Output">Output</x:String>
+    <x:String x:Key="String.RawCutter.NoSyncFound">No valid TS sync header found in the file.</x:String>
+    <x:String x:Key="String.RawCutter.InvalidRange">Invalid range. Please check start and end values.</x:String>
+    <x:String x:Key="String.RawCutter.RangeBytes">Range:</x:String>
+    <x:String x:Key="String.RawCutter.OutputSuccess">Output completed successfully!</x:String>
 </ResourceDictionary>

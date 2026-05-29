@@ -1,11 +1,11 @@
 ﻿using System;
 using System.ComponentModel;
+using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
-using TSCutter.GUI.Models;
 using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.ViewModels;
@@ -25,7 +25,9 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     public string PercentStr => $"{Percent:0.00}%";
     public string SpeedStr => $"{CommonUtil.FormatFileSize(Speed)}/s";
-    public PickedClip? SelectedClip { get; set; }
+    public string? SourceFilePath { get; set; }
+    public long StartPosition { get; set; }
+    public long EndPosition { get; set; }
     public string? OutputPath { get; set; }
     public Exception? Exception { get; private set; }
     
@@ -39,7 +41,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         try
         {
             _lastUpdateTime = DateTime.Now;
-            await CommonUtil.CopyFileAsync(SelectedClip!.InFileInfo, OutputPath!, SelectedClip!.StartPosition, SelectedClip!.EndPosition,
+            await CommonUtil.CopyFileAsync(new FileInfo(SourceFilePath!), OutputPath!, StartPosition, EndPosition,
                 (percent, bytesCopied) =>
                 {
                     Percent = percent;

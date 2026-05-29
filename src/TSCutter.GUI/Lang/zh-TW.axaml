@@ -24,6 +24,7 @@
     <x:String x:Key="String.Menu.CloseVideo">關閉影片</x:String>
     <x:String x:Key="String.Menu.Exit">離開(_E)</x:String>
     <x:String x:Key="String.Menu.Tools">工具(_T)</x:String>
+    <x:String x:Key="String.Menu.RawCutter">原始流截取(_R)...</x:String>
     <x:String x:Key="String.Menu.Settings">設定(_S)...</x:String>
     <x:String x:Key="String.Menu.View">檢視(_V)</x:String>
     <x:String x:Key="String.Menu.ZoomIn">放大</x:String>
@@ -92,4 +93,20 @@
     <x:String x:Key="String.UpdatesInfo.NewVersionTitle">發現新版本</x:String>
     <x:String x:Key="String.UpdatesInfo.NewVersionInfo">目前版本: {0}, 新版本: {1}</x:String>
     <x:String x:Key="String.UpdatesInfo.NewVersionAlert">是否開啟下載頁面？</x:String>
+    <x:String x:Key="String.RawCutter.Title">原始流截取</x:String>
+    <x:String x:Key="String.RawCutter.FilePath">檔案路徑:</x:String>
+    <x:String x:Key="String.RawCutter.SyncOffset">同步偏移: {0} 位元組</x:String>
+    <x:String x:Key="String.RawCutter.FileSize">檔案大小:</x:String>
+    <x:String x:Key="String.RawCutter.TotalPackets">總 Packet 數:</x:String>
+    <x:String x:Key="String.RawCutter.PacketMode">Packet 模式</x:String>
+    <x:String x:Key="String.RawCutter.OffsetMode">偏移量模式</x:String>
+    <x:String x:Key="String.RawCutter.StartPacket">起始 Packet:</x:String>
+    <x:String x:Key="String.RawCutter.EndPacket">結束 Packet:</x:String>
+    <x:String x:Key="String.RawCutter.StartOffset">起始偏移 (位元組):</x:String>
+    <x:String x:Key="String.RawCutter.EndOffset">結束偏移 (位元組):</x:String>
+    <x:String x:Key="String.RawCutter.Output">輸出</x:String>
+    <x:String x:Key="String.RawCutter.NoSyncFound">未找到有效的 TS 同步頭。</x:String>
+    <x:String x:Key="String.RawCutter.InvalidRange">無效的範圍，請檢查起始和結束值。</x:String>
+    <x:String x:Key="String.RawCutter.RangeBytes">範圍:</x:String>
+    <x:String x:Key="String.RawCutter.OutputSuccess">輸出完成！</x:String>
 </ResourceDictionary>

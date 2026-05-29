@@ -108,6 +108,9 @@
                                   Command="{Binding ExitApplicationCommand}"/>
                     </MenuItem>
                     <MenuItem Header="{DynamicResource String.Menu.Tools}">
+                        <MenuItem Header="{DynamicResource String.Menu.RawCutter}"
+                                  Command="{Binding RawCutterClickCommand}" />
+                        <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.Settings}"
                                   Command="{Binding SettingsClickCommand}" />
                     </MenuItem>
