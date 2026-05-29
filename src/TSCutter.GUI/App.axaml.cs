@@ -9,6 +9,7 @@ using Classic.CommonControls.Dialogs;
 using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.Avalonia;
 using Splat;
+using TSCutter.GUI.Converters;
 using TSCutter.GUI.Models;
 using TSCutter.GUI.Services;
 using TSCutter.GUI.Utils;
@@ -39,6 +40,7 @@ public partial class App : Application
         SplatRegistrations.Register<MediainfoWindowViewModel>();
         SplatRegistrations.Register<SettingsWindowViewModel>();
         SplatRegistrations.Register<UpdatesInfoWindowViewModel>();
+        SplatRegistrations.Register<CaptureFrameViewModel>();
         // --- 注册单例服务 ---
         var localizationService = new LocalizationService();
         SplatRegistrations.RegisterConstant<ILocalizationService>(localizationService);
@@ -110,6 +112,8 @@ public partial class App : Application
     public static MediainfoWindowViewModel MediainfoDialog => Locator.Current.GetService<MediainfoWindowViewModel>()!;
     public static SettingsWindowViewModel SettingsDialog => Locator.Current.GetService<SettingsWindowViewModel>()!;
     public static UpdatesInfoWindowViewModel UpdatesInfoDialog => Locator.Current.GetService<UpdatesInfoWindowViewModel>()!;
+    public static CaptureFrameViewModel CaptureFrameDialog => Locator.Current.GetService<CaptureFrameViewModel>()!;
+    public static InverseBoolConverter InverseBoolConverter => InverseBoolConverter.Instance;
     public static IDialogService DialogService => Locator.Current.GetService<IDialogService>()!;
     public static ILocalizationService LocalizationService => Locator.Current.GetService<ILocalizationService>()!;
 }
