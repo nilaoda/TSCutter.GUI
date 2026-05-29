@@ -104,13 +104,11 @@ public static class ImageUtil
             && desktopApp.MainWindow?.Clipboard is { } clipboard)
         {
             var dt = new DataTransfer();
-            if (isPng)
-            {
-                var bitmapItem = new DataTransferItem();
-                bitmapItem.SetBitmap(bitmap);
-                dt.Add(bitmapItem);
-            }
-            else
+            var bitmapItem = new DataTransferItem();
+            bitmapItem.SetBitmap(bitmap);
+            dt.Add(bitmapItem);
+
+            if (!isPng)
             {
                 using var jpgStream = new MemoryStream();
                 SaveAsJpeg(bitmap, jpgStream);
@@ -118,6 +116,7 @@ public static class ImageUtil
                 jpgItem.Set(DataFormat.CreateBytesPlatformFormat("public.jpeg"), jpgStream.ToArray());
                 dt.Add(jpgItem);
             }
+
             _ = clipboard.SetDataAsync(dt);
         }
     }
