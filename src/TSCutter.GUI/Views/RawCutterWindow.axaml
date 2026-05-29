@@ -1,0 +1,156 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
+        mc:Ignorable="d"
+        MinWidth="480" MinHeight="360"
+        Width="520" Height="390"
+        x:Class="TSCutter.GUI.Views.RawCutterWindow"
+        d:DataContext="{x:Static local:App.RawCutterDialog}"
+        CanMinimize="False"
+        CanMaximize="False"
+        WindowStartupLocation="CenterOwner"
+        x:DataType="viewModels:RawCutterWindowViewModel"
+        Title="{DynamicResource String.RawCutter.Title}">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.Label">
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBox.ReadOnlyPath">
+            <Setter Property="Background" Value="{DynamicResource SystemControlBackgroundBaseLowBrush}" />
+            <Setter Property="IsReadOnly" Value="True" />
+        </Style>
+        <Style Selector="NumericUpDown">
+            <Setter Property="Height" Value="28" />
+        </Style>
+    </Window.Styles>
+
+    <Border BorderThickness="2" Padding="10">
+        <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto,*,Auto" ColumnDefinitions="*">
+            <!-- 文件路径 -->
+            <StackPanel Grid.Row="0" Orientation="Vertical" Spacing="2" Margin="0,0,0,8">
+                <TextBlock Text="{DynamicResource String.RawCutter.FilePath}" Classes="Label" />
+                <TextBox Text="{Binding FilePath}" Classes="ReadOnlyPath" />
+            </StackPanel>
+
+            <!-- 同步头偏移信息 -->
+            <TextBlock Grid.Row="1"
+                       Text="{Binding SyncInfo}"
+                       Margin="0,0,0,6" />
+
+            <!-- 文件信息 -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="20" Margin="0,0,0,8">
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="{DynamicResource String.RawCutter.FileSize}" Classes="Label" />
+                    <TextBlock Text="{Binding FileSizeStr}" FontWeight="Bold" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="{DynamicResource String.RawCutter.TotalPackets}" Classes="Label" />
+                    <TextBlock Text="{Binding PacketInfoStr}" FontWeight="Bold" />
+                </StackPanel>
+            </StackPanel>
+
+            <!-- 模式切换 RadioButton -->
+            <StackPanel Grid.Row="3" Orientation="Horizontal" Spacing="16" Margin="0,0,0,8">
+                <RadioButton IsChecked="{Binding IsPacketMode}"
+                             GroupName="CutterMode"
+                             Content="{DynamicResource String.RawCutter.PacketMode}" />
+                <RadioButton IsChecked="{Binding IsOffsetMode}"
+                             GroupName="CutterMode"
+                             Content="{DynamicResource String.RawCutter.OffsetMode}" />
+            </StackPanel>
+
+            <!-- 单轨双拇指滑块 -->
+            <controls:RangeSlider Grid.Row="4"
+                                  Margin="0,4"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Center"
+                                  Minimum="{Binding SliderMin}"
+                                  Maximum="{Binding SliderMax}"
+                                  RangeStart="{Binding SliderStart, Mode=TwoWay}"
+                                  RangeEnd="{Binding SliderEnd, Mode=TwoWay}">
+                <controls:RangeSlider.Resources>
+                    <ResourceDictionary>
+                        <ResourceDictionary.MergedDictionaries>
+                            <MergeResourceInclude
+                                Source="avares://TSCutterGUI/Controls/CustomSliderResources.axaml" />
+                        </ResourceDictionary.MergedDictionaries>
+                    </ResourceDictionary>
+                </controls:RangeSlider.Resources>
+            </controls:RangeSlider>
+
+            <!-- 输入区域 -->
+            <Grid Grid.Row="5" ColumnDefinitions="*, *" RowDefinitions="Auto,Auto" Margin="0,10,0,8">
+                <!-- Packet 模式 -->
+                <StackPanel Grid.Column="0" Margin="0,0,8,0"
+                            IsVisible="{Binding IsPacketMode}"
+                            Orientation="Vertical" Spacing="2">
+                    <TextBlock Text="{DynamicResource String.RawCutter.StartPacket}" Classes="Label" />
+                    <NumericUpDown Value="{Binding StartPacket, Mode=TwoWay}"
+                                   Minimum="0"
+                                   Maximum="{Binding PacketMax}"
+                                   Increment="1"
+                                   ParsingNumberStyle="Integer" />
+                </StackPanel>
+                <StackPanel Grid.Column="1"
+                            IsVisible="{Binding IsPacketMode}"
+                            Orientation="Vertical" Spacing="2">
+                    <TextBlock Text="{DynamicResource String.RawCutter.EndPacket}" Classes="Label" />
+                    <NumericUpDown Value="{Binding EndPacket, Mode=TwoWay}"
+                                   Minimum="0"
+                                   Maximum="{Binding PacketMax}"
+                                   Increment="1"
+                                   ParsingNumberStyle="Integer" />
+                </StackPanel>
+
+                <!-- 偏移量模式 -->
+                <StackPanel Grid.Column="0" Margin="0,0,8,0"
+                            IsVisible="{Binding IsOffsetMode}"
+                            Orientation="Vertical" Spacing="2">
+                    <TextBlock Text="{DynamicResource String.RawCutter.StartOffset}" Classes="Label" />
+                    <NumericUpDown Value="{Binding StartOffset, Mode=TwoWay}"
+                                   Minimum="{Binding SyncOffset}"
+                                   Maximum="{Binding OffsetMax}"
+                                   Increment="188"
+                                   ParsingNumberStyle="Integer" />
+                </StackPanel>
+                <StackPanel Grid.Column="1"
+                            IsVisible="{Binding IsOffsetMode}"
+                            Orientation="Vertical" Spacing="2">
+                    <TextBlock Text="{DynamicResource String.RawCutter.EndOffset}" Classes="Label" />
+                    <NumericUpDown Value="{Binding EndOffset, Mode=TwoWay}"
+                                   Minimum="{Binding SyncOffset}"
+                                   Maximum="{Binding OffsetMax}"
+                                   Increment="188"
+                                   ParsingNumberStyle="Integer" />
+                </StackPanel>
+            </Grid>
+
+            <!-- 状态消息提示 -->
+            <TextBlock Grid.Row="6"
+                       Text="{Binding StatusMessage}"
+                       IsVisible="{Binding StatusMessage, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                       TextWrapping="Wrap"
+                       Margin="0,4,0,4"
+                       VerticalAlignment="Top" />
+
+            <!-- 底部按钮 -->
+            <Grid Grid.Row="8" ColumnDefinitions="Auto,*">
+                <!-- 计算结果提示 -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="{DynamicResource String.RawCutter.RangeBytes}" Classes="Label" />
+                    <TextBlock Text="{Binding RangeInfoStr}" FontWeight="Bold" />
+                </StackPanel>
+                <Button Grid.Column="1"
+                        Content="{DynamicResource String.RawCutter.Output}"
+                        Width="100"
+                        HorizontalAlignment="Right"
+                        Command="{Binding OutputClickCommand}" />
+            </Grid>
+        </Grid>
+    </Border>
+</Window>

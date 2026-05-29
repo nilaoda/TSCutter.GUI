@@ -1,1 +1,22 @@
 .DS_Store
+
+# AI / Agent directories
+.codebuddy
+.workbuddy
+.trae
+.codex
+.cursor
+.copilot
+.cline
+.augment
+.windsurf
+.cascade
+.qoder
+.replit
+.gemini
+.roo
+.claude
+.sage
+.composer
+.amazonq
+.qwen

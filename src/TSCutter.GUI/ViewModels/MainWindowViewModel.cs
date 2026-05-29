@@ -211,6 +211,37 @@ public partial class MainWindowViewModel : ViewModelBase
         SelectedClip!.StartPosition = 0;
     }
 
+    [RelayCommand]
+    private async Task RawCutterClickAsync()
+    {
+        var settings = new OpenFileDialogSettings()
+        {
+            Title = LocalizationManager.Instance.String_OpenTsFile,
+            Filters = new List<FileFilter>()
+            {
+                new(LocalizationManager.Instance.String_TsFiles, ["ts"]),
+            }
+        };
+        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+        if (!result.Any()) return;
+
+        var filePath = result[0].LocalPath;
+
+        // 检查同步头
+        var syncOffset = await Task.Run(() => TsUtil.FindSyncOffset(filePath));
+        if (syncOffset < 0)
+        {
+            await ShowMessageAsync(
+                LocalizationManager.Instance.String_RawCutter_NoSyncFound,
+                "TSCutter", MessageBoxIcon.Error);
+            return;
+        }
+
+        var dialogViewModel = _dialogService.CreateViewModel<RawCutterWindowViewModel>();
+        dialogViewModel.Initialize(filePath);
+        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+    }
+
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]
     private async Task SaveVideoClickAsync() => await SaveVideoAsync();
 
@@ -574,7 +605,9 @@ public partial class MainWindowViewModel : ViewModelBase
         if (result is null) return;
         
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
-        dialogViewModel.SelectedClip = SelectedClip;
+        dialogViewModel.SourceFilePath = SelectedClip!.InFileInfo.FullName;
+        dialogViewModel.StartPosition = SelectedClip!.StartPosition;
+        dialogViewModel.EndPosition = SelectedClip!.EndPosition;
         dialogViewModel.OutputPath = result!.Path!.LocalPath;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
         if (dialogViewModel.Exception is not null)
