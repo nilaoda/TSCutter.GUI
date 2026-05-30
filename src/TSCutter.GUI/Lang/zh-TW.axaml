@@ -77,6 +77,7 @@
     <x:String x:Key="String.MediaInfo.Copied">已複製!</x:String>
     <x:String x:Key="String.MediaInfo.Failed">無法載入媒體資訊:</x:String>
     <x:String x:Key="String.Output.Title">輸出...</x:String>
+    <x:String x:Key="String.Output.Remaining">剩餘時間：</x:String>
     <x:String x:Key="String.Settings.Title">設定</x:String>
     <x:String x:Key="String.Settings.General">一般</x:String>
     <x:String x:Key="String.Settings.Language">語言</x:String>

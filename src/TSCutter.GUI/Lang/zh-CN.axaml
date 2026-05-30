@@ -77,6 +77,7 @@
     <x:String x:Key="String.MediaInfo.Copied">已复制!</x:String>
     <x:String x:Key="String.MediaInfo.Failed">无法加载媒体信息:</x:String>
     <x:String x:Key="String.Output.Title">输出...</x:String>
+    <x:String x:Key="String.Output.Remaining">剩余时间：</x:String>
     <x:String x:Key="String.Settings.Title">设置</x:String>
     <x:String x:Key="String.Settings.General">常规</x:String>
     <x:String x:Key="String.Settings.Language">语言</x:String>

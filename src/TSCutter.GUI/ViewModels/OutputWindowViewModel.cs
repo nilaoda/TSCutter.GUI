@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.ComponentModel;
 using System.IO;
 using System.Threading;
@@ -23,8 +23,13 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     [NotifyPropertyChangedFor(nameof(SpeedStr))]
     public partial double Speed { get; set; }
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(RemainingTimeStr))]
+    public partial double RemainingSeconds { get; set; }
+
     public string PercentStr => $"{Percent:0.00}%";
     public string SpeedStr => $"{CommonUtil.FormatFileSize(Speed)}/s";
+    public string RemainingTimeStr => FormatRemainingTime(RemainingSeconds);
     public string? SourceFilePath { get; set; }
     public long StartPosition { get; set; }
     public long EndPosition { get; set; }
@@ -33,21 +38,27 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     
     private CancellationTokenSource _cts = new();
     private DateTime _lastUpdateTime;
+    private DateTime _startTime;
     private long _bytesCopied = 0;
+    private long _totalBytes;
 
     [RelayCommand]
     private async Task OutputAsync()
     {
         try
         {
-            _lastUpdateTime = DateTime.Now;
+            _totalBytes = EndPosition > 0 ? EndPosition - StartPosition : new FileInfo(SourceFilePath!).Length - StartPosition;
+            _startTime = DateTime.Now;
+            _lastUpdateTime = _startTime;
             await CommonUtil.CopyFileAsync(new FileInfo(SourceFilePath!), OutputPath!, StartPosition, EndPosition,
                 (percent, bytesCopied) =>
                 {
                     Percent = percent;
                     _bytesCopied += bytesCopied;
                     UpdateSpeed();
+                    UpdateRemainingTime();
                 }, _cts.Token);
+            RemainingSeconds = 0;
             DialogResult = true;
             RequestClose?.Invoke();
         } 
@@ -66,10 +77,26 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private void UpdateSpeed()
     {
         var elapsedTime = (DateTime.Now - _lastUpdateTime).TotalSeconds;
-        if (elapsedTime < 1) return; // per second
+        if (elapsedTime < 1) return;
         Speed = _bytesCopied / elapsedTime;
         _lastUpdateTime = DateTime.Now;
         _bytesCopied = 0;
+    }
+
+    private void UpdateRemainingTime()
+    {
+        if (Speed <= 0 || Percent >= 100) return;
+        var remainingBytes = _totalBytes * (1 - Percent / 100.0);
+        RemainingSeconds = remainingBytes / Speed;
+    }
+
+    private static string FormatRemainingTime(double seconds)
+    {
+        if (seconds <= 0) return "--:--";
+        var ts = TimeSpan.FromSeconds(seconds);
+        if (ts.TotalHours >= 1)
+            return $"{(int)ts.TotalHours}:{ts.Minutes:D2}:{ts.Seconds:D2}";
+        return $"{ts.Minutes:D2}:{ts.Seconds:D2}";
     }
 
     [RelayCommand]
