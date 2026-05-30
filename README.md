@@ -12,37 +12,23 @@ TSCutter.GUI is a lightweight tool designed to efficiently cut TS (Transport Str
 - **High Performance**: Leveraging direct binary data copying for maximum efficiency.
 
 ## FFmpeg Runtime
-Official release packages bundle the required **FFmpeg 7.1.3** shared libraries. End users do not need to install FFmpeg manually anymore.
+Official release packages bundle the required **FFmpeg 7.1.3** shared libraries. End users do not need to install FFmpeg manually.
 
-Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries/releases/latest). The Windows x64, Linux x64, and macOS arm64 FFmpeg shared libraries used by TSCutter.GUI releases are all maintained in that repository.
+Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries/releases/latest).
 
-The macOS arm64 release archive now extracts to `TSCutter.GUI.app`, so users can launch the app directly after unzipping.
+> **macOS**: If the app is blocked by quarantine, run `xattr -dr com.apple.quarantine TSCutter.GUI.app`.
 
-If macOS blocks the app with a quarantine warning, run:
-```bash
-xattr -dr com.apple.quarantine TSCutter.GUI.app
-```
+<details>
+<summary>Building from source</summary>
 
-If you are building or running the app from source without those bundled runtimes, you still need a compatible FFmpeg 7 installation.
+If you are building from source without the bundled runtimes, a compatible FFmpeg 7 installation is required.
 
-### Linux source builds
-Installing FFmpeg on Linux depends on the distribution you are using.
+- **macOS**: `brew install ffmpeg@7`
+- **Linux (Ubuntu 22.04)**: `sudo add-apt-repository ppa:ubuntuhandbook1/ffmpeg7 && sudo apt update && sudo apt install ffmpeg`
 
-On Ubuntu 22.04:
-```bash
-sudo add-apt-repository ppa:ubuntuhandbook1/ffmpeg7
-sudo apt update
-sudo apt install ffmpeg
-```
+On macOS, the app automatically probes common Homebrew locations. If your FFmpeg 7 lives elsewhere, set `FFmpegRootPath` in `~/Library/Application Support/TSCutter.GUI/config.json` to the FFmpeg root directory or its `lib` directory.
 
-### macOS source builds
-```bash
-brew install ffmpeg@7
-```
-
-The app first looks for bundled dylibs in the release package. If they are not present, it will automatically probe common Homebrew locations such as `/opt/homebrew/opt/ffmpeg@7/lib` and `/usr/local/opt/ffmpeg@7/lib`.
-
-If your FFmpeg 7 installation lives somewhere else, you can set `FFmpegRootPath` in `~/Library/Application Support/TSCutter.GUI/config.json` to either the FFmpeg root directory or its `lib` directory.
+</details>
 
 ## Screen
 ![img](img/SS1.png)
