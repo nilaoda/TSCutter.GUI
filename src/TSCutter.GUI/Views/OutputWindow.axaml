@@ -1,4 +1,4 @@
-﻿<Window xmlns="https://github.com/avaloniaui"
+<Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -30,26 +30,27 @@
                        MaxWidth="400" />
 
             <!-- 中部内容：进度条 + 状态 -->
-            <StackPanel Grid.Row="1" Spacing="8" HorizontalAlignment="Stretch" VerticalAlignment="Center">
-                <ProgressBar Minimum="0" Maximum="100"
-                             ShowProgressText="False"
-                             Value="{Binding Percent}"
-                             Height="20" />
-                <Grid ColumnDefinitions="80,Auto,100"
-                      HorizontalAlignment="Center">
-                    <!-- 百分比 -->
-                    <TextBlock Grid.Column="0"
-                               Text="{Binding PercentStr}"
-                               HorizontalAlignment="Right" />
-                    <!-- 分隔符 -->
-                    <TextBlock Grid.Column="1"
-                               Text=" | "
+            <StackPanel Grid.Row="1" Spacing="6" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <!-- 进度条 + 百分比覆盖 -->
+                <Grid>
+                    <ProgressBar Minimum="0" Maximum="100"
+                                 ShowProgressText="False"
+                                 Value="{Binding Percent}"
+                                 Height="20" />
+                    <TextBlock Text="{Binding PercentStr}"
                                HorizontalAlignment="Center"
-                               Margin="4,0" />
-                    <!-- 速度 -->
-                    <TextBlock Grid.Column="2"
-                               Text="{Binding SpeedStr}"
-                               HorizontalAlignment="Left" />
+                               VerticalAlignment="Center"
+                               FontWeight="Bold" />
+                </Grid>
+                <!-- 速度（左）+ 剩余时间（右） -->
+                <Grid>
+                    <TextBlock HorizontalAlignment="Left"
+                               Text="{Binding SpeedStr}" />
+                    <StackPanel HorizontalAlignment="Right" Orientation="Horizontal">
+                        <TextBlock Text="{DynamicResource String.Output.Remaining}" />
+                        <TextBlock Text=" " />
+                        <TextBlock Text="{Binding RemainingTimeStr}" FontWeight="Bold" />
+                    </StackPanel>
                 </Grid>
             </StackPanel>
 

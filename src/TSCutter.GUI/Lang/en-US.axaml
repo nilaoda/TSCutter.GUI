@@ -77,6 +77,7 @@
     <x:String x:Key="String.MediaInfo.Copied">Copied!</x:String>
     <x:String x:Key="String.MediaInfo.Failed">Failed to load media info:</x:String>
     <x:String x:Key="String.Output.Title">Output...</x:String>
+    <x:String x:Key="String.Output.Remaining">Remaining:</x:String>
     <x:String x:Key="String.Settings.Title">Settings</x:String>
     <x:String x:Key="String.Settings.General">General</x:String>
     <x:String x:Key="String.Settings.Language">Language</x:String>
