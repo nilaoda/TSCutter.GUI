@@ -1,13 +1,14 @@
 using System;
+using System.Collections.Specialized;
 using Avalonia.Controls;
+using Avalonia.Input;
+using Avalonia.Threading;
 using Classic.Avalonia.Theme;
 using CommunityToolkit.Mvvm.Messaging;
 using TSCutter.GUI.Models;
 using TSCutter.GUI.ViewModels;
 
 namespace TSCutter.GUI.Views;
-
-// https://dccn.blob.core.windows.net/2022/Slide/%E5%BC%80%E6%BA%90_B6_%E5%91%A8%E6%9D%B0_.NET%20%E7%8E%A9%E8%BD%AC%E9%9F%B3%E8%A7%86%E9%A2%91%E6%93%8D%E4%BD%9C%20FFmpeg.pdf
 
 public partial class MainWindow : ClassicWindow
 {
@@ -17,7 +18,6 @@ public partial class MainWindow : ClassicWindow
     {
         InitializeComponent();
 
-        // 监听 ViewModel 发送的 FitMessage
         WeakReferenceMessenger.Default.Register<FitMessage>(this, (r, m) =>
         {
             if (ImageViewer.FitCommand.CanExecute(null))
@@ -25,11 +25,38 @@ public partial class MainWindow : ClassicWindow
                 ImageViewer.FitCommand.Execute(null);
             }
         });
+
+        DataContextChanged += (_, _) =>
+        {
+            if (DataContext is MainWindowViewModel vm)
+            {
+                vm.Clips.CollectionChanged += OnClipsCollectionChanged;
+            }
+        };
+    }
+
+    private void OnClipsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
+    {
+        if (e.Action == NotifyCollectionChangedAction.Add)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                ClipsScrollViewer.ScrollToEnd();
+            }, DispatcherPriority.Loaded);
+        }
     }
 
     private void Window_OnClosing(object? sender, WindowClosingEventArgs e)
     {
         ViewModel.Close();
+    }
+
+    private void ClipCard_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is Border { DataContext: PickedClip clip })
+        {
+            ViewModel.SelectClip(clip);
+        }
     }
 
     private async void CustomSlider_OnValueChangedAfterMouseUp(object? sender, double e)

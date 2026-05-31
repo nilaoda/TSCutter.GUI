@@ -50,6 +50,7 @@
     <x:String x:Key="String.Table.EndTime">結束時間</x:String>
     <x:String x:Key="String.Table.OutputSize">輸出大小</x:String>
     <x:String x:Key="String.Table.OutputPath">輸出路徑</x:String>
+    <x:String x:Key="String.Table.Status">狀態</x:String>
     <x:String x:Key="String.Navigate.MarkStart">標記起點</x:String>
     <x:String x:Key="String.Navigate.MarkEnd">標記終點</x:String>
     <x:String x:Key="String.Navigate.AddClip">新增片段</x:String>
@@ -63,6 +64,14 @@
     <x:String x:Key="String.Navigate.Next20">後 20</x:String>
     <x:String x:Key="String.SaveClipTip">儲存目前片段</x:String>
     <x:String x:Key="String.SaveClip">儲存片段</x:String>
+    <x:String x:Key="String.ExportAll">全部匯出</x:String>
+    <x:String x:Key="String.ExportAllTip">將所有片段匯出到來源檔案所在目錄</x:String>
+    <x:String x:Key="String.ExportAllConfirm">將 {0} 個片段匯出到來源檔案所在目錄？&#10;&#10;輸出目錄：{1}</x:String>
+    <x:String x:Key="String.Clips.Done">完成</x:String>
+    <x:String x:Key="String.Clips.Failed">失敗</x:String>
+    <x:String x:Key="String.Clips.Cancelled">已取消</x:String>
+    <x:String x:Key="String.Clips.Empty">無任何剪輯</x:String>
+    <x:String x:Key="String.SizePrefix">大小：</x:String>
     <x:String x:Key="String.Ok">確定</x:String>
     <x:String x:Key="String.Cancel">取消</x:String>
     <x:String x:Key="String.Apply">套用</x:String>
@@ -78,6 +87,8 @@
     <x:String x:Key="String.MediaInfo.Failed">無法載入媒體資訊:</x:String>
     <x:String x:Key="String.Output.Title">輸出...</x:String>
     <x:String x:Key="String.Output.Remaining">剩餘時間：</x:String>
+    <x:String x:Key="String.Output.QueueProgress">佇列進度：</x:String>
+    <x:String x:Key="String.Output.CancelRemaining">取消剩餘</x:String>
     <x:String x:Key="String.Settings.Title">設定</x:String>
     <x:String x:Key="String.Settings.General">一般</x:String>
     <x:String x:Key="String.Settings.Language">語言</x:String>
