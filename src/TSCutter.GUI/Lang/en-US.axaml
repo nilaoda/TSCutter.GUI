@@ -50,6 +50,7 @@
     <x:String x:Key="String.Table.EndTime">End Time</x:String>
     <x:String x:Key="String.Table.OutputSize">Output Size</x:String>
     <x:String x:Key="String.Table.OutputPath">Output Path</x:String>
+    <x:String x:Key="String.Table.Status">Status</x:String>
     <x:String x:Key="String.Navigate.MarkStart">Mark Start</x:String>
     <x:String x:Key="String.Navigate.MarkEnd">Mark End</x:String>
     <x:String x:Key="String.Navigate.AddClip">Add Clip</x:String>
@@ -63,6 +64,14 @@
     <x:String x:Key="String.Navigate.Next20">Next 20</x:String>
     <x:String x:Key="String.SaveClipTip">Save Current Clip</x:String>
     <x:String x:Key="String.SaveClip">Save Clip</x:String>
+    <x:String x:Key="String.ExportAll">Export All</x:String>
+    <x:String x:Key="String.ExportAllTip">Export all clips to the source directory</x:String>
+    <x:String x:Key="String.ExportAllConfirm">Export {0} clips to the source directory?&#10;&#10;Output: {1}</x:String>
+    <x:String x:Key="String.Clips.Done">Done</x:String>
+    <x:String x:Key="String.Clips.Failed">Failed</x:String>
+    <x:String x:Key="String.Clips.Cancelled">Cancelled</x:String>
+    <x:String x:Key="String.Clips.Empty">No clips</x:String>
+    <x:String x:Key="String.SizePrefix">Size: </x:String>
     <x:String x:Key="String.Ok">OK</x:String>
     <x:String x:Key="String.Cancel">Cancel</x:String>
     <x:String x:Key="String.Apply">Apply</x:String>
@@ -78,6 +87,8 @@
     <x:String x:Key="String.MediaInfo.Failed">Failed to load media info:</x:String>
     <x:String x:Key="String.Output.Title">Output...</x:String>
     <x:String x:Key="String.Output.Remaining">Remaining:</x:String>
+    <x:String x:Key="String.Output.QueueProgress">Queue:</x:String>
+    <x:String x:Key="String.Output.CancelRemaining">Cancel Remaining</x:String>
     <x:String x:Key="String.Settings.Title">Settings</x:String>
     <x:String x:Key="String.Settings.General">General</x:String>
     <x:String x:Key="String.Settings.Language">Language</x:String>

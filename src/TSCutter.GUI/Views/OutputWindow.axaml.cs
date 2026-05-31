@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Classic.Avalonia.Theme;
 using TSCutter.GUI.ViewModels;
 
@@ -14,10 +14,11 @@ public partial class OutputWindow : ClassicWindow
     
     private void OnInitialized(object? sender, EventArgs e)
     {
-        // 订阅关闭请求
         if (DataContext is OutputWindowViewModel vm)
         {
             vm.RequestClose += Close;
+            if (vm.IsBatchMode)
+                Height = 280;
         }
     }
 }

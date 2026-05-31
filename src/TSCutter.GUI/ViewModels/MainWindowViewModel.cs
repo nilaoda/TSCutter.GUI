@@ -77,9 +77,20 @@ public partial class MainWindowViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(
         nameof(AddClipCommand), nameof(RemoveClipCommand), nameof(MarkClipStartCommand),
         nameof(MarkClipEndCommand), nameof(SaveVideoClickCommand), nameof(CloseVideoClickCommand),
-        nameof(SaveFrameClickCommand), nameof(ShowMediaInfoClickCommand)
+        nameof(SaveFrameClickCommand), nameof(ShowMediaInfoClickCommand), nameof(ExportAllCommand)
     )]
     public partial PickedClip? SelectedClip { get; set; }
+
+    partial void OnSelectedClipChanged(PickedClip? value)
+    {
+        foreach (var clip in Clips)
+            clip.IsSelected = clip == value;
+    }
+    
+    public void SelectClip(PickedClip clip)
+    {
+        SelectedClip = clip;
+    }
     
     [RelayCommand]
     private async Task JumpToStartTimeAsync(object? time)
@@ -560,6 +571,16 @@ public partial class MainWindowViewModel : ViewModelBase
             await MessageBox.ShowDialog(desktopApp.MainWindow!, message, title, MessageBoxButtons.Ok, icon);
         }
     }
+
+    private async Task<bool> ShowConfirmAsync(string message, string title = "TSCutter")
+    {
+        if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktopApp)
+        {
+            var result = await MessageBox.ShowDialog(desktopApp.MainWindow!, message, title, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+            return result == MessageBoxResult.Yes;
+        }
+        return false;
+    }
     
     [RelayCommand]
     private void DragOver(DragEventArgs? e)
@@ -604,6 +625,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     private bool HasSelectedClip => SelectedClip is not null;
+    private bool CanExportAll => Clips.Count > 0;
     public bool IsVideoInitialized => _videoInstance is { Inited: true };
     
     private async Task SaveVideoAsync()
@@ -638,6 +660,47 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
         SelectedClip!.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanExportAll))]
+    private async Task ExportAllAsync()
+    {
+        var sourceDir = Path.GetDirectoryName(Clips[0].InFileInfo.FullName)!;
+        var confirmMsg = string.Format(LocalizationManager.Instance.String_ExportAllConfirm, Clips.Count, sourceDir);
+        if (!await ShowConfirmAsync(confirmMsg)) return;
+
+        var tasks = new List<BatchTask>();
+        foreach (var clip in Clips)
+        {
+            var fileName = GenerateClipFileName(clip);
+            var destPath = Path.Combine(sourceDir, fileName);
+            tasks.Add(new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition));
+            clip.ExportStatus = ClipExportStatus.Pending;
+        }
+
+        var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
+        dialogViewModel.SetBatchTasks(tasks);
+        await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
+
+        var completedSet = dialogViewModel.CompletedTaskIndices.ToHashSet();
+        for (int i = 0; i < Clips.Count; i++)
+        {
+            if (completedSet.Contains(i))
+            {
+                Clips[i].ExportStatus = ClipExportStatus.Done;
+                Clips[i].OutputFileInfo = new FileInfo(tasks[i].DestinationPath);
+            }
+            else if (Clips[i].ExportStatus == ClipExportStatus.Exporting)
+            {
+                Clips[i].ExportStatus = ClipExportStatus.Cancelled;
+            }
+        }
+    }
+
+    private static string GenerateClipFileName(PickedClip clip)
+    {
+        var sourceName = Path.GetFileNameWithoutExtension(clip.InFileInfo.FullName);
+        return $"{sourceName}_clip{clip.ClipID}_({CommonUtil.FormatSeconds(clip.StartTime, true)}-{CommonUtil.FormatSeconds(clip.EndTime, true)}).ts";
     }
     
     private void BuildThemeMenuItems()

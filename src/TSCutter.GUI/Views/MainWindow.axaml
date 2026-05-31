@@ -101,6 +101,8 @@
                         <MenuItem Header="{DynamicResource String.Menu.SaveClip}"
                                   Command="{Binding SaveVideoClickCommand}"
                                   InputGesture="{OnPlatform Ctrl+S, macOS=⌘+S}" />
+                        <MenuItem Header="{DynamicResource String.ExportAll}"
+                                  Command="{Binding ExportAllCommand}" />
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.CloseVideo}"
                                   Command="{Binding CloseVideoClickCommand}"/>
@@ -221,65 +223,104 @@
                                 </controls:ImageViewer>
                             </ClassicBorderDecorator>
                             <GridSplitter Grid.Column="1" Width="3" />
-                            <ScrollViewer Grid.Column="2">
-                                <DataGrid x:Name="MyDataGrid"
-                                          SelectionMode="Single"
-                                          SelectedItem="{Binding SelectedClip}"
-                                          ItemsSource="{Binding Clips}"
-                                          IsReadOnly="True"
-                                          CanUserResizeColumns="True"
-                                          CanUserSortColumns="False"
-                                          AutoGenerateColumns="False">
-                                    <DataGrid.Styles>
-                                        <Style Selector="DataGridCell">
-                                            <Setter Property="Padding" Value="2,0"/>
-                                        </Style>
-                                    </DataGrid.Styles>
-                                    <DataGrid.Columns>
-                                        <DataGridTextColumn Width="25"
-                                                            Header="ID"
-                                                            Binding="{Binding ClipID}" />
-                                        <DataGridTemplateColumn Header="{DynamicResource String.Table.StartTime}" MinWidth="85">
-                                            <DataGridTemplateColumn.CellTemplate>
+                            <ClassicBorderDecorator Grid.Column="2" BorderThickness="2" BorderStyle="Sunken">
+                                <DockPanel>
+                                    <!-- Export All button pinned at bottom -->
+                                    <Button DockPanel.Dock="Bottom"
+                                            Command="{Binding ExportAllCommand}"
+                                            HorizontalAlignment="Stretch"
+                                            ToolTip.Tip="{DynamicResource String.ExportAllTip}"
+                                            Margin="0,2,0,0">
+                                        <TextBlock Text="{DynamicResource String.ExportAll}" />
+                                    </Button>
+                                    <Grid>
+                                        <!-- Empty state -->
+                                        <TextBlock Text="{DynamicResource String.Clips.Empty}"
+                                                   HorizontalAlignment="Center"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                   IsVisible="{Binding Clips.Count, Converter={x:Static converters:ZeroToVisibilityConverter.Instance}}" />
+                                        <!-- Cards -->
+                                        <ScrollViewer Name="ClipsScrollViewer"
+                                                      HorizontalScrollBarVisibility="Disabled"
+                                                      IsVisible="{Binding Clips.Count, Converter={x:Static converters:PositiveToVisibilityConverter.Instance}}">
+                                            <ItemsControl ItemsSource="{Binding Clips}">
+                                            <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
-                                                    <!-- 需要让Button继承DataGridCell的Foreground -->
-                                                    <Button Content="{Binding StartTimeStr}"
-                                                            HorizontalAlignment="Left"
-                                                            Classes="hyperlink"
-                                                            Foreground="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=Foreground}"
-                                                            Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).JumpToStartTimeCommand}"
-                                                            CommandParameter="{Binding}" />
+                                                    <Border Margin="0,0,0,4"
+                                                            Padding="6"
+                                                            Classes.selected="{Binding IsSelected}"
+                                                            PointerPressed="ClipCard_OnPointerPressed">
+                                                        <Border.Styles>
+                                                            <Style Selector="Border">
+                                                                <Setter Property="Background" Value="Transparent" />
+                                                            </Style>
+                                                            <Style Selector="Border.selected">
+                                                                <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
+                                                            </Style>
+                                                        </Border.Styles>
+                                                        <Grid>
+                                                            <!-- Unselected: Raised border -->
+                                                            <ClassicBorderDecorator BorderThickness="2" BorderStyle="Raised"
+                                                                                    IsVisible="{Binding IsSelected, Converter={x:Static local:App.InverseBoolConverter}}" />
+                                                            <!-- Selected: Sunken border -->
+                                                            <ClassicBorderDecorator BorderThickness="2" BorderStyle="Sunken"
+                                                                                    IsVisible="{Binding IsSelected}" />
+                                                            <!-- Content -->
+                                                            <StackPanel Margin="4" Spacing="2">
+                                                                <!-- Header: ID + Status -->
+                                                                <Grid ColumnDefinitions="Auto,*,Auto">
+                                                                    <TextBlock Text="{Binding ClipID, StringFormat='#{0}'}"
+                                                                               FontWeight="Bold"
+                                                                               FontSize="12" />
+                                                                    <TextBlock Grid.Column="2"
+                                                                               Text="{Binding StatusText}" />
+                                                                </Grid>
+                                                                <!-- Start time -->
+                                                                <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
+                                                                    <TextBlock Text="{DynamicResource String.Table.StartTime}"
+                                                                               Margin="0,0,4,0"
+                                                                               VerticalAlignment="Center" />
+                                                                    <Button Grid.Column="1"
+                                                                            Content="{Binding StartTimeStr}"
+                                                                            Classes="hyperlink"
+                                                                            Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToStartTimeCommand}"
+                                                                            CommandParameter="{Binding}" />
+                                                                </Grid>
+                                                                <!-- End time -->
+                                                                <Grid ColumnDefinitions="Auto,*">
+                                                                    <TextBlock Text="{DynamicResource String.Table.EndTime}"
+                                                                               Margin="0,0,4,0"
+                                                                               VerticalAlignment="Center" />
+                                                                    <Button Grid.Column="1"
+                                                                            Content="{Binding EndTimeStr}"
+                                                                            Classes="hyperlink"
+                                                                            Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToEndTimeCommand}"
+                                                                            CommandParameter="{Binding}" />
+                                                                </Grid>
+                                                                <!-- Size + Output Path -->
+                                                                <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
+                                                                    <TextBlock Text="{Binding EstimatedSizeStr}"
+                                                                               VerticalAlignment="Center"
+                                                                               Margin="0,0,8,0" />
+                                                                    <Button Grid.Column="1"
+                                                                            Content="{Binding OutputFilePathStr}"
+                                                                            Classes="hyperlink"
+                                                                            HorizontalContentAlignment="Stretch"
+                                                                            IsVisible="{Binding OutputFileInfo, Converter={x:Static converters:NullToVisibilityConverter.Instance}}"
+                                                                            Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).FindFileCommand}"
+                                                                            CommandParameter="{Binding OutputFileInfo}" />
+                                                                </Grid>
+                                                            </StackPanel>
+                                                        </Grid>
+                                                    </Border>
                                                 </DataTemplate>
-                                            </DataGridTemplateColumn.CellTemplate>
-                                        </DataGridTemplateColumn>
-                                        <DataGridTemplateColumn Header="{DynamicResource String.Table.EndTime}" MinWidth="85">
-                                            <DataGridTemplateColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <Button Content="{Binding EndTimeStr}"
-                                                            HorizontalAlignment="Left"
-                                                            Classes="hyperlink"
-                                                            Foreground="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=Foreground}"
-                                                            Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).JumpToEndTimeCommand}"
-                                                            CommandParameter="{Binding}" />
-                                                </DataTemplate>
-                                            </DataGridTemplateColumn.CellTemplate>
-                                        </DataGridTemplateColumn>
-                                        <DataGridTextColumn Header="{DynamicResource String.Table.OutputSize}" MinWidth="85"
-                                                            Binding="{Binding OutputFileSizeStr}" />
-                                        <DataGridTemplateColumn Header="{DynamicResource String.Table.OutputPath}" MinWidth="85" Width="*">
-                                            <DataGridTemplateColumn.CellTemplate>
-                                                <DataTemplate>
-                                                    <Button Content="{Binding OutputFileInfo.FullName}"
-                                                            Classes="hyperlink"
-                                                            Foreground="{Binding RelativeSource={RelativeSource AncestorType=DataGridCell}, Path=Foreground}"
-                                                            Command="{Binding #MyDataGrid.((vm:MainWindowViewModel)DataContext).FindFileCommand}"
-                                                            CommandParameter="{Binding OutputFileInfo}" />
-                                                </DataTemplate>
-                                            </DataGridTemplateColumn.CellTemplate>
-                                        </DataGridTemplateColumn>
-                                    </DataGrid.Columns>
-                                </DataGrid>
-                            </ScrollViewer>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
+                                </Grid>
+                                </DockPanel>
+                            </ClassicBorderDecorator>
                         </Grid>
                         <!-- 滑块 -->
                         <controls:CustomSlider Grid.Row="1"
