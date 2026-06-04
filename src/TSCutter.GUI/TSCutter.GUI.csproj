@@ -34,7 +34,9 @@
         <PackageReference Include="HanumanInstitute.MvvmDialogs" Version="2.2.0" />
         <PackageReference Include="HanumanInstitute.MvvmDialogs.Avalonia" Version="2.2.0" />
         <PackageReference Include="Sdcb.FFmpeg" Version="7.0.0" />
-        <PackageReference Include="Splat.DependencyInjection.SourceGenerator" Version="2.2.2">
+        <PackageReference Include="Splat" Version="19.4.1" />
+        <PackageReference Include="Tmds.DBus.Protocol" Version="0.21.3" />
+        <PackageReference Include="Splat.DependencyInjection.SourceGenerator" Version="2.3.0">
             <PrivateAssets>all</PrivateAssets>
             <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
         </PackageReference>
