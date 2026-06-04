@@ -264,7 +264,7 @@ public class VideoInstance(string filePath) : IDisposable
     /// 仅读取 packet 级别的 PTS 来计算关键帧间隔，不执行真正的帧解码。
     /// 用于 InitVideo 阶段快速估算 keyFrameGap。
     /// </summary>
-    private (long firstPts, long gap) ReadKeyFramePacketPts(int requiredKeyFrames = 2)
+    private (long firstPts, long gap) ReadKeyFramePacketPts(int requiredKeyFrames = 3)
     {
         var keyFramePtsList = new List<long>();
         foreach (var packet in inFc.ReadPackets(videoStreamIndex))
@@ -282,7 +282,7 @@ public class VideoInstance(string filePath) : IDisposable
         if (keyFramePtsList.Count < 2)
             return (keyFramePtsList.Count > 0 ? keyFramePtsList[0] : 0, 0);
 
-        var gap = Math.Abs(keyFramePtsList[1] - keyFramePtsList[0]);
+        var gap = Math.Abs(keyFramePtsList[^1] - keyFramePtsList[^2]);
         Console.WriteLine($"KeyFramePacket PTS: {string.Join(", ", keyFramePtsList)}, gap: {gap}");
         return (keyFramePtsList[0], gap);
     }
