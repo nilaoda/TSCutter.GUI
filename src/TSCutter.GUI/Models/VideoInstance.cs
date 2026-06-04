@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -88,12 +88,11 @@ public class VideoInstance(string filePath) : IDisposable
 
         try
         {
-            // calc KeyFrameGap
-            DecodeNextFrame();
-            DecodeNextFrame();
-            var firstKeyFramePts = currentKeyFramePts;
-            DecodeNextFrame();
-            keyFrameGap = Math.Abs(currentKeyFramePts - firstKeyFramePts);
+            // calc KeyFrameGap from packet-level PTS (no frame decoding needed)
+            var (firstPts, gap) = ReadKeyFramePacketPts();
+            firstFrameTimestamp = firstPts;
+            maxPts = inVideoStream.Duration + firstFrameTimestamp;
+            keyFrameGap = gap;
             Console.WriteLine($"keyFrameGap: {keyFrameGap}");
             Seek(firstFrameTimestamp);
         }
@@ -259,6 +258,33 @@ public class VideoInstance(string filePath) : IDisposable
         var durationInSeconds = inVideoStream.GetDurationInSeconds();
         var fileSize = inFc.GetFileSize();
         return $"{inVideoStream.Codecpar.CodecId}, {width}x{height}, {FormatSeconds(durationInSeconds)}, {FormatFileSize(fileSize)}";
+    }
+
+    /// <summary>
+    /// 仅读取 packet 级别的 PTS 来计算关键帧间隔，不执行真正的帧解码。
+    /// 用于 InitVideo 阶段快速估算 keyFrameGap。
+    /// </summary>
+    private (long firstPts, long gap) ReadKeyFramePacketPts(int requiredKeyFrames = 3)
+    {
+        var keyFramePtsList = new List<long>();
+        foreach (var packet in inFc.ReadPackets(videoStreamIndex))
+        {
+            if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
+                continue;
+            if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
+                continue;
+
+            keyFramePtsList.Add(packet.Pts);
+            if (keyFramePtsList.Count >= requiredKeyFrames)
+                break;
+        }
+
+        if (keyFramePtsList.Count < 2)
+            return (keyFramePtsList.Count > 0 ? keyFramePtsList[0] : 0, 0);
+
+        var gap = Math.Abs(keyFramePtsList[^1] - keyFramePtsList[^2]);
+        Console.WriteLine($"KeyFramePacket PTS: {string.Join(", ", keyFramePtsList)}, gap: {gap}");
+        return (keyFramePtsList[0], gap);
     }
 
     public void Close()

@@ -1,7 +1,6 @@
 using System;
 using System.Globalization;
 using System.IO;
-using System.Runtime.InteropServices;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
@@ -19,44 +18,49 @@ public static class ImageUtil
 {
     // 每次都创建一张纯黑图片作为音频的图
     public static Bitmap BlankImage => CreateAudioBitmap();
-    
-    public static Bitmap CreateBitmapFromFrame(Frame frame, int dpi = 96)
+
+    // 缓存 VideoFrameConverter，避免每帧重新初始化 swscale 上下文
+    private static VideoFrameConverter? _cachedSws;
+    private static int _cachedWidth;
+    private static int _cachedHeight;
+
+    public static unsafe Bitmap CreateBitmapFromFrame(Frame frame, int dpi = 96)
     {
         var width = frame.Width;
         var height = frame.Height;
-        using VideoFrameConverter sws = new();
-        using Frame dest = Frame.CreateVideo(width, height, AVPixelFormat.Bgr24);
-        sws.ConvertFrame(frame, dest);
-        
+
+        // swscale 直接输出 BGRA 格式，消除逐像素 BGR→BGRA 转换
+        if (_cachedSws == null || _cachedWidth != width || _cachedHeight != height)
+        {
+            _cachedSws?.Dispose();
+            _cachedSws = new VideoFrameConverter();
+            _cachedWidth = width;
+            _cachedHeight = height;
+        }
+
+        using Frame dest = Frame.CreateVideo(width, height, AVPixelFormat.Bgra);
+        _cachedSws.ConvertFrame(frame, dest);
+
         var writableBitmap = new WriteableBitmap(
-            new PixelSize(width, height), 
-            new Vector(dpi, dpi), 
-            PixelFormat.Bgra8888, 
+            new PixelSize(width, height),
+            new Vector(dpi, dpi),
+            PixelFormat.Bgra8888,
             AlphaFormat.Opaque);
 
         using var buffer = writableBitmap.Lock();
-        var destData = dest.Data[0]; // dest frame data。
-        var stride = dest.Linesize[0]; // bytes per line。
+        var srcData = dest.Data[0];
+        var srcStride = dest.Linesize[0];
+        var destRowBytes = buffer.RowBytes;
 
+        // swscale 已输出 BGRA，整行 MemoryCopy 替代逐字节 Marshal 操作
+        var copyBytesPerRow = Math.Min(srcStride, destRowBytes);
         for (var y = 0; y < height; y++)
         {
-            var sourcePtr = destData + y * stride;
-            var destPtr = buffer.Address + y * buffer.RowBytes;
-        
-            for (var x = 0; x < width; x++)
-            {
-                var blue = Marshal.ReadByte(sourcePtr + x * 3);
-                var green = Marshal.ReadByte(sourcePtr + x * 3 + 1);
-                var red = Marshal.ReadByte(sourcePtr + x * 3 + 2);
-
-                // write BGRA data
-                Marshal.WriteByte(destPtr + x * 4, blue);
-                Marshal.WriteByte(destPtr + x * 4 + 1, green);
-                Marshal.WriteByte(destPtr + x * 4 + 2, red);
-                Marshal.WriteByte(destPtr + x * 4 + 3, 255); // set alpha to 255
-            }
+            var srcPtr = srcData + y * srcStride;
+            var destPtr = buffer.Address + y * destRowBytes;
+            Buffer.MemoryCopy((void*)srcPtr, (void*)destPtr, destRowBytes, copyBytesPerRow);
         }
-        
+
         return writableBitmap;
     }
 
