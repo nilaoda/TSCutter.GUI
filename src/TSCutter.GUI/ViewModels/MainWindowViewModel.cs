@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls;
@@ -72,6 +73,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial ObservableCollection<PickedClip> Clips { get; set; } = new();
+
+    private long _queueIdCounter;
+    public ObservableCollection<ExportQueueItem> ExportQueue { get; } = new();
+
+    public bool HasExportQueue => ExportQueue.Count > 0;
+    public int ExportQueueCount => ExportQueue.Count;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(
@@ -701,6 +708,116 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var sourceName = Path.GetFileNameWithoutExtension(clip.InFileInfo.FullName);
         return $"{sourceName}_clip{clip.ClipID}_({CommonUtil.FormatSeconds(clip.StartTime, true)}-{CommonUtil.FormatSeconds(clip.EndTime, true)}).ts";
+    }
+
+    // ---- 导出队列 ----
+
+    [RelayCommand(CanExecute = nameof(HasSelectedClip))]
+    private async Task AddToQueueAsync()
+    {
+        var defaultName = Path.GetFileNameWithoutExtension(SelectedClip!.InFileInfo.FullName)
+            + $"_({CommonUtil.FormatSeconds(SelectedClip!.StartTime, true)}-{CommonUtil.FormatSeconds(SelectedClip!.EndTime, true)}).ts";
+        var settings = new SaveFileDialogSettings
+        {
+            Title = LocalizationManager.Instance.String_AddToQueue,
+            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(SelectedClip!.InFileInfo.FullName)!),
+            SuggestedFileName = defaultName,
+            Filters = new List<FileFilter>()
+            {
+                new(LocalizationManager.Instance.String_TsFiles, new[] { "ts" }),
+                new(LocalizationManager.Instance.String_AllFiles, "*")
+            },
+            DefaultExtension = "ts"
+        };
+        var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+        if (result is null) return;
+
+        var item = new ExportQueueItem
+        {
+            QueueItemId = Interlocked.Increment(ref _queueIdCounter),
+            SourceFilePath = SelectedClip!.InFileInfo.FullName,
+            OutputFilePath = result!.Path!.LocalPath,
+            StartPosition = SelectedClip!.StartPosition,
+            EndPosition = SelectedClip!.EndPosition,
+            SourceFileName = Path.GetFileName(SelectedClip!.InFileInfo.FullName),
+            StartTimeSeconds = SelectedClip!.StartTime,
+            EndTimeSeconds = SelectedClip!.EndTime,
+            EstimatedBytes = Math.Max(0,
+                (SelectedClip!.EndPosition > 0 ? SelectedClip!.EndPosition : SelectedClip!.InFileInfo.Length)
+                - SelectedClip!.StartPosition),
+        };
+        ExportQueue.Add(item);
+        OnPropertyChanged(nameof(HasExportQueue));
+        OnPropertyChanged(nameof(ExportQueueCount));
+        AddToQueueCommand.NotifyCanExecuteChanged();
+        ClearQueueCommand.NotifyCanExecuteChanged();
+        BatchExportQueueCommand.NotifyCanExecuteChanged();
+    }
+
+    [RelayCommand]
+    private void RemoveFromQueue(object? item)
+    {
+        if (item is ExportQueueItem queueItem)
+        {
+            ExportQueue.Remove(queueItem);
+            OnPropertyChanged(nameof(HasExportQueue));
+            OnPropertyChanged(nameof(ExportQueueCount));
+            ClearQueueCommand.NotifyCanExecuteChanged();
+            BatchExportQueueCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    [RelayCommand(CanExecute = nameof(HasExportQueueItems))]
+    private void ClearQueue()
+    {
+        ExportQueue.Clear();
+        OnPropertyChanged(nameof(HasExportQueue));
+        OnPropertyChanged(nameof(ExportQueueCount));
+        ClearQueueCommand.NotifyCanExecuteChanged();
+        BatchExportQueueCommand.NotifyCanExecuteChanged();
+    }
+
+    private bool HasExportQueueItems => ExportQueue.Count > 0;
+
+    [RelayCommand(CanExecute = nameof(HasExportQueueItems))]
+    private async Task BatchExportQueueAsync()
+    {
+        if (ExportQueue.Count == 0) return;
+
+        var confirmMsg = string.Format(
+            LocalizationManager.Instance.String_BatchExportConfirm,
+            ExportQueue.Count);
+        if (!await ShowConfirmAsync(confirmMsg)) return;
+
+        var tasks = ExportQueue.Select(item =>
+            new BatchTask(item.SourceFilePath, item.OutputFilePath, item.StartPosition, item.EndPosition)
+        ).ToList();
+
+        var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
+        dialogViewModel.SetBatchTasks(tasks);
+        await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
+
+        // 更新导出队列中的状态为已完成
+        var completedSet = dialogViewModel.CompletedTaskIndices.ToHashSet();
+        var remaining = new List<ExportQueueItem>();
+        for (int i = 0; i < ExportQueue.Count; i++)
+        {
+            var item = ExportQueue[i];
+            if (completedSet.Contains(i))
+            {
+                item.Status = ClipExportStatus.Done;
+            }
+        }
+        // 从导出队列中移除已完成项
+        for (int i = ExportQueue.Count - 1; i >= 0; i--)
+        {
+            if (ExportQueue[i].Status == ClipExportStatus.Done)
+                ExportQueue.RemoveAt(i);
+        }
+        OnPropertyChanged(nameof(HasExportQueue));
+        OnPropertyChanged(nameof(ExportQueueCount));
+        ClearQueueCommand.NotifyCanExecuteChanged();
+        BatchExportQueueCommand.NotifyCanExecuteChanged();
     }
     
     private void BuildThemeMenuItems()
