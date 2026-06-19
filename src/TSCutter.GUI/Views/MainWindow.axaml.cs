@@ -59,6 +59,14 @@ public partial class MainWindow : ClassicWindow
         }
     }
 
+    private void QueueRemove_OnPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if (sender is TextBlock { DataContext: ExportQueueItem item })
+        {
+            ViewModel.RemoveFromQueueCommand.Execute(item);
+        }
+    }
+
     private async void CustomSlider_OnValueChangedAfterMouseUp(object? sender, double e)
     {
         if (!ViewModel.IsVideoInitialized) return;

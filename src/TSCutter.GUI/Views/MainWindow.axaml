@@ -6,6 +6,7 @@
         xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
         xmlns:converters="clr-namespace:TSCutter.GUI.Converters"
         xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:models="clr-namespace:TSCutter.GUI.Models"
         xmlns:commonControls="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
         mc:Ignorable="d"
         Width="940" Height="650"
@@ -101,12 +102,14 @@
                         <MenuItem Header="{DynamicResource String.Menu.SaveClip}"
                                   Command="{Binding SaveVideoClickCommand}"
                                   InputGesture="{OnPlatform Ctrl+S, macOS=⌘+S}" />
-                        <MenuItem Header="{DynamicResource String.ExportAll}"
-                                  Command="{Binding ExportAllCommand}" />
+                        <MenuItem Header="{DynamicResource String.AddToQueue}"
+                                  Command="{Binding AddToQueueCommand}" />
+                        <MenuItem Header="{DynamicResource String.Menu.ExportQueue}"
+                                  Command="{Binding BatchExportQueueCommand}" />
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.CloseVideo}"
                                   Command="{Binding CloseVideoClickCommand}"/>
-                        <MenuItem Header="{DynamicResource String.Menu.Exit}" 
+                        <MenuItem Header="{DynamicResource String.Menu.Exit}"
                                   Command="{Binding ExitApplicationCommand}"/>
                     </MenuItem>
                     <MenuItem Header="{DynamicResource String.Menu.Tools}">
@@ -225,100 +228,231 @@
                             <GridSplitter Grid.Column="1" Width="3" />
                             <ClassicBorderDecorator Grid.Column="2" BorderThickness="2" BorderStyle="Sunken">
                                 <DockPanel>
-                                    <!-- Export All button pinned at bottom -->
-                                    <Button DockPanel.Dock="Bottom"
-                                            Command="{Binding ExportAllCommand}"
-                                            HorizontalAlignment="Stretch"
-                                            ToolTip.Tip="{DynamicResource String.ExportAllTip}"
-                                            Margin="0,2,0,0">
-                                        <TextBlock Text="{DynamicResource String.ExportAll}" />
-                                    </Button>
-                                    <Grid>
-                                        <!-- Empty state -->
-                                        <TextBlock Text="{DynamicResource String.Clips.Empty}"
-                                                   HorizontalAlignment="Center"
-                                                   VerticalAlignment="Center"
-                                                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
-                                                   IsVisible="{Binding Clips.Count, Converter={x:Static converters:ZeroToVisibilityConverter.Instance}}" />
-                                        <!-- Cards -->
-                                        <ScrollViewer Name="ClipsScrollViewer"
-                                                      HorizontalScrollBarVisibility="Disabled"
-                                                      IsVisible="{Binding Clips.Count, Converter={x:Static converters:PositiveToVisibilityConverter.Instance}}">
-                                            <ItemsControl ItemsSource="{Binding Clips}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate>
-                                                    <Border Margin="0,0,0,4"
-                                                            Padding="6"
-                                                            Classes.selected="{Binding IsSelected}"
-                                                            PointerPressed="ClipCard_OnPointerPressed">
-                                                        <Border.Styles>
-                                                            <Style Selector="Border">
-                                                                <Setter Property="Background" Value="Transparent" />
-                                                            </Style>
-                                                            <Style Selector="Border.selected">
-                                                                <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
-                                                            </Style>
-                                                        </Border.Styles>
-                                                        <Grid>
-                                                            <!-- Unselected: Raised border -->
-                                                            <ClassicBorderDecorator BorderThickness="2" BorderStyle="Raised"
-                                                                                    IsVisible="{Binding IsSelected, Converter={x:Static local:App.InverseBoolConverter}}" />
-                                                            <!-- Selected: Sunken border -->
-                                                            <ClassicBorderDecorator BorderThickness="2" BorderStyle="Sunken"
-                                                                                    IsVisible="{Binding IsSelected}" />
-                                                            <!-- Content -->
-                                                            <StackPanel Margin="4" Spacing="2">
-                                                                <!-- Header: ID + Status -->
-                                                                <Grid ColumnDefinitions="Auto,*,Auto">
-                                                                    <TextBlock Text="{Binding ClipID, StringFormat='#{0}'}"
-                                                                               FontWeight="Bold"
-                                                                               FontSize="12" />
-                                                                    <TextBlock Grid.Column="2"
-                                                                               Text="{Binding StatusText}" />
-                                                                </Grid>
-                                                                <!-- Start time -->
-                                                                <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
-                                                                    <TextBlock Text="{DynamicResource String.Table.StartTime}"
-                                                                               Margin="0,0,4,0"
-                                                                               VerticalAlignment="Center" />
-                                                                    <Button Grid.Column="1"
-                                                                            Content="{Binding StartTimeStr}"
-                                                                            Classes="hyperlink"
-                                                                            Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToStartTimeCommand}"
-                                                                            CommandParameter="{Binding}" />
-                                                                </Grid>
-                                                                <!-- End time -->
-                                                                <Grid ColumnDefinitions="Auto,*">
-                                                                    <TextBlock Text="{DynamicResource String.Table.EndTime}"
-                                                                               Margin="0,0,4,0"
-                                                                               VerticalAlignment="Center" />
-                                                                    <Button Grid.Column="1"
-                                                                            Content="{Binding EndTimeStr}"
-                                                                            Classes="hyperlink"
-                                                                            Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToEndTimeCommand}"
-                                                                            CommandParameter="{Binding}" />
-                                                                </Grid>
-                                                                <!-- Size + Output Path -->
-                                                                <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
-                                                                    <TextBlock Text="{Binding EstimatedSizeStr}"
-                                                                               VerticalAlignment="Center"
-                                                                               Margin="0,0,8,0" />
-                                                                    <Button Grid.Column="1"
-                                                                            Content="{Binding OutputFilePathStr}"
-                                                                            Classes="hyperlink"
-                                                                            HorizontalContentAlignment="Stretch"
-                                                                            IsVisible="{Binding OutputFileInfo, Converter={x:Static converters:NullToVisibilityConverter.Instance}}"
-                                                                            Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).FindFileCommand}"
-                                                                            CommandParameter="{Binding OutputFileInfo}" />
-                                                                </Grid>
-                                                            </StackPanel>
-                                                        </Grid>
+                                    <!-- TabControl：片段列表和导出队列 -->
+                                    <TabControl Name="RightTabControl">
+                                        <!-- 片段列表 Tab -->
+                                        <TabItem>
+                                            <TabItem.Header>
+                                                <TextBlock>
+                                                    <Run Text="{DynamicResource String.Clips}" />
+                                                </TextBlock>
+                                            </TabItem.Header>
+                                            <DockPanel>
+                                                <Button DockPanel.Dock="Bottom"
+                                                        Command="{Binding ExportAllCommand}"
+                                                        HorizontalAlignment="Stretch"
+                                                        ToolTip.Tip="{DynamicResource String.ExportAllTip}"
+                                                        Margin="0,2,0,0">
+                                                    <TextBlock Text="{DynamicResource String.ExportAll}" />
+                                                </Button>
+                                                <Grid>
+                                                    <!-- Empty state -->
+                                                    <TextBlock Text="{DynamicResource String.Clips.Empty}"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                               IsVisible="{Binding Clips.Count, Converter={x:Static converters:ZeroToVisibilityConverter.Instance}}" />
+                                                    <!-- Cards -->
+                                                    <ScrollViewer Name="ClipsScrollViewer"
+                                                                  HorizontalScrollBarVisibility="Disabled"
+                                                                  IsVisible="{Binding Clips.Count, Converter={x:Static converters:PositiveToVisibilityConverter.Instance}}">
+                                                        <ItemsControl ItemsSource="{Binding Clips}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate>
+                                                                <Border Margin="0,0,0,4"
+                                                                        Padding="6"
+                                                                        Classes.selected="{Binding IsSelected}"
+                                                                        PointerPressed="ClipCard_OnPointerPressed">
+                                                                    <Border.Styles>
+                                                                        <Style Selector="Border">
+                                                                            <Setter Property="Background" Value="Transparent" />
+                                                                        </Style>
+                                                                        <Style Selector="Border.selected">
+                                                                            <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
+                                                                        </Style>
+                                                                    </Border.Styles>
+                                                                    <Grid>
+                                                                        <!-- Unselected: Raised border -->
+                                                                        <ClassicBorderDecorator BorderThickness="2" BorderStyle="Raised"
+                                                                                                IsVisible="{Binding IsSelected, Converter={x:Static local:App.InverseBoolConverter}}" />
+                                                                        <!-- Selected: Sunken border -->
+                                                                        <ClassicBorderDecorator BorderThickness="2" BorderStyle="Sunken"
+                                                                                                IsVisible="{Binding IsSelected}" />
+                                                                        <!-- Content -->
+                                                                        <StackPanel Margin="4" Spacing="2">
+                                                                            <!-- Header: ID + Status -->
+                                                                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                                                                <TextBlock Text="{Binding ClipID, StringFormat='#{0}'}"
+                                                                                           FontWeight="Bold"
+                                                                                           FontSize="12" />
+                                                                                <TextBlock Grid.Column="2"
+                                                                                           Text="{Binding StatusText}" />
+                                                                            </Grid>
+                                                                            <!-- Start time -->
+                                                                            <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
+                                                                                <TextBlock Text="{DynamicResource String.Table.StartTime}"
+                                                                                           Margin="0,0,4,0"
+                                                                                           VerticalAlignment="Center" />
+                                                                                <Button Grid.Column="1"
+                                                                                        Content="{Binding StartTimeStr}"
+                                                                                        Classes="hyperlink"
+                                                                                        Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToStartTimeCommand}"
+                                                                                        CommandParameter="{Binding}" />
+                                                                            </Grid>
+                                                                            <!-- End time -->
+                                                                            <Grid ColumnDefinitions="Auto,*">
+                                                                                <TextBlock Text="{DynamicResource String.Table.EndTime}"
+                                                                                           Margin="0,0,4,0"
+                                                                                           VerticalAlignment="Center" />
+                                                                                <Button Grid.Column="1"
+                                                                                        Content="{Binding EndTimeStr}"
+                                                                                        Classes="hyperlink"
+                                                                                        Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToEndTimeCommand}"
+                                                                                        CommandParameter="{Binding}" />
+                                                                            </Grid>
+                                                                            <!-- Size + Output Path -->
+                                                                            <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
+                                                                                <TextBlock Text="{Binding EstimatedSizeStr}"
+                                                                                           VerticalAlignment="Center"
+                                                                                           Margin="0,0,8,0" />
+                                                                                <Button Grid.Column="1"
+                                                                                        Content="{Binding OutputFilePathStr}"
+                                                                                        Classes="hyperlink"
+                                                                                        HorizontalContentAlignment="Stretch"
+                                                                                        IsVisible="{Binding OutputFileInfo, Converter={x:Static converters:NullToVisibilityConverter.Instance}}"
+                                                                                        Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).FindFileCommand}"
+                                                                                        CommandParameter="{Binding OutputFileInfo}" />
+                                                                            </Grid>
+                                                                        </StackPanel>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </ScrollViewer>
+                                                </Grid>
+                                            </DockPanel>
+                                        </TabItem>
+                                        <!-- 导出队列 Tab -->
+                                        <TabItem>
+                                            <TabItem.Header>
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <TextBlock Text="{DynamicResource String.ExportQueue}" />
+                                                    <Border CornerRadius="8"
+                                                            Padding="4,1"
+                                                            MinWidth="18"
+                                                            HorizontalAlignment="Center"
+                                                            BorderBrush="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                            BorderThickness="1"
+                                                            IsVisible="{Binding HasExportQueue}">
+                                                        <TextBlock FontSize="10"
+                                                                   FontWeight="Bold"
+                                                                   HorizontalAlignment="Center"
+                                                                   Text="{Binding ExportQueueCount}" />
                                                     </Border>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                </Grid>
+                                                </StackPanel>
+                                            </TabItem.Header>
+                                            <DockPanel>
+                                                <!-- 底部按钮 -->
+                                                <Grid DockPanel.Dock="Bottom"
+                                                      ColumnDefinitions="*,*"
+                                                      ColumnSpacing="4"
+                                                      Margin="0,2,0,0">
+                                                    <Grid.Styles>
+                                                        <Style Selector="Button:disabled Image">
+                                                            <Setter Property="Opacity" Value="0.3" />
+                                                        </Style>
+                                                    </Grid.Styles>
+                                                    <Button Grid.Column="0"
+                                                            Command="{Binding ClearQueueCommand}">
+                                                        <TextBlock Text="{DynamicResource String.ClearQueue}" />
+                                                    </Button>
+                                                    <Button Grid.Column="1"
+                                                            Command="{Binding BatchExportQueueCommand}"
+                                                            Classes="accent">
+                                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                                            <Image Height="16" Source="/Assets/save.gif" />
+                                                            <TextBlock VerticalAlignment="Center"
+                                                                       Text="{DynamicResource String.BatchExportQueue}"
+                                                                       Margin="4,0,0,0" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </Grid>
+                                                <Grid>
+                                                    <!-- Empty state -->
+                                                    <TextBlock Text="{DynamicResource String.QueueEmpty}"
+                                                               HorizontalAlignment="Center"
+                                                               VerticalAlignment="Center"
+                                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                                               IsVisible="{Binding HasExportQueue, Converter={x:Static local:App.InverseBoolConverter}}" />
+                                                    <!-- Queue cards -->
+                                                    <ScrollViewer HorizontalScrollBarVisibility="Disabled"
+                                                                  IsVisible="{Binding HasExportQueue}">
+                                                        <ItemsControl ItemsSource="{Binding ExportQueue}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="models:ExportQueueItem">
+                                                                <Border Margin="0,0,0,4"
+                                                                        Padding="6">
+                                                                    <Border.Styles>
+                                                                        <Style Selector="Border">
+                                                                            <Setter Property="Background" Value="Transparent" />
+                                                                        </Style>
+                                                                    </Border.Styles>
+                                                                    <Grid>
+                                                                        <ClassicBorderDecorator BorderThickness="2" BorderStyle="Raised" />
+                                                                        <Grid ColumnDefinitions="*,Auto">
+                                                                        <StackPanel Grid.Column="0" Margin="4" Spacing="2">
+                                                                            <!-- Header: Source filename -->
+                                                                            <TextBlock Text="{Binding SourceFileName}"
+                                                                                       TextTrimming="CharacterEllipsis"
+                                                                                       FontWeight="Bold"
+                                                                                       FontSize="12" />
+                                                                            <!-- Start time -->
+                                                                            <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
+                                                                                <TextBlock Text="{DynamicResource String.Table.StartTime}"
+                                                                                           Margin="0,0,4,0"
+                                                                                           VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Column="1"
+                                                                                           Text="{Binding StartTimeStr}" />
+                                                                            </Grid>
+                                                                            <!-- End time -->
+                                                                            <Grid ColumnDefinitions="Auto,*">
+                                                                                <TextBlock Text="{DynamicResource String.Table.EndTime}"
+                                                                                           Margin="0,0,4,0"
+                                                                                           VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Column="1"
+                                                                                           Text="{Binding EndTimeStr}" />
+                                                                            </Grid>
+                                                                            <!-- Size + Output path -->
+                                                                            <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
+                                                                                <TextBlock Text="{Binding EstimatedSizeStr}"
+                                                                                           VerticalAlignment="Center"
+                                                                                           Margin="0,0,8,0" />
+                                                                                <TextBlock Grid.Column="1"
+                                                                                           Text="{Binding OutputFilePathStr}"
+                                                                                           TextTrimming="CharacterEllipsis" />
+                                                                            </Grid>
+                                                                        </StackPanel>
+                                                                        <!-- 关闭按钮 × -->
+                                                                        <TextBlock Grid.Column="1"
+                                                                                   Text="×"
+                                                                                   FontSize="14"
+                                                                                   VerticalAlignment="Top"
+                                                                                   Margin="0,2,4,0"
+                                                                                   Cursor="Hand"
+                                                                                   PointerPressed="QueueRemove_OnPointerPressed"
+                                                                                   ToolTip.Tip="{DynamicResource String.QueueRemove}" />
+                                                                        </Grid>
+                                                                    </Grid>
+                                                                </Border>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                        </ItemsControl>
+                                                    </ScrollViewer>
+                                                </Grid>
+                                            </DockPanel>
+                                        </TabItem>
+                                    </TabControl>
                                 </DockPanel>
                             </ClassicBorderDecorator>
                         </Grid>

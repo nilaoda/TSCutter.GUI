@@ -22,6 +22,7 @@
     <x:String x:Key="String.Menu.File">檔案(_F)</x:String>
     <x:String x:Key="String.Menu.OpenVideo">開啟影片(_O)...</x:String>
     <x:String x:Key="String.Menu.SaveClip">儲存片段(_S)...</x:String>
+    <x:String x:Key="String.Menu.ExportQueue">匯出佇列</x:String>
     <x:String x:Key="String.Menu.CloseVideo">關閉影片</x:String>
     <x:String x:Key="String.Menu.Exit">離開(_E)</x:String>
     <x:String x:Key="String.Menu.Tools">工具(_T)</x:String>
@@ -127,4 +128,14 @@
     <x:String x:Key="String.CaptureFrame.CopyToClipboard">複製到剪貼簿</x:String>
     <x:String x:Key="String.CaptureFrame.SaveToFile">儲存到檔案</x:String>
     <x:String x:Key="String.CaptureFrame.Format">格式</x:String>
+    <x:String x:Key="String.AddToQueue">加入佇列...</x:String>
+    <x:String x:Key="String.AddToQueueTip">將目前片段加入匯出佇列</x:String>
+    <x:String x:Key="String.BatchExportQueue">批次匯出</x:String>
+    <x:String x:Key="String.BatchExportQueueTip">匯出佇列中的所有片段</x:String>
+    <x:String x:Key="String.BatchExportConfirm">將匯出佇列中的 {0} 個片段匯出，確認繼續？</x:String>
+    <x:String x:Key="String.ExportQueue">匯出佇列</x:String>
+    <x:String x:Key="String.QueueEmpty">佇列為空</x:String>
+    <x:String x:Key="String.ClearQueue">清空佇列</x:String>
+    <x:String x:Key="String.Clips">片段</x:String>
+    <x:String x:Key="String.QueueRemove">移除</x:String>
 </ResourceDictionary>

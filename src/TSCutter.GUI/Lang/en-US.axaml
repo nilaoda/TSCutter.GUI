@@ -22,6 +22,7 @@
     <x:String x:Key="String.Menu.File">_File</x:String>
     <x:String x:Key="String.Menu.OpenVideo">_Open Video...</x:String>
     <x:String x:Key="String.Menu.SaveClip">_Save Clip...</x:String>
+    <x:String x:Key="String.Menu.ExportQueue">Export Queue</x:String>
     <x:String x:Key="String.Menu.CloseVideo">_Close Video</x:String>
     <x:String x:Key="String.Menu.Exit">_Exit</x:String>
     <x:String x:Key="String.Menu.Tools">_Tools</x:String>
@@ -127,4 +128,14 @@
     <x:String x:Key="String.CaptureFrame.CopyToClipboard">Copy to Clipboard</x:String>
     <x:String x:Key="String.CaptureFrame.SaveToFile">Save to File</x:String>
     <x:String x:Key="String.CaptureFrame.Format">Format</x:String>
+    <x:String x:Key="String.AddToQueue">Add to Queue...</x:String>
+    <x:String x:Key="String.AddToQueueTip">Add current clip to export queue</x:String>
+    <x:String x:Key="String.BatchExportQueue">Batch Export</x:String>
+    <x:String x:Key="String.BatchExportQueueTip">Export all clips in the queue</x:String>
+    <x:String x:Key="String.BatchExportConfirm">Export {0} clips from the queue?&#10;&#10;Continue?</x:String>
+    <x:String x:Key="String.ExportQueue">Export Queue</x:String>
+    <x:String x:Key="String.QueueEmpty">Queue is empty</x:String>
+    <x:String x:Key="String.ClearQueue">Clear Queue</x:String>
+    <x:String x:Key="String.Clips">Clips</x:String>
+    <x:String x:Key="String.QueueRemove">Remove</x:String>
 </ResourceDictionary>
