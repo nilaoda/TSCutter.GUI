@@ -1,5 +1,8 @@
-# TSCutter.GUI
-[English](./README.md) | 中文版
+<div align="center">
+  <img src="src/TSCutter.GUI/Assets/logo.png" alt="TSCutter.GUI" width="112">
+  <h1>TSCutter.GUI</h1>
+  <p><a href="README.md">English</a> | <strong>中文版</strong></p>
+</div>
 
 TSCutter.GUI 是一个轻量级工具，旨在高效剪切 TS（传输流）视频文件。它允许用户在不修改原始数据的情况下快速浏览关键帧并提取特定片段。
 
@@ -30,8 +33,9 @@ macOS 下程序会自动探测常见的 Homebrew 路径；若 FFmpeg 7 安装在
 
 </details>
 
-## 截图
-![img](img/SS1.png)
+## 界面预览
+
+<img alt="TSCutter.GUI 界面预览" src="img/SS1.png">
 
 ## 使用方法
 

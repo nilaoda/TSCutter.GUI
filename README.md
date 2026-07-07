@@ -1,5 +1,8 @@
-# TSCutter.GUI
-English | [中文版](./README_CN.md)
+<div align="center">
+  <img src="src/TSCutter.GUI/Assets/logo.png" alt="TSCutter.GUI" width="112">
+  <h1>TSCutter.GUI</h1>
+  <p><strong>English</strong> | <a href="README_CN.md">中文版</a></p>
+</div>
 
 TSCutter.GUI is a lightweight tool designed to efficiently cut TS (Transport Stream) video files. It allows users to quickly navigate through keyframes and extract specific segments without modifying the original data.
 
@@ -30,8 +33,9 @@ On macOS, the app automatically probes common Homebrew locations. If your FFmpeg
 
 </details>
 
-## Screen
-![img](img/SS1.png)
+## Preview
+
+<img alt="TSCutter.GUI preview" src="img/SS1.png">
 
 ## Usage
 
