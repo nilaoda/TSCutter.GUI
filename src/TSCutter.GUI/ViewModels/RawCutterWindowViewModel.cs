@@ -257,17 +257,20 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
                 return;
             }
             startPos = TsUtil.PacketToOffset(StartPacket, SyncOffset);
-            endPos = Math.Min(TsUtil.PacketToOffset(EndPacket + 1, SyncOffset) - 1, FileSize - 1);
+            // CopyFileAsync interprets its end position as exclusive.  The next packet
+            // boundary therefore includes all 188 bytes of EndPacket.
+            endPos = Math.Min(TsUtil.PacketToOffset(EndPacket + 1, SyncOffset), FileSize);
             defaultNameSuffix = $"{StartPacket}-{EndPacket}";
         }
         else
         {
             startPos = Math.Max(0, StartOffset);
-            endPos = Math.Min(Math.Max(startPos, EndOffset), FileSize - 1);
-            defaultNameSuffix = $"{startPos}-{endPos}";
+            var endOffset = Math.Min(Math.Max(startPos, EndOffset), FileSize - 1);
+            endPos = endOffset + 1;
+            defaultNameSuffix = $"{startPos}-{endOffset}";
         }
 
-        if (startPos >= endPos || endPos >= FileSize)
+        if (startPos >= endPos || endPos > FileSize)
         {
             await ShowMessageAsync(
                 LocalizationManager.Instance.String_RawCutter_InvalidRange,
