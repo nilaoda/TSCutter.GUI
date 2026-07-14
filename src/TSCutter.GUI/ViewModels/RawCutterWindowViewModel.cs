@@ -112,6 +112,18 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
             if (_syncingSlider) return;
             var v = (long)Math.Round(value);
             v = Math.Clamp(v, SyncOffset, Math.Max(SyncOffset, FileSize - 1));
+
+            if (IsPacketMode)
+            {
+                var packet = Math.Min(OffsetToPacketIndex(v), EndPacket);
+                v = TsUtil.PacketToOffset(packet, SyncOffset);
+                _syncingSlider = true;
+                StartPacket = packet;
+                StartOffset = v;
+                _syncingSlider = false;
+                return;
+            }
+
             if (v > SliderEnd) v = (long)SliderEnd;
             _syncingSlider = true;
             StartOffset = v;
@@ -131,6 +143,18 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
             if (_syncingSlider) return;
             var v = (long)Math.Round(value);
             v = Math.Clamp(v, SyncOffset, Math.Max(SyncOffset, FileSize - 1));
+
+            if (IsPacketMode)
+            {
+                var packet = Math.Max(OffsetToPacketIndex(v), StartPacket);
+                v = PacketEndOffset(packet);
+                _syncingSlider = true;
+                EndPacket = packet;
+                EndOffset = v;
+                _syncingSlider = false;
+                return;
+            }
+
             if (v < SliderStart) v = (long)SliderStart;
             _syncingSlider = true;
             EndOffset = v;
@@ -194,7 +218,7 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
 
         EndPacket = Math.Max(0, TotalPackets - 1);
         StartOffset = TsUtil.PacketToOffset(StartPacket, SyncOffset);
-        EndOffset = FileSize - 1;
+        EndOffset = PacketEndOffset(EndPacket);
     }
 
     partial void OnStartPacketChanged(long value)
@@ -215,12 +239,38 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
 
     partial void OnIsPacketModeChanged(bool value)
     {
+        if (value && TotalPackets > 0)
+        {
+            var startPacket = OffsetToPacketIndex(StartOffset);
+            var endPacket = Math.Max(startPacket, OffsetToPacketIndex(EndOffset));
+
+            _syncingSlider = true;
+            StartPacket = startPacket;
+            EndPacket = endPacket;
+            StartOffset = TsUtil.PacketToOffset(startPacket, SyncOffset);
+            EndOffset = PacketEndOffset(endPacket);
+            _syncingSlider = false;
+        }
+
         // 切换模式时强制刷新
         OnPropertyChanged(nameof(RangeInfoStr));
         OnPropertyChanged(nameof(SliderStart));
         OnPropertyChanged(nameof(SliderEnd));
         OnPropertyChanged(nameof(PacketMax));
         OnPropertyChanged(nameof(OffsetMax));
+    }
+
+    private long OffsetToPacketIndex(long offset)
+    {
+        return Math.Clamp(
+            (offset - SyncOffset) / TsUtil.TsPacketSize,
+            0,
+            Math.Max(0, TotalPackets - 1));
+    }
+
+    private long PacketEndOffset(long packetIndex)
+    {
+        return Math.Min(TsUtil.PacketToOffset(packetIndex + 1, SyncOffset) - 1, FileSize - 1);
     }
 
     [RelayCommand]
@@ -257,17 +307,20 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
                 return;
             }
             startPos = TsUtil.PacketToOffset(StartPacket, SyncOffset);
-            endPos = Math.Min(TsUtil.PacketToOffset(EndPacket + 1, SyncOffset) - 1, FileSize - 1);
+            // CopyFileAsync interprets its end position as exclusive.  The next packet
+            // boundary therefore includes all 188 bytes of EndPacket.
+            endPos = Math.Min(TsUtil.PacketToOffset(EndPacket + 1, SyncOffset), FileSize);
             defaultNameSuffix = $"{StartPacket}-{EndPacket}";
         }
         else
         {
             startPos = Math.Max(0, StartOffset);
-            endPos = Math.Min(Math.Max(startPos, EndOffset), FileSize - 1);
-            defaultNameSuffix = $"{startPos}-{endPos}";
+            var endOffset = Math.Min(Math.Max(startPos, EndOffset), FileSize - 1);
+            endPos = endOffset + 1;
+            defaultNameSuffix = $"{startPos}-{endOffset}";
         }
 
-        if (startPos >= endPos || endPos >= FileSize)
+        if (startPos >= endPos || endPos > FileSize)
         {
             await ShowMessageAsync(
                 LocalizationManager.Instance.String_RawCutter_InvalidRange,
