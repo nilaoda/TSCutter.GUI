@@ -8,10 +8,6 @@ public class AppConfig
     // 系统当前是否处于深色模式
     [JsonIgnore]
     public static bool IsSystemDarkMode { get; set; }
-    // 系统当前是否处于深色模式
-    [JsonIgnore]
-    public static string SystemLocName { get; set; }
-
     [JsonIgnore]
     public ThemeModel ThemeModel => ThemeModel.AllThemes.FirstOrDefault(x => x.Name == ThemeName)!;
     [JsonIgnore]

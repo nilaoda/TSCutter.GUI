@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Runtime.Versioning;
 using System.Text.Json;
 using System.Threading;
 using Avalonia;
@@ -125,13 +128,91 @@ public class ConfigurationService : IConfigurationService
 
     private static string AutoDetectLanguage()
     {
-        var currLoc = AppConfig.SystemLocName;
-        var loc = currLoc switch
+        foreach (var languageName in GetPreferredLanguageNames())
         {
-            "zh-CN" or "zh-SG" => "zh-CN",
-            _ when currLoc.StartsWith("zh-") => "zh-TW",
-            _ => "en-US"
-        };
-        return loc;
+            var language = ResolveLanguageName(languageName);
+            if (language != null)
+                return language;
+        }
+
+        return "en-US";
+    }
+
+    private static string? ResolveLanguageName(string? languageName)
+    {
+        if (string.IsNullOrWhiteSpace(languageName))
+            return null;
+
+        var normalized = NormalizeLanguageName(languageName);
+        if (normalized.StartsWith("zh-Hant", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("-TW", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("-HK", StringComparison.OrdinalIgnoreCase) ||
+            normalized.Contains("-MO", StringComparison.OrdinalIgnoreCase))
+            return "zh-TW";
+
+        if (normalized.StartsWith("zh", StringComparison.OrdinalIgnoreCase))
+            return "zh-CN";
+
+        return normalized.StartsWith("en", StringComparison.OrdinalIgnoreCase)
+            ? "en-US"
+            : null;
+    }
+
+    private static IEnumerable<string> GetPreferredLanguageNames()
+    {
+        if (OperatingSystem.IsMacOS())
+        {
+            foreach (var languageName in ReadMacOSAppleLanguages())
+                yield return languageName;
+        }
+
+        yield return CultureInfo.CurrentUICulture.Name;
+        yield return CultureInfo.CurrentCulture.Name;
+
+        foreach (var variable in new[] { "LC_ALL", "LC_MESSAGES", "LANG" })
+            yield return Environment.GetEnvironmentVariable(variable) ?? string.Empty;
+    }
+
+    [SupportedOSPlatform("macos")]
+    private static IReadOnlyList<string> ReadMacOSAppleLanguages()
+    {
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "/usr/bin/defaults",
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+            startInfo.ArgumentList.Add("read");
+            startInfo.ArgumentList.Add("-g");
+            startInfo.ArgumentList.Add("AppleLanguages");
+
+            using var process = Process.Start(startInfo);
+            if (process == null || !process.WaitForExit(1000))
+                return [];
+
+            var languageNames = new List<string>();
+            foreach (var line in process.StandardOutput.ReadToEnd().Split('\n'))
+            {
+                var languageName = line.Trim().Trim(',', '"');
+                if (languageName.Length > 0 && languageName is not "(" and not ")")
+                    languageNames.Add(languageName);
+            }
+
+            return languageNames;
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
+    private static string NormalizeLanguageName(string languageName)
+    {
+        var normalized = languageName.Trim().Trim('"').Replace('_', '-');
+        var dotIndex = normalized.IndexOf('.', StringComparison.Ordinal);
+        return dotIndex >= 0 ? normalized[..dotIndex] : normalized;
     }
 }

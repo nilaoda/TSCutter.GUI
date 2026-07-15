@@ -1,5 +1,4 @@
 using System;
-using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -60,9 +59,6 @@ public partial class App : Application
             AppConfig.IsSystemDarkMode = true;
         }
         
-        // 记录系统当前本地化名称
-        AppConfig.SystemLocName = Thread.CurrentThread.CurrentUICulture.Name;
-
         // 加载配置
         var configService = Locator.Current.GetService<IConfigurationService>()!;
         configService.Load();
