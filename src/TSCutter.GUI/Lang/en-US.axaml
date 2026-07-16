@@ -138,7 +138,7 @@
     <x:String x:Key="String.ClearQueue">Clear Queue</x:String>
     <x:String x:Key="String.Clips">Clips</x:String>
     <x:String x:Key="String.QueueRemove">Remove</x:String>
-    <x:String x:Key="String.Menu.TsCheck">_TS Quick Check...</x:String>
+    <x:String x:Key="String.Menu.TsCheck">TS Quick _Check...</x:String>
     <x:String x:Key="String.TsCheck.OpenFile">Open TS file for checking</x:String>
     <x:String x:Key="String.TsCheck.Title">TS Quick Check</x:String>
     <x:String x:Key="String.TsCheck.File">File:</x:String>
