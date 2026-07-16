@@ -28,7 +28,7 @@ public partial class MainWindowViewModel : ViewModelBase
 {
     private string TitleInfo => $"TSCutter.GUI - Alpha.{App.CurrentTag.Split('_').Last()}";
 
-    private static string PleaseLoadTip = LocalizationManager.Instance.String_PleaseLoadVideo;
+    private static string PleaseLoadTip => LocalizationManager.Instance.String_PleaseLoadVideo;
     public string WindowTitle
     {
         get
@@ -48,8 +48,16 @@ public partial class MainWindowViewModel : ViewModelBase
         _configService = configService;
         // 构造菜单项
         BuildThemeMenuItems();
+        // 计算型本地化文本不会随资源字典自动刷新，语言切换后需主动通知界面重新取值。
+        App.LocalizationService.LanguageChanged += OnLanguageChanged;
         Application.Current!.ActualThemeVariantChanged += (_, __)
             => Task.Delay(100).ConfigureAwait(true).GetAwaiter().OnCompleted(BuildThemeMenuItems);
+    }
+
+    private void OnLanguageChanged()
+    {
+        OnPropertyChanged(nameof(ZoomFactorStr));
+        OnPropertyChanged(nameof(StatusInfoText));
     }
 
     private long PositionInFile => _videoInstance!.PositionInFile;
