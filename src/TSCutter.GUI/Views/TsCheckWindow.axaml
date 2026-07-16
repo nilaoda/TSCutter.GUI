@@ -1,0 +1,172 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.TsCheckWindow"
+        x:DataType="viewModels:TsCheckWindowViewModel"
+        Title="{DynamicResource String.TsCheck.Title}"
+        Width="900" Height="580"
+        MinWidth="720" MinHeight="460"
+        WindowStartupLocation="CenterOwner">
+
+    <Window.Resources>
+        <ResourceDictionary>
+            <!-- 异常色跟随 ThemeVariant 切换，保证深浅背景下均有足够的文字对比度。 -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="TsCheckErrorCellBackgroundBrush" Color="#D32F2F" Opacity="0.14" />
+                    <SolidColorBrush x:Key="TsCheckErrorCellForegroundBrush" Color="#B71C1C" />
+                    <SolidColorBrush x:Key="TsCheckWarningCellBackgroundBrush" Color="#B88600" Opacity="0.14" />
+                    <SolidColorBrush x:Key="TsCheckWarningCellForegroundBrush" Color="#765000" />
+                    <SolidColorBrush x:Key="TsCheckPassForegroundBrush" Color="#1B5E20" />
+                    <SolidColorBrush x:Key="TsCheckPacketShareBrush" Color="#2E6FAD" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="TsCheckErrorCellBackgroundBrush" Color="#FF5252" Opacity="0.16" />
+                    <SolidColorBrush x:Key="TsCheckErrorCellForegroundBrush" Color="#FF7A7A" />
+                    <SolidColorBrush x:Key="TsCheckWarningCellBackgroundBrush" Color="#FFC107" Opacity="0.14" />
+                    <SolidColorBrush x:Key="TsCheckWarningCellForegroundBrush" Color="#FFD166" />
+                    <SolidColorBrush x:Key="TsCheckPassForegroundBrush" Color="#7AD97A" />
+                    <SolidColorBrush x:Key="TsCheckPacketShareBrush" Color="#70A9E8" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Window.Styles>
+        <Style Selector="Border.errorCell">
+            <Setter Property="Background" Value="{DynamicResource TsCheckErrorCellBackgroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.errorCell">
+            <Setter Property="Foreground" Value="{DynamicResource TsCheckErrorCellForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Border.warningCell">
+            <Setter Property="Background" Value="{DynamicResource TsCheckWarningCellBackgroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.warningCell">
+            <Setter Property="Foreground" Value="{DynamicResource TsCheckWarningCellForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.passVerdict">
+            <Setter Property="Foreground" Value="{DynamicResource TsCheckPassForegroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.errorVerdict">
+            <Setter Property="Foreground" Value="{DynamicResource TsCheckErrorCellForegroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.warningVerdict">
+            <Setter Property="Foreground" Value="{DynamicResource TsCheckWarningCellForegroundBrush}" />
+        </Style>
+    </Window.Styles>
+
+    <Grid Margin="12" RowDefinitions="Auto,Auto,Auto,*,Auto">
+        <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="4">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource String.TsCheck.File}" VerticalAlignment="Center" />
+                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding FilePath}" IsReadOnly="True" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="{DynamicResource String.TsCheck.FileSize}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding FileSizeText}" FontWeight="Bold" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource String.TsCheck.Status}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding StatusText}" TextWrapping="Wrap" />
+            </Grid>
+        </ClassicBorderDecorator>
+
+        <Grid Grid.Row="1" Margin="0,10,0,0" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="12" RowSpacing="4">
+            <ProgressBar Grid.Row="0" Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding Percent}" Height="18" />
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Percent, StringFormat={}{0:0.00}%}" MinWidth="70" TextAlignment="Right" />
+            <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="18">
+                <TextBlock><Run Text="{DynamicResource String.TsCheck.Progress}" /><Run Text=" " /><Run Text="{Binding ProgressText}" FontWeight="Bold" /></TextBlock>
+                <TextBlock><Run Text="{DynamicResource String.TsCheck.Speed}" /><Run Text=" " /><Run Text="{Binding SpeedText}" FontWeight="Bold" /></TextBlock>
+                <TextBlock><Run Text="{DynamicResource String.TsCheck.Packets}" /><Run Text=" " /><Run Text="{Binding PacketCountText}" FontWeight="Bold" /></TextBlock>
+                <TextBlock><Run Text="{DynamicResource String.TsCheck.Elapsed}" /><Run Text=" " /><Run Text="{Binding ElapsedText}" FontWeight="Bold" /></TextBlock>
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="0,10,0,8" ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="24">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="{DynamicResource String.TsCheck.Verdict}" />
+                <TextBlock Text="{Binding VerdictText}" FontWeight="Bold"
+                           Classes.passVerdict="{Binding IsPassVerdict}"
+                           Classes.errorVerdict="{Binding IsErrorVerdict}"
+                           Classes.warningVerdict="{Binding IsWarningVerdict}" />
+            </StackPanel>
+            <TextBlock Grid.Column="1"><Run Text="{DynamicResource String.TsCheck.Errors}" /><Run Text=" " /><Run Text="{Binding ErrorCount}" FontWeight="Bold" /></TextBlock>
+            <TextBlock Grid.Column="2"><Run Text="{DynamicResource String.TsCheck.Warnings}" /><Run Text=" " /><Run Text="{Binding WarningCount}" FontWeight="Bold" /></TextBlock>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="14">
+                <RadioButton GroupName="TsCheckView" Content="{DynamicResource String.TsCheck.View.Summary}"
+                             IsChecked="{Binding IsSummaryView, Mode=TwoWay}" />
+                <RadioButton GroupName="TsCheckView" Content="{DynamicResource String.TsCheck.View.Details}"
+                             IsChecked="{Binding IsSummaryView, Mode=TwoWay, Converter={x:Static local:App.InverseBoolConverter}}" />
+            </StackPanel>
+        </Grid>
+
+        <DataGrid Grid.Row="3" ItemsSource="{Binding PidSummaries}" IsReadOnly="True" AutoGenerateColumns="False"
+                  IsVisible="{Binding IsSummaryView}"
+                  GridLinesVisibility="All" CanUserResizeColumns="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="PID" Binding="{Binding PidText}" Width="90" />
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Stream}" Binding="{Binding Stream}" Width="*" />
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Packets}" Binding="{Binding PacketCountText}" Width="140" />
+                <DataGridTemplateColumn Header="{DynamicResource String.TsCheck.Column.PacketPercentage}" Width="170">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="4,0">
+                                <controls:PacketShareBar Grid.Column="0" Height="8"
+                                                         Fill="{DynamicResource TsCheckPacketShareBrush}"
+                                                         Value="{Binding PacketPercentage}" />
+                                <TextBlock Grid.Column="1" Text="{Binding PacketPercentageText}"
+                                           MinWidth="52" TextAlignment="Right" VerticalAlignment="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="{DynamicResource String.TsCheck.Column.Errors}" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border Classes.errorCell="{Binding HasErrors}" Padding="6,0">
+                                <TextBlock Classes.errorCell="{Binding HasErrors}" Text="{Binding ErrorCount}" HorizontalAlignment="Right" />
+                            </Border>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="{DynamicResource String.TsCheck.Column.Warnings}" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border Classes.warningCell="{Binding HasWarnings}" Padding="6,0">
+                                <TextBlock Classes.warningCell="{Binding HasWarnings}" Text="{Binding WarningCount}" HorizontalAlignment="Right" />
+                            </Border>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <DataGrid Grid.Row="3" ItemsSource="{Binding Events}" IsReadOnly="True" AutoGenerateColumns="False"
+                  IsVisible="{Binding IsSummaryView, Converter={x:Static local:App.InverseBoolConverter}}"
+                  GridLinesVisibility="All" CanUserResizeColumns="True"
+                  HorizontalScrollBarVisibility="Visible" VerticalScrollBarVisibility="Auto"
+                  ScrollViewer.HorizontalScrollBarVisibility="Visible"
+                  ScrollViewer.VerticalScrollBarVisibility="Auto">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Severity}" Binding="{Binding Severity}" Width="90" />
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.SourceTime}" Binding="{Binding SourceTime}" Width="120" />
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.ZeroBasedTime}" Binding="{Binding ZeroBasedTime}" Width="120" />
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Type}" Binding="{Binding Type}" Width="175" />
+                <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="80" />
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Stream}" Binding="{Binding Stream}" Width="220" />
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Packet}" Binding="{Binding Packet}" Width="135" />
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Description}" Binding="{Binding Message}" Width="420" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <StackPanel Grid.Row="4" Margin="0,10,0,0" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="{DynamicResource String.TsCheck.Start}" Command="{Binding StartCommand}" Width="100" />
+            <Button Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}" Width="100" />
+            <Button Content="{DynamicResource String.TsCheck.Export}" Command="{Binding ExportCommand}" Width="120" />
+        </StackPanel>
+    </Grid>
+</Window>
