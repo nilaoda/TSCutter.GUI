@@ -1,13 +1,13 @@
-name: Build and Release
+name: Build and Direct Release
 
 on:
   workflow_dispatch:
     inputs:
       publish_release:
-        description: Publish GitHub release after build
+        description: Confirm publishing GitHub release directly after build
         required: true
         type: boolean
-        default: true
+        default: false
 
 env:
   DOTNET_SDK_VERSION: 10.x
@@ -17,18 +17,66 @@ env:
   FFMPEG_RUNTIME_OSX_ARM64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20260614/ffmpeg-runtime-osx-arm64-gpl-shared-7.1.3.zip
 
 jobs:
+  confirm-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require explicit release confirmation
+        run: |
+          if [ "${{ inputs.publish_release }}" != "true" ]; then
+            echo "::error::publish_release must be explicitly enabled for this temporary direct-release workflow."
+            exit 1
+          fi
+
   set-date:
     runs-on: ubuntu-latest
     outputs:
       date: ${{ steps.get_date.outputs.date }}
+      tag: ${{ steps.get_date.outputs.tag }}
+      release_time: ${{ steps.get_date.outputs.release_time }}
     steps:
-      - name: Get Date in UTC+8
+      - name: Get release metadata in UTC+8
         id: get_date
-        run: echo "date=$(date -u -d '8 hours' +'%Y%m%d')" >> "$GITHUB_OUTPUT"
+        run: |
+          DATE="$(date -u -d '8 hours' +'%Y%m%d')"
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+          echo "tag=alphabuild_$DATE" >> "$GITHUB_OUTPUT"
+          echo "release_time=$(date -u -d '8 hours' +'%Y-%m-%d %H:%M:%S')" >> "$GITHUB_OUTPUT"
+
+  prepare-release:
+    runs-on: ubuntu-latest
+    needs: [confirm-release, set-date]
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.set-date.outputs.tag }}
+          RELEASE_TIME: ${{ needs.set-date.outputs.release_time }}
+        run: |
+          if IS_DRAFT="$(gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --json isDraft --jq .isDraft 2>/dev/null)"; then
+            if [ "$IS_DRAFT" != "true" ]; then
+              echo "::error::Published release $RELEASE_TAG already exists."
+              exit 1
+            fi
+
+            echo "Reusing existing draft release $RELEASE_TAG."
+            exit 0
+          fi
+
+          gh release create "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target main \
+            --title "Alpha-Build ($RELEASE_TIME)" \
+            --generate-notes \
+            --draft
 
   build-win-x64:
     runs-on: windows-latest
-    needs: set-date
+    needs: [set-date, prepare-release]
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -80,15 +128,21 @@ jobs:
           cd src/TSCutter.GUI/artifact
           zip -r ../../../TSCutter.GUI_Alpha_win-x64_${{ needs.set-date.outputs.date }}.zip . -x "lib*" -x "av_*" -x "*.pdb"
 
-      - name: Upload Artifact [win-x64]
-        uses: actions/upload-artifact@v4
-        with:
-          name: TSCutter.GUI_win-x64
-          path: TSCutter.GUI_Alpha_win-x64_${{ needs.set-date.outputs.date }}.zip
+      - name: Upload Release Asset [win-x64]
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ needs.set-date.outputs.tag }}" `
+            "TSCutter.GUI_Alpha_win-x64_${{ needs.set-date.outputs.date }}.zip" `
+            --repo "$env:GITHUB_REPOSITORY" `
+            --clobber
 
   build-linux-x64:
     runs-on: ubuntu-latest
-    needs: set-date
+    needs: [set-date, prepare-release]
+    permissions:
+      contents: write
 
     steps:
       - run: sudo apt-get update
@@ -113,15 +167,20 @@ jobs:
           cd artifact
           zip -r ../TSCutter.GUI_Alpha_linux-x64_${{ needs.set-date.outputs.date }}.zip . -x "*.dbg"
 
-      - name: Upload Artifact [linux-x64]
-        uses: actions/upload-artifact@v4
-        with:
-          name: TSCutter.GUI_linux-x64
-          path: TSCutter.GUI_Alpha_linux-x64_${{ needs.set-date.outputs.date }}.zip
+      - name: Upload Release Asset [linux-x64]
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ needs.set-date.outputs.tag }}" \
+            "TSCutter.GUI_Alpha_linux-x64_${{ needs.set-date.outputs.date }}.zip" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
 
   build-mac-arm64:
     runs-on: macos-14
-    needs: set-date
+    needs: [set-date, prepare-release]
+    permissions:
+      contents: write
 
     steps:
       - uses: actions/checkout@v4
@@ -192,33 +251,27 @@ jobs:
           cd "$RUNNER_TEMP"
           ditto -c -k --sequesterRsrc --keepParent "TSCutter.GUI.app" "$GITHUB_WORKSPACE/TSCutter.GUI_Alpha_osx-arm64_${{ needs.set-date.outputs.date }}.zip"
 
-      - name: Upload Artifact [osx-arm64]
-        uses: actions/upload-artifact@v4
-        with:
-          name: TSCutter.GUI_osx-arm64
-          path: TSCutter.GUI_Alpha_osx-arm64_${{ needs.set-date.outputs.date }}.zip
+      - name: Upload Release Asset [osx-arm64]
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ needs.set-date.outputs.tag }}" \
+            "TSCutter.GUI_Alpha_osx-arm64_${{ needs.set-date.outputs.date }}.zip" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber
 
   release:
-    if: ${{ github.event.inputs.publish_release != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [build-win-x64, build-linux-x64, build-mac-arm64, set-date]
+    needs: [build-win-x64, build-linux-x64, build-mac-arm64, set-date, prepare-release]
 
     steps:
-      - name: Fetch artifacts
-        uses: actions/download-artifact@v4
-
-      - name: Get Release Time
-        id: get_release_time
-        run: echo "release_time=$(date -u -d '8 hours' +'%Y-%m-%d %H:%M:%S')" >> "$GITHUB_OUTPUT"
-
-      - name: Create GitHub Release
-        uses: ncipollo/release-action@v1
-        with:
-          tag: alphabuild_${{ needs.set-date.outputs.date }}
-          name: Alpha-Build (${{ steps.get_release_time.outputs.release_time }})
-          artifacts: "TSCutter.GUI_linux-x64/*,TSCutter.GUI_osx-arm64/*,TSCutter.GUI_win-x64/*"
-          draft: false
-          allowUpdates: true
-          generateReleaseNotes: true
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release edit "${{ needs.set-date.outputs.tag }}" \
+            --repo "$GITHUB_REPOSITORY" \
+            --draft=false \
+            --latest
