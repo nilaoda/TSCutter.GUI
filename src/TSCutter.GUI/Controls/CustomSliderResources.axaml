@@ -32,13 +32,13 @@
             <system:Double x:Key="SliderInnerThumbWidth">0</system:Double>
             <CornerRadius x:Key="SliderThumbCornerRadius">0</CornerRadius>
             <CornerRadius x:Key="SliderTrackCornerRadius">0</CornerRadius>
-            <SolidColorBrush x:Key="SliderThumbBorderBrush" Color="#0091f8" />
-            <SolidColorBrush x:Key="SliderTrackValueFill" Opacity="0.2" Color="#717174" />
-            <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Opacity="0.2" Color="#717174" />
-            <SolidColorBrush x:Key="SliderTrackValueFillPressed" Opacity="0.2" Color="#717174" />
-            <SolidColorBrush x:Key="SliderTrackFill" Opacity="0.2" Color="#717174" />
-            <SolidColorBrush x:Key="SliderTrackFillPointerOver" Opacity="0.2" Color="#717174" />
-            <SolidColorBrush x:Key="SliderTrackFillPressed" Opacity="0.2" Color="#717174" />
+            <SolidColorBrush x:Key="SliderThumbBorderBrush" Color="#4F8FD8" />
+            <SolidColorBrush x:Key="SliderTrackValueFill" Opacity="0.24" Color="#7C8592" />
+            <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Opacity="0.3" Color="#87919E" />
+            <SolidColorBrush x:Key="SliderTrackValueFillPressed" Opacity="0.34" Color="#929CA9" />
+            <SolidColorBrush x:Key="SliderTrackFill" Opacity="0.24" Color="#7C8592" />
+            <SolidColorBrush x:Key="SliderTrackFillPointerOver" Opacity="0.3" Color="#87919E" />
+            <SolidColorBrush x:Key="SliderTrackFillPressed" Opacity="0.34" Color="#929CA9" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>
