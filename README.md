@@ -35,7 +35,11 @@ On macOS, the app automatically probes common Homebrew locations. If your FFmpeg
 
 ## Preview
 
-<img alt="TSCutter.GUI preview" src="img/SS1.png">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dark_en.png">
+  <source media="(prefers-color-scheme: light)" srcset="img/light_en.png">
+  <img alt="TSCutter.GUI preview" src="img/light_en.png">
+</picture>
 
 ## Usage
 

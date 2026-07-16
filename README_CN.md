@@ -35,7 +35,11 @@ macOS 下程序会自动探测常见的 Homebrew 路径；若 FFmpeg 7 安装在
 
 ## 界面预览
 
-<img alt="TSCutter.GUI 界面预览" src="img/SS1.png">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="img/dark_cn.png">
+  <source media="(prefers-color-scheme: light)" srcset="img/light_cn.png">
+  <img alt="TSCutter.GUI 界面预览" src="img/light_cn.png">
+</picture>
 
 ## 使用方法
 
