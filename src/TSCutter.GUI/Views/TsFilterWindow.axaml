@@ -1,0 +1,82 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.TsFilterWindow"
+        x:DataType="viewModels:TsFilterWindowViewModel"
+        Title="{DynamicResource String.TsFilter.Title}"
+        Width="860" Height="560" MinWidth="700" MinHeight="440"
+        WindowStartupLocation="CenterOwner">
+    <Grid Margin="12" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
+        <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="4">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource String.TsFilter.File}" VerticalAlignment="Center" />
+                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding FilePath}" IsReadOnly="True" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="{DynamicResource String.TsFilter.FileSize}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding FileSizeText}" FontWeight="Bold" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource String.TsFilter.Status}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding StatusText}" TextWrapping="Wrap" />
+            </Grid>
+        </ClassicBorderDecorator>
+
+        <Grid Grid.Row="1" RowDefinitions="18,24,Auto" ColumnDefinitions="175,180,*,90,90"
+              ColumnSpacing="12" RowSpacing="6">
+            <ProgressBar Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="4" Minimum="0" Maximum="100" Value="{Binding Percent}"
+                         Height="18" />
+            <TextBlock Grid.Row="0" Grid.Column="4" Text="{Binding Percent, StringFormat={}{0:0.00}%}"
+                       IsVisible="{Binding ShowOutputProgress}"
+                       TextAlignment="Right" VerticalAlignment="Center" />
+
+            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="5" Text="{Binding ProbeSummaryText}"
+                       IsVisible="{Binding IsProbeSummaryVisible}" TextWrapping="Wrap"
+                       VerticalAlignment="Center" Opacity="0.75" />
+
+            <TextBlock Grid.Row="1" Grid.Column="0" IsVisible="{Binding ShowOutputProgress}" VerticalAlignment="Center">
+                <Run Text="{DynamicResource String.TsFilter.Progress}" /><Run Text=" " />
+                <Run Text="{Binding ProgressText}" FontWeight="Bold" />
+            </TextBlock>
+            <TextBlock Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowOutputProgress}" VerticalAlignment="Center">
+                <Run Text="{DynamicResource String.TsFilter.Speed}" /><Run Text=" " />
+                <Run Text="{Binding SpeedText}" FontWeight="Bold" />
+            </TextBlock>
+            <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center">
+                <Run Text="{DynamicResource String.TsFilter.Selected}" /><Run Text=" " />
+                <Run Text="{Binding SelectedCount}" FontWeight="Bold" />
+            </TextBlock>
+            <CheckBox Grid.Row="2" Grid.Column="1" Content="{DynamicResource String.TsFilter.ShowAllPids}"
+                      IsChecked="{Binding ShowAllPids}" VerticalAlignment="Center" />
+            <CheckBox Grid.Row="2" Grid.Column="2" Content="{DynamicResource String.TsFilter.KeepServiceInformation}"
+                      IsChecked="{Binding KeepServiceInformation}" VerticalAlignment="Center"
+                      ToolTip.Tip="{DynamicResource String.TsFilter.KeepServiceInformationHint}" />
+            <Button Grid.Row="2" Grid.Column="3" Content="{DynamicResource String.TsFilter.SelectAll}"
+                    Command="{Binding SelectAllCommand}" MinWidth="90" />
+            <Button Grid.Row="2" Grid.Column="4" Content="{DynamicResource String.TsFilter.ClearAll}"
+                    Command="{Binding ClearAllCommand}" MinWidth="90" />
+        </Grid>
+
+        <DataGrid Grid.Row="2" ItemsSource="{Binding Pids}" AutoGenerateColumns="False"
+                  IsEnabled="{Binding CanSelect}" GridLinesVisibility="All" CanUserResizeColumns="True">
+            <DataGrid.Columns>
+                <DataGridTemplateColumn Header="{DynamicResource String.TsFilter.Column.Keep}" Width="70">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" HorizontalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="PID" Binding="{Binding PidText}" Width="90" IsReadOnly="True" />
+                <DataGridTextColumn Header="{DynamicResource String.TsFilter.Column.Stream}" Binding="{Binding StreamText}" Width="*" IsReadOnly="True" />
+                <DataGridTextColumn Header="{DynamicResource String.TsFilter.Column.Program}" Binding="{Binding ProgramText}" Width="90" IsReadOnly="True" />
+                <DataGridTextColumn Header="{DynamicResource String.TsFilter.Column.SamplePackets}" Binding="{Binding SamplePacketCountText}" Width="130" IsReadOnly="True" />
+                <DataGridTextColumn Header="{DynamicResource String.TsFilter.Column.Output}" Binding="{Binding OutputReason}" Width="170" IsReadOnly="True" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}" Width="100" />
+            <Button Content="{DynamicResource String.TsFilter.Output}" Command="{Binding OutputCommand}" Width="120" />
+        </StackPanel>
+    </Grid>
+</Window>

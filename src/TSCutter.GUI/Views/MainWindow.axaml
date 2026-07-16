@@ -117,6 +117,8 @@
                                   Command="{Binding RawCutterClickCommand}" />
                         <MenuItem Header="{DynamicResource String.Menu.TsCheck}"
                                   Command="{Binding TsCheckClickCommand}" />
+                        <MenuItem Header="{DynamicResource String.Menu.TsFilter}"
+                                  Command="{Binding TsFilterClickCommand}" />
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.Settings}"
                                   Command="{Binding SettingsClickCommand}" />

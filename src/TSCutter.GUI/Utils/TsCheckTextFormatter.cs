@@ -75,30 +75,57 @@ public sealed class TsCheckTextFormatter
     };
 
     // 这里优先使用一次性 MPEG Audio 帧头探测结果，否则回退到 PMT 的 stream_type，避免深度解析。
-    public string FormatStreamType(byte? streamType, TsMpegAudioLayer? mpegAudioLayer = null)
+    public string FormatStreamType(
+        byte? streamType,
+        TsMpegAudioLayer? mpegAudioLayer = null,
+        TsSupplementaryStreamType? supplementaryStreamType = null,
+        string? language = null)
     {
+        // 描述符给出的类型比 private stream_type 更具体，应优先用于界面和报告。
+        if (supplementaryStreamType is not null)
+        {
+            var supplementaryName = supplementaryStreamType switch
+            {
+                TsSupplementaryStreamType.DvbSubtitle => Strings.String_TsCheck_Stream_DvbSubtitle,
+                TsSupplementaryStreamType.DvbTeletext => Strings.String_TsCheck_Stream_DvbTeletext,
+                TsSupplementaryStreamType.AribCaption => Strings.String_TsCheck_Stream_AribCaption,
+                TsSupplementaryStreamType.Ac4 => Strings.String_TsCheck_Stream_Ac4,
+                TsSupplementaryStreamType.Opus => Strings.String_TsCheck_Stream_Opus,
+                TsSupplementaryStreamType.Smpte302M => Strings.String_TsCheck_Stream_Smpte302M,
+                TsSupplementaryStreamType.Dra => Strings.String_TsCheck_Stream_Dra,
+                TsSupplementaryStreamType.SmpteKlv => Strings.String_TsCheck_Stream_SmpteKlv,
+                TsSupplementaryStreamType.Smpte2038 => Strings.String_TsCheck_Stream_Smpte2038,
+                TsSupplementaryStreamType.TimedId3 => Strings.String_TsCheck_Stream_TimedId3,
+                _ => throw new ArgumentOutOfRangeException(nameof(supplementaryStreamType))
+            };
+            return FormatStreamLanguage(supplementaryName, language);
+        }
+
         if (mpegAudioLayer is not null)
         {
-            return mpegAudioLayer switch
+            var layerName = mpegAudioLayer switch
             {
                 TsMpegAudioLayer.LayerI => Strings.String_TsCheck_Stream_Mp1,
                 TsMpegAudioLayer.LayerII => Strings.String_TsCheck_Stream_Mp2,
                 TsMpegAudioLayer.LayerIII => Strings.String_TsCheck_Stream_Mp3,
                 _ => throw new ArgumentOutOfRangeException(nameof(mpegAudioLayer))
             };
+            return FormatStreamLanguage(layerName, language);
         }
 
-        return streamType switch
+        var streamName = streamType switch
         {
             TsStreamTypes.Mpeg1Video => Strings.String_TsCheck_Stream_Mpeg1Video,
             TsStreamTypes.Mpeg2Video => Strings.String_TsCheck_Stream_Mpeg2Video,
             TsStreamTypes.Mpeg1Audio => Strings.String_TsCheck_Stream_Mpeg1Audio,
             TsStreamTypes.Mpeg2Audio => Strings.String_TsCheck_Stream_Mpeg2Audio,
+            TsStreamTypes.PrivateSection => Strings.String_TsCheck_Stream_PrivateSection,
             TsStreamTypes.PrivateData => Strings.String_TsCheck_Stream_PrivateData,
             TsStreamTypes.Aac => Strings.String_TsCheck_Stream_Aac,
             TsStreamTypes.Mpeg4Video => Strings.String_TsCheck_Stream_Mpeg4Video,
             TsStreamTypes.AacLatm => Strings.String_TsCheck_Stream_AacLatm,
             TsStreamTypes.Mpeg4Systems => Strings.String_TsCheck_Stream_Mpeg4Systems,
+            TsStreamTypes.Mpeg4SystemsSection => Strings.String_TsCheck_Stream_Mpeg4SystemsSection,
             TsStreamTypes.Metadata => Strings.String_TsCheck_Stream_Metadata,
             TsStreamTypes.H264 => Strings.String_TsCheck_Stream_H264,
             TsStreamTypes.Mpeg4Audio => Strings.String_TsCheck_Stream_Mpeg4Audio,
@@ -118,6 +145,9 @@ public sealed class TsCheckTextFormatter
             TsStreamTypes.DtsHdMaster => Strings.String_TsCheck_Stream_DtsHdMaster,
             TsStreamTypes.Eac3Atsc => Strings.String_TsCheck_Stream_Eac3,
             TsStreamTypes.Eac3Secondary => Strings.String_TsCheck_Stream_Eac3Secondary,
+            TsStreamTypes.DtsExpressSecondary => Strings.String_TsCheck_Stream_DtsExpressSecondary,
+            TsStreamTypes.HdmvPgsSubtitle => Strings.String_TsCheck_Stream_HdmvPgsSubtitle,
+            TsStreamTypes.HdmvTextSubtitle => Strings.String_TsCheck_Stream_HdmvTextSubtitle,
             TsStreamTypes.Dirac => Strings.String_TsCheck_Stream_Dirac,
             TsStreamTypes.Avs2 => Strings.String_TsCheck_Stream_Avs2,
             TsStreamTypes.Avs3 => Strings.String_TsCheck_Stream_Avs3,
@@ -126,7 +156,13 @@ public sealed class TsCheckTextFormatter
             null => Strings.String_TsCheck_Stream_Unknown,
             _ => string.Format(Strings.String_TsCheck_Stream_Other, streamType)
         };
+        return FormatStreamLanguage(streamName, language);
     }
+
+    private string FormatStreamLanguage(string streamName, string? language) =>
+        string.IsNullOrEmpty(language)
+            ? streamName
+            : string.Format(Strings.String_TsCheck_Stream_WithLanguage, streamName, language);
 
     public string FormatEventSourceTime(TsCheckEvent item) => FormatTime(item.SourceTimeSeconds, item.IsEstimatedTime);
 
@@ -149,14 +185,16 @@ public sealed class TsCheckTextFormatter
 
         if (result?.Pids.TryGetValue(item.Pid, out var pid) == true)
             return FormatPidDescription(
-                item.Pid, pid.ProgramNumber, pid.StreamType, pid.MpegAudioLayer, pid.IsPcrPid, pid.IsPmtPid);
+                item.Pid, pid.ProgramNumber, pid.StreamType, pid.MpegAudioLayer,
+                pid.SupplementaryStreamType, pid.Language, pid.IsPcrPid, pid.IsPmtPid);
 
         return FormatPidDescription(
-            item.Pid, pmtProgram?.ProgramNumber, null, null, false, pmtProgram is not null);
+            item.Pid, pmtProgram?.ProgramNumber, null, null, null, null, false, pmtProgram is not null);
     }
 
     public string FormatPidDescription(
         int pid, int? programNumber, byte? streamType, TsMpegAudioLayer? mpegAudioLayer,
+        TsSupplementaryStreamType? supplementaryStreamType, string? language,
         bool isPcrPid, bool isPmtPid, bool isGlobal = false)
     {
         if (isGlobal)
@@ -171,7 +209,9 @@ public sealed class TsCheckTextFormatter
         var program = programNumber is { } number
             ? string.Format(Strings.String_TsCheck_Pid_Program, number)
             : null;
-        var stream = streamType is not null ? FormatStreamType(streamType, mpegAudioLayer) : null;
+        var stream = streamType is not null
+            ? FormatStreamType(streamType, mpegAudioLayer, supplementaryStreamType, language)
+            : null;
         var pmt = isPmtPid ? Strings.String_TsCheck_Pid_Pmt : null;
         var pcr = isPcrPid ? Strings.String_TsCheck_Pid_Pcr : null;
         var description = JoinParts(program, stream, pmt, pcr);

@@ -48,7 +48,8 @@ public sealed class TsCheckReportBuilder(TsCheckTextFormatter text)
                 {
                     result.Pids.TryGetValue(stream.Key, out var pid);
                     builder.AppendLine(string.Format(strings.String_TsCheck_Report_StreamLine,
-                        $"0x{stream.Key:X4}", text.FormatStreamType(stream.Value, pid?.MpegAudioLayer)));
+                        $"0x{stream.Key:X4}", text.FormatStreamType(
+                            stream.Value, pid?.MpegAudioLayer, pid?.SupplementaryStreamType, pid?.Language)));
                 }
             }
         }
@@ -60,7 +61,8 @@ public sealed class TsCheckReportBuilder(TsCheckTextFormatter text)
         {
             builder.AppendLine($"{pid.PidText,-8} {pid.PacketCount,14:N0} {pid.ContinuityErrors,10:N0} " +
                                $"{pid.TransportErrors,10:N0} {pid.DuplicatePackets,10:N0}  " +
-                               text.FormatStreamType(pid.StreamType, pid.MpegAudioLayer));
+                               text.FormatStreamType(
+                                   pid.StreamType, pid.MpegAudioLayer, pid.SupplementaryStreamType, pid.Language));
         }
         builder.AppendLine();
 
