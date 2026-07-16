@@ -34,6 +34,7 @@ public partial class App : Application
         SplatRegistrations.Register<MainWindowViewModel>();
         SplatRegistrations.Register<OutputWindowViewModel>();
         SplatRegistrations.Register<RawCutterWindowViewModel>();
+        SplatRegistrations.Register<TsCheckWindowViewModel>();
         SplatRegistrations.Register<AboutWindowViewModel>();
         SplatRegistrations.Register<JumpTimeViewModel>();
         SplatRegistrations.Register<MediainfoWindowViewModel>();
@@ -103,6 +104,7 @@ public partial class App : Application
     public static MainWindowViewModel MainWindow => Locator.Current.GetService<MainWindowViewModel>()!;
     public static OutputWindowViewModel OutputDialog => Locator.Current.GetService<OutputWindowViewModel>()!;
     public static RawCutterWindowViewModel RawCutterDialog => Locator.Current.GetService<RawCutterWindowViewModel>()!;
+    public static TsCheckWindowViewModel TsCheckDialog => Locator.Current.GetService<TsCheckWindowViewModel>()!;
     public static JumpTimeViewModel JumpTimeDialog => Locator.Current.GetService<JumpTimeViewModel>()!;
     public static AboutWindowViewModel AboutDialog => Locator.Current.GetService<AboutWindowViewModel>()!;
     public static MediainfoWindowViewModel MediainfoDialog => Locator.Current.GetService<MediainfoWindowViewModel>()!;
