@@ -79,6 +79,20 @@ public enum TsMpegAudioLayer
     LayerIII
 }
 
+public enum TsSupplementaryStreamType
+{
+    DvbSubtitle,
+    DvbTeletext,
+    AribCaption,
+    Ac4,
+    Opus,
+    Smpte302M,
+    Dra,
+    SmpteKlv,
+    Smpte2038,
+    TimedId3
+}
+
 public sealed class TsCheckEvent
 {
     public required TsCheckSeverity Severity { get; init; }
@@ -115,6 +129,8 @@ public sealed class TsCheckPidSummary
     public int WarningCount { get; set; }
     public byte? StreamType { get; set; }
     public TsMpegAudioLayer? MpegAudioLayer { get; set; }
+    public TsSupplementaryStreamType? SupplementaryStreamType { get; set; }
+    public string? Language { get; set; }
     public int? ProgramNumber { get; set; }
     public bool IsPcrPid { get; set; }
     public bool IsPmtPid { get; set; }
@@ -126,13 +142,24 @@ public sealed class TsCheckProgramSummary
     public required int ProgramNumber { get; init; }
     public required int PmtPid { get; set; }
     public int PcrPid { get; set; } = -1;
+    public byte PmtVersion { get; set; }
+    public byte[] ProgramDescriptors { get; set; } = [];
     public Dictionary<int, byte> Streams { get; } = [];
+    public Dictionary<int, TsStreamDefinition> StreamDefinitions { get; } = [];
+}
+
+public sealed class TsStreamDefinition
+{
+    public required byte StreamType { get; init; }
+    public byte[] Descriptors { get; init; } = [];
 }
 
 public sealed class TsCheckResult
 {
     public required string FilePath { get; init; }
     public required long FileSize { get; init; }
+    public int TransportStreamId { get; set; } = 1;
+    public byte PatVersion { get; set; }
     public long SyncOffset { get; set; }
     public long PacketCount { get; set; }
     public long BytesScanned { get; set; }
@@ -157,6 +184,13 @@ public sealed class TsCheckResult
                 : TsCheckVerdict.Pass;
 }
 
+public sealed class TsStreamAnalyzeOptions
+{
+    public bool InventoryOnly { get; init; }
+    public long MaxBytes { get; init; } = long.MaxValue;
+    public int StablePacketCount { get; init; } = 8_192;
+}
+
 public readonly record struct TsCheckPidProgress(
     int Pid,
     long PacketCount,
@@ -165,6 +199,8 @@ public readonly record struct TsCheckPidProgress(
     int? ProgramNumber,
     byte? StreamType,
     TsMpegAudioLayer? MpegAudioLayer,
+    TsSupplementaryStreamType? SupplementaryStreamType,
+    string? Language,
     bool IsPcrPid,
     bool IsPmtPid,
     bool IsGlobal);
@@ -190,11 +226,13 @@ public static class TsStreamTypes
     public const byte Mpeg2Video = 0x02;
     public const byte Mpeg1Audio = 0x03;
     public const byte Mpeg2Audio = 0x04;
+    public const byte PrivateSection = 0x05;
     public const byte PrivateData = 0x06;
     public const byte Aac = 0x0F;
     public const byte Mpeg4Video = 0x10;
     public const byte AacLatm = 0x11;
     public const byte Mpeg4Systems = 0x12;
+    public const byte Mpeg4SystemsSection = 0x13;
     public const byte Metadata = 0x15;
     public const byte H264 = 0x1B;
     public const byte Mpeg4Audio = 0x1C;
@@ -214,6 +252,9 @@ public static class TsStreamTypes
     public const byte DtsHdMaster = 0x86;
     public const byte Eac3Atsc = 0x87;
     public const byte Eac3Secondary = 0xA1;
+    public const byte DtsExpressSecondary = 0xA2;
+    public const byte HdmvPgsSubtitle = 0x90;
+    public const byte HdmvTextSubtitle = 0x92;
     public const byte Dirac = 0xD1;
     public const byte Avs2 = 0xD2;
     public const byte Avs3 = 0xD4;
@@ -224,8 +265,11 @@ public static class TsStreamTypes
         Mpeg1Video or Mpeg2Video or Mpeg4Video or H264 or Mvc or Jpeg2000 or Hevc or
         JpegXs or Vvc or Lcevc or Cavs or Dirac or Avs2 or Avs3 or Vc1;
 
-    public static bool IsAudio(byte streamType) => streamType is
+    public static bool IsAudio(byte streamType, TsSupplementaryStreamType? supplementaryStreamType = null) =>
+        supplementaryStreamType is TsSupplementaryStreamType.Ac4 or TsSupplementaryStreamType.Opus or
+            TsSupplementaryStreamType.Smpte302M or TsSupplementaryStreamType.Dra || streamType is
         Mpeg1Audio or Mpeg2Audio or Aac or AacLatm or Mpeg4Audio or BluRayPcm or Ac3 or
-        Dts or TrueHd or Eac3 or DtsHd or DtsHdMaster or Eac3Atsc or Eac3Secondary or Av3a;
+        Dts or TrueHd or Eac3 or DtsHd or DtsHdMaster or Eac3Atsc or Eac3Secondary or
+        DtsExpressSecondary or Av3a;
 
 }

@@ -54,6 +54,7 @@ public sealed partial class TsCheckPidSummaryView : ObservableObject
         WarningCount = progress.WarningCount;
         Stream = text.FormatPidDescription(
             progress.Pid, progress.ProgramNumber, progress.StreamType, progress.MpegAudioLayer,
+            progress.SupplementaryStreamType, progress.Language,
             progress.IsPcrPid, progress.IsPmtPid, progress.IsGlobal);
     }
 }

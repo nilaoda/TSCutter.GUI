@@ -43,15 +43,20 @@ public sealed class TsStreamAnalyzer
     private int _globalErrorCount;
     private int _globalWarningCount;
     private TsCheckEvent? _pendingProgressEvent;
+    private TsStreamAnalyzeOptions _options = new();
+    private long _lastCatalogChangePacket;
+    private bool _stopRequested;
 
     public async Task<TsCheckResult> AnalyzeAsync(
         string filePath,
         IProgress<TsCheckProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        TsStreamAnalyzeOptions? options = null)
     {
-        Reset(filePath, progress);
+        Reset(filePath, progress, options);
+        var readBufferSize = _options.InventoryOnly ? PacketSize * 8_192 : ReadBufferSize;
         // 使用池化大缓冲区减少系统调用和大对象堆分配；额外空间用于保留跨 ReadAsync 的残余包。
-        var buffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize + PacketSize * 4);
+        var buffer = ArrayPool<byte>.Shared.Rent(readBufferSize + PacketSize * 4);
         var buffered = 0;
 
         try
@@ -63,7 +68,7 @@ public sealed class TsStreamAnalyzer
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var read = await stream.ReadAsync(buffer.AsMemory(buffered, ReadBufferSize), cancellationToken)
+                var read = await stream.ReadAsync(buffer.AsMemory(buffered, readBufferSize), cancellationToken)
                     .ConfigureAwait(false);
                 if (read == 0)
                     break;
@@ -77,29 +82,35 @@ public sealed class TsStreamAnalyzer
                         buffer.AsSpan(consumed, buffered).CopyTo(buffer);
                 }
 
+                _result.BytesScanned = _syncOffset < 0
+                    ? Math.Min(stream.Position, _result.FileSize)
+                    : Math.Min(_result.FileSize, _syncOffset + _packetIndex * PacketSize);
                 ReportProgress(null, force: false);
+                if (_stopRequested || _result.BytesScanned >= _options.MaxBytes)
+                    break;
             }
 
-            if (_syncOffset < 0)
+            if (!_options.InventoryOnly && _syncOffset < 0)
             {
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.SyncLoss, -1, 0, 0,
                     TsCheckMessageCode.NoSync, [], null, false);
             }
-            else if (_pendingSyncLossOffset >= 0)
+            else if (!_options.InventoryOnly && _pendingSyncLossOffset >= 0)
             {
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.SyncLoss, -1, _packetIndex,
                     _pendingSyncLossOffset, TsCheckMessageCode.SyncLostAtEnd,
                     [_pendingSyncLossBytes + buffered], GetEstimatedTime(), true);
             }
-            else if (buffered > 0)
+            else if (!_options.InventoryOnly && buffered > 0 && !_stopRequested)
             {
                 AddEvent(TsCheckSeverity.Warning, TsCheckEventType.TrailingBytes, -1, _packetIndex,
                     stream.Length - buffered, TsCheckMessageCode.TrailingBytes, [buffered],
                     GetEstimatedTime(), true);
             }
 
-            ValidateCompletedScan(stream.Length);
-            CompleteResult(stream.Length, false);
+            if (!_options.InventoryOnly)
+                ValidateCompletedScan(stream.Length);
+            CompleteResult(_stopRequested ? _result.BytesScanned : Math.Min(stream.Length, _options.MaxBytes), false);
         }
         catch (OperationCanceledException)
         {
@@ -114,7 +125,7 @@ public sealed class TsStreamAnalyzer
         return _result;
     }
 
-    private void Reset(string filePath, IProgress<TsCheckProgress>? progress)
+    private void Reset(string filePath, IProgress<TsCheckProgress>? progress, TsStreamAnalyzeOptions? options)
     {
         _pidStates.Clear();
         _psiAssemblers.Clear();
@@ -142,6 +153,9 @@ public sealed class TsStreamAnalyzer
         _globalErrorCount = 0;
         _globalWarningCount = 0;
         _pendingProgressEvent = null;
+        _options = options ?? new TsStreamAnalyzeOptions();
+        _lastCatalogChangePacket = 0;
+        _stopRequested = false;
         _psiAssemblers[0] = new PsiAssembler();
     }
 
@@ -196,6 +210,12 @@ public sealed class TsStreamAnalyzer
             ProcessPacket(data.Slice(position, PacketSize), absoluteOffset + position);
             position += PacketSize;
             _packetIndex++;
+            if (_options.InventoryOnly && HasCompleteCatalog() &&
+                _packetIndex - _lastCatalogChangePacket >= _options.StablePacketCount)
+            {
+                _stopRequested = true;
+                break;
+            }
         }
 
         return position;
@@ -233,14 +253,16 @@ public sealed class TsStreamAnalyzer
         if (transportError)
         {
             state.Summary.TransportErrors++;
-            AddEvent(TsCheckSeverity.Error, TsCheckEventType.TransportError, pid, _packetIndex, fileOffset,
-                TsCheckMessageCode.TransportError, [], GetPacketEventTime(state), true);
+            if (!_options.InventoryOnly)
+                AddEvent(TsCheckSeverity.Error, TsCheckEventType.TransportError, pid, _packetIndex, fileOffset,
+                    TsCheckMessageCode.TransportError, [], GetPacketEventTime(state), true);
         }
 
         if (adaptationControl == 0)
         {
-            AddEvent(TsCheckSeverity.Error, TsCheckEventType.InvalidPacketHeader, pid, _packetIndex, fileOffset,
-                TsCheckMessageCode.InvalidAdaptationControl, [], GetPacketEventTime(state), true);
+            if (!_options.InventoryOnly)
+                AddEvent(TsCheckSeverity.Error, TsCheckEventType.InvalidPacketHeader, pid, _packetIndex, fileOffset,
+                    TsCheckMessageCode.InvalidAdaptationControl, [], GetPacketEventTime(state), true);
             return;
         }
 
@@ -252,8 +274,9 @@ public sealed class TsStreamAnalyzer
             var adaptationLength = packet[4];
             if (adaptationLength > 183)
             {
-                AddEvent(TsCheckSeverity.Error, TsCheckEventType.SyncLoss, pid, _packetIndex, fileOffset,
-                    TsCheckMessageCode.InvalidAdaptationLength, [adaptationLength], GetPacketEventTime(state), true);
+                if (!_options.InventoryOnly)
+                    AddEvent(TsCheckSeverity.Error, TsCheckEventType.SyncLoss, pid, _packetIndex, fileOffset,
+                        TsCheckMessageCode.InvalidAdaptationLength, [adaptationLength], GetPacketEventTime(state), true);
                 return;
             }
 
@@ -276,10 +299,13 @@ public sealed class TsStreamAnalyzer
         }
 
         if (!pcrBytes.IsEmpty)
-            ProcessPcr(pid, pcrBytes, state, fileOffset, discontinuity);
+        {
+            if (!_options.InventoryOnly)
+                ProcessPcr(pid, pcrBytes, state, fileOffset, discontinuity);
+        }
 
         // Null packet 的 CC 没有连续性语义，不参与丢包判断。
-        if (hasPayload && payloadOffset < PacketSize && pid != 0x1FFF &&
+        if (!_options.InventoryOnly && hasPayload && payloadOffset < PacketSize && pid != 0x1FFF &&
             !ProcessContinuity(packet, pid, state, continuityCounter, fileOffset))
             return;
 
@@ -291,7 +317,12 @@ public sealed class TsStreamAnalyzer
             ProcessPsi(pid, payload, payloadStart, fileOffset);
 
         if (_streamPidPrograms.ContainsKey(pid))
-            ProcessPes(pid, payload, payloadStart, state, fileOffset);
+        {
+            if (_options.InventoryOnly)
+                ProbeMpegAudioLayer(payload, payloadStart, state);
+            else
+                ProcessPes(pid, payload, payloadStart, state, fileOffset);
+        }
     }
 
     private bool ProcessContinuity(ReadOnlySpan<byte> packet, int pid, PidState state, int counter, long fileOffset)
@@ -404,6 +435,8 @@ public sealed class TsStreamAnalyzer
 
     private void ParsePat(ReadOnlySpan<byte> section)
     {
+        _result.TransportStreamId = (section[3] << 8) | section[4];
+        _result.PatVersion = (byte)((section[5] >> 1) & 0x1F);
         var sectionLength = ((section[1] & 0x0F) << 8) | section[2];
         var end = Math.Min(section.Length - 4, 3 + sectionLength - 4);
         for (var offset = 8; offset + 4 <= end; offset += 4)
@@ -413,6 +446,8 @@ public sealed class TsStreamAnalyzer
                 continue;
 
             var pmtPid = ((section[offset + 2] & 0x1F) << 8) | section[offset + 3];
+            var catalogChanged = !_pmtPidPrograms.TryGetValue(pmtPid, out var oldProgramNumber) ||
+                                 oldProgramNumber != programNumber;
             _pmtPidPrograms[pmtPid] = programNumber;
             _psiAssemblers.TryAdd(pmtPid, new PsiAssembler());
             var pmtSummary = GetPidState(pmtPid).Summary;
@@ -422,11 +457,15 @@ public sealed class TsStreamAnalyzer
             {
                 program = new TsCheckProgramSummary { ProgramNumber = programNumber, PmtPid = pmtPid };
                 _result.Programs[programNumber] = program;
+                catalogChanged = true;
             }
             else
             {
+                catalogChanged |= program.PmtPid != pmtPid;
                 program.PmtPid = pmtPid;
             }
+            if (catalogChanged)
+                _lastCatalogChangePacket = _packetIndex;
         }
     }
 
@@ -453,28 +492,62 @@ public sealed class TsStreamAnalyzer
             _result.Programs[programNumber] = program;
         }
 
+        var pmtVersion = (byte)((section[5] >> 1) & 0x1F);
+        var rebuildDefinitions = program.StreamDefinitions.Count == 0 || program.PmtVersion != pmtVersion;
+        var catalogChanged = rebuildDefinitions || program.PcrPid != pcrPid;
         program.PcrPid = pcrPid;
+        if (rebuildDefinitions)
+        {
+            program.PmtVersion = pmtVersion;
+            program.ProgramDescriptors = section.Slice(12, programInfoLength).ToArray();
+            program.StreamDefinitions.Clear();
+        }
         _pcrPidPrograms[pcrPid] = programNumber;
         GetPidState(pcrPid).Summary.IsPcrPid = true;
         _programClocks.TryAdd(programNumber, new ProgramClockState());
 
         while (offset + 5 <= sectionEnd)
         {
-            var streamType = section[offset];
+            var originalStreamType = section[offset];
             var elementaryPid = ((section[offset + 1] & 0x1F) << 8) | section[offset + 2];
             var infoLength = ((section[offset + 3] & 0x0F) << 8) | section[offset + 4];
             if (offset + 5 + infoLength > sectionEnd)
                 break;
 
             // DVB 常把 AC-3/E-AC-3 标成 private data (0x06)，需要结合 descriptor 还原实际类型。
-            streamType = ResolveStreamType(streamType, section.Slice(offset + 5, infoLength));
-            program.Streams[elementaryPid] = streamType;
+            var descriptors = section.Slice(offset + 5, infoLength);
+            var streamInfo = ResolveStreamInfo(originalStreamType, descriptors);
+            program.Streams[elementaryPid] = streamInfo.StreamType;
+            if (rebuildDefinitions)
+            {
+                program.StreamDefinitions[elementaryPid] = new TsStreamDefinition
+                {
+                    StreamType = originalStreamType,
+                    Descriptors = descriptors.ToArray()
+                };
+            }
             _streamPidPrograms[elementaryPid] = programNumber;
             var summary = GetPidState(elementaryPid).Summary;
-            summary.StreamType = streamType;
+            summary.StreamType = streamInfo.StreamType;
+            summary.SupplementaryStreamType = streamInfo.SupplementaryStreamType;
+            summary.Language = streamInfo.Language;
             summary.ProgramNumber = programNumber;
             offset += 5 + infoLength;
         }
+        if (catalogChanged)
+            _lastCatalogChangePacket = _packetIndex;
+    }
+
+    private bool HasCompleteCatalog()
+    {
+        if (_result.Programs.Count == 0)
+            return false;
+        foreach (var program in _result.Programs.Values)
+        {
+            if (program.Streams.Count == 0)
+                return false;
+        }
+        return true;
     }
 
     private void ProcessPes(int pid, ReadOnlySpan<byte> payload, bool payloadStart, PidState state, long fileOffset)
@@ -626,10 +699,13 @@ public sealed class TsStreamAnalyzer
         }
     }
 
-    private static byte ResolveStreamType(byte streamType, ReadOnlySpan<byte> descriptors)
+    private static ResolvedStreamInfo ResolveStreamInfo(byte streamType, ReadOnlySpan<byte> descriptors)
     {
-        if (streamType != TsStreamTypes.PrivateData)
-            return streamType;
+        var resolvedStreamType = streamType;
+        TsSupplementaryStreamType? supplementaryStreamType = null;
+        string? language = null;
+        int? componentTag = null;
+        int? dataComponentId = null;
 
         for (var offset = 0; offset + 2 <= descriptors.Length;)
         {
@@ -643,35 +719,104 @@ public sealed class TsStreamAnalyzer
             {
                 var registration = descriptors.Slice(offset + 2, 4);
                 if (registration.SequenceEqual("AC-3"u8))
-                    return TsStreamTypes.Ac3;
-                if (registration.SequenceEqual("EAC3"u8))
-                    return TsStreamTypes.Eac3;
-                if (registration.SequenceEqual("DTS1"u8) ||
+                    resolvedStreamType = TsStreamTypes.Ac3;
+                else if (registration.SequenceEqual("EAC3"u8))
+                    resolvedStreamType = TsStreamTypes.Eac3;
+                else if (registration.SequenceEqual("DTS1"u8) ||
                     registration.SequenceEqual("DTS2"u8) ||
                     registration.SequenceEqual("DTS3"u8))
-                    return TsStreamTypes.Dts;
-                if (registration.SequenceEqual("HEVC"u8))
-                    return TsStreamTypes.Hevc;
-                if (registration.SequenceEqual("VVC "u8))
-                    return TsStreamTypes.Vvc;
-                if (registration.SequenceEqual("VC-1"u8))
-                    return TsStreamTypes.Vc1;
-                if (registration.SequenceEqual("drac"u8))
-                    return TsStreamTypes.Dirac;
+                    resolvedStreamType = TsStreamTypes.Dts;
+                else if (registration.SequenceEqual("HEVC"u8))
+                    resolvedStreamType = TsStreamTypes.Hevc;
+                else if (registration.SequenceEqual("VVC "u8))
+                    resolvedStreamType = TsStreamTypes.Vvc;
+                else if (registration.SequenceEqual("VC-1"u8))
+                    resolvedStreamType = TsStreamTypes.Vc1;
+                else if (registration.SequenceEqual("drac"u8))
+                    resolvedStreamType = TsStreamTypes.Dirac;
+                else if (registration.SequenceEqual("AC-4"u8))
+                    supplementaryStreamType = TsSupplementaryStreamType.Ac4;
+                else if (registration.SequenceEqual("Opus"u8))
+                    supplementaryStreamType = TsSupplementaryStreamType.Opus;
+                else if (registration.SequenceEqual("BSSD"u8))
+                    supplementaryStreamType = TsSupplementaryStreamType.Smpte302M;
+                else if (registration.SequenceEqual("DRA1"u8))
+                    supplementaryStreamType = TsSupplementaryStreamType.Dra;
+                else if (registration.SequenceEqual("KLVA"u8))
+                    supplementaryStreamType = TsSupplementaryStreamType.SmpteKlv;
+                else if (registration.SequenceEqual("VANC"u8))
+                    supplementaryStreamType = TsSupplementaryStreamType.Smpte2038;
+                else if (registration.SequenceEqual("ID3 "u8))
+                    supplementaryStreamType = TsSupplementaryStreamType.TimedId3;
             }
 
             if (tag == 0x6A)
-                return TsStreamTypes.Ac3;
-            if (tag == 0x7A)
-                return TsStreamTypes.Eac3Atsc;
-            if (tag == 0x7B)
-                return TsStreamTypes.Dts;
-            if (tag == 0x7C)
-                return TsStreamTypes.Aac;
+                resolvedStreamType = TsStreamTypes.Ac3;
+            else if (tag == 0x7A)
+                resolvedStreamType = TsStreamTypes.Eac3Atsc;
+            else if (tag == 0x7B)
+                resolvedStreamType = TsStreamTypes.Dts;
+            else if (tag == 0x7C)
+                resolvedStreamType = TsStreamTypes.Aac;
+            else if (tag == 0x59)
+            {
+                supplementaryStreamType = TsSupplementaryStreamType.DvbSubtitle;
+                language = ReadDescriptorLanguages(descriptors.Slice(offset + 2, length), 8);
+            }
+            else if (tag == 0x56)
+            {
+                supplementaryStreamType = TsSupplementaryStreamType.DvbTeletext;
+                language = ReadDescriptorLanguages(descriptors.Slice(offset + 2, length), 5);
+            }
+            else if (tag == 0xFD && length >= 2)
+            {
+                dataComponentId = (descriptors[offset + 2] << 8) | descriptors[offset + 3];
+            }
+            else if (tag == 0x52 && length >= 1)
+            {
+                componentTag = descriptors[offset + 2];
+            }
+            else if (tag == 0x0A && string.IsNullOrEmpty(language))
+            {
+                language = ReadDescriptorLanguages(descriptors.Slice(offset + 2, length), 4);
+            }
             offset += 2 + length;
         }
-        return streamType;
+
+        // FFmpeg 还会结合 stream_identifier 校验 ARIB 字幕的 profile，避免仅凭 data_component_id 误报普通数据流。
+        if (streamType == TsStreamTypes.PrivateData &&
+            (dataComponentId == 0x0008 && componentTag is >= 0x30 and <= 0x37 ||
+             dataComponentId == 0x0012 && componentTag == 0x87))
+        {
+            supplementaryStreamType = TsSupplementaryStreamType.AribCaption;
+        }
+        return new ResolvedStreamInfo(resolvedStreamType, supplementaryStreamType, language);
     }
+
+    private static string? ReadDescriptorLanguages(ReadOnlySpan<byte> descriptor, int entrySize)
+    {
+        string? result = null;
+        for (var offset = 0; offset + 3 <= descriptor.Length; offset += entrySize)
+        {
+            if (offset + entrySize > descriptor.Length)
+                break;
+            var code = string.Create(3,
+                (descriptor[offset], descriptor[offset + 1], descriptor[offset + 2]),
+                static (span, bytes) =>
+                {
+                    span[0] = (char)bytes.Item1;
+                    span[1] = (char)bytes.Item2;
+                    span[2] = (char)bytes.Item3;
+                });
+            result = result is null ? code : result + ", " + code;
+        }
+        return result;
+    }
+
+    private readonly record struct ResolvedStreamInfo(
+        byte StreamType,
+        TsSupplementaryStreamType? SupplementaryStreamType,
+        string? Language);
 
     private void CheckPts(int pid, PidState state, long pts, long fileOffset)
     {
@@ -716,7 +861,7 @@ public sealed class TsStreamAnalyzer
                     clock.FirstVideoPts90k = pts;
             }
         }
-        else if (TsStreamTypes.IsAudio(streamType))
+        else if (TsStreamTypes.IsAudio(streamType, _result.Pids[pid].SupplementaryStreamType))
         {
             clock.AudioPts90k[pid] = pts;
             clock.FirstAudioPts90k.TryAdd(pid, pts);
@@ -782,6 +927,9 @@ public sealed class TsStreamAnalyzer
         TsCheckSeverity severity, TsCheckEventType type, int pid, long packetIndex,
         long fileOffset, TsCheckMessageCode messageCode, object[] messageArguments, double? timeSeconds, bool estimated)
     {
+        if (_options.InventoryOnly)
+            return;
+
         if (severity == TsCheckSeverity.Error)
             _errorCount++;
         else if (severity == TsCheckSeverity.Warning)
@@ -872,13 +1020,15 @@ public sealed class TsStreamAnalyzer
         if (_globalErrorCount + _globalWarningCount > 0)
         {
             pidSnapshot[snapshotIndex++] = new TsCheckPidProgress(
-                -1, 0, _globalErrorCount, _globalWarningCount, null, null, null, false, false, true);
+                -1, 0, _globalErrorCount, _globalWarningCount, null, null, null, null, null,
+                false, false, true);
         }
         foreach (var pid in _result.Pids.Values)
         {
             pidSnapshot[snapshotIndex++] = new TsCheckPidProgress(
                 pid.Pid, pid.PacketCount, pid.ErrorCount, pid.WarningCount, pid.ProgramNumber,
-                pid.StreamType, pid.MpegAudioLayer, pid.IsPcrPid, pid.IsPmtPid, false);
+                pid.StreamType, pid.MpegAudioLayer, pid.SupplementaryStreamType, pid.Language,
+                pid.IsPcrPid, pid.IsPmtPid, false);
         }
         _progress.Report(new TsCheckProgress(
             bytesScanned, _result.FileSize, _packetIndex, _errorCount, _warningCount,

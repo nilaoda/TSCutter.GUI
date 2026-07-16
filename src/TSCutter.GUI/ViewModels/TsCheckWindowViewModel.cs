@@ -204,7 +204,7 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
         {
             UpdatePidSummary(new TsCheckPidProgress(
                 -1, 0, _result.GlobalErrorCount, _result.GlobalWarningCount,
-                null, null, null, false, false, true), _result.PacketCount);
+                null, null, null, null, null, false, false, true), _result.PacketCount);
         }
 
         var pids = new List<int>(_result.Pids.Keys);
@@ -215,6 +215,7 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
             UpdatePidSummary(new TsCheckPidProgress(
                 pid.Pid, pid.PacketCount, pid.ErrorCount, pid.WarningCount,
                 pid.ProgramNumber, pid.StreamType, pid.MpegAudioLayer,
+                pid.SupplementaryStreamType, pid.Language,
                 pid.IsPcrPid, pid.IsPmtPid, false), _result.PacketCount);
         }
     }
