@@ -76,9 +76,13 @@
                 <ResourceDictionary.ThemeDictionaries>
                     <ResourceDictionary x:Key="Light">
                         <SolidColorBrush x:Key="MaskBackgroundBrush">White</SolidColorBrush>
+                        <SolidColorBrush x:Key="ClipSelectionBackgroundBrush"
+                                         Color="{DynamicResource SystemAccentColorLight1}" />
                     </ResourceDictionary>
                     <ResourceDictionary x:Key="Dark">
-                        <SolidColorBrush x:Key="MaskBackgroundBrush">Black</SolidColorBrush>
+                        <SolidColorBrush x:Key="MaskBackgroundBrush" Color="#111316" />
+                        <!-- 选中卡片只做轻微蓝色染色，避免与标题栏、进度条争夺视觉焦点。 -->
+                        <SolidColorBrush x:Key="ClipSelectionBackgroundBrush" Color="#2B3B4B" />
                     </ResourceDictionary>
                 </ResourceDictionary.ThemeDictionaries>
             </ResourceDictionary>
@@ -272,7 +276,7 @@
                                                                             <Setter Property="Background" Value="Transparent" />
                                                                         </Style>
                                                                         <Style Selector="Border.selected">
-                                                                            <Setter Property="Background" Value="{DynamicResource SystemAccentColorLight1}" />
+                                                                            <Setter Property="Background" Value="{DynamicResource ClipSelectionBackgroundBrush}" />
                                                                         </Style>
                                                                     </Border.Styles>
                                                                     <Grid>

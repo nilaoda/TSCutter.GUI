@@ -26,12 +26,12 @@
                     <SolidColorBrush x:Key="TsCheckPacketShareBrush" Color="#2E6FAD" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="TsCheckErrorCellBackgroundBrush" Color="#FF5252" Opacity="0.16" />
-                    <SolidColorBrush x:Key="TsCheckErrorCellForegroundBrush" Color="#FF7A7A" />
-                    <SolidColorBrush x:Key="TsCheckWarningCellBackgroundBrush" Color="#FFC107" Opacity="0.14" />
-                    <SolidColorBrush x:Key="TsCheckWarningCellForegroundBrush" Color="#FFD166" />
-                    <SolidColorBrush x:Key="TsCheckPassForegroundBrush" Color="#7AD97A" />
-                    <SolidColorBrush x:Key="TsCheckPacketShareBrush" Color="#70A9E8" />
+                    <SolidColorBrush x:Key="TsCheckErrorCellBackgroundBrush" Color="#FF7070" Opacity="0.13" />
+                    <SolidColorBrush x:Key="TsCheckErrorCellForegroundBrush" Color="#FF8585" />
+                    <SolidColorBrush x:Key="TsCheckWarningCellBackgroundBrush" Color="#E6B84A" Opacity="0.13" />
+                    <SolidColorBrush x:Key="TsCheckWarningCellForegroundBrush" Color="#EBC565" />
+                    <SolidColorBrush x:Key="TsCheckPassForegroundBrush" Color="#72C985" />
+                    <SolidColorBrush x:Key="TsCheckPacketShareBrush" Color="#5A94D6" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
         </ResourceDictionary>

@@ -2,36 +2,67 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
                     xmlns:system="clr-namespace:System;assembly=netstandard">
-    <Color x:Key="{x:Static common:SystemColors.ActiveBorderColorKey}">#ff2a2a2a</Color>
-    <Color x:Key="{x:Static common:SystemColors.ActiveCaptionColorKey}">#ff1a2630</Color>
-    <Color x:Key="{x:Static common:SystemColors.ActiveCaptionTextColorKey}">#ffe8e8e8</Color>
-    <Color x:Key="{x:Static common:SystemColors.AppWorkspaceColorKey}">#ff1c1c1c</Color>
-    <Color x:Key="{x:Static common:SystemColors.ControlColorKey}">#ff363636</Color>
-    <Color x:Key="{x:Static common:SystemColors.ControlDarkColorKey}">#ff2c2c2c</Color>
-    <Color x:Key="{x:Static common:SystemColors.ControlDarkDarkColorKey}">#ff1f1f1f</Color>
-    <Color x:Key="{x:Static common:SystemColors.ControlLightColorKey}">#ff505050</Color>
-    <Color x:Key="{x:Static common:SystemColors.ControlLightLightColorKey}">#ff6e6e6e</Color>
-    <Color x:Key="{x:Static common:SystemColors.ControlTextColorKey}">#ffe8e8e8</Color>
-    <Color x:Key="{x:Static common:SystemColors.DesktopColorKey}">#ff181818</Color>
-    <Color x:Key="{x:Static common:SystemColors.GradientActiveCaptionColorKey}">#ff2c4a70</Color>
-    <Color x:Key="{x:Static common:SystemColors.GradientInactiveCaptionColorKey}">#ff3c3c3c</Color>
-    <Color x:Key="{x:Static common:SystemColors.GrayTextColorKey}">#ff888888</Color>
-    <Color x:Key="{x:Static common:SystemColors.HighlightColorKey}">#ff3a5f8a</Color>
-    <Color x:Key="{x:Static common:SystemColors.HighlightTextColorKey}">#fff0f0f0</Color>
-    <Color x:Key="{x:Static common:SystemColors.HotTrackColorKey}">#ff5073a0</Color>
-    <Color x:Key="{x:Static common:SystemColors.InactiveBorderColorKey}">#ff2a2a2a</Color>
-    <Color x:Key="{x:Static common:SystemColors.InactiveCaptionColorKey}">#ff282828</Color>
-    <Color x:Key="{x:Static common:SystemColors.InactiveCaptionTextColorKey}">#ff969696</Color>
-    <Color x:Key="{x:Static common:SystemColors.InfoColorKey}">#ff2e2e2e</Color>
-    <Color x:Key="{x:Static common:SystemColors.InfoTextColorKey}">#ffe8e8e8</Color>
-    <Color x:Key="{x:Static common:SystemColors.MenuColorKey}">#ff2a2a2a</Color>
-    <Color x:Key="{x:Static common:SystemColors.MenuBarColorKey}">#ff282828</Color>
-    <Color x:Key="{x:Static common:SystemColors.MenuHighlightColorKey}">#ff3a6fa5</Color>
-    <Color x:Key="{x:Static common:SystemColors.MenuTextColorKey}">#ffe8e8e8</Color>
-    <Color x:Key="{x:Static common:SystemColors.ScrollBarColorKey}">#ff363636</Color>
-    <Color x:Key="{x:Static common:SystemColors.WindowColorKey}">#ff1c1c1c</Color>
-    <Color x:Key="{x:Static common:SystemColors.WindowFrameColorKey}">#ff2a2a2a</Color>
-    <Color x:Key="{x:Static common:SystemColors.WindowTextColorKey}">#ffe8e8e8</Color>
+    <!-- 深色主题使用带少量蓝相的中性灰。经典凹凸边框仍保留四级明暗，但降低最亮边缘的反差。 -->
+    <Color x:Key="{x:Static common:SystemColors.ActiveBorderColorKey}">#ff3a414a</Color>
+    <Color x:Key="{x:Static common:SystemColors.ActiveCaptionColorKey}">#ff243448</Color>
+    <Color x:Key="{x:Static common:SystemColors.ActiveCaptionTextColorKey}">#fff2f4f7</Color>
+    <Color x:Key="{x:Static common:SystemColors.AppWorkspaceColorKey}">#ff15171a</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlColorKey}">#ff292d33</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlDarkColorKey}">#ff20242a</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlDarkDarkColorKey}">#ff121418</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlLightColorKey}">#ff373e47</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlLightLightColorKey}">#ff48515c</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlTextColorKey}">#ffe6e9ee</Color>
+    <Color x:Key="{x:Static common:SystemColors.DesktopColorKey}">#ff111316</Color>
+    <Color x:Key="{x:Static common:SystemColors.GradientActiveCaptionColorKey}">#ff2d5275</Color>
+    <Color x:Key="{x:Static common:SystemColors.GradientInactiveCaptionColorKey}">#ff30353d</Color>
+    <Color x:Key="{x:Static common:SystemColors.GrayTextColorKey}">#ff929aa6</Color>
+    <Color x:Key="{x:Static common:SystemColors.HighlightColorKey}">#ff386c9e</Color>
+    <Color x:Key="{x:Static common:SystemColors.HighlightTextColorKey}">#fff7f9fb</Color>
+    <Color x:Key="{x:Static common:SystemColors.HotTrackColorKey}">#ff68a0db</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveBorderColorKey}">#ff30353d</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveCaptionColorKey}">#ff24282e</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveCaptionTextColorKey}">#ff9da5b1</Color>
+    <Color x:Key="{x:Static common:SystemColors.InfoColorKey}">#ff24282e</Color>
+    <Color x:Key="{x:Static common:SystemColors.InfoTextColorKey}">#ffe6e9ee</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuColorKey}">#ff24282e</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuBarColorKey}">#ff202329</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuHighlightColorKey}">#ff386c9e</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuTextColorKey}">#ffe6e9ee</Color>
+    <Color x:Key="{x:Static common:SystemColors.ScrollBarColorKey}">#ff292d33</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowColorKey}">#ff181a1e</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowFrameColorKey}">#ff111316</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowTextColorKey}">#ffe6e9ee</Color>
+
+    <!-- 应用语义色统一菜单、表格和状态提示，避免各窗口分别定义近似颜色。 -->
+    <Color x:Key="AppAccentColor">#ff4f8fd8</Color>
+    <Color x:Key="AppAccentHoverColor">#ff68a0db</Color>
+    <Color x:Key="AppSelectionColor">#ff315f91</Color>
+    <Color x:Key="AppSurfaceRaisedColor">#ff292d33</Color>
+    <Color x:Key="AppSurfaceHoverColor">#ff333943</Color>
+    <Color x:Key="AppBorderColor">#ff3c424b</Color>
+    <Color x:Key="AppSecondaryTextColor">#ffaab1bc</Color>
+    <Color x:Key="AppErrorColor">#ffff7070</Color>
+    <Color x:Key="AppWarningColor">#ffe6b84a</Color>
+    <Color x:Key="AppSuccessColor">#ff72c985</Color>
+
+    <SolidColorBrush x:Key="AppAccentBrush" Color="{DynamicResource AppAccentColor}" />
+    <SolidColorBrush x:Key="AppAccentHoverBrush" Color="{DynamicResource AppAccentHoverColor}" />
+    <SolidColorBrush x:Key="AppSelectionBrush" Color="{DynamicResource AppSelectionColor}" />
+    <SolidColorBrush x:Key="AppSurfaceRaisedBrush" Color="{DynamicResource AppSurfaceRaisedColor}" />
+    <SolidColorBrush x:Key="AppSurfaceHoverBrush" Color="{DynamicResource AppSurfaceHoverColor}" />
+    <SolidColorBrush x:Key="AppBorderBrush" Color="{DynamicResource AppBorderColor}" />
+    <SolidColorBrush x:Key="AppSecondaryTextBrush" Color="{DynamicResource AppSecondaryTextColor}" />
+    <SolidColorBrush x:Key="AppErrorBrush" Color="{DynamicResource AppErrorColor}" />
+    <SolidColorBrush x:Key="AppWarningBrush" Color="{DynamicResource AppWarningColor}" />
+    <SolidColorBrush x:Key="AppSuccessBrush" Color="{DynamicResource AppSuccessColor}" />
+
+    <!-- 兼容项目中使用的 Fluent 资源名，让空状态、只读输入框和选中卡片跟随新色板。 -->
+    <Color x:Key="SystemAccentColor">#ff4f8fd8</Color>
+    <Color x:Key="SystemAccentColorLight1">#ff315f91</Color>
+    <Color x:Key="SystemBaseLowColor">#ff343a43</Color>
+    <SolidColorBrush x:Key="SystemControlForegroundBaseMediumBrush" Color="#ffaab1bc" />
+    <SolidColorBrush x:Key="SystemControlBackgroundBaseLowBrush" Color="#ff20242a" />
 
     <system:Double x:Key="{x:Static common:SystemParameters.HorizontalScrollBarHeightKey}">16</system:Double>
     <system:Double x:Key="{x:Static common:SystemParameters.VerticalScrollBarWidthKey}">16</system:Double>
@@ -49,5 +80,24 @@
     <system:Double x:Key="FontSizeLarge">13</system:Double>
     
     <SolidColorBrush x:Key="ThemeForegroundBrush" Color="{DynamicResource {x:Static common:SystemColors.ControlTextColorKey}}" />
-    <SolidColorBrush x:Key="DataGridColumnHeaderForegroundBrush" Color="{DynamicResource {x:Static common:SystemColors.ControlTextColorKey}}" />
+
+    <!-- 表格减少高亮蓝块和亮网格线的冲突，同时明确表头、悬停、选中和焦点层级。 -->
+    <SolidColorBrush x:Key="DataGridCellBackgroundBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="DataGridRowBackgroundBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="DataGridGridLinesBrush" Color="#ff343b44" />
+    <SolidColorBrush x:Key="DataGridFillerColumnGridLinesBrush" Color="#ff343b44" />
+    <SolidColorBrush x:Key="DataGridColumnHeaderBackgroundBrush" Color="#ff292d33" />
+    <SolidColorBrush x:Key="DataGridColumnHeaderForegroundBrush" Color="#ffe6e9ee" />
+    <SolidColorBrush x:Key="DataGridColumnHeaderHoveredBackgroundBrush" Color="#ff333943" />
+    <SolidColorBrush x:Key="DataGridColumnHeaderPressedBackgroundBrush" Color="#ff20242a" />
+    <SolidColorBrush x:Key="DataGridColumnHeaderDraggedBackgroundBrush" Color="#ff333943" />
+    <SolidColorBrush x:Key="DataGridRowHoveredBackgroundColor" Color="#ff252a31" />
+    <SolidColorBrush x:Key="DataGridRowSelectedBackgroundBrush" Color="#ff315f91" />
+    <SolidColorBrush x:Key="DataGridRowSelectedHoveredBackgroundBrush" Color="#ff3b6e9f" />
+    <SolidColorBrush x:Key="DataGridRowSelectedUnfocusedBackgroundBrush" Color="#ff2b4a67" />
+    <SolidColorBrush x:Key="DataGridRowSelectedHoveredUnfocusedBackgroundBrush" Color="#ff345875" />
+    <SolidColorBrush x:Key="DataGridCellFocusVisualPrimaryBrush" Color="#ff72a7e0" />
+    <SolidColorBrush x:Key="DataGridCellFocusVisualSecondaryBrush" Color="#ff181a1e" />
+    <SolidColorBrush x:Key="DataGridCellInvalidBrush" Color="#ffff7070" />
+    <SolidColorBrush x:Key="DataGridRowInvalidBrush" Color="#33ff7070" />
 </ResourceDictionary>
