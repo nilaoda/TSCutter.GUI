@@ -205,6 +205,11 @@
     <x:String x:Key="String.TsCheck.Column.Warnings">警告數</x:String>
     <x:String x:Key="String.TsCheck.View.Summary">摘要</x:String>
     <x:String x:Key="String.TsCheck.View.Details">詳細資料</x:String>
+    <x:String x:Key="String.TsCheck.View.Timeline">時間軸</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.Stream">曲線：</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.TotalTs">TS 總位元率</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.NoData">正在等待有效的 PCR 時間軸...</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.Hint">懸停查看位元率；點擊紅色或黃色標記可開啟對應詳細資料。</x:String>
     <x:String x:Key="String.TsCheck.Column.Type">類型</x:String>
     <x:String x:Key="String.TsCheck.Column.Packet">Packet</x:String>
     <x:String x:Key="String.TsCheck.Column.Description">說明</x:String>
@@ -285,6 +290,13 @@
     <x:String x:Key="String.TsCheck.Report.Warnings">警告</x:String>
     <x:String x:Key="String.TsCheck.Report.Elapsed">掃描耗時</x:String>
     <x:String x:Key="String.TsCheck.Report.AverageSpeed">平均速度</x:String>
+    <x:String x:Key="String.TsCheck.Report.BitrateTimeline">位元率時間軸</x:String>
+    <x:String x:Key="String.TsCheck.Report.ReferencePcr">參考 PCR PID</x:String>
+    <x:String x:Key="String.TsCheck.Report.TimelineDuration">時間軸時長</x:String>
+    <x:String x:Key="String.TsCheck.Report.TimelineSamples">時間軸取樣數</x:String>
+    <x:String x:Key="String.TsCheck.Report.AverageBitrate">TS 平均位元率</x:String>
+    <x:String x:Key="String.TsCheck.Report.PeakBitrate">TS 峰值位元率</x:String>
+    <x:String x:Key="String.TsCheck.Report.BitrateValue">{0:0.###} Mb/s</x:String>
     <x:String x:Key="String.TsCheck.Report.Programs">節目與軌道</x:String>
     <x:String x:Key="String.TsCheck.Report.NoPrograms">未找到有效的 PAT/PMT 節目。</x:String>
     <x:String x:Key="String.TsCheck.Report.ProgramLine">節目 {0}：PMT {1}，PCR {2}</x:String>

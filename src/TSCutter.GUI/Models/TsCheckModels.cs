@@ -171,8 +171,10 @@ public sealed class TsCheckResult
     public int GlobalErrorCount { get; set; }
     public int GlobalWarningCount { get; set; }
     public List<TsCheckEvent> Events { get; } = [];
+    public List<TsCheckTimelineBucket> Timeline { get; } = [];
     public Dictionary<int, TsCheckPidSummary> Pids { get; } = [];
     public Dictionary<int, TsCheckProgramSummary> Programs { get; } = [];
+    public int TimelineReferencePcrPid { get; set; } = -1;
     public int ErrorCount => TotalErrorCount;
     public int WarningCount => TotalWarningCount;
     public TsCheckVerdict Verdict => WasCancelled
@@ -182,6 +184,44 @@ public sealed class TsCheckResult
             : WarningCount > 0
                 ? TsCheckVerdict.Warning
                 : TsCheckVerdict.Pass;
+}
+
+public readonly record struct TsCheckTimelinePidSample(int Pid, double PacketCount);
+
+public sealed class TsCheckTimelineBucket
+{
+    private const int TransportPacketBits = 188 * 8;
+
+    public required double StartSeconds { get; init; }
+    public required double DurationSeconds { get; init; }
+    public required double TotalPacketCount { get; init; }
+    public required int Segment { get; init; }
+    public TsCheckTimelinePidSample[] Pids { get; init; } = [];
+    public double EndSeconds => StartSeconds + DurationSeconds;
+    public double TotalBitrate => DurationSeconds > 0
+        ? TotalPacketCount * TransportPacketBits / DurationSeconds
+        : 0;
+
+    public double GetPidBitrate(int pid)
+    {
+        if (DurationSeconds <= 0)
+            return 0;
+        // 每个桶的 PID 采样已排序，绘图时使用二分查找，避免长时间轴反复线性扫描全部 PID。
+        var low = 0;
+        var high = Pids.Length - 1;
+        while (low <= high)
+        {
+            var middle = low + (high - low) / 2;
+            var sample = Pids[middle];
+            if (sample.Pid == pid)
+                return sample.PacketCount * TransportPacketBits / DurationSeconds;
+            if (sample.Pid < pid)
+                low = middle + 1;
+            else
+                high = middle - 1;
+        }
+        return 0;
+    }
 }
 
 public sealed class TsStreamAnalyzeOptions
@@ -214,7 +254,8 @@ public readonly record struct TsCheckProgress(
     double BytesPerSecond,
     TimeSpan Elapsed,
     TsCheckPidProgress[] Pids,
-    TsCheckEvent? NewEvent)
+    TsCheckEvent? NewEvent,
+    TsCheckTimelineBucket[] Timeline)
 {
     public double Percent => FileSize > 0 ? BytesScanned * 100.0 / FileSize : 0;
 }

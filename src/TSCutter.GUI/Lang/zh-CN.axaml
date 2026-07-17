@@ -205,6 +205,11 @@
     <x:String x:Key="String.TsCheck.Column.Warnings">警告数</x:String>
     <x:String x:Key="String.TsCheck.View.Summary">摘要</x:String>
     <x:String x:Key="String.TsCheck.View.Details">详情</x:String>
+    <x:String x:Key="String.TsCheck.View.Timeline">时间轴</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.Stream">曲线：</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.TotalTs">TS 总码率</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.NoData">正在等待有效的 PCR 时间轴...</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.Hint">悬停查看码率；点击红色或黄色标记可打开对应详情。</x:String>
     <x:String x:Key="String.TsCheck.Column.Type">类型</x:String>
     <x:String x:Key="String.TsCheck.Column.Packet">Packet</x:String>
     <x:String x:Key="String.TsCheck.Column.Description">说明</x:String>
@@ -285,6 +290,13 @@
     <x:String x:Key="String.TsCheck.Report.Warnings">警告</x:String>
     <x:String x:Key="String.TsCheck.Report.Elapsed">扫描耗时</x:String>
     <x:String x:Key="String.TsCheck.Report.AverageSpeed">平均速度</x:String>
+    <x:String x:Key="String.TsCheck.Report.BitrateTimeline">码率时间轴</x:String>
+    <x:String x:Key="String.TsCheck.Report.ReferencePcr">参考 PCR PID</x:String>
+    <x:String x:Key="String.TsCheck.Report.TimelineDuration">时间轴时长</x:String>
+    <x:String x:Key="String.TsCheck.Report.TimelineSamples">时间轴采样数</x:String>
+    <x:String x:Key="String.TsCheck.Report.AverageBitrate">TS 平均码率</x:String>
+    <x:String x:Key="String.TsCheck.Report.PeakBitrate">TS 峰值码率</x:String>
+    <x:String x:Key="String.TsCheck.Report.BitrateValue">{0:0.###} Mb/s</x:String>
     <x:String x:Key="String.TsCheck.Report.Programs">节目与轨道</x:String>
     <x:String x:Key="String.TsCheck.Report.NoPrograms">未找到有效的 PAT/PMT 节目。</x:String>
     <x:String x:Key="String.TsCheck.Report.ProgramLine">节目 {0}：PMT {1}，PCR {2}</x:String>

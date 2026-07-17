@@ -33,6 +33,27 @@ public sealed class TsCheckReportBuilder(TsCheckTextFormatter text)
             $"{CommonUtil.FormatFileSize(result.BytesScanned / Math.Max(0.001, result.Elapsed.TotalSeconds))}/s");
         builder.AppendLine();
 
+        if (result.Timeline.Count > 0)
+        {
+            var timelineDuration = result.Timeline.Sum(item => item.DurationSeconds);
+            var timelinePackets = result.Timeline.Sum(item => item.TotalPacketCount);
+            var averageBitrate = timelinePackets * TsStreamAnalyzer.PacketSize * 8 /
+                                 Math.Max(0.001, timelineDuration);
+            var peakBitrate = result.Timeline.Max(item => item.TotalBitrate);
+            AppendSection(builder, strings.String_TsCheck_Report_BitrateTimeline);
+            AppendField(builder, strings.String_TsCheck_Report_ReferencePcr,
+                result.TimelineReferencePcrPid >= 0 ? $"0x{result.TimelineReferencePcrPid:X4}" : "-");
+            AppendField(builder, strings.String_TsCheck_Report_TimelineDuration,
+                TsCheckEvent.FormatTime(result.Timeline[^1].EndSeconds));
+            AppendField(builder, strings.String_TsCheck_Report_TimelineSamples,
+                result.Timeline.Count.ToString("N0"));
+            AppendField(builder, strings.String_TsCheck_Report_AverageBitrate,
+                string.Format(strings.String_TsCheck_Report_BitrateValue, averageBitrate / 1_000_000));
+            AppendField(builder, strings.String_TsCheck_Report_PeakBitrate,
+                string.Format(strings.String_TsCheck_Report_BitrateValue, peakBitrate / 1_000_000));
+            builder.AppendLine();
+        }
+
         AppendSection(builder, strings.String_TsCheck_Report_Programs);
         if (result.Programs.Count == 0)
         {

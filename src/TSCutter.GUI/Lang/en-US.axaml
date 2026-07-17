@@ -205,6 +205,11 @@
     <x:String x:Key="String.TsCheck.Column.Warnings">Warnings</x:String>
     <x:String x:Key="String.TsCheck.View.Summary">Summary</x:String>
     <x:String x:Key="String.TsCheck.View.Details">Details</x:String>
+    <x:String x:Key="String.TsCheck.View.Timeline">Timeline</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.Stream">Series:</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.TotalTs">Total TS</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.NoData">Waiting for a valid PCR timeline...</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.Hint">Hover to inspect bitrate; click a red or yellow marker to open its detail.</x:String>
     <x:String x:Key="String.TsCheck.Column.Type">Type</x:String>
     <x:String x:Key="String.TsCheck.Column.Packet">Packet</x:String>
     <x:String x:Key="String.TsCheck.Column.Description">Description</x:String>
@@ -285,6 +290,13 @@
     <x:String x:Key="String.TsCheck.Report.Warnings">Warnings</x:String>
     <x:String x:Key="String.TsCheck.Report.Elapsed">Elapsed</x:String>
     <x:String x:Key="String.TsCheck.Report.AverageSpeed">Average speed</x:String>
+    <x:String x:Key="String.TsCheck.Report.BitrateTimeline">Bitrate timeline</x:String>
+    <x:String x:Key="String.TsCheck.Report.ReferencePcr">Reference PCR PID</x:String>
+    <x:String x:Key="String.TsCheck.Report.TimelineDuration">Timeline duration</x:String>
+    <x:String x:Key="String.TsCheck.Report.TimelineSamples">Timeline samples</x:String>
+    <x:String x:Key="String.TsCheck.Report.AverageBitrate">Average TS bitrate</x:String>
+    <x:String x:Key="String.TsCheck.Report.PeakBitrate">Peak TS bitrate</x:String>
+    <x:String x:Key="String.TsCheck.Report.BitrateValue">{0:0.###} Mb/s</x:String>
     <x:String x:Key="String.TsCheck.Report.Programs">Programs and streams</x:String>
     <x:String x:Key="String.TsCheck.Report.NoPrograms">No valid PAT/PMT program was found.</x:String>
     <x:String x:Key="String.TsCheck.Report.ProgramLine">Program {0}: PMT {1}, PCR {2}</x:String>

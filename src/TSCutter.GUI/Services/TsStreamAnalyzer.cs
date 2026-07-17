@@ -20,6 +20,8 @@ public sealed class TsStreamAnalyzer
     private const double PcrGapThresholdSeconds = 0.5;
     private const double TimestampJumpThresholdSeconds = 10;
     private const double AvDriftThresholdSeconds = 0.5;
+    private const int MaxTimelineBuckets = 4_096;
+    private const double InitialTimelineBucketSeconds = 1;
 
     private readonly Dictionary<int, PidState> _pidStates = [];
     private readonly Dictionary<int, PsiAssembler> _psiAssemblers = [];
@@ -46,6 +48,15 @@ public sealed class TsStreamAnalyzer
     private TsStreamAnalyzeOptions _options = new();
     private long _lastCatalogChangePacket;
     private bool _stopRequested;
+    private int _timelineReferencePcrPid = -1;
+    private bool _timelineStarted;
+    private double _timelineLastClockSeconds;
+    private double _timelineBucketStartSeconds;
+    private double _timelineBucketDurationSeconds = InitialTimelineBucketSeconds;
+    private double _timelineBucketPacketCount;
+    private long _timelineIntervalPacketCount;
+    private int _timelineSegment;
+    private int _timelineCompactionThreshold = MaxTimelineBuckets;
 
     public async Task<TsCheckResult> AnalyzeAsync(
         string filePath,
@@ -156,6 +167,15 @@ public sealed class TsStreamAnalyzer
         _options = options ?? new TsStreamAnalyzeOptions();
         _lastCatalogChangePacket = 0;
         _stopRequested = false;
+        _timelineReferencePcrPid = -1;
+        _timelineStarted = false;
+        _timelineLastClockSeconds = 0;
+        _timelineBucketStartSeconds = 0;
+        _timelineBucketDurationSeconds = InitialTimelineBucketSeconds;
+        _timelineBucketPacketCount = 0;
+        _timelineIntervalPacketCount = 0;
+        _timelineSegment = 0;
+        _timelineCompactionThreshold = MaxTimelineBuckets;
         _psiAssemblers[0] = new PsiAssembler();
     }
 
@@ -247,6 +267,11 @@ public sealed class TsStreamAnalyzer
 
         var state = GetPidState(pid);
         state.Summary.PacketCount++;
+        if (_timelineStarted)
+        {
+            state.TimelineIntervalPacketCount++;
+            _timelineIntervalPacketCount++;
+        }
         if (hasPayload)
             state.Summary.PayloadPacketCount++;
 
@@ -400,6 +425,7 @@ public sealed class TsStreamAnalyzer
         _lastKnownPcr90k = pcr;
         _lastKnownClock90k = pcr;
         SetTimelineOrigin(pcr);
+        UpdateTimeline(pid, ptsToSeconds(pcr), discontinuity);
         if (_pcrPidPrograms.TryGetValue(pid, out var programNumber))
             CheckAvSyncAtPcr(programNumber, pcr, fileOffset);
     }
@@ -1033,11 +1059,12 @@ public sealed class TsStreamAnalyzer
         _progress.Report(new TsCheckProgress(
             bytesScanned, _result.FileSize, _packetIndex, _errorCount, _warningCount,
             bytesScanned / Math.Max(0.001, _stopwatch.Elapsed.TotalSeconds), _stopwatch.Elapsed,
-            pidSnapshot, progressEvent));
+            pidSnapshot, progressEvent, _result.Timeline.ToArray()));
     }
 
     private void CompleteResult(long bytesScanned, bool cancelled)
     {
+        CompleteTimeline();
         _result.PacketCount = _packetIndex;
         _result.BytesScanned = Math.Min(_result.FileSize, bytesScanned);
         _result.Elapsed = _stopwatch.Elapsed;
@@ -1046,6 +1073,202 @@ public sealed class TsStreamAnalyzer
         _result.TotalWarningCount = _warningCount;
         _result.GlobalErrorCount = _globalErrorCount;
         _result.GlobalWarningCount = _globalWarningCount;
+    }
+
+    private void UpdateTimeline(int pid, double clockSeconds, bool discontinuity)
+    {
+        // 码率以首个已确认的节目 PCR 为参考时钟，避免多个节目交错 PCR 导致时间轴来回跳动。
+        if (_timelineReferencePcrPid < 0)
+        {
+            if (!_pcrPidPrograms.ContainsKey(pid))
+                return;
+            _timelineReferencePcrPid = pid;
+            _result.TimelineReferencePcrPid = pid;
+            StartTimeline(clockSeconds);
+            return;
+        }
+        if (pid != _timelineReferencePcrPid || !_timelineStarted)
+            return;
+
+        var intervalDuration = clockSeconds - _timelineLastClockSeconds;
+        if (discontinuity || intervalDuration <= 0 || intervalDuration > TimestampJumpThresholdSeconds)
+        {
+            // 时钟不连续时保留已有片段并开启新段，不能把跳变区间平均成虚假的低码率。
+            FlushTimelineBucket(_timelineLastClockSeconds - _timelineBucketStartSeconds);
+            _timelineSegment++;
+            ResetTimelineCounters();
+            _timelineBucketStartSeconds = Math.Max(clockSeconds, GetTimelineEndSeconds());
+            _timelineLastClockSeconds = _timelineBucketStartSeconds;
+            return;
+        }
+
+        var cursor = _timelineLastClockSeconds;
+        while (cursor < clockSeconds)
+        {
+            var bucketEnd = _timelineBucketStartSeconds + _timelineBucketDurationSeconds;
+            var overlap = Math.Min(clockSeconds, bucketEnd) - cursor;
+            if (overlap <= 0)
+                break;
+
+            var ratio = overlap / intervalDuration;
+            _timelineBucketPacketCount += _timelineIntervalPacketCount * ratio;
+            foreach (var state in _pidStates.Values)
+                state.TimelineBucketPacketCount += state.TimelineIntervalPacketCount * ratio;
+
+            cursor += overlap;
+            if (cursor >= bucketEnd - 0.000_001)
+                SealTimelineBucket(_timelineBucketDurationSeconds);
+        }
+
+        ResetTimelineIntervalCounters();
+        _timelineLastClockSeconds = clockSeconds;
+    }
+
+    private void StartTimeline(double clockSeconds)
+    {
+        _timelineStarted = true;
+        _timelineLastClockSeconds = clockSeconds;
+        _timelineBucketStartSeconds = clockSeconds;
+        ResetTimelineCounters();
+    }
+
+    private void CompleteTimeline()
+    {
+        if (!_timelineStarted)
+            return;
+        FlushTimelineBucket(_timelineLastClockSeconds - _timelineBucketStartSeconds);
+        ResetTimelineIntervalCounters();
+        _timelineStarted = false;
+    }
+
+    private void FlushTimelineBucket(double durationSeconds)
+    {
+        if (durationSeconds <= 0 || _timelineBucketPacketCount <= 0)
+            return;
+        SealTimelineBucket(durationSeconds);
+    }
+
+    private void SealTimelineBucket(double durationSeconds)
+    {
+        var sampleCount = 0;
+        foreach (var state in _pidStates.Values)
+        {
+            if (state.TimelineBucketPacketCount > 0)
+                sampleCount++;
+        }
+
+        var samples = new TsCheckTimelinePidSample[sampleCount];
+        var index = 0;
+        foreach (var state in _pidStates.Values)
+        {
+            if (state.TimelineBucketPacketCount > 0)
+            {
+                samples[index++] = new TsCheckTimelinePidSample(
+                    state.Summary.Pid, state.TimelineBucketPacketCount);
+            }
+            state.TimelineBucketPacketCount = 0;
+        }
+        Array.Sort(samples, static (left, right) => left.Pid.CompareTo(right.Pid));
+
+        _result.Timeline.Add(new TsCheckTimelineBucket
+        {
+            StartSeconds = _timelineBucketStartSeconds,
+            DurationSeconds = durationSeconds,
+            TotalPacketCount = _timelineBucketPacketCount,
+            Segment = _timelineSegment,
+            Pids = samples
+        });
+        _timelineBucketStartSeconds += durationSeconds;
+        _timelineBucketPacketCount = 0;
+
+        if (_result.Timeline.Count >= _timelineCompactionThreshold)
+            CompactTimeline();
+    }
+
+    private void CompactTimeline()
+    {
+        var source = _result.Timeline;
+        var compacted = new List<TsCheckTimelineBucket>((source.Count + 1) / 2);
+        for (var index = 0; index < source.Count;)
+        {
+            var first = source[index++];
+            if (index < source.Count && source[index].Segment == first.Segment)
+            {
+                compacted.Add(MergeTimelineBuckets(first, source[index++]));
+            }
+            else
+            {
+                compacted.Add(first);
+            }
+        }
+
+        source.Clear();
+        source.AddRange(compacted);
+        _timelineBucketDurationSeconds *= 2;
+        // 如果异常分段过多导致本轮无法充分压缩，推迟下一轮，避免每增加一个桶都重复整理。
+        _timelineCompactionThreshold = source.Count < MaxTimelineBuckets
+            ? MaxTimelineBuckets
+            : source.Count + MaxTimelineBuckets;
+    }
+
+    private static TsCheckTimelineBucket MergeTimelineBuckets(
+        TsCheckTimelineBucket first, TsCheckTimelineBucket second)
+    {
+        var merged = new TsCheckTimelinePidSample[first.Pids.Length + second.Pids.Length];
+        var firstIndex = 0;
+        var secondIndex = 0;
+        var outputIndex = 0;
+        while (firstIndex < first.Pids.Length || secondIndex < second.Pids.Length)
+        {
+            if (secondIndex >= second.Pids.Length ||
+                firstIndex < first.Pids.Length && first.Pids[firstIndex].Pid < second.Pids[secondIndex].Pid)
+            {
+                merged[outputIndex++] = first.Pids[firstIndex++];
+            }
+            else if (firstIndex >= first.Pids.Length ||
+                     second.Pids[secondIndex].Pid < first.Pids[firstIndex].Pid)
+            {
+                merged[outputIndex++] = second.Pids[secondIndex++];
+            }
+            else
+            {
+                merged[outputIndex++] = new TsCheckTimelinePidSample(
+                    first.Pids[firstIndex].Pid,
+                    first.Pids[firstIndex].PacketCount + second.Pids[secondIndex].PacketCount);
+                firstIndex++;
+                secondIndex++;
+            }
+        }
+        if (outputIndex != merged.Length)
+            Array.Resize(ref merged, outputIndex);
+
+        return new TsCheckTimelineBucket
+        {
+            StartSeconds = first.StartSeconds,
+            DurationSeconds = first.DurationSeconds + second.DurationSeconds,
+            TotalPacketCount = first.TotalPacketCount + second.TotalPacketCount,
+            Segment = first.Segment,
+            Pids = merged
+        };
+    }
+
+    private double GetTimelineEndSeconds() => _result.Timeline.Count > 0
+        ? _result.Timeline[^1].EndSeconds
+        : 0;
+
+    private void ResetTimelineCounters()
+    {
+        _timelineBucketPacketCount = 0;
+        foreach (var state in _pidStates.Values)
+            state.TimelineBucketPacketCount = 0;
+        ResetTimelineIntervalCounters();
+    }
+
+    private void ResetTimelineIntervalCounters()
+    {
+        _timelineIntervalPacketCount = 0;
+        foreach (var state in _pidStates.Values)
+            state.TimelineIntervalPacketCount = 0;
     }
 
     private void ValidateCompletedScan(long fileSize)
@@ -1178,6 +1401,9 @@ public sealed class TsStreamAnalyzer
         public byte[] MpegAudioProbeTail { get; } = new byte[3];
         public int MpegAudioProbeTailLength;
         public int MpegAudioProbeBytes;
+        // 时间轴仅在 PCR 到达时汇总，逐包热路径只做整数累加，不创建采样对象。
+        public long TimelineIntervalPacketCount;
+        public double TimelineBucketPacketCount;
 
         public void ResetContinuity() => HasContinuity = false;
 
