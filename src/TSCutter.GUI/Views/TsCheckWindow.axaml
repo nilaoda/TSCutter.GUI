@@ -5,6 +5,8 @@
         xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
         xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
         xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:models="clr-namespace:TSCutter.GUI.Models"
+        xmlns:commonControls="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
         mc:Ignorable="d"
         x:Class="TSCutter.GUI.Views.TsCheckWindow"
         x:DataType="viewModels:TsCheckWindowViewModel"
@@ -100,7 +102,9 @@
                 <RadioButton GroupName="TsCheckView" Content="{DynamicResource String.TsCheck.View.Summary}"
                              IsChecked="{Binding IsSummaryView, Mode=TwoWay}" />
                 <RadioButton GroupName="TsCheckView" Content="{DynamicResource String.TsCheck.View.Details}"
-                             IsChecked="{Binding IsSummaryView, Mode=TwoWay, Converter={x:Static local:App.InverseBoolConverter}}" />
+                             IsChecked="{Binding IsDetailsView, Mode=TwoWay}" />
+                <RadioButton GroupName="TsCheckView" Content="{DynamicResource String.TsCheck.View.Timeline}"
+                             IsChecked="{Binding IsTimelineView, Mode=TwoWay}" />
             </StackPanel>
         </Grid>
 
@@ -146,7 +150,9 @@
         </DataGrid>
 
         <DataGrid Grid.Row="3" ItemsSource="{Binding Events}" IsReadOnly="True" AutoGenerateColumns="False"
-                  IsVisible="{Binding IsSummaryView, Converter={x:Static local:App.InverseBoolConverter}}"
+                  x:Name="DetailsGrid"
+                  IsVisible="{Binding IsDetailsView}"
+                  SelectedItem="{Binding SelectedEventRow, Mode=TwoWay}"
                   GridLinesVisibility="All" CanUserResizeColumns="True"
                   HorizontalScrollBarVisibility="Visible" VerticalScrollBarVisibility="Auto"
                   ScrollViewer.HorizontalScrollBarVisibility="Visible"
@@ -162,6 +168,47 @@
                 <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Description}" Binding="{Binding Message}" Width="420" />
             </DataGrid.Columns>
         </DataGrid>
+
+        <Grid Grid.Row="3" IsVisible="{Binding IsTimelineView}" RowDefinitions="Auto,*" RowSpacing="6">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,360,*" ColumnSpacing="8">
+                <TextBlock Grid.Column="0" Text="{DynamicResource String.TsCheck.Timeline.Stream}"
+                           VerticalAlignment="Center" />
+                <ComboBox Grid.Column="1" ItemsSource="{Binding TimelineStreams}"
+                          SelectedItem="{Binding SelectedTimelineStream, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:TsCheckTimelineStreamView">
+                            <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock Grid.Column="2" Text="{DynamicResource String.TsCheck.Timeline.Hint}"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                           VerticalAlignment="Center" TextAlignment="Right" TextWrapping="Wrap" />
+            </Grid>
+            <ClassicBorderDecorator Grid.Row="1" BorderThickness="2" BorderStyle="Sunken">
+                <controls:TsCheckTimeline Buckets="{Binding TimelineBuckets}"
+                                          EventSelected="Timeline_OnEventSelected"
+                                          Events="{Binding TimelineEvents}"
+                                          SelectedPid="{Binding SelectedTimelinePid}"
+                                          SeriesName="{Binding SelectedTimelineSeriesName}"
+                                          SelectedEvent="{Binding SelectedTimelineEvent, Mode=TwoWay}"
+                                          BackgroundBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowColorKey}}"
+                                          PrimaryBrush="{DynamicResource TsCheckPacketShareBrush}"
+                                          SecondaryBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
+                                          GridBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
+                                          TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
+                                          ErrorBrush="{DynamicResource TsCheckErrorCellForegroundBrush}"
+                                          WarningBrush="{DynamicResource TsCheckWarningCellForegroundBrush}"
+                                          TooltipBackgroundBrush="{DynamicResource {x:Static commonControls:SystemColors.InfoColorKey}}"
+                                          TooltipTextBrush="{DynamicResource {x:Static commonControls:SystemColors.InfoTextColorKey}}"
+                                          TooltipBorderBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowFrameColorKey}}"
+                                          TotalText="{DynamicResource String.TsCheck.Timeline.TotalTs}"
+                                          NoDataText="{DynamicResource String.TsCheck.Timeline.NoData}"
+                                          ErrorText="{DynamicResource String.TsCheck.Severity.Error}"
+                                          WarningText="{DynamicResource String.TsCheck.Severity.Warning}"
+                                          MinHeight="200" />
+            </ClassicBorderDecorator>
+        </Grid>
 
         <StackPanel Grid.Row="4" Margin="0,10,0,0" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
             <Button Content="{DynamicResource String.TsCheck.Start}" Command="{Binding StartCommand}" Width="100" />
