@@ -208,6 +208,8 @@ public sealed class TsStreamAnalyzer
 
             if (data[position] != 0x47)
             {
+                // TS 失步后无法确认各 PID 当前 PES 中间丢了多少数据，先放弃半成品，避免恢复后重复报长度错误。
+                DiscardPendingPes();
                 // 中途失步时在当前缓冲区内重新寻找连续同步点，恢复后继续保持单遍扫描。
                 var resync = FindSync(data[position..]);
                 if (resync < 0)
@@ -284,6 +286,7 @@ public sealed class TsStreamAnalyzer
 
         if (transportError)
         {
+            state.DiscardPes();
             state.Summary.TransportErrors++;
             if (!_options.InventoryOnly)
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.TransportError, pid, _packetIndex, fileOffset,
@@ -292,6 +295,7 @@ public sealed class TsStreamAnalyzer
 
         if (adaptationControl == 0)
         {
+            state.DiscardPes();
             if (!_options.InventoryOnly)
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.InvalidPacketHeader, pid, _packetIndex, fileOffset,
                     TsCheckMessageCode.InvalidAdaptationControl, [], GetPacketEventTime(state), true);
@@ -306,6 +310,7 @@ public sealed class TsStreamAnalyzer
             var adaptationLength = packet[4];
             if (adaptationLength > 183)
             {
+                state.DiscardPes();
                 if (!_options.InventoryOnly)
                     AddEvent(TsCheckSeverity.Error, TsCheckEventType.SyncLoss, pid, _packetIndex, fileOffset,
                         TsCheckMessageCode.InvalidAdaptationLength, [adaptationLength], GetPacketEventTime(state), true);
@@ -354,7 +359,7 @@ public sealed class TsStreamAnalyzer
             if (_options.InventoryOnly)
                 ProbeMpegAudioLayer(payload, payloadStart, state);
             else
-                ProcessPes(pid, payload, payloadStart, state, fileOffset);
+                ProcessPes(pid, payload, payloadStart, state, fileOffset, !transportError);
         }
     }
 
@@ -369,6 +374,12 @@ public sealed class TsStreamAnalyzer
             {
                 state.Summary.DuplicatePackets++;
                 var same = packetBody.SequenceEqual(state.LastPacketBody);
+                if (!same)
+                {
+                    // 相同 CC 却包含不同 payload 时无法判断哪一份属于当前 PES，放弃长度结算以免二次误报。
+                    state.PesHeaderLength = 0;
+                    state.DiscardPes();
+                }
                 AddEvent(same ? TsCheckSeverity.Warning : TsCheckSeverity.Error,
                     same ? TsCheckEventType.DuplicatePacket : TsCheckEventType.ConflictingDuplicate,
                     pid, _packetIndex, fileOffset,
@@ -382,6 +393,7 @@ public sealed class TsStreamAnalyzer
                 state.Summary.ContinuityErrors++;
                 // payload 已不连续，丢弃跨包的 PSI/PES 半成品，避免错误拼接出伪 section 或时间戳。
                 state.PesHeaderLength = 0;
+                state.DiscardPes();
                 if (_psiAssemblers.TryGetValue(pid, out var assembler))
                     assembler.Discard();
                 var missingModulo = (counter - expected + 16) & 0x0F;
@@ -736,9 +748,16 @@ public sealed class TsStreamAnalyzer
         return true;
     }
 
-    private void ProcessPes(int pid, ReadOnlySpan<byte> payload, bool payloadStart, PidState state, long fileOffset)
+    private void ProcessPes(
+        int pid, ReadOnlySpan<byte> payload, bool payloadStart, PidState state,
+        long fileOffset, bool payloadIsReliable)
     {
         ProbeMpegAudioLayer(payload, payloadStart, state);
+
+        if (payloadIsReliable)
+            TrackPesSize(pid, payload, payloadStart, state, fileOffset);
+        else
+            state.DiscardPes();
 
         // 仅解析 PES 头中的 PTS/DTS，不读取 ES 帧内容，扫描速度不受编码复杂度和分辨率影响。
         if (payloadStart)
@@ -774,6 +793,85 @@ public sealed class TsStreamAnalyzer
 
         ParsePesHeader(pid, state.PesHeader.AsSpan(0, totalHeaderLength), state, fileOffset);
         state.PesHeaderLength = 0;
+    }
+
+    private void TrackPesSize(
+        int pid, ReadOnlySpan<byte> payload, bool payloadStart, PidState state, long fileOffset)
+    {
+        if (payloadStart)
+        {
+            FinishPesSize(pid, state);
+            state.PesActive = true;
+            state.PesStartPacket = _packetIndex;
+            state.PesStartFileOffset = fileOffset;
+            state.PesExpectedLength = -1;
+            state.PesActualLength = 0;
+            state.PesPrefix = 0;
+            state.PesPrefixLength = 0;
+            state.PesStartTimeSeconds = null;
+        }
+        else if (!state.PesActive)
+        {
+            return;
+        }
+
+        state.PesActualLength += payload.Length;
+        if (state.PesExpectedLength >= 0)
+            return;
+
+        // PES 头最前面的 6 字节可能被很大的 adaptation field 拆到下一包；用一个 ulong 原地拼接，
+        // 不保存 ES 内容，也不为每个 PES 分配数组，热路径只增加少量整数运算。
+        var needed = 6 - state.PesPrefixLength;
+        var copyLength = Math.Min(needed, payload.Length);
+        for (var index = 0; index < copyLength; index++)
+            state.PesPrefix = (state.PesPrefix << 8) | payload[index];
+        state.PesPrefixLength += copyLength;
+        if (state.PesPrefixLength < 6)
+            return;
+
+        if ((state.PesPrefix >> 24) != 0x000001)
+        {
+            state.DiscardPes();
+            return;
+        }
+
+        var declaredLength = (int)(state.PesPrefix & 0xFFFF);
+        // 长度为 0 表示 PES 长度未指定，视频流中很常见，不能据此判断边界是否异常。
+        state.PesExpectedLength = declaredLength == 0 ? 0 : declaredLength + 6;
+    }
+
+    private void FinishPesSize(int pid, PidState state)
+    {
+        if (!state.PesActive)
+            return;
+
+        var expectedLength = state.PesExpectedLength;
+        var actualLength = state.PesActualLength;
+        var startPacket = state.PesStartPacket;
+        var startFileOffset = state.PesStartFileOffset;
+        var startTime = state.PesStartTimeSeconds;
+        state.DiscardPes();
+
+        if (expectedLength <= 0 || actualLength == expectedLength)
+            return;
+
+        state.Summary.PesSizeErrors++;
+        // PES_packet_length 不包含起始码、stream_id 和长度字段本身，因此界面按规范显示减去 6 后的值。
+        var actualDeclaredAreaLength = Math.Max(0, actualLength - 6);
+        var expectedDeclaredAreaLength = expectedLength - 6;
+        AddEvent(TsCheckSeverity.Error, TsCheckEventType.PesSizeMismatch, pid, startPacket,
+            startFileOffset, TsCheckMessageCode.PesSizeMismatch,
+            [actualDeclaredAreaLength, expectedDeclaredAreaLength, actualDeclaredAreaLength - expectedDeclaredAreaLength],
+            startTime ?? GetPacketEventTime(state), startTime is null);
+    }
+
+    private void DiscardPendingPes()
+    {
+        foreach (var state in _pidStates.Values)
+        {
+            state.PesHeaderLength = 0;
+            state.DiscardPes();
+        }
     }
 
     private static void ProbeMpegAudioLayer(ReadOnlySpan<byte> payload, bool payloadStart, PidState state)
@@ -863,6 +961,8 @@ public sealed class TsStreamAnalyzer
             state.LastPts90k = pts;
             _lastKnownClock90k = pts;
             SetTimelineOrigin(pts);
+            if (state.PesActive)
+                state.PesStartTimeSeconds = ptsToSeconds(pts);
             UpdateStreamClock(pid, pts);
         }
 
@@ -1558,6 +1658,14 @@ public sealed class TsStreamAnalyzer
         public long LastDts90k = long.MinValue;
         public byte[] PesHeader { get; } = new byte[64];
         public int PesHeaderLength;
+        public bool PesActive;
+        public long PesStartPacket;
+        public long PesStartFileOffset;
+        public int PesExpectedLength = -1;
+        public long PesActualLength;
+        public ulong PesPrefix;
+        public int PesPrefixLength;
+        public double? PesStartTimeSeconds;
         public byte[] MpegAudioProbeTail { get; } = new byte[3];
         public int MpegAudioProbeTailLength;
         public int MpegAudioProbeBytes;
@@ -1573,7 +1681,18 @@ public sealed class TsStreamAnalyzer
             LastPcr90k = LastPts90k = LastDts90k = long.MinValue;
             PcrWrapOffset = PtsWrapOffset = DtsWrapOffset = 0;
             PesHeaderLength = 0;
+            DiscardPes();
             MpegAudioProbeTailLength = 0;
+        }
+
+        public void DiscardPes()
+        {
+            PesActive = false;
+            PesExpectedLength = -1;
+            PesActualLength = 0;
+            PesPrefix = 0;
+            PesPrefixLength = 0;
+            PesStartTimeSeconds = null;
         }
     }
 

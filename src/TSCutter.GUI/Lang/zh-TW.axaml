@@ -276,6 +276,7 @@
     <x:String x:Key="String.TsCheck.Type.TrailingBytes">檔案尾端殘缺包</x:String>
     <x:String x:Key="String.TsCheck.Type.TransportError">傳輸錯誤標記</x:String>
     <x:String x:Key="String.TsCheck.Type.ContinuityGap">連續計數器跳變</x:String>
+    <x:String x:Key="String.TsCheck.Type.PesSizeMismatch">PES 長度不一致</x:String>
     <x:String x:Key="String.TsCheck.Type.DuplicatePacket">重複 TS 包</x:String>
     <x:String x:Key="String.TsCheck.Type.ConflictingDuplicate">衝突重複包</x:String>
     <x:String x:Key="String.TsCheck.Type.PsiCrcError">PAT/PMT CRC 錯誤</x:String>
@@ -302,6 +303,7 @@
     <x:String x:Key="String.TsCheck.Message.DuplicatePacket">偵測到 CC={0} 的重複 payload 包。</x:String>
     <x:String x:Key="String.TsCheck.Message.ConflictingDuplicate">CC={0} 被不同的包資料重複使用。</x:String>
     <x:String x:Key="String.TsCheck.Message.ContinuityGap">預期 CC={0}，實際 CC={1}；疑似至少遺失 {2} 個包。</x:String>
+    <x:String x:Key="String.TsCheck.Message.PesSizeMismatch">PES 實際邊界包含 {0} 位元組，但 PES_packet_length 宣告為 {1} 位元組（相差 {2:+#;-#;0}）；可能存在負載遺失、插入或 PES 邊界錯位。</x:String>
     <x:String x:Key="String.TsCheck.Message.PcrBackward">PCR 倒退 {0:0.000} 秒。</x:String>
     <x:String x:Key="String.TsCheck.Message.PcrJump">PCR 向前跳變 {0:0.000} 秒。</x:String>
     <x:String x:Key="String.TsCheck.Message.PcrGap">連續 {0:0.000} 秒未發現 PCR。</x:String>
@@ -345,7 +347,7 @@
     <x:String x:Key="String.TsCheck.Report.ProgramLine">節目 {0}：PMT {1}，PCR {2}</x:String>
     <x:String x:Key="String.TsCheck.Report.StreamLine">  PID {0}：{1}</x:String>
     <x:String x:Key="String.TsCheck.Report.PidStatistics">PID 統計</x:String>
-    <x:String x:Key="String.TsCheck.Report.PidHeader">PID                包數量    CC 錯誤  TEI 錯誤     重複包  軌道</x:String>
+    <x:String x:Key="String.TsCheck.Report.PidHeader">PID                包數量    CC 錯誤  TEI 錯誤  PES 錯誤     重複包  軌道</x:String>
     <x:String x:Key="String.TsCheck.Report.Events">異常明細</x:String>
     <x:String x:Key="String.TsCheck.Report.NoEvents">未發現異常。</x:String>
     <x:String x:Key="String.TsCheck.Report.EventTimes">來源時間點：{0}，0-based 時間：{1}</x:String>

@@ -81,7 +81,7 @@ public sealed class TsCheckReportBuilder(TsCheckTextFormatter text)
         foreach (var pid in result.Pids.Values.OrderBy(item => item.Pid))
         {
             builder.AppendLine($"{pid.PidText,-8} {pid.PacketCount,14:N0} {pid.ContinuityErrors,10:N0} " +
-                               $"{pid.TransportErrors,10:N0} {pid.DuplicatePackets,10:N0}  " +
+                               $"{pid.TransportErrors,10:N0} {pid.PesSizeErrors,10:N0} {pid.DuplicatePackets,10:N0}  " +
                                text.FormatStreamType(
                                    pid.StreamType, pid.MpegAudioLayer, pid.SupplementaryStreamType, pid.Language));
         }
