@@ -4,6 +4,8 @@ using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models;
@@ -22,6 +24,7 @@ public sealed class TsStreamAnalyzer
     private const double AvDriftThresholdSeconds = 0.5;
     private const int MaxTimelineBuckets = 4_096;
     private const double InitialTimelineBucketSeconds = 1;
+    private static readonly Encoding Gb18030Encoding = CreateGb18030Encoding();
 
     private readonly Dictionary<int, PidState> _pidStates = [];
     private readonly Dictionary<int, PsiAssembler> _psiAssemblers = [];
@@ -48,6 +51,7 @@ public sealed class TsStreamAnalyzer
     private TsStreamAnalyzeOptions _options = new();
     private long _lastCatalogChangePacket;
     private bool _stopRequested;
+    private bool _sdtSeen;
     private int _timelineReferencePcrPid = -1;
     private bool _timelineStarted;
     private double _timelineLastClockSeconds;
@@ -167,6 +171,7 @@ public sealed class TsStreamAnalyzer
         _options = options ?? new TsStreamAnalyzeOptions();
         _lastCatalogChangePacket = 0;
         _stopRequested = false;
+        _sdtSeen = false;
         _timelineReferencePcrPid = -1;
         _timelineStarted = false;
         _timelineLastClockSeconds = 0;
@@ -177,6 +182,8 @@ public sealed class TsStreamAnalyzer
         _timelineSegment = 0;
         _timelineCompactionThreshold = MaxTimelineBuckets;
         _psiAssemblers[0] = new PsiAssembler();
+        if (_options.IncludeServiceMetadata)
+            _psiAssemblers[0x0011] = new PsiAssembler();
     }
 
     private int ProcessBuffer(ReadOnlySpan<byte> data, long absoluteOffset, CancellationToken cancellationToken)
@@ -338,7 +345,8 @@ public sealed class TsStreamAnalyzer
             return;
 
         var payload = packet[payloadOffset..];
-        if (pid == 0 || _pmtPidPrograms.ContainsKey(pid))
+        if (pid == 0 || _pmtPidPrograms.ContainsKey(pid) ||
+            (_options.IncludeServiceMetadata && pid == 0x0011))
             ProcessPsi(pid, payload, payloadStart, fileOffset);
 
         if (_streamPidPrograms.ContainsKey(pid))
@@ -457,6 +465,8 @@ public sealed class TsStreamAnalyzer
             ParsePat(section);
         else if (_pmtPidPrograms.TryGetValue(pid, out var programNumber) && section[0] == 0x02)
             ParsePmt(programNumber, pid, section, fileOffset);
+        else if (_options.IncludeServiceMetadata && pid == 0x0011 && section[0] == 0x42)
+            ParseSdt(section);
     }
 
     private void ParsePat(ReadOnlySpan<byte> section)
@@ -564,6 +574,154 @@ public sealed class TsStreamAnalyzer
             _lastCatalogChangePacket = _packetIndex;
     }
 
+    private void ParseSdt(ReadOnlySpan<byte> section)
+    {
+        if (section.Length < 15)
+            return;
+
+        _sdtSeen = true;
+        var sectionLength = ((section[1] & 0x0F) << 8) | section[2];
+        var sectionEnd = Math.Min(section.Length - 4, 3 + sectionLength - 4);
+        var version = (byte)((section[5] >> 1) & 0x1F);
+        var originalNetworkId = (section[8] << 8) | section[9];
+        for (var offset = 11; offset + 5 <= sectionEnd;)
+        {
+            var serviceId = (section[offset] << 8) | section[offset + 1];
+            var descriptorLength = ((section[offset + 3] & 0x0F) << 8) | section[offset + 4];
+            var descriptorOffset = offset + 5;
+            if (descriptorOffset + descriptorLength > sectionEnd)
+                break;
+
+            var descriptors = section.Slice(descriptorOffset, descriptorLength);
+            var serviceType = (byte)0;
+            var serviceName = string.Empty;
+            var providerName = string.Empty;
+            ParseServiceDescriptor(descriptors, ref serviceType, ref providerName, ref serviceName);
+
+            var changed = !_result.Services.TryGetValue(serviceId, out var service) ||
+                          service.SdtVersion != version ||
+                          !service.Descriptors.AsSpan().SequenceEqual(descriptors);
+            service ??= new TsServiceSummary { ServiceId = serviceId };
+            service.ServiceName = serviceName;
+            service.ProviderName = providerName;
+            service.ServiceType = serviceType;
+            service.SdtVersion = version;
+            service.OriginalNetworkId = originalNetworkId;
+            service.EitSchedule = (section[offset + 2] & 0x02) != 0;
+            service.EitPresentFollowing = (section[offset + 2] & 0x01) != 0;
+            service.RunningStatus = (byte)((section[offset + 3] >> 5) & 0x07);
+            service.FreeCaMode = (section[offset + 3] & 0x10) != 0;
+            service.Descriptors = descriptors.ToArray();
+            _result.Services[serviceId] = service;
+            if (changed)
+                _lastCatalogChangePacket = _packetIndex;
+            offset = descriptorOffset + descriptorLength;
+        }
+    }
+
+    private static void ParseServiceDescriptor(
+        ReadOnlySpan<byte> descriptors,
+        ref byte serviceType,
+        ref string providerName,
+        ref string serviceName)
+    {
+        for (var offset = 0; offset + 2 <= descriptors.Length;)
+        {
+            var tag = descriptors[offset];
+            var length = descriptors[offset + 1];
+            if (offset + 2 + length > descriptors.Length)
+                return;
+            if (tag == 0x48 && length >= 3)
+            {
+                var body = descriptors.Slice(offset + 2, length);
+                serviceType = body[0];
+                var providerLength = body[1];
+                if (2 + providerLength >= body.Length)
+                    return;
+                providerName = DecodeDvbText(body.Slice(2, providerLength));
+                var nameLengthOffset = 2 + providerLength;
+                var nameLength = body[nameLengthOffset];
+                if (nameLengthOffset + 1 + nameLength <= body.Length)
+                    serviceName = DecodeDvbText(body.Slice(nameLengthOffset + 1, nameLength));
+                return;
+            }
+            offset += 2 + length;
+        }
+    }
+
+    private static string DecodeDvbText(ReadOnlySpan<byte> value)
+    {
+        if (value.IsEmpty)
+            return string.Empty;
+
+        // DVB 文本以首字节选择字符集；优先覆盖广播中常见的 UTF-8/UTF-16，
+        // 未声明字符集时按 ISO-8859-1 安全回退，无法识别的控制字符不会进入文件名或界面。
+        Encoding encoding = Encoding.Latin1;
+        var offset = 0;
+        if (value[0] == 0x15)
+        {
+            encoding = Encoding.UTF8;
+            offset = 1;
+        }
+        else if (value[0] == 0x11)
+        {
+            encoding = Encoding.BigEndianUnicode;
+            offset = 1;
+        }
+        else if (value[0] is >= 0x01 and <= 0x0B)
+        {
+            var isoPart = value[0] switch
+            {
+                0x01 => 5,
+                0x02 => 6,
+                0x03 => 7,
+                0x04 => 8,
+                0x05 => 9,
+                0x06 => 10,
+                0x07 => 11,
+                0x09 => 13,
+                0x0A => 14,
+                0x0B => 15,
+                _ => 0
+            };
+            if (isoPart > 0)
+                encoding = Encoding.GetEncoding($"ISO-8859-{isoPart}");
+            offset = 1;
+        }
+        else if (value[0] == 0x10 && value.Length >= 3)
+        {
+            if (value[1] == 0 && value[2] is >= 1 and <= 15 && value[2] != 12)
+                encoding = Encoding.GetEncoding($"ISO-8859-{value[2]}");
+            offset = 3;
+        }
+
+        var textBytes = value[offset..];
+        var text = encoding.GetString(textBytes).Trim();
+        var highByteCount = 0;
+        foreach (var item in textBytes)
+        {
+            if (item >= 0x80)
+                highByteCount++;
+        }
+        if (offset == 0 && highByteCount >= 2)
+        {
+            var gbText = Gb18030Encoding.GetString(textBytes).Trim();
+            // 国内 DVB 前端常把未带字符集标识的 GB2312/GBK 直接放入 SDT。
+            // 仅在解码结果明确包含多个中日韩字符时采用 GB18030，避免影响标准拉丁文本。
+            if (gbText.Count(IsCjkCharacter) >= 2)
+                text = gbText;
+        }
+        return string.Concat(text.Where(character => !char.IsControl(character)));
+    }
+
+    private static Encoding CreateGb18030Encoding()
+    {
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return Encoding.GetEncoding("GB18030", EncoderFallback.ReplacementFallback, DecoderFallback.ReplacementFallback);
+    }
+
+    private static bool IsCjkCharacter(char value) => value is >= '\u3400' and <= '\u9FFF';
+
     private bool HasCompleteCatalog()
     {
         if (_result.Programs.Count == 0)
@@ -571,6 +729,8 @@ public sealed class TsStreamAnalyzer
         foreach (var program in _result.Programs.Values)
         {
             if (program.Streams.Count == 0)
+                return false;
+            if (_options.IncludeServiceMetadata && _sdtSeen && !_result.Services.ContainsKey(program.ProgramNumber))
                 return false;
         }
         return true;

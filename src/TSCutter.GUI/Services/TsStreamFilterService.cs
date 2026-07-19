@@ -236,7 +236,7 @@ public sealed class TsStreamFilterService
         return result;
     }
 
-    private static byte[] BuildPatSection(TsCheckResult catalog, HashSet<int> selectedPrograms)
+    internal static byte[] BuildPatSection(TsCheckResult catalog, HashSet<int> selectedPrograms)
     {
         var programs = catalog.Programs.Values
             .Where(item => selectedPrograms.Contains(item.ProgramNumber))
@@ -287,7 +287,7 @@ public sealed class TsStreamFilterService
         return true;
     }
 
-    private static byte[] BuildPmtSection(TsCheckProgramSummary program, IReadOnlySet<int> selectedPids)
+    internal static byte[] BuildPmtSection(TsCheckProgramSummary program, IReadOnlySet<int> selectedPids)
     {
         var streams = program.StreamDefinitions
             .Where(item => selectedPids.Contains(item.Key))
@@ -329,7 +329,7 @@ public sealed class TsStreamFilterService
         return section;
     }
 
-    private static void WriteCrc(Span<byte> section)
+    internal static void WriteCrc(Span<byte> section)
     {
         var crc = ComputeCrc(section[..^4]);
         BinaryPrimitives.WriteUInt32BigEndian(section[^4..], crc);
