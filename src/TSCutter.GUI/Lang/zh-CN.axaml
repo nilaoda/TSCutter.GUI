@@ -276,6 +276,7 @@
     <x:String x:Key="String.TsCheck.Type.TrailingBytes">文件尾残缺包</x:String>
     <x:String x:Key="String.TsCheck.Type.TransportError">传输错误标志</x:String>
     <x:String x:Key="String.TsCheck.Type.ContinuityGap">连续计数器跳变</x:String>
+    <x:String x:Key="String.TsCheck.Type.PesSizeMismatch">PES 长度不一致</x:String>
     <x:String x:Key="String.TsCheck.Type.DuplicatePacket">重复 TS 包</x:String>
     <x:String x:Key="String.TsCheck.Type.ConflictingDuplicate">冲突重复包</x:String>
     <x:String x:Key="String.TsCheck.Type.PsiCrcError">PAT/PMT CRC 错误</x:String>
@@ -302,6 +303,7 @@
     <x:String x:Key="String.TsCheck.Message.DuplicatePacket">检测到 CC={0} 的重复 payload 包。</x:String>
     <x:String x:Key="String.TsCheck.Message.ConflictingDuplicate">CC={0} 被不同的包数据重复使用。</x:String>
     <x:String x:Key="String.TsCheck.Message.ContinuityGap">预期 CC={0}，实际 CC={1}；疑似至少丢失 {2} 个包。</x:String>
+    <x:String x:Key="String.TsCheck.Message.PesSizeMismatch">PES 实际边界包含 {0} 字节，但 PES_packet_length 声明为 {1} 字节（相差 {2:+#;-#;0}）；可能存在负载丢失、插入或 PES 边界错位。</x:String>
     <x:String x:Key="String.TsCheck.Message.PcrBackward">PCR 倒退 {0:0.000} 秒。</x:String>
     <x:String x:Key="String.TsCheck.Message.PcrJump">PCR 向前跳变 {0:0.000} 秒。</x:String>
     <x:String x:Key="String.TsCheck.Message.PcrGap">连续 {0:0.000} 秒未发现 PCR。</x:String>
@@ -345,7 +347,7 @@
     <x:String x:Key="String.TsCheck.Report.ProgramLine">节目 {0}：PMT {1}，PCR {2}</x:String>
     <x:String x:Key="String.TsCheck.Report.StreamLine">  PID {0}：{1}</x:String>
     <x:String x:Key="String.TsCheck.Report.PidStatistics">PID 统计</x:String>
-    <x:String x:Key="String.TsCheck.Report.PidHeader">PID                包数量    CC 错误  TEI 错误     重复包  轨道</x:String>
+    <x:String x:Key="String.TsCheck.Report.PidHeader">PID                包数量    CC 错误  TEI 错误  PES 错误     重复包  轨道</x:String>
     <x:String x:Key="String.TsCheck.Report.Events">异常明细</x:String>
     <x:String x:Key="String.TsCheck.Report.NoEvents">未发现异常。</x:String>
     <x:String x:Key="String.TsCheck.Report.EventTimes">源时间点：{0}，0-based 时间：{1}</x:String>

@@ -24,6 +24,7 @@ public enum TsCheckEventType
     TrailingBytes,
     TransportError,
     ContinuityGap,
+    PesSizeMismatch,
     DuplicatePacket,
     ConflictingDuplicate,
     PsiCrcError,
@@ -53,6 +54,7 @@ public enum TsCheckMessageCode
     DuplicatePacket,
     ConflictingDuplicate,
     ContinuityGap,
+    PesSizeMismatch,
     PcrBackward,
     PcrJump,
     PcrGap,
@@ -124,6 +126,7 @@ public sealed class TsCheckPidSummary
     public long PayloadPacketCount { get; set; }
     public long ContinuityErrors { get; set; }
     public long TransportErrors { get; set; }
+    public long PesSizeErrors { get; set; }
     public long DuplicatePackets { get; set; }
     public int ErrorCount { get; set; }
     public int WarningCount { get; set; }
