@@ -9,7 +9,11 @@ public enum TsFilterErrorCode
     SameFile,
     SyncLost,
     PatTooLarge,
-    PmtTooLarge
+    PmtTooLarge,
+    SdtTooLarge,
+    DuplicateOutputPath,
+    MissingProgram,
+    OutputExists
 }
 
 public sealed class TsFilterException(TsFilterErrorCode code, params object[] arguments) : Exception
@@ -72,5 +76,42 @@ public sealed class TsFilterResult
     public required long BytesProcessed { get; init; }
     public required long BytesWritten { get; init; }
     public required long PacketsWritten { get; init; }
+    public required TimeSpan Elapsed { get; init; }
+}
+
+public sealed partial class TsServiceFilterItem : ObservableObject
+{
+    public required int ServiceId { get; init; }
+    public required string ServiceIdText { get; init; }
+    public required string ServiceName { get; init; }
+    public required string ProviderName { get; init; }
+    public required string ServiceTypeText { get; init; }
+    public required string PmtPidText { get; init; }
+    public required string TrackSummary { get; init; }
+    public required bool CanExtract { get; init; }
+
+    [ObservableProperty]
+    private bool _isSelected;
+
+    [ObservableProperty]
+    private string _outputFileName = string.Empty;
+
+    public event Action? SelectionChanged;
+
+    partial void OnIsSelectedChanged(bool value) => SelectionChanged?.Invoke();
+}
+
+public sealed class TsServiceFilterOutput
+{
+    public required int ServiceId { get; init; }
+    public required string OutputPath { get; init; }
+}
+
+public sealed class TsServiceFilterBatchResult
+{
+    public required long BytesProcessed { get; init; }
+    public required long BytesWritten { get; init; }
+    public required long PacketsWritten { get; init; }
+    public required int OutputCount { get; init; }
     public required TimeSpan Elapsed { get; init; }
 }

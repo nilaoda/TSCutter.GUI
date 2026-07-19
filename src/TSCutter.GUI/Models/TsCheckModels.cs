@@ -148,6 +148,21 @@ public sealed class TsCheckProgramSummary
     public Dictionary<int, TsStreamDefinition> StreamDefinitions { get; } = [];
 }
 
+public sealed class TsServiceSummary
+{
+    public required int ServiceId { get; init; }
+    public string ServiceName { get; set; } = string.Empty;
+    public string ProviderName { get; set; } = string.Empty;
+    public byte ServiceType { get; set; }
+    public byte SdtVersion { get; set; }
+    public int OriginalNetworkId { get; set; }
+    public bool EitSchedule { get; set; }
+    public bool EitPresentFollowing { get; set; }
+    public byte RunningStatus { get; set; }
+    public bool FreeCaMode { get; set; }
+    public byte[] Descriptors { get; set; } = [];
+}
+
 public sealed class TsStreamDefinition
 {
     public required byte StreamType { get; init; }
@@ -174,6 +189,7 @@ public sealed class TsCheckResult
     public List<TsCheckTimelineBucket> Timeline { get; } = [];
     public Dictionary<int, TsCheckPidSummary> Pids { get; } = [];
     public Dictionary<int, TsCheckProgramSummary> Programs { get; } = [];
+    public Dictionary<int, TsServiceSummary> Services { get; } = [];
     public int TimelineReferencePcrPid { get; set; } = -1;
     public int ErrorCount => TotalErrorCount;
     public int WarningCount => TotalWarningCount;
@@ -227,6 +243,7 @@ public sealed class TsCheckTimelineBucket
 public sealed class TsStreamAnalyzeOptions
 {
     public bool InventoryOnly { get; init; }
+    public bool IncludeServiceMetadata { get; init; }
     public long MaxBytes { get; init; } = long.MaxValue;
     public int StablePacketCount { get; init; } = 8_192;
 }
