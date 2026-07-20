@@ -1,0 +1,20 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- 应用级状态语义色。窗口只引用语义，不再分别维护深浅色具体值。 -->
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="Light">
+            <SolidColorBrush x:Key="AppStatusSuccessForegroundBrush" Color="#1B5E20" />
+            <SolidColorBrush x:Key="AppStatusWarningForegroundBrush" Color="#765000" />
+            <SolidColorBrush x:Key="AppStatusErrorForegroundBrush" Color="#B71C1C" />
+            <SolidColorBrush x:Key="AppStatusWarningBackgroundBrush" Color="#B88600" Opacity="0.14" />
+            <SolidColorBrush x:Key="AppStatusErrorBackgroundBrush" Color="#D32F2F" Opacity="0.14" />
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Dark">
+            <SolidColorBrush x:Key="AppStatusSuccessForegroundBrush" Color="#72C985" />
+            <SolidColorBrush x:Key="AppStatusWarningForegroundBrush" Color="#EBC565" />
+            <SolidColorBrush x:Key="AppStatusErrorForegroundBrush" Color="#FF8585" />
+            <SolidColorBrush x:Key="AppStatusWarningBackgroundBrush" Color="#E6B84A" Opacity="0.13" />
+            <SolidColorBrush x:Key="AppStatusErrorBackgroundBrush" Color="#FF7070" Opacity="0.13" />
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

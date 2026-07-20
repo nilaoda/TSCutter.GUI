@@ -11,39 +11,21 @@
         Title="{DynamicResource String.TsRepair.Title}"
         Width="900" Height="580" MinWidth="720" MinHeight="460"
         WindowStartupLocation="CenterOwner">
-    <Window.Resources>
-        <ResourceDictionary>
-            <!-- 修复能力颜色沿用快速检查的结论色，并针对深浅主题分别保证可读性。 -->
-            <ResourceDictionary.ThemeDictionaries>
-                <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="TsRepairFullForegroundBrush" Color="#1B5E20" />
-                    <SolidColorBrush x:Key="TsRepairPartialForegroundBrush" Color="#765000" />
-                    <SolidColorBrush x:Key="TsRepairNoneForegroundBrush" Color="#B71C1C" />
-                </ResourceDictionary>
-                <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="TsRepairFullForegroundBrush" Color="#72C985" />
-                    <SolidColorBrush x:Key="TsRepairPartialForegroundBrush" Color="#EBC565" />
-                    <SolidColorBrush x:Key="TsRepairNoneForegroundBrush" Color="#FF8585" />
-                </ResourceDictionary>
-            </ResourceDictionary.ThemeDictionaries>
-        </ResourceDictionary>
-    </Window.Resources>
-
     <Window.Styles>
         <Style Selector="TextBlock.repairFull">
-            <Setter Property="Foreground" Value="{DynamicResource TsRepairFullForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusSuccessForegroundBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style Selector="TextBlock.repairPartial">
-            <Setter Property="Foreground" Value="{DynamicResource TsRepairPartialForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style Selector="TextBlock.repairNone">
-            <Setter Property="Foreground" Value="{DynamicResource TsRepairNoneForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style Selector="TextBlock.analysisIssue">
-            <Setter Property="Foreground" Value="{DynamicResource TsRepairNoneForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
     </Window.Styles>
