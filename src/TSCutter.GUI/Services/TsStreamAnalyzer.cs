@@ -62,6 +62,19 @@ public sealed class TsStreamAnalyzer
     private int _timelineSegment;
     private int _timelineCompactionThreshold = MaxTimelineBuckets;
 
+    private bool NeedsClockProcessing => HasFeature(
+        TsStreamAnalyzeFeatures.TimestampValidation |
+        TsStreamAnalyzeFeatures.AvSyncValidation |
+        TsStreamAnalyzeFeatures.DetailedEvents |
+        TsStreamAnalyzeFeatures.Timeline);
+
+    private bool NeedsPesTimestampProcessing => HasFeature(
+        TsStreamAnalyzeFeatures.TimestampValidation |
+        TsStreamAnalyzeFeatures.AvSyncValidation);
+
+    private bool NeedsPesProcessing => NeedsPesTimestampProcessing ||
+                                       HasFeature(TsStreamAnalyzeFeatures.PesSizeValidation);
+
     public async Task<TsCheckResult> AnalyzeAsync(
         string filePath,
         IProgress<TsCheckProgress>? progress = null,
@@ -335,14 +348,15 @@ public sealed class TsStreamAnalyzer
                 clock.ResetSync();
         }
 
-        if (!pcrBytes.IsEmpty)
+        if (!pcrBytes.IsEmpty && NeedsClockProcessing)
         {
             if (!_options.InventoryOnly)
                 ProcessPcr(pid, pcrBytes, state, fileOffset, discontinuity);
         }
 
         // Null packet 的 CC 没有连续性语义，不参与丢包判断。
-        if (!_options.InventoryOnly && hasPayload && payloadOffset < PacketSize && pid != 0x1FFF &&
+        if (!_options.InventoryOnly && HasFeature(TsStreamAnalyzeFeatures.ContinuityValidation) &&
+            hasPayload && payloadOffset < PacketSize && pid != 0x1FFF &&
             !ProcessContinuity(packet, pid, state, continuityCounter, fileOffset))
             return;
 
@@ -421,7 +435,8 @@ public sealed class TsStreamAnalyzer
         state.LastRawPcr = raw;
         state.PcrWrapOffset = pcr - raw;
 
-        if (!discontinuity && state.LastPcr90k != long.MinValue)
+        if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation) &&
+            !discontinuity && state.LastPcr90k != long.MinValue)
         {
             var delta = (pcr - state.LastPcr90k) / 90_000.0;
             if (delta < -0.001)
@@ -445,8 +460,10 @@ public sealed class TsStreamAnalyzer
         _lastKnownPcr90k = pcr;
         _lastKnownClock90k = pcr;
         SetTimelineOrigin(pcr);
-        UpdateTimeline(pid, ptsToSeconds(pcr), discontinuity);
-        if (_pcrPidPrograms.TryGetValue(pid, out var programNumber))
+        if (HasFeature(TsStreamAnalyzeFeatures.Timeline))
+            UpdateTimeline(pid, ptsToSeconds(pcr), discontinuity);
+        if (HasFeature(TsStreamAnalyzeFeatures.AvSyncValidation) &&
+            _pcrPidPrograms.TryGetValue(pid, out var programNumber))
             CheckAvSyncAtPcr(programNumber, pcr, fileOffset);
     }
 
@@ -753,11 +770,16 @@ public sealed class TsStreamAnalyzer
         long fileOffset, bool payloadIsReliable)
     {
         ProbeMpegAudioLayer(payload, payloadStart, state);
+        if (!NeedsPesProcessing)
+            return;
 
-        if (payloadIsReliable)
+        if (payloadIsReliable && HasFeature(TsStreamAnalyzeFeatures.PesSizeValidation))
             TrackPesSize(pid, payload, payloadStart, state, fileOffset);
-        else
+        else if (!payloadIsReliable)
             state.DiscardPes();
+
+        if (!NeedsPesTimestampProcessing)
+            return;
 
         // 仅解析 PES 头中的 PTS/DTS，不读取 ES 帧内容，扫描速度不受编码复杂度和分辨率影响。
         if (payloadStart)
@@ -957,13 +979,15 @@ public sealed class TsStreamAnalyzer
             var pts = Unwrap(rawPts.Value, state.LastRawPts, state.PtsWrapOffset);
             state.LastRawPts = rawPts.Value;
             state.PtsWrapOffset = pts - rawPts.Value;
-            CheckPts(pid, state, pts, fileOffset);
+            if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation))
+                CheckPts(pid, state, pts, fileOffset);
             state.LastPts90k = pts;
             _lastKnownClock90k = pts;
             SetTimelineOrigin(pts);
             if (state.PesActive)
                 state.PesStartTimeSeconds = ptsToSeconds(pts);
-            UpdateStreamClock(pid, pts);
+            if (HasFeature(TsStreamAnalyzeFeatures.AvSyncValidation))
+                UpdateStreamClock(pid, pts);
         }
 
         if (rawDts is not null)
@@ -971,12 +995,14 @@ public sealed class TsStreamAnalyzer
             var dts = Unwrap(rawDts.Value, state.LastRawDts, state.DtsWrapOffset);
             state.LastRawDts = rawDts.Value;
             state.DtsWrapOffset = dts - rawDts.Value;
-            if (state.LastDts90k != long.MinValue && dts + 90 < state.LastDts90k)
+            if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation) &&
+                state.LastDts90k != long.MinValue && dts + 90 < state.LastDts90k)
             {
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.DtsBackward, pid, _packetIndex, fileOffset,
                     TsCheckMessageCode.DtsBackward, [(state.LastDts90k - dts) / 90_000.0], ptsToSeconds(dts), false);
             }
-            if (rawPts is not null && dts > state.LastPts90k + 90)
+            if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation) &&
+                rawPts is not null && dts > state.LastPts90k + 90)
             {
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.DtsAfterPts, pid, _packetIndex, fileOffset,
                     TsCheckMessageCode.DtsAfterPts, [(dts - state.LastPts90k) / 90_000.0], ptsToSeconds(state.LastPts90k), false);
@@ -1236,6 +1262,12 @@ public sealed class TsStreamAnalyzer
         else if (severity == TsCheckSeverity.Warning)
         {
             _globalWarningCount++;
+        }
+
+        if (!HasFeature(TsStreamAnalyzeFeatures.DetailedEvents))
+        {
+            ReportProgress(null, force: false);
+            return;
         }
 
         TsCheckEvent? item = null;
@@ -1530,6 +1562,9 @@ public sealed class TsStreamAnalyzer
         foreach (var state in _pidStates.Values)
             state.TimelineIntervalPacketCount = 0;
     }
+
+    private bool HasFeature(TsStreamAnalyzeFeatures features) =>
+        (_options.Features & features) != 0;
 
     private void ValidateCompletedScan(long fileSize)
     {

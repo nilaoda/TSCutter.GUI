@@ -319,6 +319,13 @@ public partial class MainWindowViewModel : ViewModelBase
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
 
+    [RelayCommand]
+    private async Task TsMultiSourceRepairClickAsync()
+    {
+        var dialogViewModel = _dialogService.CreateViewModel<TsMultiSourceRepairWindowViewModel>();
+        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+    }
+
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]
     private async Task SaveVideoClickAsync() => await SaveVideoAsync();
 

@@ -249,6 +249,21 @@ public sealed class TsStreamAnalyzeOptions
     public bool IncludeServiceMetadata { get; init; }
     public long MaxBytes { get; init; } = long.MaxValue;
     public int StablePacketCount { get; init; } = 8_192;
+    public TsStreamAnalyzeFeatures Features { get; init; } = TsStreamAnalyzeFeatures.Default;
+}
+
+[Flags]
+public enum TsStreamAnalyzeFeatures
+{
+    None = 0,
+    ContinuityValidation = 1 << 0,
+    TimestampValidation = 1 << 1,
+    AvSyncValidation = 1 << 2,
+    DetailedEvents = 1 << 3,
+    Timeline = 1 << 4,
+    PesSizeValidation = 1 << 5,
+    Default = ContinuityValidation | TimestampValidation | AvSyncValidation | DetailedEvents | Timeline |
+              PesSizeValidation
 }
 
 public readonly record struct TsCheckPidProgress(

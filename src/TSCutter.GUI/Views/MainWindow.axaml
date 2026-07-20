@@ -127,6 +127,8 @@
                             <MenuItem Header="{DynamicResource String.Menu.TsFilterService}"
                                       Command="{Binding TsServiceFilterClickCommand}" />
                         </MenuItem>
+                        <MenuItem Header="{DynamicResource String.Menu.TsMultiSourceRepair}"
+                                  Command="{Binding TsMultiSourceRepairClickCommand}" />
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.Settings}"
                                   Command="{Binding SettingsClickCommand}" />
