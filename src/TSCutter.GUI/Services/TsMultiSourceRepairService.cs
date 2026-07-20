@@ -244,6 +244,7 @@ public sealed class TsMultiSourceRepairService
             plan.Analysis.ReferenceSource.Catalog,
             plan.SelectedPids,
             plan.IncludeServiceInformation);
+        var outputValidator = new TsRepairOutputValidator(plan.SelectedPids);
         var filterResult = await filter.FilterWithInsertionsAsync(
             plan.Analysis.ReferenceSource.FilePath,
             outputPath,
@@ -252,26 +253,15 @@ public sealed class TsMultiSourceRepairService
             plan.Insertions,
             plan.Replacements,
             plan.DiscardPacketOffsets,
+            outputValidator,
             progress,
             cancellationToken).ConfigureAwait(false);
-        // 输出完成后用轻量结构检查复核本次目标。允许保留无法从辅助源找到候选的少量异常，
-        // 但若所选轨道的 CC、TEI 与 PES 错误总数没有下降，则删除输出并明确失败。
+        // 输出缓冲在写盘时已经同步经过轻量结构复检，不需要重新打开并顺序读取完整文件。
+        // 允许保留无法从辅助源找到候选的少量异常，但错误总数必须确有下降。
         try
         {
-            var verification = await new TsStreamAnalyzer().AnalyzeAsync(
-                outputPath, cancellationToken: cancellationToken,
-                options: new TsStreamAnalyzeOptions
-                {
-                    Features = TsStreamAnalyzeFeatures.ContinuityValidation |
-                               TsStreamAnalyzeFeatures.PesSizeValidation
-                }).ConfigureAwait(false);
-            // 扫描器会返回带取消标记的部分结果；修复输出不能把部分复检误当成完整通过。
-            if (verification.WasCancelled)
-                throw new OperationCanceledException(cancellationToken);
-            var verificationErrors = verification.Pids
-                .Where(item => plan.SelectedPids.Contains(item.Key))
-                .Sum(item => item.Value.ContinuityErrors + item.Value.TransportErrors +
-                             item.Value.PesSizeErrors);
+            cancellationToken.ThrowIfCancellationRequested();
+            var verificationErrors = outputValidator.TotalErrors;
             var referenceErrors = plan.Analysis.Tracks
                 .Where(track => plan.SelectedPids.Contains(track.ReferencePid))
                 .Sum(track => track.ContinuityErrorCount + track.TransportErrorCount + track.PesSizeErrorCount);

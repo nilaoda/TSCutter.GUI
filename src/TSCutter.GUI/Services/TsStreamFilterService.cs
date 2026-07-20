@@ -84,7 +84,8 @@ public sealed class TsStreamFilterService
         TsFilterPlan plan,
         IProgress<TsFilterProgress>? progress = null,
         CancellationToken cancellationToken = default) =>
-        FilterCoreAsync(sourcePath, outputPath, catalog, plan, null, null, null, progress, cancellationToken);
+        FilterCoreAsync(sourcePath, outputPath, catalog, plan, null, null, null, null,
+            progress, cancellationToken);
 
     internal Task<TsFilterResult> FilterWithInsertionsAsync(
         string sourcePath,
@@ -94,10 +95,11 @@ public sealed class TsStreamFilterService
         IReadOnlyDictionary<long, List<TsPacketInsertion>> insertions,
         IReadOnlyList<TsPacketReplacement> replacements,
         IReadOnlySet<long> discardPacketOffsets,
+        TsRepairOutputValidator outputValidator,
         IProgress<TsFilterProgress>? progress = null,
         CancellationToken cancellationToken = default) =>
         FilterCoreAsync(sourcePath, outputPath, catalog, plan, insertions, replacements,
-            discardPacketOffsets, progress, cancellationToken);
+            discardPacketOffsets, outputValidator, progress, cancellationToken);
 
     private async Task<TsFilterResult> FilterCoreAsync(
         string sourcePath,
@@ -107,6 +109,7 @@ public sealed class TsStreamFilterService
         IReadOnlyDictionary<long, List<TsPacketInsertion>>? insertions,
         IReadOnlyList<TsPacketReplacement>? replacements,
         IReadOnlySet<long>? discardPacketOffsets,
+        TsRepairOutputValidator? outputValidator,
         IProgress<TsFilterProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -150,6 +153,8 @@ public sealed class TsStreamFilterService
                     return;
                 await output.WriteAsync(outputBuffer.AsMemory(0, outputLength), cancellationToken)
                     .ConfigureAwait(false);
+                // 对刚写出的最终字节同步做轻量复检，避免输出完成后再次读取整个文件。
+                outputValidator?.ProcessPackets(outputBuffer.AsSpan(0, outputLength));
                 bytesWritten += outputLength;
                 outputLength = 0;
             }
