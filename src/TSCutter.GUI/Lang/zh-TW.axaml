@@ -223,6 +223,9 @@
     <x:String x:Key="String.TsRepair.Status.NeedSources">請新增至少兩份有效的錄製檔案，並選擇其中一份作為參考來源。</x:String>
     <x:String x:Key="String.TsRepair.Status.Analyzing">正在分析來源 {0}/{1}：{2}</x:String>
     <x:String x:Key="String.TsRepair.Status.AnalysisCompleted">分析完成：發現 {0:N0} 個遺失包缺口或媒體異常區域，其中 {1:N0} 個可保守修復。</x:String>
+    <x:String x:Key="String.TsRepair.Status.AnalysisCompletedPrefix">分析完成：發現 </x:String>
+    <x:String x:Key="String.TsRepair.Status.AnalysisCompletedMiddle"> 個遺失包缺口或媒體異常區域，其中 </x:String>
+    <x:String x:Key="String.TsRepair.Status.AnalysisCompletedSuffix"> 個可保守修復。</x:String>
     <x:String x:Key="String.TsRepair.Status.Outputting">正在修復選定軌道並重建節目表...</x:String>
     <x:String x:Key="String.TsRepair.Status.Completed">輸出完成：修復 {0:N0} 個遺失包缺口、{1:N0} 個媒體異常區域，共寫入 {2:N0} 個修復封包，檔案大小 {3}；複核剩餘 {4:N0} 個傳輸或 PES 錯誤。</x:String>
     <x:String x:Key="String.TsRepair.Status.Cancelled">操作已取消。</x:String>

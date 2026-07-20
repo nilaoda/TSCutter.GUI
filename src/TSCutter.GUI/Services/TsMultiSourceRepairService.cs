@@ -50,6 +50,7 @@ public sealed class TsMultiSourceRepairService
         IReadOnlyList<string> sourcePaths,
         string referencePath,
         IProgress<TsMultiSourceProgress>? progress = null,
+        IProgress<TsRepairSourceCompleted>? sourceCompleted = null,
         CancellationToken cancellationToken = default)
     {
         if (sourcePaths.Count < 2)
@@ -98,6 +99,7 @@ public sealed class TsMultiSourceRepairService
                 .Sum(region => region.MismatchCount);
         }
         reference.PesSizeErrors = result.Tracks.Sum(track => track.PesSizeErrorCount);
+        ReportSourceCompleted(reference, sourceCompleted);
 
         for (var sourceIndex = 0; sourceIndex < sources.Count; sourceIndex++)
         {
@@ -108,10 +110,12 @@ public sealed class TsMultiSourceRepairService
             if (mappings.Count == 0)
             {
                 scanOrdinal++;
+                ReportSourceCompleted(source, sourceCompleted);
                 continue;
             }
             await ScanDonorAsync(source, mappings, scanOrdinal++, sources.Count, progress, cancellationToken)
                 .ConfigureAwait(false);
+            ReportSourceCompleted(source, sourceCompleted);
         }
 
         foreach (var track in result.Tracks)
@@ -128,6 +132,17 @@ public sealed class TsMultiSourceRepairService
         ValidateCorrelatedVideoCandidates(result.Tracks);
         return result;
     }
+
+    private static void ReportSourceCompleted(
+        TsRepairSourceAnalysis source,
+        IProgress<TsRepairSourceCompleted>? progress) =>
+        progress?.Report(new TsRepairSourceCompleted(
+            source.FilePath,
+            source.IsReference,
+            source.Catalog.Programs.Count > 0,
+            source.ContinuityErrors,
+            source.TransportErrors,
+            source.PesSizeErrors));
 
     public TsRepairOutputPlan BuildOutputPlan(
         TsMultiSourceAnalysisResult analysis,

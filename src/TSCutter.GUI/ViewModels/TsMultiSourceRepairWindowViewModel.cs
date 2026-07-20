@@ -75,6 +75,26 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     [ObservableProperty]
     private string _speedText = $"{CommonUtil.FormatFileSize(0)}/s";
 
+    [ObservableProperty]
+    private bool _isAnalysisSummaryVisible;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAnalysisClean), nameof(IsAnalysisIssue))]
+    private int _analysisIssueCount;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsAnalysisFullyRepairable), nameof(IsAnalysisPartiallyRepairable),
+        nameof(IsAnalysisNotRepairable))]
+    private int _analysisRepairableCount;
+
+    public bool IsAnalysisClean => AnalysisIssueCount == 0;
+    public bool IsAnalysisIssue => AnalysisIssueCount > 0;
+    public bool IsAnalysisFullyRepairable => AnalysisIssueCount == 0 ||
+                                             AnalysisRepairableCount == AnalysisIssueCount;
+    public bool IsAnalysisPartiallyRepairable => AnalysisRepairableCount > 0 &&
+                                                 AnalysisRepairableCount < AnalysisIssueCount;
+    public bool IsAnalysisNotRepairable => AnalysisIssueCount > 0 && AnalysisRepairableCount == 0;
+
     public bool CanAnalyze => !IsBusy && Sources.Count >= 2 && SelectedReference is not null;
     public bool CanOutput => !IsBusy && HasAnalysis && Tracks.Any(item => item.IsSelected);
     public bool CanCancel => IsBusy;
@@ -139,6 +159,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         _cancellationTokenSource = cancellationTokenSource;
         IsBusy = true;
         HasAnalysis = false;
+        IsAnalysisSummaryVisible = false;
         _analysis = null;
         Tracks.Clear();
         Percent = 0;
@@ -158,17 +179,18 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                     _text.Strings.String_TsRepair_Status_Analyzing,
                     value.SourceIndex + 1, value.SourceCount, Path.GetFileName(value.FilePath));
             });
+            var sourceCompleted = new Progress<TsRepairSourceCompleted>(UpdateCompletedSourceRow);
             _analysis = await _repairService.AnalyzeAsync(
-                paths, SelectedReference.FilePath, progress, cancellationTokenSource.Token);
+                paths, SelectedReference.FilePath, progress, sourceCompleted, cancellationTokenSource.Token);
             if (_isClosing)
                 return;
             UpdateSourceRows(_analysis);
             BuildTrackRows(_analysis);
             HasAnalysis = true;
             Percent = 100;
-            StatusText = string.Format(
-                _text.Strings.String_TsRepair_Status_AnalysisCompleted,
-                _analysis.TotalGapCount, _analysis.RepairableGapCount);
+            AnalysisIssueCount = _analysis.TotalGapCount;
+            AnalysisRepairableCount = _analysis.RepairableGapCount;
+            IsAnalysisSummaryVisible = true;
         }
         catch (OperationCanceledException)
         {
@@ -228,6 +250,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         _cancellationTokenSource?.Dispose();
         _cancellationTokenSource = cancellationTokenSource;
         IsBusy = true;
+        IsAnalysisSummaryVisible = false;
         Percent = 0;
         ProgressText = $"{CommonUtil.FormatFileSize(0)} / {CommonUtil.FormatFileSize(analysis.ReferenceSource.Catalog.FileSize)}";
         SpeedText = $"{CommonUtil.FormatFileSize(0)}/s";
@@ -365,10 +388,26 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         }
     }
 
+    private void UpdateCompletedSourceRow(TsRepairSourceCompleted source)
+    {
+        if (_isClosing)
+            return;
+        var row = Sources.FirstOrDefault(item => PathsEqual(item.FilePath, source.FilePath));
+        if (row is null)
+            return;
+        row.ErrorCount = source.ErrorCount;
+        row.StatusText = !source.HasProgram
+            ? _text.Strings.String_TsRepair_Source_NoProgram
+            : source.IsReference
+                ? _text.Strings.String_TsRepair_Source_Reference
+                : _text.Strings.String_TsRepair_Source_Analyzed;
+    }
+
     private void InvalidateAnalysis()
     {
         _analysis = null;
         HasAnalysis = false;
+        IsAnalysisSummaryVisible = false;
         Tracks.Clear();
         foreach (var source in Sources)
         {

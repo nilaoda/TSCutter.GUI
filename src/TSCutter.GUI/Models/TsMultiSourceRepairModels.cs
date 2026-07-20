@@ -184,6 +184,17 @@ public readonly record struct TsMultiSourceProgress(
     public double Percent => FileSize > 0 ? BytesProcessed * 100.0 / FileSize : 0;
 }
 
+public readonly record struct TsRepairSourceCompleted(
+    string FilePath,
+    bool IsReference,
+    bool HasProgram,
+    int ContinuityErrors,
+    int TransportErrors,
+    int PesSizeErrors)
+{
+    public int ErrorCount => ContinuityErrors + TransportErrors + PesSizeErrors;
+}
+
 public sealed class TsRepairOutputPlan
 {
     public required TsMultiSourceAnalysisResult Analysis { get; init; }

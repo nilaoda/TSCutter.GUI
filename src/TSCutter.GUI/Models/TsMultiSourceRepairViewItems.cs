@@ -32,6 +32,9 @@ public sealed partial class TsRepairTrackItem : ObservableObject
     private string _repairSourcesText = string.Empty;
     public int GapCount => Analysis.IssueCount;
     public int RepairableGapCount => Analysis.RepairableIssueCount;
+    public bool IsFullyRepairable => GapCount > 0 && RepairableGapCount == GapCount;
+    public bool IsPartiallyRepairable => RepairableGapCount > 0 && RepairableGapCount < GapCount;
+    public bool IsNotRepairable => GapCount > 0 && RepairableGapCount == 0;
 
     [ObservableProperty]
     private bool _isSelected = true;

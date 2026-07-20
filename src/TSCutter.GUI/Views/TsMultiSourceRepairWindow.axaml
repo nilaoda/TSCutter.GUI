@@ -4,12 +4,50 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
         xmlns:models="clr-namespace:TSCutter.GUI.Models"
+        xmlns:local="clr-namespace:TSCutter.GUI"
         mc:Ignorable="d"
         x:Class="TSCutter.GUI.Views.TsMultiSourceRepairWindow"
         x:DataType="viewModels:TsMultiSourceRepairWindowViewModel"
         Title="{DynamicResource String.TsRepair.Title}"
         Width="900" Height="580" MinWidth="720" MinHeight="460"
         WindowStartupLocation="CenterOwner">
+    <Window.Resources>
+        <ResourceDictionary>
+            <!-- 修复能力颜色沿用快速检查的结论色，并针对深浅主题分别保证可读性。 -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="TsRepairFullForegroundBrush" Color="#1B5E20" />
+                    <SolidColorBrush x:Key="TsRepairPartialForegroundBrush" Color="#765000" />
+                    <SolidColorBrush x:Key="TsRepairNoneForegroundBrush" Color="#B71C1C" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="TsRepairFullForegroundBrush" Color="#72C985" />
+                    <SolidColorBrush x:Key="TsRepairPartialForegroundBrush" Color="#EBC565" />
+                    <SolidColorBrush x:Key="TsRepairNoneForegroundBrush" Color="#FF8585" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Window.Styles>
+        <Style Selector="TextBlock.repairFull">
+            <Setter Property="Foreground" Value="{DynamicResource TsRepairFullForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.repairPartial">
+            <Setter Property="Foreground" Value="{DynamicResource TsRepairPartialForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.repairNone">
+            <Setter Property="Foreground" Value="{DynamicResource TsRepairNoneForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.analysisIssue">
+            <Setter Property="Foreground" Value="{DynamicResource TsRepairNoneForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </Window.Styles>
+
     <Grid Margin="12" RowDefinitions="210,Auto,*,Auto" RowSpacing="8">
         <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
             <Grid RowDefinitions="Auto,*" RowSpacing="6">
@@ -58,7 +96,21 @@
                 <TextBlock><Run Text="{DynamicResource String.TsRepair.Speed}" /><Run Text=" " /><Run Text="{Binding SpeedText}" FontWeight="Bold" /></TextBlock>
             </StackPanel>
             <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Text="{Binding StatusText}"
-                       TextWrapping="Wrap" />
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding IsAnalysisSummaryVisible, Converter={x:Static local:App.InverseBoolConverter}}" />
+            <WrapPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                       IsVisible="{Binding IsAnalysisSummaryVisible}">
+                <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedPrefix}" />
+                <TextBlock Text="{Binding AnalysisIssueCount, StringFormat={}{0:N0}}"
+                           Classes.repairFull="{Binding IsAnalysisClean}"
+                           Classes.analysisIssue="{Binding IsAnalysisIssue}" />
+                <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedMiddle}" />
+                <TextBlock Text="{Binding AnalysisRepairableCount, StringFormat={}{0:N0}}"
+                           Classes.repairFull="{Binding IsAnalysisFullyRepairable}"
+                           Classes.repairPartial="{Binding IsAnalysisPartiallyRepairable}"
+                           Classes.repairNone="{Binding IsAnalysisNotRepairable}" />
+                <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedSuffix}" />
+            </WrapPanel>
         </Grid>
 
         <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="6">
@@ -96,8 +148,19 @@
                     </DataGridTemplateColumn>
                     <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Gaps}"
                                         Binding="{Binding GapCount}" Width="80" IsReadOnly="True" />
-                    <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Repairable}"
-                                        Binding="{Binding RepairableGapCount}" Width="90" IsReadOnly="True" />
+                    <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.Column.Repairable}" Width="90">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="models:TsRepairTrackItem">
+                                <Grid Margin="6,0">
+                                    <TextBlock Text="{Binding RepairableGapCount}"
+                                               Classes.repairFull="{Binding IsFullyRepairable}"
+                                               Classes.repairPartial="{Binding IsPartiallyRepairable}"
+                                               Classes.repairNone="{Binding IsNotRepairable}"
+                                               HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
                 </DataGrid.Columns>
             </DataGrid>
         </Grid>
