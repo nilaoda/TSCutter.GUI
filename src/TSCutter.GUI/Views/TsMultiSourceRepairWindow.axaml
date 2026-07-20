@@ -79,7 +79,7 @@
             </StackPanel>
             <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Text="{Binding StatusText}"
                        TextWrapping="Wrap"
-                       IsVisible="{Binding IsAnalysisSummaryVisible, Converter={x:Static local:App.InverseBoolConverter}}" />
+                       IsVisible="{Binding IsPlainStatusVisible}" />
             <WrapPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
                        IsVisible="{Binding IsAnalysisSummaryVisible}">
                 <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedPrefix}" />
@@ -93,6 +93,13 @@
                            Classes.repairNone="{Binding IsAnalysisNotRepairable}" />
                 <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedSuffix}" />
             </WrapPanel>
+            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2"
+                        IsVisible="{Binding IsOutputSummaryVisible}">
+                <TextBlock Text="{Binding OutputSummaryText}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding OutputVerificationText}" TextWrapping="Wrap"
+                           Classes.repairFull="{Binding IsOutputVerificationPassed}"
+                           Classes.repairPartial="{Binding HasOutputRemainingErrors}" />
+            </StackPanel>
         </Grid>
 
         <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="6">

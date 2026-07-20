@@ -76,7 +76,26 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     private string _speedText = $"{CommonUtil.FormatFileSize(0)}/s";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPlainStatusVisible))]
     private bool _isAnalysisSummaryVisible;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPlainStatusVisible))]
+    private bool _isOutputSummaryVisible;
+
+    [ObservableProperty]
+    private string _outputSummaryText = string.Empty;
+
+    [ObservableProperty]
+    private string _outputVerificationText = string.Empty;
+
+    [ObservableProperty]
+    private bool _isOutputVerificationPassed;
+
+    [ObservableProperty]
+    private bool _hasOutputRemainingErrors;
+
+    public bool IsPlainStatusVisible => !IsAnalysisSummaryVisible && !IsOutputSummaryVisible;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAnalysisClean), nameof(IsAnalysisIssue))]
@@ -160,6 +179,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         IsBusy = true;
         HasAnalysis = false;
         IsAnalysisSummaryVisible = false;
+        IsOutputSummaryVisible = false;
         _analysis = null;
         Tracks.Clear();
         Percent = 0;
@@ -251,6 +271,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         _cancellationTokenSource = cancellationTokenSource;
         IsBusy = true;
         IsAnalysisSummaryVisible = false;
+        IsOutputSummaryVisible = false;
         Percent = 0;
         ProgressText = $"{CommonUtil.FormatFileSize(0)} / {CommonUtil.FormatFileSize(analysis.ReferenceSource.Catalog.FileSize)}";
         SpeedText = $"{CommonUtil.FormatFileSize(0)}/s";
@@ -271,13 +292,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
             if (_isClosing)
                 return;
             Percent = 100;
-            StatusText = string.Format(
-                _text.Strings.String_TsRepair_Status_Completed,
-                result.RepairedGapCount,
-                result.RepairedPesRegionCount,
-                result.RepairedPacketCount,
-                CommonUtil.FormatFileSize(result.FilterResult.BytesWritten),
-                result.RemainingErrorCount);
+            SetOutputSummary(result);
         }
         catch (OperationCanceledException)
         {
@@ -408,6 +423,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         _analysis = null;
         HasAnalysis = false;
         IsAnalysisSummaryVisible = false;
+        IsOutputSummaryVisible = false;
         Tracks.Clear();
         foreach (var source in Sources)
         {
@@ -443,7 +459,9 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                 row.RepairSourcesText = FormatRepairSources(row.Analysis);
             }
         }
-        else
+        if (IsOutputSummaryVisible)
+            RefreshOutputSummaryText();
+        else if (_analysis is null)
         {
             foreach (var source in Sources)
                 source.StatusText = _text.Strings.String_TsRepair_Source_Ready;
@@ -455,6 +473,62 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         _text.Strings.String_TsRepair_Status_Ready,
         Environment.NewLine,
         _text.Strings.String_TsRepair_Status_ReadyNote);
+
+    private int _outputRepairedGapCount;
+    private int _outputRepairedRegionCount;
+    private long _outputRepairedPacketCount;
+    private long _outputBytesWritten;
+    private long _outputRemainingErrorCount;
+
+    private void SetOutputSummary(TsRepairOutputResult result)
+    {
+        _outputRepairedGapCount = result.RepairedGapCount;
+        _outputRepairedRegionCount = result.RepairedPesRegionCount;
+        _outputRepairedPacketCount = result.RepairedPacketCount;
+        _outputBytesWritten = result.FilterResult.BytesWritten;
+        _outputRemainingErrorCount = result.RemainingErrorCount;
+        RefreshOutputSummaryText();
+        IsOutputSummaryVisible = true;
+    }
+
+    private void RefreshOutputSummaryText()
+    {
+        if (_outputRepairedGapCount == 0 && _outputRepairedRegionCount == 0)
+        {
+            OutputSummaryText = string.Format(
+                _text.Strings.String_TsRepair_Status_OutputNoRepair,
+                CommonUtil.FormatFileSize(_outputBytesWritten));
+        }
+        else
+        {
+            var repairedItems = new List<string>(2);
+            if (_outputRepairedGapCount > 0)
+            {
+                repairedItems.Add(string.Format(
+                    _text.Strings.String_TsRepair_Status_RepairedGaps,
+                    _outputRepairedGapCount));
+            }
+            if (_outputRepairedRegionCount > 0)
+            {
+                repairedItems.Add(string.Format(
+                    _text.Strings.String_TsRepair_Status_RepairedRegions,
+                    _outputRepairedRegionCount));
+            }
+            OutputSummaryText = string.Format(
+                _text.Strings.String_TsRepair_Status_OutputSummary,
+                string.Join(_text.Strings.String_TsRepair_Status_ItemSeparator, repairedItems),
+                _outputRepairedPacketCount,
+                CommonUtil.FormatFileSize(_outputBytesWritten));
+        }
+
+        IsOutputVerificationPassed = _outputRemainingErrorCount == 0;
+        HasOutputRemainingErrors = _outputRemainingErrorCount > 0;
+        OutputVerificationText = IsOutputVerificationPassed
+            ? _text.Strings.String_TsRepair_Status_VerificationPassed
+            : string.Format(
+                _text.Strings.String_TsRepair_Status_VerificationRemaining,
+                _outputRemainingErrorCount);
+    }
 
     private string FormatRepairError(TsRepairException exception)
     {

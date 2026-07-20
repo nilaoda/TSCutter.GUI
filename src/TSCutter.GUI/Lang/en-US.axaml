@@ -227,7 +227,13 @@
     <x:String x:Key="String.TsRepair.Status.AnalysisCompletedMiddle"> packet gap(s) or media issue region(s), of which </x:String>
     <x:String x:Key="String.TsRepair.Status.AnalysisCompletedSuffix"> are conservatively repairable.</x:String>
     <x:String x:Key="String.TsRepair.Status.Outputting">Repairing selected tracks and rebuilding program tables...</x:String>
-    <x:String x:Key="String.TsRepair.Status.Completed">Output completed: repaired {0:N0} packet gap(s) and {1:N0} media issue region(s), writing {2:N0} repair packet(s); size {3}. Verification found {4:N0} remaining transport/PES error(s).</x:String>
+    <x:String x:Key="String.TsRepair.Status.OutputSummary">Repair completed: repaired {0} and wrote {1:N0} repair packet(s). Output size: {2}.</x:String>
+    <x:String x:Key="String.TsRepair.Status.OutputNoRepair">Output completed: no issue required repair. Output size: {0}.</x:String>
+    <x:String x:Key="String.TsRepair.Status.RepairedGaps">{0:N0} packet gap(s)</x:String>
+    <x:String x:Key="String.TsRepair.Status.RepairedRegions">{0:N0} media issue region(s)</x:String>
+    <x:String x:Key="String.TsRepair.Status.ItemSeparator"> and </x:String>
+    <x:String x:Key="String.TsRepair.Status.VerificationPassed">Verification passed: no remaining transport or PES errors were found.</x:String>
+    <x:String x:Key="String.TsRepair.Status.VerificationRemaining">Verification completed: {0:N0} transport or PES error(s) remain.</x:String>
     <x:String x:Key="String.TsRepair.Status.Cancelled">Operation cancelled.</x:String>
     <x:String x:Key="String.TsRepair.Status.Failed">Operation failed: {0}</x:String>
     <x:String x:Key="String.TsRepair.Status.NoTrack">Select at least one reference track to output.</x:String>

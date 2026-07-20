@@ -227,7 +227,13 @@
     <x:String x:Key="String.TsRepair.Status.AnalysisCompletedMiddle"> 个丢包缺口或媒体异常区域，其中 </x:String>
     <x:String x:Key="String.TsRepair.Status.AnalysisCompletedSuffix"> 个可保守修复。</x:String>
     <x:String x:Key="String.TsRepair.Status.Outputting">正在修复选定轨道并重建节目表...</x:String>
-    <x:String x:Key="String.TsRepair.Status.Completed">输出完成：修复 {0:N0} 个丢包缺口、{1:N0} 个媒体异常区域，共写入 {2:N0} 个修复包，文件大小 {3}；复核剩余 {4:N0} 个传输或 PES 错误。</x:String>
+    <x:String x:Key="String.TsRepair.Status.OutputSummary">修复完成：已修复 {0}，共写入 {1:N0} 个修复包。输出大小：{2}。</x:String>
+    <x:String x:Key="String.TsRepair.Status.OutputNoRepair">输出完成：未发现需要修复的异常。输出大小：{0}。</x:String>
+    <x:String x:Key="String.TsRepair.Status.RepairedGaps">{0:N0} 个丢包缺口</x:String>
+    <x:String x:Key="String.TsRepair.Status.RepairedRegions">{0:N0} 个媒体异常区域</x:String>
+    <x:String x:Key="String.TsRepair.Status.ItemSeparator">、</x:String>
+    <x:String x:Key="String.TsRepair.Status.VerificationPassed">复核通过：未发现剩余的传输或 PES 错误。</x:String>
+    <x:String x:Key="String.TsRepair.Status.VerificationRemaining">复核完成：仍有 {0:N0} 个传输或 PES 错误。</x:String>
     <x:String x:Key="String.TsRepair.Status.Cancelled">操作已取消。</x:String>
     <x:String x:Key="String.TsRepair.Status.Failed">操作失败：{0}</x:String>
     <x:String x:Key="String.TsRepair.Status.NoTrack">请至少选择一条参考源轨道进行输出。</x:String>
