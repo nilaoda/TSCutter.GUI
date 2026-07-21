@@ -26,21 +26,12 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
         _analysis = analysis;
         _selectedPids = selectedPids;
         _outputResult = outputResult;
-        ZoomItems =
-        [
-            new TsRepairMapZoomItem(100),
-            new TsRepairMapZoomItem(200),
-            new TsRepairMapZoomItem(400),
-            new TsRepairMapZoomItem(800)
-        ];
-        _selectedZoom = ZoomItems[0];
         _viewMode = outputResult is null ? TsRepairMapViewMode.Expected : TsRepairMapViewMode.Actual;
         App.LocalizationService.LanguageChanged += OnLanguageChanged;
         Rebuild();
     }
 
     public ObservableCollection<TsRepairMapTrackView> Tracks { get; } = [];
-    public IReadOnlyList<TsRepairMapZoomItem> ZoomItems { get; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsExpectedView), nameof(IsActualView))]
@@ -90,7 +81,10 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
     public bool IsSelectedError => SelectedRegion?.Status == TsRepairMapRegionStatus.Error;
 
     [ObservableProperty]
-    private TsRepairMapZoomItem _selectedZoom;
+    [NotifyPropertyChangedFor(nameof(ZoomDisplayText))]
+    private double _zoomPercent = 100;
+
+    public string ZoomDisplayText => $"{ZoomPercent:0}%";
 
     partial void OnViewModeChanged(TsRepairMapViewMode value) => Rebuild();
 

@@ -26,7 +26,7 @@
     </Window.Styles>
     <Grid Margin="12" RowDefinitions="Auto,*,170,Auto" RowSpacing="8">
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto" RowSpacing="6">
-            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*,Auto,110" ColumnSpacing="8">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto,150,42" ColumnSpacing="8">
                 <RadioButton Grid.Column="0" GroupName="RepairMapView"
                              Content="{DynamicResource String.TsRepair.Map.Expected}"
                              IsChecked="{Binding IsExpectedView, Mode=TwoWay}" />
@@ -35,18 +35,17 @@
                              IsChecked="{Binding IsActualView, Mode=TwoWay}"
                              IsEnabled="{Binding HasActualResult}" />
                 <TextBlock Grid.Column="2" Text="{Binding SummaryText}" VerticalAlignment="Center"
-                           Margin="8,0,0,0" FontWeight="SemiBold" />
-                <TextBlock Grid.Column="4" Text="{DynamicResource String.TsRepair.Map.Zoom}"
+                           Margin="8,0,0,0" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Grid.Column="3" Text="{DynamicResource String.TsRepair.Map.Zoom}"
                            VerticalAlignment="Center" />
-                <ComboBox Grid.Column="5" ItemsSource="{Binding ZoomItems}"
-                          SelectedItem="{Binding SelectedZoom, Mode=TwoWay}"
-                          SelectionChanged="Zoom_OnSelectionChanged">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate x:DataType="models:TsRepairMapZoomItem">
-                            <TextBlock Text="{Binding DisplayText}" />
-                        </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
+                <Slider Grid.Column="4" Minimum="100" Maximum="800"
+                        TickFrequency="25" SmallChange="25" LargeChange="100"
+                        IsSnapToTickEnabled="True"
+                        Value="{Binding ZoomPercent, Mode=TwoWay}"
+                        ValueChanged="Zoom_OnValueChanged"
+                        VerticalAlignment="Center" />
+                <TextBlock Grid.Column="5" Text="{Binding ZoomDisplayText}"
+                           HorizontalAlignment="Right" VerticalAlignment="Center" />
             </Grid>
             <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="6">
                 <TextBlock Grid.Column="0" Text="{DynamicResource String.TsRepair.Map.Reference}" />

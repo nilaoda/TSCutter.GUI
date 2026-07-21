@@ -52,9 +52,3 @@ public sealed class TsRepairMapTrackView
     public bool IsOverview { get; init; }
     public List<TsRepairMapRegionView> Regions { get; } = [];
 }
-
-public sealed class TsRepairMapZoomItem(int percent)
-{
-    public int Percent { get; } = percent;
-    public string DisplayText => $"{Percent}%";
-}
