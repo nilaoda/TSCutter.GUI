@@ -37,10 +37,12 @@ public sealed class TsRepairMapRegionView
     public required string IssueText { get; init; }
     public required string StatusText { get; set; }
     public required string TimeText { get; init; }
+    public required string BroadcastTimeText { get; init; }
     public required string PositionText { get; init; }
     public required string SourceText { get; init; }
     public required string MatchText { get; init; }
     public required string PacketText { get; init; }
+    public bool HasBroadcastTime => !string.IsNullOrEmpty(BroadcastTimeText);
 }
 
 public sealed class TsRepairMapTrackView

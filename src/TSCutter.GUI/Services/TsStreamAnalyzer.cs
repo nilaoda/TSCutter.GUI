@@ -27,7 +27,7 @@ public sealed class TsStreamAnalyzer
     private static readonly Encoding Gb18030Encoding = CreateGb18030Encoding();
 
     private readonly Dictionary<int, PidState> _pidStates = [];
-    private readonly Dictionary<int, PsiAssembler> _psiAssemblers = [];
+    private readonly Dictionary<int, TsPsiSectionAssembler> _psiAssemblers = [];
     private readonly Dictionary<int, int> _pmtPidPrograms = [];
     private readonly Dictionary<int, int> _streamPidPrograms = [];
     private readonly Dictionary<int, int> _pcrPidPrograms = [];
@@ -194,9 +194,11 @@ public sealed class TsStreamAnalyzer
         _timelineIntervalPacketCount = 0;
         _timelineSegment = 0;
         _timelineCompactionThreshold = MaxTimelineBuckets;
-        _psiAssemblers[0] = new PsiAssembler();
+        _psiAssemblers[0] = new TsPsiSectionAssembler();
         if (_options.IncludeServiceMetadata)
-            _psiAssemblers[0x0011] = new PsiAssembler();
+            _psiAssemblers[0x0011] = new TsPsiSectionAssembler();
+        if (HasFeature(TsStreamAnalyzeFeatures.BroadcastClock))
+            _psiAssemblers[TsDvbTimeTableParser.Pid] = new TsPsiSectionAssembler();
     }
 
     private int ProcessBuffer(ReadOnlySpan<byte> data, long absoluteOffset, CancellationToken cancellationToken)
@@ -300,6 +302,8 @@ public sealed class TsStreamAnalyzer
         if (transportError)
         {
             state.DiscardPes();
+            if (_psiAssemblers.TryGetValue(pid, out var damagedAssembler))
+                damagedAssembler.DiscardUntilPayloadStart();
             state.Summary.TransportErrors++;
             if (!_options.InventoryOnly)
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.TransportError, pid, _packetIndex, fileOffset,
@@ -344,6 +348,8 @@ public sealed class TsStreamAnalyzer
         {
             state.ResetContinuity();
             state.ResetTimestamps();
+            if (_psiAssemblers.TryGetValue(pid, out var discontinuousAssembler))
+                discontinuousAssembler.DiscardUntilPayloadStart();
             if (_streamPidPrograms.TryGetValue(pid, out var programNumber) && _programClocks.TryGetValue(programNumber, out var clock))
                 clock.ResetSync();
         }
@@ -364,8 +370,10 @@ public sealed class TsStreamAnalyzer
             return;
 
         var payload = packet[payloadOffset..];
-        if (pid == 0 || _pmtPidPrograms.ContainsKey(pid) ||
-            (_options.IncludeServiceMetadata && pid == 0x0011))
+        if (!transportError &&
+            (pid == 0 || _pmtPidPrograms.ContainsKey(pid) ||
+             (_options.IncludeServiceMetadata && pid == 0x0011) ||
+             (pid == TsDvbTimeTableParser.Pid && HasFeature(TsStreamAnalyzeFeatures.BroadcastClock))))
             ProcessPsi(pid, payload, payloadStart, fileOffset);
 
         if (_streamPidPrograms.ContainsKey(pid))
@@ -393,6 +401,8 @@ public sealed class TsStreamAnalyzer
                     // 相同 CC 却包含不同 payload 时无法判断哪一份属于当前 PES，放弃长度结算以免二次误报。
                     state.PesHeaderLength = 0;
                     state.DiscardPes();
+                    if (_psiAssemblers.TryGetValue(pid, out var assembler))
+                        assembler.DiscardUntilPayloadStart();
                 }
                 AddEvent(same ? TsCheckSeverity.Warning : TsCheckSeverity.Error,
                     same ? TsCheckEventType.DuplicatePacket : TsCheckEventType.ConflictingDuplicate,
@@ -409,7 +419,7 @@ public sealed class TsStreamAnalyzer
                 state.PesHeaderLength = 0;
                 state.DiscardPes();
                 if (_psiAssemblers.TryGetValue(pid, out var assembler))
-                    assembler.Discard();
+                    assembler.DiscardUntilPayloadStart();
                 var missingModulo = (counter - expected + 16) & 0x0F;
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.ContinuityGap, pid, _packetIndex, fileOffset,
                     TsCheckMessageCode.ContinuityGap, [expected, counter, Math.Max(1, missingModulo)],
@@ -471,7 +481,7 @@ public sealed class TsStreamAnalyzer
     {
         if (!_psiAssemblers.TryGetValue(pid, out var assembler))
         {
-            assembler = new PsiAssembler();
+            assembler = new TsPsiSectionAssembler();
             _psiAssemblers[pid] = assembler;
         }
 
@@ -482,6 +492,19 @@ public sealed class TsStreamAnalyzer
     {
         if (section.Length < 8)
             return;
+
+        // TDT/TOT 提供真实 UTC，其中 TDT 不带 CRC，必须在通用 PSI CRC 检查之前单独解析。
+        if (pid == TsDvbTimeTableParser.Pid)
+        {
+            if (TsDvbTimeTableParser.TryParseUtc(section, out var utcTime))
+            {
+                var anchor = new TsBroadcastTimeAnchor(
+                    utcTime, _lastKnownPcr90k, _packetIndex, fileOffset);
+                _result.FirstBroadcastTime ??= anchor;
+                _result.LastBroadcastTime = anchor;
+            }
+            return;
+        }
 
         if (!HasValidPsiCrc(section))
         {
@@ -514,7 +537,7 @@ public sealed class TsStreamAnalyzer
             var catalogChanged = !_pmtPidPrograms.TryGetValue(pmtPid, out var oldProgramNumber) ||
                                  oldProgramNumber != programNumber;
             _pmtPidPrograms[pmtPid] = programNumber;
-            _psiAssemblers.TryAdd(pmtPid, new PsiAssembler());
+            _psiAssemblers.TryAdd(pmtPid, new TsPsiSectionAssembler());
             var pmtSummary = GetPidState(pmtPid).Summary;
             pmtSummary.ProgramNumber = programNumber;
             pmtSummary.IsPmtPid = true;
@@ -1754,81 +1777,4 @@ public sealed class TsStreamAnalyzer
         }
     }
 
-    private sealed class PsiAssembler
-    {
-        private readonly byte[] _buffer = new byte[4096];
-        private int _length;
-        private int _expectedLength;
-
-        public void Push(ReadOnlySpan<byte> payload, bool payloadStart, Action<ReadOnlySpan<byte>> sectionHandler)
-        {
-            // PAT/PMT section 可跨多个 TS 包；pointer_field 之前的数据用于补完上一 section。
-            if (payloadStart)
-            {
-                if (payload.IsEmpty)
-                    return;
-                var pointer = payload[0];
-                payload = payload[1..];
-                if (pointer > payload.Length)
-                {
-                    Reset();
-                    return;
-                }
-
-                if (_length > 0 && pointer > 0)
-                    Append(payload[..pointer], sectionHandler);
-                payload = payload[pointer..];
-                Reset();
-            }
-
-            Append(payload, sectionHandler);
-        }
-
-        private void Append(ReadOnlySpan<byte> data, Action<ReadOnlySpan<byte>> sectionHandler)
-        {
-            while (!data.IsEmpty)
-            {
-                if (_length == 0 && data[0] == 0xFF)
-                    return;
-
-                var needed = _expectedLength > 0 ? _expectedLength - _length : Math.Min(3 - _length, data.Length);
-                if (needed <= 0)
-                    needed = data.Length;
-                var take = Math.Min(needed, data.Length);
-                if (_length + take > _buffer.Length)
-                {
-                    Reset();
-                    return;
-                }
-
-                data[..take].CopyTo(_buffer.AsSpan(_length));
-                _length += take;
-                data = data[take..];
-
-                if (_length >= 3 && _expectedLength == 0)
-                {
-                    _expectedLength = 3 + ((_buffer[1] & 0x0F) << 8) + _buffer[2];
-                    if (_expectedLength < 8 || _expectedLength > _buffer.Length)
-                    {
-                        Reset();
-                        return;
-                    }
-                }
-
-                if (_expectedLength > 0 && _length == _expectedLength)
-                {
-                    sectionHandler(_buffer.AsSpan(0, _length));
-                    Reset();
-                }
-            }
-        }
-
-        private void Reset()
-        {
-            _length = 0;
-            _expectedLength = 0;
-        }
-
-        public void Discard() => Reset();
-    }
 }

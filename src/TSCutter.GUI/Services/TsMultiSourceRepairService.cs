@@ -93,7 +93,8 @@ public sealed class TsMultiSourceRepairService
         var referenceStates = BuildReferenceTracks(reference.Catalog, result.Tracks);
 
         var scanOrdinal = 0;
-        await ScanReferenceAsync(reference, referenceStates, scanOrdinal++, sources.Count, progress, cancellationToken)
+        await ScanReferenceAsync(reference, referenceStates, result.ReferenceBroadcastTimes,
+                scanOrdinal++, sources.Count, progress, cancellationToken)
             .ConfigureAwait(false);
         foreach (var state in referenceStates.Values)
             state.CompletePesRegions();
@@ -510,15 +511,24 @@ public sealed class TsMultiSourceRepairService
     private static async Task ScanReferenceAsync(
         TsRepairSourceAnalysis source,
         IReadOnlyDictionary<int, ReferenceTrackState> states,
+        List<TsBroadcastTimeAnchor> broadcastTimes,
         int sourceIndex,
         int sourceCount,
         IProgress<TsMultiSourceProgress>? progress,
         CancellationToken cancellationToken)
     {
+        var broadcastClock = new ReferenceBroadcastClockCollector(broadcastTimes, source.Catalog.SyncOffset);
         await ScanPacketsAsync(source.FilePath, source.Catalog.SyncOffset, sourceIndex, sourceCount, progress,
             (packet, fileOffset) =>
             {
-                if (!TryParsePacket(packet, out var info) || !states.TryGetValue(info.Pid, out var state))
+                if (!TryParsePacket(packet, out var info))
+                    return;
+                if (info.Pid == TsDvbTimeTableParser.Pid)
+                {
+                    broadcastClock.ProcessPacket(packet, info, fileOffset, states.Values);
+                    return;
+                }
+                if (!states.TryGetValue(info.Pid, out var state))
                     return;
                 if (info.TransportError)
                 {
@@ -601,6 +611,8 @@ public sealed class TsMultiSourceRepairService
                 var elementaryPayload = GetElementaryPayload(packet, info, out var startsNewPes);
                 // 重复包已经在上方返回，只有连续性可接受的当前包才进入 PES 长度和 ES 指纹状态。
                 state.ProcessPes(packet, info, fileOffset, elementaryPayload);
+                if (broadcastClock.HasPending && state.CurrentPesPts90k != long.MinValue)
+                    broadcastClock.TryResolvePending(states.Values);
                 state.Track.PayloadPacketCount++;
                 for (var index = state.PendingGaps.Count - 1; index >= 0; index--)
                 {
@@ -1174,6 +1186,154 @@ public sealed class TsMultiSourceRepairService
 
     private delegate void PacketHandler(ReadOnlySpan<byte> packet, long fileOffset);
 
+    private sealed class ReferenceBroadcastClockCollector(
+        List<TsBroadcastTimeAnchor> output,
+        long syncOffset)
+    {
+        private const int MaxAnchors = 8_192;
+        private readonly TsPsiSectionAssembler _assembler = new();
+        private readonly Dictionary<int, DateTimeOffset> _lastAnchorTimes = [];
+        private PendingBroadcastTime? _pending;
+        private double _minimumIntervalSeconds = 0.5;
+        private bool _hasContinuity;
+        private int _lastContinuityCounter;
+
+        public bool HasPending => _pending is not null;
+
+        public void ProcessPacket(
+            ReadOnlySpan<byte> packet,
+            PacketInfo info,
+            long fileOffset,
+            IEnumerable<ReferenceTrackState> states)
+        {
+            if (info.TransportError)
+            {
+                _assembler.DiscardUntilPayloadStart();
+                _hasContinuity = false;
+                return;
+            }
+            var continuityBroken = info.Discontinuity;
+            if (continuityBroken)
+            {
+                _assembler.DiscardUntilPayloadStart();
+                _hasContinuity = false;
+            }
+            if (!info.HasPayload)
+                return;
+
+            if (_hasContinuity)
+            {
+                var expected = (_lastContinuityCounter + 1) & 0x0F;
+                if (info.ContinuityCounter == _lastContinuityCounter)
+                    return;
+                if (info.ContinuityCounter != expected)
+                {
+                    _assembler.DiscardUntilPayloadStart();
+                    continuityBroken = true;
+                }
+            }
+            _hasContinuity = true;
+            _lastContinuityCounter = info.ContinuityCounter;
+            if (continuityBroken && !info.PayloadStart)
+                return;
+
+            _assembler.Push(packet[info.PayloadOffset..], info.PayloadStart, section =>
+            {
+                if (!TsDvbTimeTableParser.TryParseUtc(section, out var utcTime))
+                    return;
+                var packetIndex = Math.Max(0, (fileOffset - syncOffset) / PacketSize);
+                if (AddAvailableProgramAnchors(utcTime, packetIndex, fileOffset, states) == 0)
+                {
+                    // 表可能先于首个音视频 PES 出现，延迟到取得节目 PTS 后再建立锚点。
+                    _pending = new PendingBroadcastTime(utcTime, packetIndex, fileOffset);
+                    return;
+                }
+                _pending = null;
+            });
+        }
+
+        public void TryResolvePending(IEnumerable<ReferenceTrackState> states)
+        {
+            if (_pending is not { } pending)
+                return;
+            if (AddAvailableProgramAnchors(
+                    pending.UtcTime, pending.PacketIndex, pending.FileOffset, states) > 0)
+                _pending = null;
+        }
+
+        private int AddAvailableProgramAnchors(
+            DateTimeOffset utcTime,
+            long packetIndex,
+            long fileOffset,
+            IEnumerable<ReferenceTrackState> states)
+        {
+            var clocks = new Dictionary<int, (long Clock90k, long FileOffset, bool IsVideo)>();
+            // 每个 program 都有独立的 STC/PTS 时钟域，不能用某个节目的 PTS 推算其他节目。
+            foreach (var state in states)
+            {
+                var clock90k = state.CurrentPesPts90k;
+                var clockOffset = state.CurrentPesPtsFileOffset;
+                if (clock90k == long.MinValue || clockOffset < 0)
+                    continue;
+                var isVideo = TsStreamTypes.IsVideo(state.Track.StreamType);
+                if (!clocks.TryGetValue(state.Track.ProgramNumber, out var current) ||
+                    clockOffset > current.FileOffset ||
+                    (clockOffset == current.FileOffset && isVideo && !current.IsVideo))
+                {
+                    clocks[state.Track.ProgramNumber] = (clock90k, clockOffset, isVideo);
+                }
+            }
+            foreach (var pair in clocks)
+                Add(utcTime, pair.Value.Clock90k, packetIndex, fileOffset, pair.Key);
+            return clocks.Count;
+        }
+
+        private void Add(
+            DateTimeOffset utcTime,
+            long clock90k,
+            long packetIndex,
+            long fileOffset,
+            int programNumber)
+        {
+            if (_lastAnchorTimes.TryGetValue(programNumber, out var lastTime) &&
+                Math.Abs((utcTime - lastTime).TotalSeconds) < _minimumIntervalSeconds)
+                return;
+            _lastAnchorTimes[programNumber] = utcTime;
+            if (output.Count >= MaxAnchors)
+                Compact();
+            output.Add(new TsBroadcastTimeAnchor(
+                utcTime, clock90k, packetIndex, fileOffset, programNumber));
+        }
+
+        private void Compact()
+        {
+            // 超长录制才会触发；各节目分别保留首尾并隔点降采样，避免交错顺序偏向某个节目。
+            var compacted = new List<TsBroadcastTimeAnchor>(output.Count / 2 + 32);
+            foreach (var group in output.GroupBy(item => item.ProgramNumber))
+            {
+                var values = group.OrderBy(item => item.FileOffset).ToArray();
+                if (values.Length <= 2)
+                {
+                    compacted.AddRange(values);
+                    continue;
+                }
+                compacted.Add(values[0]);
+                for (var index = 2; index < values.Length - 1; index += 2)
+                    compacted.Add(values[index]);
+                compacted.Add(values[^1]);
+            }
+            compacted.Sort((left, right) => left.FileOffset.CompareTo(right.FileOffset));
+            output.Clear();
+            output.AddRange(compacted);
+            _minimumIntervalSeconds *= 2;
+        }
+
+        private readonly record struct PendingBroadcastTime(
+            DateTimeOffset UtcTime,
+            long PacketIndex,
+            long FileOffset);
+    }
+
     private sealed class ReferenceTrackState(TsRepairTrackAnalysis track)
     {
         public TsRepairTrackAnalysis Track { get; } = track;
@@ -1207,9 +1367,11 @@ public sealed class TsMultiSourceRepairService
         private long _lastRawPts90k = long.MinValue;
         private long _ptsWrapOffset90k;
         private long _lastKnownPts90k = long.MinValue;
+        private long _lastKnownPtsFileOffset = -1;
 
         public void ResetContinuity() => HasContinuity = false;
         public long CurrentPesPts90k => _activePes?.Pts90k ?? _lastKnownPts90k;
+        public long CurrentPesPtsFileOffset => _activePes?.StartOffset ?? _lastKnownPtsFileOffset;
 
         public void AddTransportError(long fileOffset, int continuityCounter, bool hasPayload)
         {
@@ -1275,6 +1437,7 @@ public sealed class TsMultiSourceRepairService
                     return;
                 var pts90k = UnwrapTimestamp(rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
                 _lastKnownPts90k = pts90k;
+                _lastKnownPtsFileOffset = fileOffset;
                 Track.FirstPts90k = Math.Min(Track.FirstPts90k, pts90k);
                 Track.LastPts90k = Math.Max(Track.LastPts90k, pts90k);
                 _activePes = new ReferencePesInfo(
@@ -1497,6 +1660,7 @@ public sealed class TsMultiSourceRepairService
             _lastRawPts90k = long.MinValue;
             _ptsWrapOffset90k = 0;
             _lastKnownPts90k = long.MinValue;
+            _lastKnownPtsFileOffset = -1;
         }
     }
 

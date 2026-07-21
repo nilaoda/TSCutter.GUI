@@ -102,7 +102,8 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
                 InventoryOnly = true,
                 IncludeServiceMetadata = true,
                 MaxBytes = MaxProbeBytes,
-                StablePacketCount = 8_192
+                StablePacketCount = 8_192,
+                Features = TsStreamAnalyzeFeatures.None
             };
             var result = await Task.Run(() => analyzer.AnalyzeAsync(
                 FilePath, null, cancellationTokenSource.Token, options));

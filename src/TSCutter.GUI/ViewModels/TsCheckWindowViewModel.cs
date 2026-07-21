@@ -125,6 +125,12 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
     private string _statusText = string.Empty;
 
     [ObservableProperty]
+    private bool _hasBroadcastTime;
+
+    [ObservableProperty]
+    private string _broadcastTimeText = string.Empty;
+
+    [ObservableProperty]
     private string _speedText = $"{CommonUtil.FormatFileSize(0)}/s";
 
     [ObservableProperty]
@@ -188,6 +194,8 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
         WarningCount = 0;
         VerdictText = "-";
         Verdict = null;
+        HasBroadcastTime = false;
+        BroadcastTimeText = string.Empty;
         StatusText = _text.Strings.String_TsCheck_Status_Scanning;
 
         try
@@ -221,6 +229,7 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
             WarningCount = _result.WarningCount;
             Verdict = _result.Verdict;
             VerdictText = _text.FormatVerdict(_result);
+            UpdateBroadcastTime();
             StatusText = _result.WasCancelled
                 ? _text.Strings.String_TsCheck_Status_Cancelled
                 : _text.Strings.String_TsCheck_Status_Completed;
@@ -384,6 +393,15 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
         if (SelectedTimelineEvent is { } selectedEvent)
             SelectEventRow(selectedEvent);
         VerdictText = _text.FormatVerdict(_result);
+        UpdateBroadcastTime();
+    }
+
+    private void UpdateBroadcastTime()
+    {
+        HasBroadcastTime = _result?.FirstBroadcastTime is not null;
+        BroadcastTimeText = _result?.FirstBroadcastTime is { } first
+            ? _text.FormatBroadcastTime(first, _result.LastBroadcastTime)
+            : string.Empty;
     }
 
     private void UpdatePidSummary(TsCheckPidProgress progress, long totalPacketCount)

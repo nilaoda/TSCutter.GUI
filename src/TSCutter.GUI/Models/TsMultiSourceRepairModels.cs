@@ -163,6 +163,7 @@ public sealed class TsMultiSourceAnalysisResult
     public required TsRepairSourceAnalysis ReferenceSource { get; init; }
     public List<TsRepairSourceAnalysis> Sources { get; } = [];
     public List<TsRepairTrackAnalysis> Tracks { get; } = [];
+    public List<TsBroadcastTimeAnchor> ReferenceBroadcastTimes { get; } = [];
     public long TimelineStartPts90k { get; set; } = long.MinValue;
     public long TimelineEndPts90k { get; set; } = long.MinValue;
     public int TotalGapCount => GetIssueCount(repairableOnly: false);

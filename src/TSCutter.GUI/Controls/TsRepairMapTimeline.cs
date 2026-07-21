@@ -204,7 +204,9 @@ public sealed class TsRepairMapTimeline : Control
         if (_pointer is not { } pointer || _hoveredRegion is null)
             return;
         var region = _hoveredRegion;
-        var content = $"{region.TimeText}\n{region.IssueText}\n{region.StatusText}";
+        var content = string.IsNullOrEmpty(region.BroadcastTimeText)
+            ? $"{region.TimeText}\n{region.IssueText}\n{region.StatusText}"
+            : $"{region.TimeText}\n{region.BroadcastTimeText}\n{region.IssueText}\n{region.StatusText}";
         var formatted = CreateText(content, 12, TooltipTextBrush ?? textBrush);
         const double paddingX = 10;
         const double paddingY = 6;

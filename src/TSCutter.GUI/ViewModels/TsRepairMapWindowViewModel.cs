@@ -17,6 +17,9 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
     private TsMultiSourceAnalysisResult _analysis;
     private IReadOnlySet<int> _selectedPids;
     private TsRepairOutputResult? _outputResult;
+    private TsBroadcastTimeAnchor[] _broadcastAnchors = [];
+    private IReadOnlyDictionary<int, TsBroadcastTimeAnchor[]> _broadcastAnchorsByProgram =
+        new Dictionary<int, TsBroadcastTimeAnchor[]>();
 
     public TsRepairMapWindowViewModel(
         TsMultiSourceAnalysisResult analysis,
@@ -67,6 +70,12 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
     private string _summaryText = string.Empty;
 
     [ObservableProperty]
+    private bool _hasBroadcastTime;
+
+    [ObservableProperty]
+    private string _broadcastTimeRangeText = string.Empty;
+
+    [ObservableProperty]
     private string _hintText = string.Empty;
 
     [ObservableProperty]
@@ -115,6 +124,19 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
 
         ReferenceFileName = Path.GetFileName(_analysis.ReferenceSource.FilePath);
         DurationSeconds = GetTimelineDuration(_analysis);
+        _broadcastAnchors = _analysis.ReferenceBroadcastTimes
+            .Where(item => item.Clock90k != long.MinValue)
+            .OrderBy(item => item.FileOffset)
+            .ToArray();
+        _broadcastAnchorsByProgram = _broadcastAnchors
+            .GroupBy(item => item.ProgramNumber)
+            .ToDictionary(
+                item => item.Key,
+                item => item.OrderBy(anchor => anchor.FileOffset).ToArray());
+        HasBroadcastTime = _broadcastAnchors.Length > 0;
+        BroadcastTimeRangeText = HasBroadcastTime
+            ? _text.FormatBroadcastTime(_broadcastAnchors[0], _broadcastAnchors[^1])
+            : string.Empty;
         Tracks.Clear();
 
         var actual = ViewMode == TsRepairMapViewMode.Actual;
@@ -214,6 +236,9 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
                 IssueText = _text.Strings.String_TsRepair_Map_IssuePacketGap,
                 StatusText = FormatStatus(status),
                 TimeText = FormatTimePoint(start, gap.ReferencePts90k == long.MinValue),
+                BroadcastTimeText = FormatBroadcastTimePoint(
+                    track.ProgramNumber, gap.ReferencePts90k, gap.ReferenceInsertOffset,
+                    gap.ReferencePts90k == long.MinValue),
                 PositionText = FormatPosition(gap.ReferenceInsertOffset, gap.ReferenceInsertOffset),
                 SourceText = FormatCandidateSource(insertion?.SourcePath ?? candidate?.SourcePath,
                     insertion?.SourcePid ?? candidate?.SourcePid),
@@ -270,6 +295,10 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
                     : _text.Strings.String_TsRepair_Map_IssuePesMismatch,
                 StatusText = FormatStatus(status),
                 TimeText = FormatTimeRange(start, end, !hasPts),
+                BroadcastTimeText = FormatBroadcastTimeRange(
+                    track.ProgramNumber,
+                    region.ReferenceFirstPts90k, region.ReferenceLastPts90k,
+                    region.ReferenceStartOffset, region.ReferenceEndOffset, !hasPts),
                 PositionText = FormatPosition(region.ReferenceStartOffset, region.ReferenceEndOffset),
                 SourceText = FormatCandidateSource(sourcePath ?? candidate?.SourcePath, sourcePid ?? candidate?.SourcePid),
                 MatchText = coveringInsertion is not null
@@ -395,6 +424,95 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
             TsCheckEvent.FormatTime(value), suffix);
     }
 
+    private string FormatBroadcastTimePoint(
+        int programNumber,
+        long pts90k,
+        long fileOffset,
+        bool estimated)
+    {
+        if (!TryGetBroadcastTime(programNumber, pts90k, fileOffset, out var utcTime))
+            return string.Empty;
+        var suffix = estimated ? _text.Strings.String_TsRepair_Map_EstimatedSuffix : string.Empty;
+        return _text.FormatBroadcastTime(utcTime) + suffix;
+    }
+
+    private string FormatBroadcastTimeRange(
+        int programNumber,
+        long startPts90k,
+        long endPts90k,
+        long startOffset,
+        long endOffset,
+        bool estimated)
+    {
+        if (!TryGetBroadcastTime(programNumber, startPts90k, startOffset, out var startUtc) ||
+            !TryGetBroadcastTime(programNumber, endPts90k, endOffset, out var endUtc))
+        {
+            return string.Empty;
+        }
+        var suffix = estimated ? _text.Strings.String_TsRepair_Map_EstimatedSuffix : string.Empty;
+        return _text.FormatBroadcastTime(startUtc, endUtc) + suffix;
+    }
+
+    private bool TryGetBroadcastTime(
+        int programNumber,
+        long pts90k,
+        long fileOffset,
+        out DateTimeOffset utcTime)
+    {
+        utcTime = default;
+        if (!_broadcastAnchorsByProgram.TryGetValue(programNumber, out var anchors) || anchors.Length == 0)
+            return false;
+
+        var insertionIndex = FindBroadcastAnchorInsertionIndex(anchors, fileOffset);
+        if (pts90k == long.MinValue)
+        {
+            if (anchors.Length < 2)
+                return false;
+            var leftIndex = insertionIndex <= 0 ? 0
+                : insertionIndex >= anchors.Length ? anchors.Length - 2
+                : insertionIndex - 1;
+            var rightIndex = leftIndex + 1;
+            var left = anchors[leftIndex];
+            var right = anchors[rightIndex];
+            var offsetSpan = right.FileOffset - left.FileOffset;
+            if (offsetSpan <= 0)
+                return false;
+            var ratio = (fileOffset - left.FileOffset) / (double)offsetSpan;
+            try
+            {
+                // 缺少 PTS 时只在同一节目相邻 UTC 锚点间按文件位置估算，避免跨节目时钟域。
+                utcTime = left.UtcTime.AddSeconds((right.UtcTime - left.UtcTime).TotalSeconds * ratio);
+                return true;
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                return false;
+            }
+        }
+
+        // 先按文件位置选最近的 UTC 锚点，再用 PTS 差值细化到异常区域；这样 PTS 重置后也不会串到旧时间段。
+        var index = insertionIndex;
+        if (index >= anchors.Length)
+            index = anchors.Length - 1;
+        else if (index > 0 &&
+                 fileOffset - anchors[index - 1].FileOffset <=
+                 anchors[index].FileOffset - fileOffset)
+            index--;
+
+        var anchor = anchors[index];
+        utcTime = anchor.UtcTime.AddSeconds((pts90k - anchor.Clock90k) / 90_000.0);
+        return true;
+    }
+
+    private static int FindBroadcastAnchorInsertionIndex(TsBroadcastTimeAnchor[] anchors, long fileOffset)
+    {
+        var index = Array.BinarySearch(
+            anchors,
+            new TsBroadcastTimeAnchor(default, 0, 0, fileOffset),
+            BroadcastAnchorOffsetComparer.Instance);
+        return index < 0 ? ~index : index;
+    }
+
     private string FormatPosition(long start, long end)
     {
         var startPacket = Math.Max(0, (start - _analysis.ReferenceSource.Catalog.SyncOffset) / TsStreamAnalyzer.PacketSize);
@@ -410,4 +528,12 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
     private static bool PathsEqual(string left, string right) => string.Equals(
         Path.GetFullPath(left), Path.GetFullPath(right),
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private sealed class BroadcastAnchorOffsetComparer : IComparer<TsBroadcastTimeAnchor>
+    {
+        public static BroadcastAnchorOffsetComparer Instance { get; } = new();
+
+        public int Compare(TsBroadcastTimeAnchor left, TsBroadcastTimeAnchor right) =>
+            left.FileOffset.CompareTo(right.FileOffset);
+    }
 }
