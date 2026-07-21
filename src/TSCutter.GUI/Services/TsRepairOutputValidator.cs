@@ -48,11 +48,6 @@ internal sealed class TsRepairOutputValidator(IReadOnlySet<int> selectedPids)
         var hasAdaptation = (adaptationControl & 0x02) != 0;
         var hasPayload = (adaptationControl & 0x01) != 0;
 
-        if (transportError)
-        {
-            TransportErrors++;
-            state.DiscardPes();
-        }
         if (adaptationControl == 0)
         {
             state.DiscardPes();
@@ -74,6 +69,18 @@ internal sealed class TsRepairOutputValidator(IReadOnlySet<int> selectedPids)
                 discontinuity = (packet[5] & 0x80) != 0;
         }
 
+        if (transportError)
+        {
+            TransportErrors++;
+            state.DiscardPes();
+            // 与参考源分析保持同一计数口径：带 payload 的 TEI 包已经代表一次损坏，
+            // 后续首个有效 payload 的 CC 跳变不能再重复计为另一处丢包。若 TEI 已被
+            // 候选替换，干净补包仍会按正常连续性路径接受检查。
+            if (hasPayload && payloadOffset < PacketSize)
+                state.HasPendingTransportError = true;
+            return;
+        }
+
         if (discontinuity)
         {
             state.HasContinuity = false;
@@ -83,11 +90,12 @@ internal sealed class TsRepairOutputValidator(IReadOnlySet<int> selectedPids)
         if (!hasPayload || payloadOffset >= PacketSize)
             return;
 
+        if (state.HasPendingTransportError)
+        {
+            state.HasPendingTransportError = false;
+            state.HasContinuity = false;
+        }
         if (!ProcessContinuity(packet, state, continuityCounter))
-            return;
-
-        // TEI 包的负载不可信。仍跟踪它的 CC，但不能参与 PES 长度结算。
-        if (transportError)
             return;
 
         ProcessPesSize(packet[payloadOffset..], payloadStart, state);
@@ -174,6 +182,7 @@ internal sealed class TsRepairOutputValidator(IReadOnlySet<int> selectedPids)
     private sealed class PidState
     {
         public bool HasContinuity;
+        public bool HasPendingTransportError;
         public int LastContinuityCounter;
         public byte[] LastPacketBody { get; } = new byte[PacketSize - 4];
         public bool PesActive;

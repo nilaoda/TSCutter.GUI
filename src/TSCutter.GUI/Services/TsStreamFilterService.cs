@@ -736,7 +736,12 @@ public sealed class TsStreamFilterService
     private static bool TryWritePcrOnlyPacket(ReadOnlySpan<byte> source, byte[] outputBuffer, ref int outputLength)
     {
         var adaptationControl = (source[3] >> 4) & 0x03;
-        if ((adaptationControl & 0x02) == 0 || source[4] < 7 || (source[5] & 0x10) == 0)
+        var adaptationLength = source[4];
+        // TEI 包中的 PCR 同样不可信；损坏包还可能声明超过 188 字节边界的
+        // adaptation field。过滤时应直接丢弃，不能让纯音频输出携带坏时钟或切片越界。
+        if ((source[1] & 0x80) != 0 ||
+            (adaptationControl & 0x02) == 0 || adaptationLength is < 7 or > 183 ||
+            5 + adaptationLength > source.Length || (source[5] & 0x10) == 0)
             return false;
 
         // PCR 可能与未选中的视频 payload 共用一个 PID。把该包改成仅含 adaptation field 的
@@ -748,7 +753,7 @@ public sealed class TsStreamFilterService
         packet[2] = source[2];
         packet[3] = (byte)(0x20 | (source[3] & 0x0F));
         packet[4] = 183;
-        source.Slice(5, source[4]).CopyTo(packet[5..]);
+        source.Slice(5, adaptationLength).CopyTo(packet[5..]);
         outputLength += PacketSize;
         return true;
     }
