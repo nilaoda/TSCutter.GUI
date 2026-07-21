@@ -25,6 +25,8 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     private readonly TsCheckTextFormatter _text = new();
     private CancellationTokenSource? _cancellationTokenSource;
     private TsMultiSourceAnalysisResult? _analysis;
+    private TsRepairOutputResult? _lastOutputResult;
+    private TsRepairMapWindowViewModel? _repairMapViewModel;
     private bool _isClosing;
 
     public TsMultiSourceRepairWindowViewModel(IDialogService dialogService)
@@ -52,12 +54,13 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     [NotifyPropertyChangedFor(nameof(CanOutput))]
     [NotifyPropertyChangedFor(nameof(CanCancel))]
     [NotifyCanExecuteChangedFor(nameof(AddSourcesCommand), nameof(RemoveSourceCommand), nameof(AnalyzeCommand),
-        nameof(OutputCommand), nameof(CancelCommand))]
+        nameof(OutputCommand), nameof(CancelCommand), nameof(OpenRepairMapCommand))]
     private bool _isBusy;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanOutput))]
-    [NotifyCanExecuteChangedFor(nameof(OutputCommand))]
+    [NotifyPropertyChangedFor(nameof(CanOpenRepairMap))]
+    [NotifyCanExecuteChangedFor(nameof(OutputCommand), nameof(OpenRepairMapCommand))]
     private bool _hasAnalysis;
 
     [ObservableProperty]
@@ -117,6 +120,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     public bool CanAnalyze => !IsBusy && Sources.Count >= 2 && SelectedReference is not null;
     public bool CanOutput => !IsBusy && HasAnalysis && Tracks.Any(item => item.IsSelected);
     public bool CanCancel => IsBusy;
+    public bool CanOpenRepairMap => !IsBusy && HasAnalysis;
 
     [RelayCommand(CanExecute = nameof(CanModifySources))]
     private async Task AddSourcesAsync()
@@ -177,10 +181,12 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         _cancellationTokenSource?.Dispose();
         _cancellationTokenSource = cancellationTokenSource;
         IsBusy = true;
+        CloseRepairMap();
         HasAnalysis = false;
         IsAnalysisSummaryVisible = false;
         IsOutputSummaryVisible = false;
         _analysis = null;
+        _lastOutputResult = null;
         Tracks.Clear();
         Percent = 0;
         ProgressText = "0 / 0";
@@ -295,6 +301,8 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                 return;
             Percent = 100;
             SetOutputSummary(result);
+            _lastOutputResult = result;
+            RefreshOpenRepairMap(preferActual: true);
         }
         catch (OperationCanceledException)
         {
@@ -347,6 +355,41 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel() => _cancellationTokenSource?.Cancel();
 
+    [RelayCommand(CanExecute = nameof(CanOpenRepairMap))]
+    private void OpenRepairMap()
+    {
+        var analysis = _analysis;
+        if (analysis is null)
+            return;
+        var selectedPids = Tracks.Where(item => item.IsSelected)
+            .Select(item => item.Analysis.ReferencePid)
+            .ToHashSet();
+        if (_repairMapViewModel is not null && _dialogService.Activate(_repairMapViewModel))
+        {
+            _repairMapViewModel.Refresh(analysis, selectedPids, _lastOutputResult);
+            return;
+        }
+
+        _repairMapViewModel = new TsRepairMapWindowViewModel(analysis, selectedPids, _lastOutputResult);
+        _dialogService.Show(this, _repairMapViewModel);
+    }
+
+    private void RefreshOpenRepairMap()
+    {
+        RefreshOpenRepairMap(preferActual: false);
+    }
+
+    private void RefreshOpenRepairMap(bool preferActual)
+    {
+        var analysis = _analysis;
+        if (analysis is null || _repairMapViewModel is null)
+            return;
+        var selectedPids = Tracks.Where(item => item.IsSelected)
+            .Select(item => item.Analysis.ReferencePid)
+            .ToHashSet();
+        _repairMapViewModel.Refresh(analysis, selectedPids, _lastOutputResult, preferActual);
+    }
+
     private void BuildTrackRows(TsMultiSourceAnalysisResult analysis)
     {
         Tracks.Clear();
@@ -361,6 +404,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                 RepairSourcesText = FormatRepairSources(track)
             };
             row.SelectionChanged += OutputCommand.NotifyCanExecuteChanged;
+            row.SelectionChanged += RefreshOpenRepairMap;
             Tracks.Add(row);
         }
     }
@@ -422,7 +466,9 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
 
     private void InvalidateAnalysis()
     {
+        CloseRepairMap();
         _analysis = null;
+        _lastOutputResult = null;
         HasAnalysis = false;
         IsAnalysisSummaryVisible = false;
         IsOutputSummaryVisible = false;
@@ -569,6 +615,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         AnalyzeCommand.NotifyCanExecuteChanged();
         OutputCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
+        OpenRepairMapCommand.NotifyCanExecuteChanged();
     }
 
     private static bool PathsEqual(string left, string right) => string.Equals(
@@ -588,7 +635,17 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         Sources.CollectionChanged -= OnSourcesChanged;
         _cancellationTokenSource?.Cancel();
         _analysis = null;
+        _lastOutputResult = null;
+        CloseRepairMap();
         Tracks.Clear();
         Sources.Clear();
+    }
+
+    private void CloseRepairMap()
+    {
+        var viewModel = _repairMapViewModel;
+        _repairMapViewModel = null;
+        if (viewModel is not null)
+            _dialogService.Close(viewModel);
     }
 }

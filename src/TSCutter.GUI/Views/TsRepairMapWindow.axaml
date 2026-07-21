@@ -1,0 +1,161 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        xmlns:models="clr-namespace:TSCutter.GUI.Models"
+        xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.TsRepairMapWindow"
+        x:DataType="viewModels:TsRepairMapWindowViewModel"
+        Title="{DynamicResource String.TsRepair.Map.Title}"
+        Width="900" Height="580" MinWidth="720" MinHeight="460"
+        WindowStartupLocation="CenterOwner">
+    <Window.Styles>
+        <Style Selector="TextBlock.mapSuccess">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusSuccessForegroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.mapWarning">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.mapError">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
+        </Style>
+    </Window.Styles>
+    <Grid Margin="12" RowDefinitions="Auto,*,170,Auto" RowSpacing="8">
+        <Grid Grid.Row="0" RowDefinitions="Auto,Auto" RowSpacing="6">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*,Auto,110" ColumnSpacing="8">
+                <RadioButton Grid.Column="0" GroupName="RepairMapView"
+                             Content="{DynamicResource String.TsRepair.Map.Expected}"
+                             IsChecked="{Binding IsExpectedView, Mode=TwoWay}" />
+                <RadioButton Grid.Column="1" GroupName="RepairMapView"
+                             Content="{DynamicResource String.TsRepair.Map.Actual}"
+                             IsChecked="{Binding IsActualView, Mode=TwoWay}"
+                             IsEnabled="{Binding HasActualResult}" />
+                <TextBlock Grid.Column="2" Text="{Binding SummaryText}" VerticalAlignment="Center"
+                           Margin="8,0,0,0" FontWeight="SemiBold" />
+                <TextBlock Grid.Column="4" Text="{DynamicResource String.TsRepair.Map.Zoom}"
+                           VerticalAlignment="Center" />
+                <ComboBox Grid.Column="5" ItemsSource="{Binding ZoomItems}"
+                          SelectedItem="{Binding SelectedZoom, Mode=TwoWay}"
+                          SelectionChanged="Zoom_OnSelectionChanged">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:TsRepairMapZoomItem">
+                            <TextBlock Text="{Binding DisplayText}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+            </Grid>
+            <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="6">
+                <TextBlock Grid.Column="0" Text="{DynamicResource String.TsRepair.Map.Reference}" />
+                <TextBlock Grid.Column="1" Text="{Binding ReferenceFileName}" TextTrimming="CharacterEllipsis" />
+                <Border Grid.Column="2" Width="14" Height="10" Background="{DynamicResource AppStatusSuccessForegroundBrush}" />
+                <TextBlock Grid.Column="3" Text="{DynamicResource String.TsRepair.Map.Legend.Success}" />
+                <Border Grid.Column="4" Width="14" Height="10" Background="{DynamicResource AppStatusWarningForegroundBrush}" />
+                <TextBlock Grid.Column="5" Text="{DynamicResource String.TsRepair.Map.Legend.Warning}" />
+                <Border Grid.Column="6" Width="14" Height="10" Background="{DynamicResource AppStatusErrorForegroundBrush}" />
+                <TextBlock Grid.Column="7" Text="{DynamicResource String.TsRepair.Map.Legend.Error}" />
+            </Grid>
+        </Grid>
+
+        <ClassicBorderDecorator Grid.Row="1" BorderThickness="1" BorderStyle="Sunken" Padding="0">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
+                          Background="{DynamicResource {x:Static common:SystemColors.WindowColorKey}}">
+                <Grid ColumnDefinitions="230,*">
+                    <Border Grid.Column="0" BorderBrush="{DynamicResource {x:Static common:SystemColors.WindowFrameColorKey}}"
+                            BorderThickness="0,0,1,0"
+                            Background="{DynamicResource {x:Static common:SystemColors.WindowColorKey}}">
+                        <Grid RowDefinitions="32,Auto">
+                            <TextBlock Grid.Row="0" Text="{DynamicResource String.TsRepair.Map.Track}"
+                                       Margin="8,0" VerticalAlignment="Center" FontWeight="Bold" />
+                            <ItemsControl Grid.Row="1" ItemsSource="{Binding Tracks}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="models:TsRepairMapTrackView">
+                                        <Border Height="38" BorderBrush="{DynamicResource {x:Static common:SystemColors.GrayTextColorKey}}"
+                                                BorderThickness="0,1,0,0" Padding="8,0">
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                                <StackPanel Grid.Column="0" VerticalAlignment="Center" Spacing="1">
+                                                    <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Text="{Binding StatusText}" FontSize="11"
+                                                               Foreground="{DynamicResource {x:Static common:SystemColors.GrayTextColorKey}}"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                </StackPanel>
+                                                <TextBlock Grid.Column="1" Text="{DynamicResource String.TsRepair.Map.NotSelectedMark}"
+                                                           IsVisible="{Binding IsSelected, Converter={x:Static local:App.InverseBoolConverter}}"
+                                                           Foreground="{DynamicResource {x:Static common:SystemColors.GrayTextColorKey}}"
+                                                           VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </Grid>
+                    </Border>
+                    <ScrollViewer x:Name="TimelineScrollViewer" Grid.Column="1"
+                                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"
+                                  HorizontalContentAlignment="Left"
+                                  SizeChanged="TimelineScrollViewer_OnSizeChanged">
+                        <controls:TsRepairMapTimeline x:Name="RepairTimeline" HorizontalAlignment="Left"
+                                                      Tracks="{Binding Tracks}"
+                                                      DurationSeconds="{Binding DurationSeconds}"
+                                                      SelectedRegion="{Binding SelectedRegion, Mode=TwoWay}"
+                                                      BackgroundBrush="{DynamicResource {x:Static common:SystemColors.WindowColorKey}}"
+                                                      GridBrush="{DynamicResource {x:Static common:SystemColors.GrayTextColorKey}}"
+                                                      TextBrush="{DynamicResource {x:Static common:SystemColors.WindowTextColorKey}}"
+                                                      SuccessBrush="{DynamicResource AppStatusSuccessForegroundBrush}"
+                                                      WarningBrush="{DynamicResource AppStatusWarningForegroundBrush}"
+                                                      ErrorBrush="{DynamicResource AppStatusErrorForegroundBrush}"
+                                                      MutedBrush="{DynamicResource {x:Static common:SystemColors.GrayTextColorKey}}"
+                                                      SelectionBrush="{DynamicResource AppRepairMapSelectionBrush}"
+                                                      TooltipBackgroundBrush="{DynamicResource {x:Static common:SystemColors.InfoColorKey}}"
+                                                      TooltipTextBrush="{DynamicResource {x:Static common:SystemColors.InfoTextColorKey}}"
+                                                      TooltipBorderBrush="{DynamicResource {x:Static common:SystemColors.WindowFrameColorKey}}"
+                                                      TimeLabel="{DynamicResource String.TsRepair.Map.ZeroBasedTime}" />
+                    </ScrollViewer>
+                </Grid>
+            </ScrollViewer>
+        </ClassicBorderDecorator>
+
+        <ClassicBorderDecorator Grid.Row="2" BorderThickness="1" BorderStyle="Etched" Padding="8">
+            <Grid RowDefinitions="Auto,*" RowSpacing="6">
+                <TextBlock Grid.Row="0" Text="{DynamicResource String.TsRepair.Map.SelectedRegion}"
+                           FontWeight="Bold" />
+                <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,*" RowDefinitions="Auto,Auto,Auto,Auto"
+                      ColumnSpacing="8" RowSpacing="5">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource String.TsRepair.Map.Detail.Track}" />
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding SelectedRegion.TrackText}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="{DynamicResource String.TsRepair.Map.Detail.Status}" />
+                    <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding SelectedRegion.StatusText}" FontWeight="SemiBold"
+                               Classes.mapSuccess="{Binding IsSelectedSuccess}"
+                               Classes.mapWarning="{Binding IsSelectedWarning}"
+                               Classes.mapError="{Binding IsSelectedError}" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource String.TsRepair.Map.Detail.Issue}" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding SelectedRegion.IssueText}" />
+                    <TextBlock Grid.Row="1" Grid.Column="2" Text="{DynamicResource String.TsRepair.Map.Detail.Time}" />
+                    <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding SelectedRegion.TimeText}" />
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource String.TsRepair.Map.Detail.Source}" />
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedRegion.SourceText}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Row="2" Grid.Column="2" Text="{DynamicResource String.TsRepair.Map.Detail.Position}" />
+                    <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding SelectedRegion.PositionText}" TextTrimming="CharacterEllipsis" />
+
+                    <TextBlock Grid.Row="3" Grid.Column="0" Text="{DynamicResource String.TsRepair.Map.Detail.Match}" />
+                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedRegion.MatchText}" TextWrapping="Wrap" />
+                    <TextBlock Grid.Row="3" Grid.Column="2" Text="{DynamicResource String.TsRepair.Map.Detail.Packets}" />
+                    <TextBlock Grid.Row="3" Grid.Column="3" Text="{Binding SelectedRegion.PacketText}" TextWrapping="Wrap" />
+                </Grid>
+            </Grid>
+        </ClassicBorderDecorator>
+
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="{Binding HintText}" TextWrapping="Wrap"
+                       Foreground="{DynamicResource {x:Static common:SystemColors.GrayTextColorKey}}"
+                       VerticalAlignment="Center" />
+            <Button Grid.Column="1" Content="{DynamicResource String.TsRepair.Map.Close}" Width="100"
+                    Click="Close_OnClick" />
+        </Grid>
+    </Grid>
+</Window>

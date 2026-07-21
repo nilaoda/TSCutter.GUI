@@ -154,12 +154,14 @@
             </DataGrid>
         </Grid>
 
-        <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
             <Button Grid.Column="1" Content="{DynamicResource String.TsRepair.Analyze}"
                     Command="{Binding AnalyzeCommand}" Width="120" />
             <Button Grid.Column="2" Content="{DynamicResource String.Cancel}"
                     Command="{Binding CancelCommand}" Width="100" />
-            <Button Grid.Column="3" Content="{DynamicResource String.TsRepair.Output}"
+            <Button Grid.Column="3" Content="{DynamicResource String.TsRepair.Map.Open}"
+                    Command="{Binding OpenRepairMapCommand}" Width="150" />
+            <Button Grid.Column="4" Content="{DynamicResource String.TsRepair.Output}"
                     Command="{Binding OutputCommand}" Width="150" />
         </Grid>
     </Grid>
