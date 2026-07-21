@@ -185,7 +185,9 @@ public readonly record struct TsMultiSourceProgress(
     long FileSize,
     double BytesPerSecond,
     TimeSpan Elapsed,
-    bool IsIntensiveAnalysis = false)
+    bool IsIntensiveAnalysis = false,
+    int IntensiveTaskCompleted = 0,
+    int IntensiveTaskCount = 0)
 {
     public double Percent => FileSize > 0 ? BytesProcessed * 100.0 / FileSize : 0;
 }

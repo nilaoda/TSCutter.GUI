@@ -17,6 +17,7 @@ public sealed class TsMultiSourceRepairService
     private const int PacketSize = TsStreamAnalyzer.PacketSize;
     private const long TimestampWrap = 1L << 33;
     private const int ReadBufferSize = PacketSize * 32_768;
+    private const int ParallelReadBufferSize = PacketSize * 8_192;
     private const int AnchorLength = 4;
     private const int ElementaryAnchorLength = 32;
     private const int ElementarySampleLength = 64;
@@ -31,6 +32,10 @@ public sealed class TsMultiSourceRepairService
     private const int MaxElementaryRepairBytes = MaxElementaryRepairPackets * 184;
     private const int MaxElementaryRepairGapsPerMapping = 1_024;
     private const long ElementaryGapSearchPadding90k = 2L * 90_000;
+    private const long DonorTimestampIndexInterval90k = 45_000;
+    private const long MaxElementarySearchWindowDuration90k = 60L * 90_000;
+    private const int MaxElementaryGapsPerSearchTask = 64;
+    private const int MaxParallelElementarySearchTasks = 4;
     private const int MaxReferenceGaps = 50_000;
     private const int PesRegionAnchorCount = 2;
     private const int VideoPesRegionAnchorCount = 8;
@@ -689,6 +694,7 @@ public sealed class TsMultiSourceRepairService
             }, cancellationToken).ConfigureAwait(false);
 
         source.PesSizeErrors = states.Values.Sum(item => item.PesSizeErrorCount);
+        var validTrackStates = new List<DonorTrackState>();
         foreach (var state in states.Values.SelectMany(item => item.TrackStates))
         {
             if (state.UsedElementaryFallback && !state.HasConfirmedElementaryMatch)
@@ -707,6 +713,15 @@ public sealed class TsMultiSourceRepairService
             state.Mapping.Match.FingerprintMatches =
                 state.MatchedSamples.Count + state.MatchedElementarySamples.Count;
             state.CompleteTimestampOffset();
+            validTrackStates.Add(state);
+        }
+
+        await ScanTimedElementaryGapsAsync(
+            source, states, validTrackStates, sourceIndex, sourceCount, progress, cancellationToken)
+            .ConfigureAwait(false);
+
+        foreach (var state in validTrackStates)
+        {
             if (state.UsedElementaryFallback && state.HasConfirmedElementaryMatch)
                 state.Mapping.Match.Confidence = TsRepairMatchConfidence.ElementaryStreamFingerprint;
             else if (state.MatchedSamples.Count > 0 || state.Mapping.Match.RepairedGapCount > 0)
@@ -715,6 +730,157 @@ public sealed class TsMultiSourceRepairService
                 state.Mapping.Match.Confidence = TsRepairMatchConfidence.ElementaryStreamFingerprint;
             else if (state.Mapping.MetadataIsAmbiguous)
                 state.Mapping.ReferenceState.Track.Matches.Remove(state.Mapping.Match);
+        }
+    }
+
+    private static async Task ScanTimedElementaryGapsAsync(
+        TsRepairSourceAnalysis source,
+        IReadOnlyDictionary<int, DonorPidState> pidStates,
+        IReadOnlyList<DonorTrackState> trackStates,
+        int sourceIndex,
+        int sourceCount,
+        IProgress<TsMultiSourceProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        // 主扫描只建立稀疏的 PTS→文件偏移索引；真正高开销的逐字节 ES 锚点匹配
+        // 被拆成相互独立的小窗口，从而可以并行读取，又不破坏 TS/PES 顺序状态。
+        var jobs = new List<ElementaryGapSearchJob>();
+        foreach (var state in trackStates)
+        {
+            if (!pidStates.TryGetValue(state.Mapping.SourcePid, out var pidState))
+                continue;
+            jobs.AddRange(state.CreateTimedElementarySearchJobs(
+                pidState.TimestampIndex, source.FilePath, source.Catalog.FileSize));
+        }
+        if (jobs.Count == 0)
+            return;
+
+        var completed = 0;
+        var progressSync = new object();
+        // 在首个窗口完成前就通知界面，避免大窗口计算期间仍停留在“扫描 100%”。
+        progress?.Report(new TsMultiSourceProgress(
+            sourceIndex, sourceCount, source.FilePath,
+            source.Catalog.FileSize, source.Catalog.FileSize, 0, TimeSpan.Zero,
+            IsIntensiveAnalysis: true,
+            IntensiveTaskCompleted: 0,
+            IntensiveTaskCount: jobs.Count));
+        var options = new ParallelOptions
+        {
+            CancellationToken = cancellationToken,
+            MaxDegreeOfParallelism = Math.Min(
+                MaxParallelElementarySearchTasks,
+                Math.Max(1, Environment.ProcessorCount - 1))
+        };
+        await Parallel.ForEachAsync(jobs, options, async (job, token) =>
+        {
+            job.Results = await SearchElementaryGapWindowAsync(job, token)
+                .ConfigureAwait(false);
+            // IProgress<T> 不保证实现本身可并发调用；完成通知很稀疏，用短锁串行化即可。
+            lock (progressSync)
+            {
+                completed++;
+                progress?.Report(new TsMultiSourceProgress(
+                    sourceIndex, sourceCount, source.FilePath,
+                    source.Catalog.FileSize, source.Catalog.FileSize, 0, TimeSpan.Zero,
+                    IsIntensiveAnalysis: true,
+                    IntensiveTaskCompleted: completed,
+                    IntensiveTaskCount: jobs.Count));
+            }
+        }).ConfigureAwait(false);
+
+        // 工作线程不写入最终候选集合；按规划顺序在当前线程合并，确保多次运行
+        // 即使任务完成顺序不同，也会得到完全一致的候选和计数。
+        var addedByOwner = new Dictionary<DonorTrackState, int>();
+        foreach (var job in jobs)
+        {
+            foreach (var result in job.Results)
+            {
+                var gap = result.State.Gap;
+                if (gap.Candidates.Any(item => item.SourcePid == job.SourcePid &&
+                        string.Equals(item.SourcePath, job.SourcePath, StringComparison.Ordinal)))
+                {
+                    continue;
+                }
+                gap.Candidates.Add(result.Candidate);
+                result.State.Completed = true;
+                addedByOwner[job.Owner] = addedByOwner.GetValueOrDefault(job.Owner) + 1;
+            }
+        }
+        foreach (var item in addedByOwner)
+            item.Key.ApplyParallelElementaryResults(item.Value);
+    }
+
+    private static async Task<List<ElementaryGapCandidateResult>> SearchElementaryGapWindowAsync(
+        ElementaryGapSearchJob job,
+        CancellationToken cancellationToken)
+    {
+        // 每个窗口拥有独立的匹配器和有界缓冲，最大并行度固定，因此内存不会随
+        // 异常数量或文件大小线性增长。
+        var matcher = new ElementaryGapWindowMatcher(job.GapStates, job.SourcePath, job.SourcePid);
+        var buffer = ArrayPool<byte>.Shared.Rent(ParallelReadBufferSize + PacketSize);
+        var buffered = 0;
+        var position = job.StartOffset;
+        var hasContinuity = false;
+        var lastContinuityCounter = 0;
+        try
+        {
+            await using var stream = new FileStream(
+                job.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                ParallelReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            stream.Position = job.StartOffset;
+            while (position < job.EndOffset)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var remaining = job.EndOffset - position - buffered;
+                if (remaining <= 0)
+                    break;
+                var readLength = (int)Math.Min(ParallelReadBufferSize, remaining);
+                var read = await stream.ReadAsync(
+                    buffer.AsMemory(buffered, readLength), cancellationToken).ConfigureAwait(false);
+                if (read == 0)
+                    break;
+                buffered += read;
+                var completeLength = buffered / PacketSize * PacketSize;
+                for (var offset = 0; offset < completeLength; offset += PacketSize)
+                {
+                    if ((offset / PacketSize & 0x0FFF) == 0)
+                        cancellationToken.ThrowIfCancellationRequested();
+                    var packet = buffer.AsSpan(offset, PacketSize);
+                    if (!TryParsePacket(packet, out var info) || info.Pid != job.SourcePid)
+                        continue;
+                    if (info.TransportError || info.Discontinuity)
+                    {
+                        matcher.ResetForDiscontinuity();
+                        hasContinuity = false;
+                        if (info.TransportError)
+                            continue;
+                    }
+                    if (!info.HasPayload)
+                        continue;
+                    if (hasContinuity)
+                    {
+                        var expected = (lastContinuityCounter + 1) & 0x0F;
+                        if (info.ContinuityCounter == lastContinuityCounter)
+                            continue;
+                        if (info.ContinuityCounter != expected)
+                            matcher.ResetForDiscontinuity();
+                    }
+                    hasContinuity = true;
+                    lastContinuityCounter = info.ContinuityCounter;
+                    var elementaryPayload = GetElementaryPayload(packet, info, out _);
+                    matcher.Process(elementaryPayload);
+                }
+                position += completeLength;
+                buffered -= completeLength;
+                if (buffered > 0)
+                    buffer.AsSpan(completeLength, buffered).CopyTo(buffer);
+            }
+            matcher.Finish();
+            return matcher.Results;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
         }
     }
 
@@ -1495,9 +1661,11 @@ public sealed class TsMultiSourceRepairService
         private DonorTrackState? _confirmedTrackState;
         private long _lastRawPts90k = long.MinValue;
         private long _ptsWrapOffset90k;
+        private long _lastIndexedPts90k = long.MinValue;
 
         public void ResetContinuity() => HasContinuity = false;
         public long CurrentPesPts90k => _activePes?.Pts90k ?? long.MinValue;
+        public List<DonorTimestampIndexEntry> TimestampIndex { get; } = [];
 
         public void DiscardPes()
         {
@@ -1517,6 +1685,15 @@ public sealed class TsMultiSourceRepairService
                 if (!TryReadPesStart(packet, info, out var expectedLength, out var rawPts90k))
                     return;
                 var pts90k = UnwrapTimestamp(rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
+                if (pts90k != long.MinValue &&
+                    (_lastIndexedPts90k == long.MinValue ||
+                     Math.Abs(pts90k - _lastIndexedPts90k) >= DonorTimestampIndexInterval90k))
+                {
+                    // 每 0.5 秒保留一个稀疏定位点即可覆盖 ±2 秒搜索窗；无需把每个 PES
+                    // 都留在内存中，也避免第二阶段从文件头重新顺序扫描。
+                    TimestampIndex.Add(new DonorTimestampIndexEntry(fileOffset, pts90k));
+                    _lastIndexedPts90k = pts90k;
+                }
                 _activePes = new DonorPesInfo(fileOffset, expectedLength, pts90k);
             }
             if (_activePes is null)
@@ -1563,6 +1740,7 @@ public sealed class TsMultiSourceRepairService
             DiscardPes();
             _lastRawPts90k = long.MinValue;
             _ptsWrapOffset90k = 0;
+            _lastIndexedPts90k = long.MinValue;
             _elementarySampleWindowStart = 0;
             _elementarySampleWindowCount = 0;
             _elementarySampleWindowHash = 0;
@@ -1673,12 +1851,15 @@ public sealed class TsMultiSourceRepairService
         public bool IsValid { get; set; }
     }
 
+    private readonly record struct DonorTimestampIndexEntry(long FileOffset, long Pts90k);
+
     private sealed class DonorTrackState
     {
         private readonly Dictionary<ulong, List<GapSearchState>> _gapStarts = [];
         private readonly Queue<ulong> _recentHashes = new(AnchorLength);
         private readonly List<ActiveGapCandidate> _activeCandidates = [];
         private readonly Dictionary<ulong, List<GapSearchState>> _elementaryGapStarts = [];
+        private readonly List<GapSearchState> _elementaryGapStates = [];
         private readonly byte[] _elementaryWindow = new byte[ElementaryAnchorLength];
         private readonly List<ActiveElementaryGapCandidate> _activeElementaryCandidates = [];
         private readonly Dictionary<TsRepairPesSignature, List<TsRepairPesRegion>> _pesRegionStarts = [];
@@ -1690,12 +1871,8 @@ public sealed class TsMultiSourceRepairService
         private readonly HashSet<TsRepairPesRegion> _activePesRegionSet = [];
         private readonly List<long> _timestampOffsets = new(MaxFingerprintSamples);
         private readonly HashSet<ulong> _timestampOffsetHashes = [];
-        private readonly long[] _timedElementaryGapPts90k;
         private readonly int _untimedElementaryGapCount;
-        private readonly int _elementaryGapCount;
         private int _completedElementaryGapCount;
-        private long _currentTimestampOffset90k;
-        private bool _hasCurrentTimestampOffset;
         private bool _wasScanningElementaryGaps;
 
         public DonorTrackState(TrackMapping mapping)
@@ -1721,6 +1898,7 @@ public sealed class TsMultiSourceRepairService
                 }
                 elementaryGapCount++;
                 gapState.ElementaryEligible = true;
+                _elementaryGapStates.Add(gapState);
                 indexedElementaryGaps.Add(gap);
                 var elementaryHash = ComputeByteHash(elementaryAnchor);
                 if (!_elementaryGapStarts.TryGetValue(elementaryHash, out var elementaryGaps))
@@ -1730,14 +1908,8 @@ public sealed class TsMultiSourceRepairService
                 }
                 elementaryGaps.Add(gapState);
             }
-            _timedElementaryGapPts90k = indexedElementaryGaps
-                .Where(gap => gap.ReferencePts90k != long.MinValue)
-                .Select(gap => gap.ReferencePts90k)
-                .Order()
-                .ToArray();
             _untimedElementaryGapCount = indexedElementaryGaps.Count(gap =>
                 gap.ReferencePts90k == long.MinValue);
-            _elementaryGapCount = elementaryGapCount;
             foreach (var region in mapping.ReferenceState.Track.PesRegions)
             {
                 if (region.BeforeAnchor.Length == 0)
@@ -1853,7 +2025,6 @@ public sealed class TsMultiSourceRepairService
                     Mapping.ReferenceState.SamplePts90k.TryGetValue(hash, out var referencePts90k))
                 {
                     _timestampOffsets.Add(referencePts90k - donorPts90k);
-                    UpdateCurrentTimestampOffset();
                 }
             }
 
@@ -1916,8 +2087,9 @@ public sealed class TsMultiSourceRepairService
             if (!Mapping.ReferenceState.SupportsElementaryFallback || payload.IsEmpty)
                 return;
 
-            var needsGapSearch = _completedElementaryGapCount < _elementaryGapCount &&
-                                 ShouldScanElementaryGaps(donorPts90k);
+            // 带 PTS 的缺口在主扫描完成后按时间窗口并行匹配；这里只保留
+            // 无法按时间定位的少量缺口，避免再次退化为整条 ES 的串行热点。
+            var needsGapSearch = _completedElementaryGapCount < _untimedElementaryGapCount;
             if (!needsGapSearch)
             {
                 if (_wasScanningElementaryGaps)
@@ -1977,7 +2149,7 @@ public sealed class TsMultiSourceRepairService
                     if (gapState.Completed)
                         continue;
                     var gap = gapState.Gap;
-                    if (!IsElementaryGapInCurrentTimeWindow(gap, donorPts90k))
+                    if (gap.ReferencePts90k != long.MinValue)
                         continue;
                     var hasCandidate = false;
                     for (var candidateIndex = 0; candidateIndex < gap.Candidates.Count; candidateIndex++)
@@ -2007,59 +2179,8 @@ public sealed class TsMultiSourceRepairService
             if (state.Completed)
                 return;
             state.Completed = true;
-            if (state.ElementaryEligible)
+            if (state.ElementaryEligible && state.Gap.ReferencePts90k == long.MinValue)
                 _completedElementaryGapCount++;
-        }
-
-        private bool ShouldScanElementaryGaps(long donorPts90k)
-        {
-            if (_elementaryGapStarts.Count == 0)
-                return false;
-            // 没有 PTS 的少数编码或损坏区间无法按时间定位，继续使用原有全流回退。
-            if (_untimedElementaryGapCount > 0)
-                return true;
-            if (donorPts90k == long.MinValue || _timedElementaryGapPts90k.Length == 0)
-                return false;
-            if (IsNearTimedElementaryGap(donorPts90k))
-                return true;
-            return _hasCurrentTimestampOffset &&
-                   IsNearTimedElementaryGap(donorPts90k + _currentTimestampOffset90k);
-        }
-
-        private bool IsElementaryGapInCurrentTimeWindow(TsRepairGap gap, long donorPts90k)
-        {
-            if (gap.ReferencePts90k == long.MinValue)
-                return true;
-            if (donorPts90k == long.MinValue)
-                return false;
-            if (Math.Abs(gap.ReferencePts90k - donorPts90k) <= ElementaryGapSearchPadding90k)
-                return true;
-            return _hasCurrentTimestampOffset && Math.Abs(
-                gap.ReferencePts90k - (donorPts90k + _currentTimestampOffset90k)) <=
-                ElementaryGapSearchPadding90k;
-        }
-
-        private bool IsNearTimedElementaryGap(long referencePts90k)
-        {
-            var index = Array.BinarySearch(_timedElementaryGapPts90k, referencePts90k);
-            if (index >= 0)
-                return true;
-            index = ~index;
-            return index < _timedElementaryGapPts90k.Length &&
-                       _timedElementaryGapPts90k[index] - referencePts90k <= ElementaryGapSearchPadding90k ||
-                   index > 0 &&
-                       referencePts90k - _timedElementaryGapPts90k[index - 1] <= ElementaryGapSearchPadding90k;
-        }
-
-        private void UpdateCurrentTimestampOffset()
-        {
-            if (_timestampOffsets.Count < MinimumElementarySampleMatches)
-                return;
-            // 扫描中只需一个稳健的近似偏移来缩小 ES 搜索窗口；最终匹配仍由完整聚类复核。
-            var recentCount = Math.Min(31, _timestampOffsets.Count);
-            var values = _timestampOffsets.TakeLast(recentCount).Order().ToArray();
-            _currentTimestampOffset90k = values[values.Length / 2];
-            _hasCurrentTimestampOffset = true;
         }
 
         private void ResetElementaryGapSearchState()
@@ -2112,6 +2233,124 @@ public sealed class TsMultiSourceRepairService
                 return;
             var values = cluster.Order().ToArray();
             Mapping.Match.TimestampOffset90k = values[values.Length / 2];
+        }
+
+        public List<ElementaryGapSearchJob> CreateTimedElementarySearchJobs(
+            IReadOnlyList<DonorTimestampIndexEntry> timestampIndex,
+            string sourcePath,
+            long fileSize)
+        {
+            if (timestampIndex.Count == 0)
+                return [];
+
+            // 参考时间减去两份录制的稳健时间戳偏移，得到辅助源中的目标时间。
+            // 相邻 ±2 秒区间先合并，避免异常密集处对同一批文件数据反复读取。
+            var timestampOffset90k = Mapping.Match.TimestampOffset90k ?? 0;
+            var pending = _elementaryGapStates
+                .Where(state => !state.Completed && state.Gap.ReferencePts90k != long.MinValue)
+                .Select(state => (State: state,
+                    DonorPts90k: state.Gap.ReferencePts90k - timestampOffset90k))
+                .OrderBy(item => item.DonorPts90k)
+                .ToArray();
+            if (pending.Length == 0)
+                return [];
+
+            var windows = new List<ElementaryGapSearchWindow>();
+            foreach (var item in pending)
+            {
+                var startPts90k = item.DonorPts90k - ElementaryGapSearchPadding90k;
+                var endPts90k = item.DonorPts90k + ElementaryGapSearchPadding90k;
+                var startsNewWindow = windows.Count == 0;
+                if (!startsNewWindow)
+                {
+                    var current = windows[^1];
+                    // 密集异常若无限串联成一个大窗口，第二阶段仍会退化为单核长任务。
+                    // 限制单任务跨度和目标数；新旧窗口可以重叠，但每个缺口只归属一个任务。
+                    startsNewWindow = startPts90k > current.EndPts90k ||
+                                      current.GapStates.Count >= MaxElementaryGapsPerSearchTask ||
+                                      Math.Max(current.EndPts90k, endPts90k) - current.StartPts90k >
+                                      MaxElementarySearchWindowDuration90k;
+                }
+                if (startsNewWindow)
+                {
+                    windows.Add(new ElementaryGapSearchWindow(startPts90k, endPts90k));
+                }
+                else
+                {
+                    windows[^1].EndPts90k = Math.Max(windows[^1].EndPts90k, endPts90k);
+                }
+                windows[^1].GapStates.Add(item.State);
+            }
+
+            var jobs = new List<ElementaryGapSearchJob>(windows.Count);
+            foreach (var window in windows)
+            {
+                var centerPts90k = window.StartPts90k + (window.EndPts90k - window.StartPts90k) / 2;
+                var closestIndex = FindClosestTimestampIndex(timestampIndex, centerPts90k);
+                if (closestIndex < 0 || Math.Abs(timestampIndex[closestIndex].Pts90k - centerPts90k) >
+                    ElementaryGapSearchPadding90k * 2)
+                {
+                    continue;
+                }
+
+                var startIndex = closestIndex;
+                while (startIndex > 0 &&
+                       timestampIndex[startIndex - 1].Pts90k <= timestampIndex[startIndex].Pts90k &&
+                       timestampIndex[startIndex - 1].Pts90k >=
+                       window.StartPts90k - DonorTimestampIndexInterval90k)
+                {
+                    startIndex--;
+                }
+                if (startIndex > 0)
+                    startIndex--;
+
+                var endIndex = closestIndex;
+                while (endIndex + 1 < timestampIndex.Count &&
+                       timestampIndex[endIndex + 1].Pts90k >= timestampIndex[endIndex].Pts90k &&
+                       timestampIndex[endIndex + 1].Pts90k <=
+                       window.EndPts90k + DonorTimestampIndexInterval90k)
+                {
+                    endIndex++;
+                }
+                if (endIndex + 1 < timestampIndex.Count)
+                    endIndex++;
+
+                var startOffset = timestampIndex[startIndex].FileOffset;
+                var endOffset = endIndex + 1 < timestampIndex.Count
+                    ? timestampIndex[endIndex + 1].FileOffset
+                    : fileSize;
+                if (endOffset <= startOffset)
+                    continue;
+                jobs.Add(new ElementaryGapSearchJob(
+                    this, sourcePath, Mapping.SourcePid, startOffset, Math.Min(endOffset, fileSize),
+                    window.GapStates.ToArray()));
+            }
+            return jobs;
+        }
+
+        public void ApplyParallelElementaryResults(int addedCandidateCount)
+        {
+            if (addedCandidateCount <= 0)
+                return;
+            Mapping.Match.RepairedGapCount += addedCandidateCount;
+            UsedElementaryFallback = true;
+        }
+
+        private static int FindClosestTimestampIndex(
+            IReadOnlyList<DonorTimestampIndexEntry> values,
+            long targetPts90k)
+        {
+            var closestIndex = -1;
+            var closestDistance = long.MaxValue;
+            for (var index = 0; index < values.Count; index++)
+            {
+                var distance = Math.Abs(values[index].Pts90k - targetPts90k);
+                if (distance >= closestDistance)
+                    continue;
+                closestDistance = distance;
+                closestIndex = index;
+            }
+            return closestIndex;
         }
 
         private void AppendElementaryByte(byte value)
@@ -2506,6 +2745,150 @@ public sealed class TsMultiSourceRepairService
         public bool ElementaryActive { get; set; }
     }
 
+    private sealed class ElementaryGapSearchWindow(long startPts90k, long endPts90k)
+    {
+        public long StartPts90k { get; } = startPts90k;
+        public long EndPts90k { get; set; } = endPts90k;
+        public List<GapSearchState> GapStates { get; } = [];
+    }
+
+    private sealed class ElementaryGapSearchJob(
+        DonorTrackState owner,
+        string sourcePath,
+        int sourcePid,
+        long startOffset,
+        long endOffset,
+        GapSearchState[] gapStates)
+    {
+        public DonorTrackState Owner { get; } = owner;
+        public string SourcePath { get; } = sourcePath;
+        public int SourcePid { get; } = sourcePid;
+        public long StartOffset { get; } = startOffset;
+        public long EndOffset { get; } = endOffset;
+        public GapSearchState[] GapStates { get; } = gapStates;
+        public List<ElementaryGapCandidateResult> Results { get; set; } = [];
+    }
+
+    private readonly record struct ElementaryGapCandidateResult(
+        GapSearchState State,
+        TsRepairGapCandidate Candidate);
+
+    private sealed class ElementaryGapWindowMatcher(
+        IReadOnlyList<GapSearchState> gapStates,
+        string sourcePath,
+        int sourcePid)
+    {
+        private readonly Dictionary<ulong, List<GapSearchState>> _gapStarts = BuildGapStarts(gapStates);
+        private readonly byte[] _window = new byte[ElementaryAnchorLength];
+        private readonly List<ActiveElementaryGapCandidate> _activeCandidates = [];
+        private int _windowStart;
+        private int _windowCount;
+        private ulong _windowHash;
+
+        public List<ElementaryGapCandidateResult> Results { get; } = [];
+
+        public void Process(ReadOnlySpan<byte> payload)
+        {
+            foreach (var value in payload)
+            {
+                for (var index = _activeCandidates.Count - 1; index >= 0; index--)
+                {
+                    var candidate = _activeCandidates[index];
+                    candidate.Append(value);
+                    if (candidate.TryCreateCandidate(sourcePath, sourcePid, out var result))
+                    {
+                        if (result is not null)
+                        {
+                            candidate.State.Completed = true;
+                            Results.Add(new ElementaryGapCandidateResult(candidate.State, result));
+                        }
+                        candidate.State.ElementaryActive = false;
+                        RemoveAtSwapBack(_activeCandidates, index);
+                    }
+                    else if (candidate.Bytes.Count >= candidate.MaximumByteCount)
+                    {
+                        candidate.State.ElementaryActive = false;
+                        RemoveAtSwapBack(_activeCandidates, index);
+                    }
+                }
+
+                Append(value);
+                if (_windowCount != ElementaryAnchorLength ||
+                    !_gapStarts.TryGetValue(_windowHash, out var starts))
+                {
+                    continue;
+                }
+                foreach (var state in starts)
+                {
+                    if (state.Completed || state.ElementaryActive ||
+                        _activeCandidates.Count >= 64 ||
+                        !WindowEquals(state.Gap.BeforeElementaryAnchor!))
+                    {
+                        continue;
+                    }
+                    state.ElementaryActive = true;
+                    _activeCandidates.Add(new ActiveElementaryGapCandidate(state));
+                }
+            }
+        }
+
+        public void ResetForDiscontinuity()
+        {
+            foreach (var candidate in _activeCandidates)
+                candidate.State.ElementaryActive = false;
+            _activeCandidates.Clear();
+            _windowStart = 0;
+            _windowCount = 0;
+            _windowHash = 0;
+        }
+
+        public void Finish() => ResetForDiscontinuity();
+
+        private void Append(byte value)
+        {
+            if (_windowCount < ElementaryAnchorLength)
+            {
+                var index = (_windowStart + _windowCount) % ElementaryAnchorLength;
+                _window[index] = value;
+                _windowHash = _windowHash * ElementaryHashBase + value + 1UL;
+                _windowCount++;
+                return;
+            }
+            var oldest = _window[_windowStart];
+            _windowHash -= (oldest + 1UL) * ElementaryHashOldestFactor;
+            _windowHash = _windowHash * ElementaryHashBase + value + 1UL;
+            _window[_windowStart] = value;
+            _windowStart = (_windowStart + 1) % ElementaryAnchorLength;
+        }
+
+        private bool WindowEquals(ReadOnlySpan<byte> expected)
+        {
+            for (var index = 0; index < ElementaryAnchorLength; index++)
+            {
+                if (_window[(_windowStart + index) % ElementaryAnchorLength] != expected[index])
+                    return false;
+            }
+            return true;
+        }
+
+        private static Dictionary<ulong, List<GapSearchState>> BuildGapStarts(
+            IReadOnlyList<GapSearchState> states)
+        {
+            var result = new Dictionary<ulong, List<GapSearchState>>();
+            foreach (var state in states)
+            {
+                var hash = ComputeByteHash(state.Gap.BeforeElementaryAnchor!);
+                if (!result.TryGetValue(hash, out var values))
+                {
+                    values = [];
+                    result[hash] = values;
+                }
+                values.Add(state);
+            }
+            return result;
+        }
+    }
+
     private sealed class ActiveGapCandidate(GapSearchState state)
     {
         public GapSearchState State { get; } = state;
@@ -2721,6 +3104,25 @@ public sealed class TsMultiSourceRepairService
         public bool TryComplete(string sourcePath, int sourcePid, out bool added)
         {
             added = false;
+            if (!TryCreateCandidate(sourcePath, sourcePid, out var candidate))
+                return false;
+            if (candidate is null || Gap.Candidates.Any(item => string.Equals(
+                    item.SourcePath, sourcePath, StringComparison.Ordinal) &&
+                    item.SourcePid == sourcePid))
+            {
+                return true;
+            }
+            Gap.Candidates.Add(candidate);
+            added = true;
+            return true;
+        }
+
+        public bool TryCreateCandidate(
+            string sourcePath,
+            int sourcePid,
+            out TsRepairGapCandidate? candidate)
+        {
+            candidate = null;
             if (Bytes.Count < ElementaryAnchorLength ||
                 _afterWindowHash != _afterAnchorHash ||
                 !EndsWith(Bytes, Gap.AfterElementaryAnchor!))
@@ -2736,21 +3138,13 @@ public sealed class TsMultiSourceRepairService
             {
                 return false;
             }
-            if (Gap.Candidates.Any(item => string.Equals(
-                    item.SourcePath, sourcePath, StringComparison.Ordinal) &&
-                    item.SourcePid == sourcePid))
-            {
-                return true;
-            }
-
-            Gap.Candidates.Add(new TsRepairGapCandidate
+            candidate = new TsRepairGapCandidate
             {
                 SourcePath = sourcePath,
                 SourcePid = sourcePid,
                 ElementaryPayload = Bytes.Take(repairByteCount).ToArray(),
                 SynthesizedPacketCount = packetCount
-            });
-            added = true;
+            };
             return true;
         }
 

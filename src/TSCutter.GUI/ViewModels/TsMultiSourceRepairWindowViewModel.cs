@@ -27,6 +27,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     private TsMultiSourceAnalysisResult? _analysis;
     private TsRepairOutputResult? _lastOutputResult;
     private TsRepairMapWindowViewModel? _repairMapViewModel;
+    private int _lastIntensiveTaskCompleted;
     private bool _isClosing;
 
     public TsMultiSourceRepairWindowViewModel(IDialogService dialogService)
@@ -200,12 +201,24 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                     return;
                 Percent = value.Percent;
                 ProgressText = $"{CommonUtil.FormatFileSize(value.BytesProcessed)} / {CommonUtil.FormatFileSize(value.FileSize)}";
-                SpeedText = $"{CommonUtil.FormatFileSize(value.BytesPerSecond)}/s";
+                if (value.IntensiveTaskCount == 0)
+                {
+                    _lastIntensiveTaskCompleted = 0;
+                    SpeedText = $"{CommonUtil.FormatFileSize(value.BytesPerSecond)}/s";
+                }
+                else
+                {
+                    _lastIntensiveTaskCompleted = Math.Max(
+                        _lastIntensiveTaskCompleted, value.IntensiveTaskCompleted);
+                }
                 StatusText = string.Format(
-                    value.IsIntensiveAnalysis
-                        ? _text.Strings.String_TsRepair_Status_AnalyzingIntensive
-                        : _text.Strings.String_TsRepair_Status_Analyzing,
-                    value.SourceIndex + 1, value.SourceCount, Path.GetFileName(value.FilePath));
+                    value.IntensiveTaskCount > 0
+                        ? _text.Strings.String_TsRepair_Status_AnalyzingParallel
+                        : value.IsIntensiveAnalysis
+                            ? _text.Strings.String_TsRepair_Status_AnalyzingIntensive
+                            : _text.Strings.String_TsRepair_Status_Analyzing,
+                    value.SourceIndex + 1, value.SourceCount, Path.GetFileName(value.FilePath),
+                    _lastIntensiveTaskCompleted, value.IntensiveTaskCount);
             });
             var sourceCompleted = new Progress<TsRepairSourceCompleted>(UpdateCompletedSourceRow);
             _analysis = await _repairService.AnalyzeAsync(

@@ -223,6 +223,7 @@
     <x:String x:Key="String.TsRepair.Status.NeedSources">请添加至少两份有效的录制文件，并选择其中一份作为参考源。</x:String>
     <x:String x:Key="String.TsRepair.Status.Analyzing">正在分析来源 {0}/{1}：{2}</x:String>
     <x:String x:Key="String.TsRepair.Status.AnalyzingIntensive">正在匹配来源 {0}/{1} 中的异常密集区：{2}（计算量较大，请稍候）</x:String>
+    <x:String x:Key="String.TsRepair.Status.AnalyzingParallel">正在并行匹配来源 {0}/{1} 的异常区域 {3}/{4}：{2}</x:String>
     <x:String x:Key="String.TsRepair.Status.AnalysisCompleted">分析完成：发现 {0:N0} 个丢包缺口或媒体异常区域，其中 {1:N0} 个可保守修复。</x:String>
     <x:String x:Key="String.TsRepair.Status.AnalysisCompletedPrefix">分析完成：发现 </x:String>
     <x:String x:Key="String.TsRepair.Status.AnalysisCompletedMiddle"> 个丢包缺口或媒体异常区域，其中 </x:String>
