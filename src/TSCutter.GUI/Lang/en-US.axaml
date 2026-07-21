@@ -222,6 +222,7 @@
     <x:String x:Key="String.TsRepair.Status.ReadyNote">Different recorders, PIDs, packetization, and track selections are supported; recordings from different airings or re-encoded content are not compatible.</x:String>
     <x:String x:Key="String.TsRepair.Status.NeedSources">Add at least two existing recordings and select one as the reference.</x:String>
     <x:String x:Key="String.TsRepair.Status.Analyzing">Analyzing source {0}/{1}: {2}</x:String>
+    <x:String x:Key="String.TsRepair.Status.AnalyzingIntensive">Matching an issue-dense region in source {0}/{1}: {2} (additional processing may take a moment)</x:String>
     <x:String x:Key="String.TsRepair.Status.AnalysisCompleted">Analysis completed: {0:N0} packet gap(s) or media issue region(s), {1:N0} conservatively repairable.</x:String>
     <x:String x:Key="String.TsRepair.Status.AnalysisCompletedPrefix">Analysis completed: found </x:String>
     <x:String x:Key="String.TsRepair.Status.AnalysisCompletedMiddle"> packet gap(s) or media issue region(s), of which </x:String>

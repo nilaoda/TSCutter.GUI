@@ -71,6 +71,8 @@ public sealed class TsRepairTrackAnalysis
     public TsSupplementaryStreamType? SupplementaryStreamType { get; init; }
     public string? Language { get; init; }
     public long PayloadPacketCount { get; set; }
+    public long FirstPts90k { get; set; } = long.MaxValue;
+    public long LastPts90k { get; set; } = long.MinValue;
     public int ContinuityErrorCount { get; set; }
     public int TransportErrorCount { get; set; }
     public int PesSizeErrorCount { get; set; }
@@ -135,6 +137,7 @@ public sealed class TsRepairGap
     public required long ReferenceInsertOffset { get; init; }
     public required int ExpectedContinuityCounter { get; init; }
     public required int MissingPacketModulo { get; init; }
+    public long ReferencePts90k { get; init; } = long.MinValue;
     public required ulong[] BeforeAnchor { get; init; }
     public required ulong[] AfterAnchor { get; init; }
     public byte[]? BeforeElementaryAnchor { get; init; }
@@ -160,6 +163,8 @@ public sealed class TsMultiSourceAnalysisResult
     public required TsRepairSourceAnalysis ReferenceSource { get; init; }
     public List<TsRepairSourceAnalysis> Sources { get; } = [];
     public List<TsRepairTrackAnalysis> Tracks { get; } = [];
+    public long TimelineStartPts90k { get; set; } = long.MinValue;
+    public long TimelineEndPts90k { get; set; } = long.MinValue;
     public int TotalGapCount => GetIssueCount(repairableOnly: false);
     public int RepairableGapCount => GetIssueCount(repairableOnly: true);
 
@@ -179,7 +184,8 @@ public readonly record struct TsMultiSourceProgress(
     long BytesProcessed,
     long FileSize,
     double BytesPerSecond,
-    TimeSpan Elapsed)
+    TimeSpan Elapsed,
+    bool IsIntensiveAnalysis = false)
 {
     public double Percent => FileSize > 0 ? BytesProcessed * 100.0 / FileSize : 0;
 }
@@ -244,4 +250,5 @@ public sealed class TsRepairOutputResult
     public required int RepairedPesRegionCount { get; init; }
     public required long ReferenceErrorCount { get; init; }
     public required long RemainingErrorCount { get; init; }
+    public required TsRepairOutputPlan Plan { get; init; }
 }

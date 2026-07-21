@@ -196,7 +196,9 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                 ProgressText = $"{CommonUtil.FormatFileSize(value.BytesProcessed)} / {CommonUtil.FormatFileSize(value.FileSize)}";
                 SpeedText = $"{CommonUtil.FormatFileSize(value.BytesPerSecond)}/s";
                 StatusText = string.Format(
-                    _text.Strings.String_TsRepair_Status_Analyzing,
+                    value.IsIntensiveAnalysis
+                        ? _text.Strings.String_TsRepair_Status_AnalyzingIntensive
+                        : _text.Strings.String_TsRepair_Status_Analyzing,
                     value.SourceIndex + 1, value.SourceCount, Path.GetFileName(value.FilePath));
             });
             var sourceCompleted = new Progress<TsRepairSourceCompleted>(UpdateCompletedSourceRow);

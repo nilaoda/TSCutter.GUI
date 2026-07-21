@@ -30,6 +30,7 @@ public sealed class TsMultiSourceRepairService
     private const int MaxElementaryRepairPackets = 15;
     private const int MaxElementaryRepairBytes = MaxElementaryRepairPackets * 184;
     private const int MaxElementaryRepairGapsPerMapping = 1_024;
+    private const long ElementaryGapSearchPadding90k = 2L * 90_000;
     private const int MaxReferenceGaps = 50_000;
     private const int PesRegionAnchorCount = 2;
     private const int VideoPesRegionAnchorCount = 8;
@@ -130,6 +131,14 @@ public sealed class TsMultiSourceRepairService
             track.RepairablePesRegionCount = track.PesRegions.Count(region => region.Candidates.Count > 0);
         }
         ValidateCorrelatedVideoCandidates(result.Tracks);
+        var timedTracks = result.Tracks
+            .Where(track => track.FirstPts90k != long.MaxValue && track.LastPts90k != long.MinValue)
+            .ToArray();
+        if (timedTracks.Length > 0)
+        {
+            result.TimelineStartPts90k = timedTracks.Min(track => track.FirstPts90k);
+            result.TimelineEndPts90k = timedTracks.Max(track => track.LastPts90k);
+        }
         return result;
     }
 
@@ -292,7 +301,8 @@ public sealed class TsMultiSourceRepairService
                 RepairedPacketCount = plan.RepairedPacketCount,
                 RepairedPesRegionCount = plan.RepairedPesRegionCount,
                 ReferenceErrorCount = referenceErrors,
-                RemainingErrorCount = verificationErrors
+                RemainingErrorCount = verificationErrors,
+                Plan = plan
             };
         }
         catch
@@ -559,6 +569,7 @@ public sealed class TsMultiSourceRepairService
                             };
                             state.PendingGaps.Add(new PendingGap(
                                 info.Pid, fileOffset, expected, Math.Max(1, missingModulo),
+                                state.CurrentPesPts90k,
                                 state.RecentHashes.ToArray(),
                                 canUseElementaryFallback &&
                                 state.RecentElementaryBytes.Count == ElementaryAnchorLength
@@ -737,10 +748,27 @@ public sealed class TsMultiSourceRepairService
                     break;
                 buffered += read;
                 var completeLength = buffered / PacketSize * PacketSize;
+                var heartbeatCountdown = 1_024;
                 for (var offset = 0; offset < completeLength; offset += PacketSize)
                 {
-                    if ((offset & 0x3FFFFF) == 0)
+                    if (--heartbeatCountdown == 0)
+                    {
+                        heartbeatCountdown = 1_024;
                         cancellationToken.ThrowIfCancellationRequested();
+                        var heartbeatTicks = stopwatch.ElapsedTicks;
+                        if (progress is not null &&
+                            heartbeatTicks - lastProgressTicks >= Stopwatch.Frequency / 2)
+                        {
+                            lastProgressTicks = heartbeatTicks;
+                            var heartbeatBytes = Math.Min(bytesProcessed + offset, fileSize);
+                            progress.Report(new TsMultiSourceProgress(
+                                sourceIndex, sourceCount, path, heartbeatBytes, fileSize,
+                                Math.Max(0, heartbeatBytes - syncOffset) /
+                                Math.Max(0.001, stopwatch.Elapsed.TotalSeconds),
+                                stopwatch.Elapsed,
+                                IsIntensiveAnalysis: true));
+                        }
+                    }
                     if (buffer[offset] != 0x47)
                         continue;
                     packetHandler(buffer.AsSpan(offset, PacketSize), bytesProcessed + offset);
@@ -757,7 +785,8 @@ public sealed class TsMultiSourceRepairService
                     progress.Report(new TsMultiSourceProgress(
                         sourceIndex, sourceCount, path, Math.Min(bytesProcessed, fileSize), fileSize,
                         Math.Max(0, bytesProcessed - syncOffset) / Math.Max(0.001, stopwatch.Elapsed.TotalSeconds),
-                        stopwatch.Elapsed));
+                        stopwatch.Elapsed,
+                        IsIntensiveAnalysis: false));
                 }
             }
         }
@@ -960,6 +989,14 @@ public sealed class TsMultiSourceRepairService
         return result;
     }
 
+    private static void RemoveAtSwapBack<T>(List<T> values, int index)
+    {
+        var last = values.Count - 1;
+        if (index != last)
+            values[index] = values[last];
+        values.RemoveAt(last);
+    }
+
     private readonly record struct PacketInfo(
         int Pid,
         int ContinuityCounter,
@@ -999,12 +1036,14 @@ public sealed class TsMultiSourceRepairService
         private readonly List<ReferencePesInfo> _indexedVideoPes = [];
         private readonly List<long> _pendingTransportErrorOffsets = [];
         private int _pendingTransportErrorExpectedCounter;
+        private long _pendingTransportErrorPts90k = long.MinValue;
         private bool _hasPendingTransportError;
         private long _lastRawPts90k = long.MinValue;
         private long _ptsWrapOffset90k;
+        private long _lastKnownPts90k = long.MinValue;
 
         public void ResetContinuity() => HasContinuity = false;
-        public long CurrentPesPts90k => _activePes?.Pts90k ?? long.MinValue;
+        public long CurrentPesPts90k => _activePes?.Pts90k ?? _lastKnownPts90k;
 
         public void AddTransportError(long fileOffset, int continuityCounter, bool hasPayload)
         {
@@ -1021,6 +1060,7 @@ public sealed class TsMultiSourceRepairService
                 _pendingTransportErrorExpectedCounter = HasContinuity
                     ? (LastContinuityCounter + 1) & 0x0F
                     : continuityCounter;
+                _pendingTransportErrorPts90k = CurrentPesPts90k;
                 _hasPendingTransportError = true;
             }
             _pendingTransportErrorOffsets.Add(fileOffset);
@@ -1043,6 +1083,7 @@ public sealed class TsMultiSourceRepairService
                     _pendingTransportErrorOffsets[0],
                     _pendingTransportErrorExpectedCounter,
                     replacementPacketModulo,
+                    _pendingTransportErrorPts90k,
                     RecentHashes.ToArray(),
                     RecentElementaryBytes.Count == ElementaryAnchorLength
                         ? RecentElementaryBytes.ToArray()
@@ -1053,6 +1094,7 @@ public sealed class TsMultiSourceRepairService
                     _pendingTransportErrorOffsets.ToArray()));
             }
             _pendingTransportErrorOffsets.Clear();
+            _pendingTransportErrorPts90k = long.MinValue;
             _hasPendingTransportError = false;
             return true;
         }
@@ -1066,6 +1108,9 @@ public sealed class TsMultiSourceRepairService
                 if (!TryReadPesStart(packet, info, out var expectedLength, out var rawPts90k))
                     return;
                 var pts90k = UnwrapTimestamp(rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
+                _lastKnownPts90k = pts90k;
+                Track.FirstPts90k = Math.Min(Track.FirstPts90k, pts90k);
+                Track.LastPts90k = Math.Max(Track.LastPts90k, pts90k);
                 _activePes = new ReferencePesInfo(
                     fileOffset, info.ContinuityCounter, expectedLength, pts90k);
             }
@@ -1281,9 +1326,11 @@ public sealed class TsMultiSourceRepairService
             _pendingRegionAfter.Clear();
             _activePesRegion = null;
             _pendingTransportErrorOffsets.Clear();
+            _pendingTransportErrorPts90k = long.MinValue;
             _hasPendingTransportError = false;
             _lastRawPts90k = long.MinValue;
             _ptsWrapOffset90k = 0;
+            _lastKnownPts90k = long.MinValue;
         }
     }
 
@@ -1352,6 +1399,7 @@ public sealed class TsMultiSourceRepairService
         long insertOffset,
         int expectedCounter,
         int missingModulo,
+        long referencePts90k,
         ulong[] beforeHashes,
         byte[]? beforeElementaryAnchor,
         int? elementaryBytesUntilPesEnd,
@@ -1386,6 +1434,7 @@ public sealed class TsMultiSourceRepairService
             ReferenceInsertOffset = insertOffset,
             ExpectedContinuityCounter = expectedCounter,
             MissingPacketModulo = missingModulo,
+            ReferencePts90k = referencePts90k,
             BeforeAnchor = beforeHashes,
             AfterAnchor = AfterHashes.ToArray(),
             BeforeElementaryAnchor = !ElementaryBoundaryCrossed ? beforeElementaryAnchor : null,
@@ -1415,8 +1464,22 @@ public sealed class TsMultiSourceRepairService
 
     private sealed class DonorPidState
     {
-        public DonorPidState(IEnumerable<TrackMapping> mappings) =>
+        public DonorPidState(IEnumerable<TrackMapping> mappings)
+        {
             TrackStates = mappings.Select(item => new DonorTrackState(item)).ToArray();
+            foreach (var state in TrackStates)
+            {
+                foreach (var hash in state.Mapping.ReferenceState.ElementarySampleHashes)
+                {
+                    if (!_elementarySampleTargets.TryGetValue(hash, out var targets))
+                    {
+                        targets = [];
+                        _elementarySampleTargets[hash] = targets;
+                    }
+                    targets.Add(state);
+                }
+            }
+        }
 
         public DonorTrackState[] TrackStates { get; }
         public int PesSizeErrorCount { get; private set; }
@@ -1424,6 +1487,12 @@ public sealed class TsMultiSourceRepairService
         public int LastContinuityCounter;
         private DonorPesInfo? _activePes;
         private readonly Queue<DonorPesInfo> _recentPes = new();
+        private readonly byte[] _elementarySampleWindow = new byte[ElementarySampleLength];
+        private readonly Dictionary<ulong, List<DonorTrackState>> _elementarySampleTargets = [];
+        private int _elementarySampleWindowStart;
+        private int _elementarySampleWindowCount;
+        private ulong _elementarySampleWindowHash;
+        private DonorTrackState? _confirmedTrackState;
         private long _lastRawPts90k = long.MinValue;
         private long _ptsWrapOffset90k;
 
@@ -1476,8 +1545,15 @@ public sealed class TsMultiSourceRepairService
             // 原实现随后对这份大队列反复 ToArray，长文件会产生数 GB 短命分配。
             while (_recentPes.Count > VideoPesRegionAnchorCount)
                 _recentPes.Dequeue();
-            foreach (var state in TrackStates)
-                state.ProcessPes(pes, _recentPes, sourcePath);
+            if (_confirmedTrackState is { } confirmed)
+            {
+                confirmed.ProcessPes(pes, _recentPes, sourcePath);
+            }
+            else
+            {
+                foreach (var state in TrackStates)
+                    state.ProcessPes(pes, _recentPes, sourcePath);
+            }
         }
 
         public void ResetForDiscontinuity()
@@ -1487,10 +1563,18 @@ public sealed class TsMultiSourceRepairService
             DiscardPes();
             _lastRawPts90k = long.MinValue;
             _ptsWrapOffset90k = 0;
+            _elementarySampleWindowStart = 0;
+            _elementarySampleWindowCount = 0;
+            _elementarySampleWindowHash = 0;
         }
 
         public void ProcessPacket(ulong hash, long fileOffset, string sourcePath)
         {
+            if (_confirmedTrackState is { } confirmed)
+            {
+                confirmed.ProcessPacket(hash, fileOffset, sourcePath, CurrentPesPts90k);
+                return;
+            }
             foreach (var state in TrackStates)
                 state.ProcessPacket(hash, fileOffset, sourcePath, CurrentPesPts90k);
         }
@@ -1499,8 +1583,79 @@ public sealed class TsMultiSourceRepairService
             ReadOnlySpan<byte> payload,
             string sourcePath)
         {
+            var needsIdentitySamples = false;
+            if (_confirmedTrackState is null)
+            {
+                foreach (var state in TrackStates)
+                {
+                    if (!state.NeedsElementaryIdentitySamples)
+                        continue;
+                    needsIdentitySamples = true;
+                    break;
+                }
+            }
+            if (needsIdentitySamples && _elementarySampleTargets.Count > 0)
+            {
+                foreach (var value in payload)
+                {
+                    AppendElementarySampleByte(value);
+                    if (_elementarySampleWindowCount != ElementarySampleLength ||
+                        !_elementarySampleTargets.TryGetValue(_elementarySampleWindowHash, out var targets))
+                    {
+                        continue;
+                    }
+                    foreach (var state in targets)
+                        state.AddElementarySampleHash(_elementarySampleWindowHash);
+                }
+                TryResolveConfirmedTrackState();
+            }
+            var donorPts90k = CurrentPesPts90k;
+            if (_confirmedTrackState is { } confirmed)
+            {
+                confirmed.ProcessElementaryPayload(payload, sourcePath, donorPts90k);
+                return;
+            }
             foreach (var state in TrackStates)
-                state.ProcessElementaryPayload(payload, sourcePath);
+                state.ProcessElementaryPayload(payload, sourcePath, donorPts90k);
+        }
+
+        private void TryResolveConfirmedTrackState()
+        {
+            DonorTrackState? confirmed = null;
+            foreach (var state in TrackStates)
+            {
+                if (!state.HasConfirmedElementaryMatch)
+                    continue;
+                if (confirmed is not null)
+                    return;
+                confirmed = state;
+            }
+            if (confirmed is null)
+                return;
+
+            // 同一个辅助 PID 在 ES 指纹唯一确认后，只可能对应这一条参考轨道。
+            // 立即停止其余 N×M 歧义候选的逐包处理，避免多节目、缺少语言描述的
+            // 大型复用流在整段文件上反复执行无效的哈希查找和候选匹配。
+            _confirmedTrackState = confirmed;
+        }
+
+        private void AppendElementarySampleByte(byte value)
+        {
+            if (_elementarySampleWindowCount < ElementarySampleLength)
+            {
+                var index = (_elementarySampleWindowStart + _elementarySampleWindowCount) %
+                            ElementarySampleLength;
+                _elementarySampleWindow[index] = value;
+                _elementarySampleWindowHash = _elementarySampleWindowHash * ElementaryHashBase + value + 1UL;
+                _elementarySampleWindowCount++;
+                return;
+            }
+
+            var oldest = _elementarySampleWindow[_elementarySampleWindowStart];
+            _elementarySampleWindowHash -= (oldest + 1UL) * ElementarySampleHashOldestFactor;
+            _elementarySampleWindowHash = _elementarySampleWindowHash * ElementaryHashBase + value + 1UL;
+            _elementarySampleWindow[_elementarySampleWindowStart] = value;
+            _elementarySampleWindowStart = (_elementarySampleWindowStart + 1) % ElementarySampleLength;
         }
     }
 
@@ -1520,39 +1675,43 @@ public sealed class TsMultiSourceRepairService
 
     private sealed class DonorTrackState
     {
-        private readonly Dictionary<ulong, List<TsRepairGap>> _gapStarts = [];
+        private readonly Dictionary<ulong, List<GapSearchState>> _gapStarts = [];
         private readonly Queue<ulong> _recentHashes = new(AnchorLength);
         private readonly List<ActiveGapCandidate> _activeCandidates = [];
-        private readonly HashSet<TsRepairGap> _activeGaps = [];
-        private readonly Dictionary<ulong, List<TsRepairGap>> _elementaryGapStarts = [];
+        private readonly Dictionary<ulong, List<GapSearchState>> _elementaryGapStarts = [];
         private readonly byte[] _elementaryWindow = new byte[ElementaryAnchorLength];
-        private readonly byte[] _elementarySampleWindow = new byte[ElementarySampleLength];
         private readonly List<ActiveElementaryGapCandidate> _activeElementaryCandidates = [];
-        private readonly HashSet<TsRepairGap> _activeElementaryGaps = [];
+        private readonly Dictionary<TsRepairPesSignature, List<TsRepairPesRegion>> _pesRegionStarts = [];
         private int _elementaryWindowStart;
         private int _elementaryWindowCount;
         private ulong _elementaryWindowHash;
-        private int _elementarySampleWindowStart;
-        private int _elementarySampleWindowCount;
-        private ulong _elementarySampleWindowHash;
         private readonly HashSet<TsRepairPesRegion> _completedPesRegions = [];
         private readonly List<ActivePesRegionCandidate> _activePesRegions = [];
         private readonly HashSet<TsRepairPesRegion> _activePesRegionSet = [];
         private readonly List<long> _timestampOffsets = new(MaxFingerprintSamples);
         private readonly HashSet<ulong> _timestampOffsetHashes = [];
+        private readonly long[] _timedElementaryGapPts90k;
+        private readonly int _untimedElementaryGapCount;
+        private readonly int _elementaryGapCount;
+        private int _completedElementaryGapCount;
+        private long _currentTimestampOffset90k;
+        private bool _hasCurrentTimestampOffset;
+        private bool _wasScanningElementaryGaps;
 
         public DonorTrackState(TrackMapping mapping)
         {
             Mapping = mapping;
             var elementaryGapCount = 0;
+            var indexedElementaryGaps = new List<TsRepairGap>();
             foreach (var gap in mapping.ReferenceState.Track.Gaps)
             {
+                var gapState = new GapSearchState(gap);
                 if (!_gapStarts.TryGetValue(gap.BeforeAnchor[0], out var gaps))
                 {
                     gaps = [];
                     _gapStarts[gap.BeforeAnchor[0]] = gaps;
                 }
-                gaps.Add(gap);
+                gaps.Add(gapState);
 
                 if (gap.BeforeElementaryAnchor is not { Length: ElementaryAnchorLength } elementaryAnchor ||
                     gap.AfterElementaryAnchor is not { Length: ElementaryAnchorLength } ||
@@ -1561,19 +1720,43 @@ public sealed class TsMultiSourceRepairService
                     continue;
                 }
                 elementaryGapCount++;
+                gapState.ElementaryEligible = true;
+                indexedElementaryGaps.Add(gap);
                 var elementaryHash = ComputeByteHash(elementaryAnchor);
                 if (!_elementaryGapStarts.TryGetValue(elementaryHash, out var elementaryGaps))
                 {
                     elementaryGaps = [];
                     _elementaryGapStarts[elementaryHash] = elementaryGaps;
                 }
-                elementaryGaps.Add(gap);
+                elementaryGaps.Add(gapState);
+            }
+            _timedElementaryGapPts90k = indexedElementaryGaps
+                .Where(gap => gap.ReferencePts90k != long.MinValue)
+                .Select(gap => gap.ReferencePts90k)
+                .Order()
+                .ToArray();
+            _untimedElementaryGapCount = indexedElementaryGaps.Count(gap =>
+                gap.ReferencePts90k == long.MinValue);
+            _elementaryGapCount = elementaryGapCount;
+            foreach (var region in mapping.ReferenceState.Track.PesRegions)
+            {
+                if (region.BeforeAnchor.Length == 0)
+                    continue;
+                var key = region.BeforeAnchor[^1];
+                if (!_pesRegionStarts.TryGetValue(key, out var regions))
+                {
+                    regions = [];
+                    _pesRegionStarts[key] = regions;
+                }
+                regions.Add(region);
             }
         }
 
         public TrackMapping Mapping { get; }
         public HashSet<ulong> MatchedSamples { get; } = [];
         public HashSet<ulong> MatchedElementarySamples { get; } = [];
+        public bool NeedsElementaryIdentitySamples =>
+            Mapping.MetadataIsAmbiguous && !HasConfirmedElementaryMatch;
         public bool UsedElementaryFallback { get; private set; }
         public bool HasConfirmedElementaryMatch
         {
@@ -1591,11 +1774,18 @@ public sealed class TsMultiSourceRepairService
                 return requiredMatches > 0 && MatchedElementarySamples.Count >= requiredMatches;
             }
         }
+
+        public void AddElementarySampleHash(ulong hash)
+        {
+            if (NeedsElementaryIdentitySamples)
+                MatchedElementarySamples.Add(hash);
+        }
         public void ResetForDiscontinuity()
         {
             _recentHashes.Clear();
+            foreach (var candidate in _activeCandidates)
+                candidate.State.PacketActive = false;
             _activeCandidates.Clear();
-            _activeGaps.Clear();
             ResetElementaryState();
             ResetPesRegions();
         }
@@ -1618,10 +1808,12 @@ public sealed class TsMultiSourceRepairService
                 if (candidate.Completed)
                     _completedPesRegions.Add(candidate.Region);
                 _activePesRegionSet.Remove(candidate.Region);
-                _activePesRegions.RemoveAt(index);
+                RemoveAtSwapBack(_activePesRegions, index);
             }
 
-            foreach (var region in Mapping.ReferenceState.Track.PesRegions)
+            if (!_pesRegionStarts.TryGetValue(current.Signature, out var matchingRegions))
+                return;
+            foreach (var region in matchingRegions)
             {
                 var isVideoRegion = region.Reason ==
                                     TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch;
@@ -1642,7 +1834,6 @@ public sealed class TsMultiSourceRepairService
                     continue;
                 }
 
-                var anchorCount = region.BeforeAnchor.Length;
                 if (!QueueEndsWithPesAnchors(recent, region.BeforeAnchor))
                 {
                     continue;
@@ -1662,6 +1853,7 @@ public sealed class TsMultiSourceRepairService
                     Mapping.ReferenceState.SamplePts90k.TryGetValue(hash, out var referencePts90k))
                 {
                     _timestampOffsets.Add(referencePts90k - donorPts90k);
+                    UpdateCurrentTimestampOffset();
                 }
             }
 
@@ -1673,13 +1865,14 @@ public sealed class TsMultiSourceRepairService
                 if (candidate.TryComplete(sourcePath, Mapping.SourcePid))
                 {
                     Mapping.Match.RepairedGapCount++;
-                    _activeCandidates.RemoveAt(index);
-                    _activeGaps.Remove(candidate.Gap);
+                    MarkGapCompleted(candidate.State);
+                    RemoveAtSwapBack(_activeCandidates, index);
+                    candidate.State.PacketActive = false;
                 }
                 else if (candidate.Hashes.Count >= MaxRepairPacketsPerGap + AnchorLength)
                 {
-                    _activeCandidates.RemoveAt(index);
-                    _activeGaps.Remove(candidate.Gap);
+                    RemoveAtSwapBack(_activeCandidates, index);
+                    candidate.State.PacketActive = false;
                 }
             }
 
@@ -1690,8 +1883,9 @@ public sealed class TsMultiSourceRepairService
                 return;
             }
             var recent = _recentHashes.ToArray();
-            foreach (var gap in gaps)
+            foreach (var gapState in gaps)
             {
+                var gap = gapState.Gap;
                 var hasCandidate = false;
                 for (var candidateIndex = 0; candidateIndex < gap.Candidates.Count; candidateIndex++)
                 {
@@ -1703,59 +1897,72 @@ public sealed class TsMultiSourceRepairService
                         break;
                     }
                 }
-                if (_activeCandidates.Count >= 64 || _activeGaps.Contains(gap) ||
+                if (_activeCandidates.Count >= 64 || gapState.Completed || gapState.PacketActive ||
                     hasCandidate ||
                     !recent.AsSpan().SequenceEqual(gap.BeforeAnchor))
                 {
                     continue;
                 }
-                _activeCandidates.Add(new ActiveGapCandidate(gap));
-                _activeGaps.Add(gap);
+                _activeCandidates.Add(new ActiveGapCandidate(gapState));
+                gapState.PacketActive = true;
             }
         }
 
         public void ProcessElementaryPayload(
             ReadOnlySpan<byte> payload,
-            string sourcePath)
+            string sourcePath,
+            long donorPts90k)
         {
             if (!Mapping.ReferenceState.SupportsElementaryFallback || payload.IsEmpty)
                 return;
-            if (_elementaryGapStarts.Count == 0 &&
-                (HasConfirmedElementaryMatch ||
-                 (!Mapping.MetadataIsAmbiguous &&
-                  MatchedSamples.Count >= MinimumElementarySampleMatches)))
+
+            var needsGapSearch = _completedElementaryGapCount < _elementaryGapCount &&
+                                 ShouldScanElementaryGaps(donorPts90k);
+            if (!needsGapSearch)
             {
-                // 双向唯一的轨道已经由多个分散 TS 负载指纹确认时，无需再为了身份
-                // 识别逐字节滑动 ES 窗口；有 ES 缺口待搜索或元数据歧义时仍走完整路径。
-                return;
+                if (_wasScanningElementaryGaps)
+                    ResetElementaryGapSearchState();
+                _wasScanningElementaryGaps = false;
             }
+            else
+            {
+                _wasScanningElementaryGaps = true;
+            }
+            if (!needsGapSearch)
+                return;
 
             // PES 头的组织方式和边界可能因复用器而异，因此辅助源侧把 ES 视为连续字节流；
             // 是否会跨越参考源 PES 边界，已由参考源记录的 PES 剩余长度单独约束。
 
             foreach (var value in payload)
             {
-                AppendElementarySampleByte(value);
                 if (_elementaryGapStarts.Count == 0)
                     continue;
                 for (var index = _activeElementaryCandidates.Count - 1; index >= 0; index--)
                 {
                     var candidate = _activeElementaryCandidates[index];
-                    candidate.Bytes.Add(value);
+                    if (candidate.State.Completed)
+                    {
+                        candidate.State.ElementaryActive = false;
+                        RemoveAtSwapBack(_activeElementaryCandidates, index);
+                        continue;
+                    }
+                    candidate.Append(value);
                     if (candidate.TryComplete(sourcePath, Mapping.SourcePid, out var added))
                     {
                         if (added)
                         {
                             Mapping.Match.RepairedGapCount++;
                             UsedElementaryFallback = true;
+                            MarkGapCompleted(candidate.State);
                         }
-                        _activeElementaryCandidates.RemoveAt(index);
-                        _activeElementaryGaps.Remove(candidate.Gap);
+                        RemoveAtSwapBack(_activeElementaryCandidates, index);
+                        candidate.State.ElementaryActive = false;
                     }
-                    else if (candidate.Bytes.Count >= MaxElementaryRepairBytes + ElementaryAnchorLength)
+                    else if (candidate.Bytes.Count >= candidate.MaximumByteCount)
                     {
-                        _activeElementaryCandidates.RemoveAt(index);
-                        _activeElementaryGaps.Remove(candidate.Gap);
+                        RemoveAtSwapBack(_activeElementaryCandidates, index);
+                        candidate.State.ElementaryActive = false;
                     }
                 }
 
@@ -1765,8 +1972,13 @@ public sealed class TsMultiSourceRepairService
                 {
                     continue;
                 }
-                foreach (var gap in gaps)
+                foreach (var gapState in gaps)
                 {
+                    if (gapState.Completed)
+                        continue;
+                    var gap = gapState.Gap;
+                    if (!IsElementaryGapInCurrentTimeWindow(gap, donorPts90k))
+                        continue;
                     var hasCandidate = false;
                     for (var candidateIndex = 0; candidateIndex < gap.Candidates.Count; candidateIndex++)
                     {
@@ -1778,16 +1990,86 @@ public sealed class TsMultiSourceRepairService
                             break;
                         }
                     }
-                    if (_activeElementaryCandidates.Count >= 64 || _activeElementaryGaps.Contains(gap) ||
+                    if (_activeElementaryCandidates.Count >= 64 || gapState.ElementaryActive ||
                         hasCandidate ||
                         !ElementaryWindowEquals(gap.BeforeElementaryAnchor!))
                     {
                         continue;
                     }
-                    _activeElementaryCandidates.Add(new ActiveElementaryGapCandidate(gap));
-                    _activeElementaryGaps.Add(gap);
+                    _activeElementaryCandidates.Add(new ActiveElementaryGapCandidate(gapState));
+                    gapState.ElementaryActive = true;
                 }
             }
+        }
+
+        private void MarkGapCompleted(GapSearchState state)
+        {
+            if (state.Completed)
+                return;
+            state.Completed = true;
+            if (state.ElementaryEligible)
+                _completedElementaryGapCount++;
+        }
+
+        private bool ShouldScanElementaryGaps(long donorPts90k)
+        {
+            if (_elementaryGapStarts.Count == 0)
+                return false;
+            // 没有 PTS 的少数编码或损坏区间无法按时间定位，继续使用原有全流回退。
+            if (_untimedElementaryGapCount > 0)
+                return true;
+            if (donorPts90k == long.MinValue || _timedElementaryGapPts90k.Length == 0)
+                return false;
+            if (IsNearTimedElementaryGap(donorPts90k))
+                return true;
+            return _hasCurrentTimestampOffset &&
+                   IsNearTimedElementaryGap(donorPts90k + _currentTimestampOffset90k);
+        }
+
+        private bool IsElementaryGapInCurrentTimeWindow(TsRepairGap gap, long donorPts90k)
+        {
+            if (gap.ReferencePts90k == long.MinValue)
+                return true;
+            if (donorPts90k == long.MinValue)
+                return false;
+            if (Math.Abs(gap.ReferencePts90k - donorPts90k) <= ElementaryGapSearchPadding90k)
+                return true;
+            return _hasCurrentTimestampOffset && Math.Abs(
+                gap.ReferencePts90k - (donorPts90k + _currentTimestampOffset90k)) <=
+                ElementaryGapSearchPadding90k;
+        }
+
+        private bool IsNearTimedElementaryGap(long referencePts90k)
+        {
+            var index = Array.BinarySearch(_timedElementaryGapPts90k, referencePts90k);
+            if (index >= 0)
+                return true;
+            index = ~index;
+            return index < _timedElementaryGapPts90k.Length &&
+                       _timedElementaryGapPts90k[index] - referencePts90k <= ElementaryGapSearchPadding90k ||
+                   index > 0 &&
+                       referencePts90k - _timedElementaryGapPts90k[index - 1] <= ElementaryGapSearchPadding90k;
+        }
+
+        private void UpdateCurrentTimestampOffset()
+        {
+            if (_timestampOffsets.Count < MinimumElementarySampleMatches)
+                return;
+            // 扫描中只需一个稳健的近似偏移来缩小 ES 搜索窗口；最终匹配仍由完整聚类复核。
+            var recentCount = Math.Min(31, _timestampOffsets.Count);
+            var values = _timestampOffsets.TakeLast(recentCount).Order().ToArray();
+            _currentTimestampOffset90k = values[values.Length / 2];
+            _hasCurrentTimestampOffset = true;
+        }
+
+        private void ResetElementaryGapSearchState()
+        {
+            _elementaryWindowStart = 0;
+            _elementaryWindowCount = 0;
+            _elementaryWindowHash = 0;
+            foreach (var candidate in _activeElementaryCandidates)
+                candidate.State.ElementaryActive = false;
+            _activeElementaryCandidates.Clear();
         }
 
         public void RemoveUnconfirmedElementaryCandidates(string sourcePath)
@@ -1850,32 +2132,6 @@ public sealed class TsMultiSourceRepairService
             _elementaryWindowStart = (_elementaryWindowStart + 1) % ElementaryAnchorLength;
         }
 
-        private void AppendElementarySampleByte(byte value)
-        {
-            if (_elementarySampleWindowCount < ElementarySampleLength)
-            {
-                var index = (_elementarySampleWindowStart + _elementarySampleWindowCount) %
-                            ElementarySampleLength;
-                _elementarySampleWindow[index] = value;
-                _elementarySampleWindowHash = _elementarySampleWindowHash * ElementaryHashBase + value + 1UL;
-                _elementarySampleWindowCount++;
-            }
-            else
-            {
-                var oldest = _elementarySampleWindow[_elementarySampleWindowStart];
-                _elementarySampleWindowHash -= (oldest + 1UL) * ElementarySampleHashOldestFactor;
-                _elementarySampleWindowHash = _elementarySampleWindowHash * ElementaryHashBase + value + 1UL;
-                _elementarySampleWindow[_elementarySampleWindowStart] = value;
-                _elementarySampleWindowStart = (_elementarySampleWindowStart + 1) % ElementarySampleLength;
-            }
-
-            if (_elementarySampleWindowCount == ElementarySampleLength &&
-                Mapping.ReferenceState.ElementarySampleHashes.Contains(_elementarySampleWindowHash))
-            {
-                MatchedElementarySamples.Add(_elementarySampleWindowHash);
-            }
-        }
-
         private bool ElementaryWindowEquals(ReadOnlySpan<byte> expected)
         {
             for (var index = 0; index < ElementaryAnchorLength; index++)
@@ -1891,11 +2147,9 @@ public sealed class TsMultiSourceRepairService
             _elementaryWindowStart = 0;
             _elementaryWindowCount = 0;
             _elementaryWindowHash = 0;
-            _elementarySampleWindowStart = 0;
-            _elementarySampleWindowCount = 0;
-            _elementarySampleWindowHash = 0;
+            foreach (var candidate in _activeElementaryCandidates)
+                candidate.State.ElementaryActive = false;
             _activeElementaryCandidates.Clear();
-            _activeElementaryGaps.Clear();
         }
 
         private void ResetElementaryState() => ResetElementaryWindowAndCandidates();
@@ -2243,9 +2497,19 @@ public sealed class TsMultiSourceRepairService
         }
     }
 
-    private sealed class ActiveGapCandidate(TsRepairGap gap)
+    private sealed class GapSearchState(TsRepairGap gap)
     {
         public TsRepairGap Gap { get; } = gap;
+        public bool ElementaryEligible { get; set; }
+        public bool Completed { get; set; }
+        public bool PacketActive { get; set; }
+        public bool ElementaryActive { get; set; }
+    }
+
+    private sealed class ActiveGapCandidate(GapSearchState state)
+    {
+        public GapSearchState State { get; } = state;
+        public TsRepairGap Gap => State.Gap;
         public List<ulong> Hashes { get; } = new(MaxRepairPacketsPerGap + AnchorLength);
         public List<long> Offsets { get; } = new(MaxRepairPacketsPerGap + AnchorLength);
 
@@ -2287,6 +2551,7 @@ public sealed class TsMultiSourceRepairService
     private sealed class ActivePesRegionCandidate(TsRepairPesRegion region)
     {
         private readonly List<DonorPesInfo> _values = [];
+        private int _packetCount;
         public TsRepairPesRegion Region { get; } = region;
         public bool Completed { get; private set; }
 
@@ -2295,6 +2560,7 @@ public sealed class TsMultiSourceRepairService
             if (!pes.IsValid)
                 return true;
             _values.Add(pes);
+            _packetCount += pes.PacketCount;
             var afterAnchorCount = Region.AfterAnchor.Length;
             if (_values.Count <= afterAnchorCount || _values[0].Pts90k == long.MinValue)
                 return false;
@@ -2309,13 +2575,8 @@ public sealed class TsMultiSourceRepairService
                 return false;
             }
 
-            var suffix = _values.TakeLast(afterAnchorCount)
-                .Select(item => item.Signature).ToArray();
-            if (!PesAnchorsEqual(suffix, Region.AfterAnchor))
-            {
-                var packetCount = _values.Sum(item => item.PacketCount);
-                return packetCount > GetMaxRegionPackets(Region);
-            }
+            if (!EndsWithPesAnchors(_values, Region.AfterAnchor))
+                return _packetCount > GetMaxRegionPackets(Region);
 
             var replacementPesCount = _values.Count - afterAnchorCount;
             if (replacementPesCount <= 0)
@@ -2413,17 +2674,55 @@ public sealed class TsMultiSourceRepairService
             Completed = Region.Reason != TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch;
             return true;
         }
+
+        private static bool EndsWithPesAnchors(
+            IReadOnlyList<DonorPesInfo> values,
+            IReadOnlyList<TsRepairPesSignature> anchors)
+        {
+            if (values.Count < anchors.Count)
+                return false;
+            var start = values.Count - anchors.Count;
+            for (var index = 0; index < anchors.Count; index++)
+            {
+                if (values[start + index].Signature != anchors[index])
+                    return false;
+            }
+            return true;
+        }
     }
 
-    private sealed class ActiveElementaryGapCandidate(TsRepairGap gap)
+    private sealed class ActiveElementaryGapCandidate(GapSearchState state)
     {
-        public TsRepairGap Gap { get; } = gap;
-        public List<byte> Bytes { get; } = new(MaxElementaryRepairBytes + ElementaryAnchorLength);
+        private readonly ulong _afterAnchorHash = ComputeByteHash(state.Gap.AfterElementaryAnchor!);
+        private ulong _afterWindowHash;
+        public GapSearchState State { get; } = state;
+        public TsRepairGap Gap => State.Gap;
+        public int MaximumByteCount { get; } = GetMaximumByteCount(state.Gap);
+        public List<byte> Bytes { get; } = new(GetMaximumByteCount(state.Gap));
+
+        private static int GetMaximumByteCount(TsRepairGap gap) =>
+            Math.Min(MaxElementaryRepairPackets, gap.MissingPacketModulo) * 184 + ElementaryAnchorLength;
+
+        public void Append(byte value)
+        {
+            if (Bytes.Count < ElementaryAnchorLength)
+            {
+                _afterWindowHash = _afterWindowHash * ElementaryHashBase + value + 1UL;
+            }
+            else
+            {
+                var oldest = Bytes[Bytes.Count - ElementaryAnchorLength];
+                _afterWindowHash -= (oldest + 1UL) * ElementaryHashOldestFactor;
+                _afterWindowHash = _afterWindowHash * ElementaryHashBase + value + 1UL;
+            }
+            Bytes.Add(value);
+        }
 
         public bool TryComplete(string sourcePath, int sourcePid, out bool added)
         {
             added = false;
             if (Bytes.Count < ElementaryAnchorLength ||
+                _afterWindowHash != _afterAnchorHash ||
                 !EndsWith(Bytes, Gap.AfterElementaryAnchor!))
             {
                 return false;
