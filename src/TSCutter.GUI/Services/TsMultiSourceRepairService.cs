@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models;
@@ -19,7 +20,11 @@ public sealed class TsMultiSourceRepairService
     private const int ReadBufferSize = PacketSize * 32_768;
     private const int ParallelReadBufferSize = PacketSize * 8_192;
     private const int AnchorLength = 4;
-    private const int ElementaryAnchorLength = 32;
+    private const int ElementaryAnchorLength = 128;
+    private const int MaxElementaryAnchorSuffixLength = MaxElementaryRepairBytes;
+    private const int MaxElementaryRepeatedSuffixLength = 256 * 1024;
+    private const int ElementaryAnchorHistoryLength =
+        ElementaryAnchorLength + MaxElementaryRepeatedSuffixLength;
     private const int ElementarySampleLength = 64;
     private const int AudioElementarySampleInterval = 64 * 1024;
     private const int VideoElementarySampleInterval = 1024 * 1024;
@@ -192,6 +197,10 @@ public sealed class TsMultiSourceRepairService
                     .OrderBy(item => sourceRank.GetValueOrDefault(item.SourcePath).Errors)
                     .ThenBy(item => sourceRank.GetValueOrDefault(item.SourcePath).Order)
                     .First();
+                var timestampOffset90k = track.Matches.FirstOrDefault(item =>
+                    item.SourcePid == candidate.SourcePid &&
+                    string.Equals(item.SourcePath, candidate.SourcePath, StringComparison.Ordinal))
+                    ?.TimestampOffset90k ?? 0;
                 var insertion = new TsPacketInsertion
                 {
                     SourcePath = candidate.SourcePath,
@@ -200,7 +209,9 @@ public sealed class TsMultiSourceRepairService
                     StartContinuityCounter = gap.ExpectedContinuityCounter,
                     SourcePacketOffsets = candidate.SourcePacketOffsets,
                     ElementaryPayload = candidate.ElementaryPayload,
-                    SynthesizedPacketCount = candidate.SynthesizedPacketCount
+                    PesBoundaries = candidate.PesBoundaries,
+                    SynthesizedPacketCount = candidate.SynthesizedPacketCount,
+                    TimestampOffset90k = timestampOffset90k
                 };
                 if (!plan.Insertions.TryGetValue(gap.ReferenceInsertOffset, out var insertions))
                 {
@@ -582,14 +593,28 @@ public sealed class TsMultiSourceRepairService
                                     TsRepairElementaryKind.H264 or TsRepairElementaryKind.H265 => true,
                                 _ => false
                             };
+                            canUseElementaryFallback &=
+                                state.Track.Gaps.Count + state.PendingGaps.Count <
+                                MaxElementaryRepairGapsPerMapping;
+                            TryCreateBeforeElementaryAnchor(
+                                state.RecentElementaryBytes,
+                                out var beforeElementaryAnchor,
+                                out var beforeElementarySuffix,
+                                out var beforeElementaryRepeatedSuffixLength,
+                                out var beforeElementaryRepeatedSuffixByte);
                             state.PendingGaps.Add(new PendingGap(
                                 info.Pid, fileOffset, expected, Math.Max(1, missingModulo),
                                 state.CurrentPesPts90k,
                                 state.RecentHashes.ToArray(),
                                 canUseElementaryFallback &&
-                                state.RecentElementaryBytes.Count == ElementaryAnchorLength
-                                    ? state.RecentElementaryBytes.ToArray()
+                                beforeElementaryAnchor is not null
+                                    ? beforeElementaryAnchor
                                     : null,
+                                canUseElementaryFallback ? beforeElementarySuffix : null,
+                                canUseElementaryFallback
+                                    ? beforeElementaryRepeatedSuffixLength
+                                    : 0,
+                                beforeElementaryRepeatedSuffixByte,
                                 elementaryBytesUntilPesEnd,
                                 elementaryBytesUntilFrameEnd,
                                 state.ElementaryKind));
@@ -638,7 +663,8 @@ public sealed class TsMultiSourceRepairService
                 EnqueueHash(state.RecentHashes, hash);
                 if (startsNewPes)
                     state.RecentElementaryBytes.Clear();
-                EnqueueBytes(state.RecentElementaryBytes, elementaryPayload, ElementaryAnchorLength);
+                EnqueueBytes(
+                    state.RecentElementaryBytes, elementaryPayload, ElementaryAnchorHistoryLength);
                 state.ProcessElementarySamples(elementaryPayload);
                 state.ProcessElementaryStructure(elementaryPayload);
                 state.UpdatePesLength(packet, info);
@@ -674,8 +700,10 @@ public sealed class TsMultiSourceRepairService
                     state.DiscardPes();
                     state.ResetForDiscontinuity();
                 }
+                var startsNewPes = false;
+                var pesHeaderLength = 0;
                 var elementaryPayload = info.HasPayload
-                    ? GetElementaryPayload(packet, info, out _)
+                    ? GetElementaryPayload(packet, info, out startsNewPes, out pesHeaderLength)
                     : default;
                 if (!info.HasPayload)
                 {
@@ -702,7 +730,11 @@ public sealed class TsMultiSourceRepairService
                 state.ProcessPes(packet, info, fileOffset, elementaryPayload, source.FilePath);
                 var hash = ComputePayloadHash(packet[info.PayloadOffset..]);
                 state.ProcessPacket(hash, fileOffset, source.FilePath);
-                state.ProcessElementaryPayload(elementaryPayload, source.FilePath);
+                var pesHeader = startsNewPes
+                    ? packet.Slice(info.PayloadOffset, pesHeaderLength)
+                    : default;
+                state.ProcessElementaryPayload(
+                    elementaryPayload, source.FilePath, startsNewPes, pesHeader);
             }, cancellationToken).ConfigureAwait(false);
 
         source.PesSizeErrors = states.Values.Sum(item => item.PesSizeErrorCount);
@@ -834,6 +866,9 @@ public sealed class TsMultiSourceRepairService
         var position = job.StartOffset;
         var hasContinuity = false;
         var lastContinuityCounter = 0;
+        var currentPesPts90k = long.MinValue;
+        var lastRawPts90k = long.MinValue;
+        var ptsWrapOffset90k = 0L;
         try
         {
             await using var stream = new FileStream(
@@ -864,6 +899,7 @@ public sealed class TsMultiSourceRepairService
                     {
                         matcher.ResetForDiscontinuity();
                         hasContinuity = false;
+                        currentPesPts90k = long.MinValue;
                         if (info.TransportError)
                             continue;
                     }
@@ -879,8 +915,19 @@ public sealed class TsMultiSourceRepairService
                     }
                     hasContinuity = true;
                     lastContinuityCounter = info.ContinuityCounter;
-                    var elementaryPayload = GetElementaryPayload(packet, info, out _);
-                    matcher.Process(elementaryPayload);
+                    var elementaryPayload = GetElementaryPayload(
+                        packet, info, out var startsNewPes, out var pesHeaderLength);
+                    if (startsNewPes && TryReadPesStart(packet, info, out _, out var rawPts90k) &&
+                        rawPts90k != long.MinValue)
+                    {
+                        currentPesPts90k = UnwrapTimestamp(
+                            rawPts90k, ref lastRawPts90k, ref ptsWrapOffset90k);
+                    }
+                    var pesHeader = startsNewPes
+                        ? packet.Slice(info.PayloadOffset, pesHeaderLength)
+                        : default;
+                    matcher.Process(
+                        elementaryPayload, startsNewPes, pesHeader, currentPesPts90k);
                 }
                 position += completeLength;
                 buffered -= completeLength;
@@ -1014,7 +1061,17 @@ public sealed class TsMultiSourceRepairService
         PacketInfo info,
         out bool startsNewPes)
     {
+        return GetElementaryPayload(packet, info, out startsNewPes, out _);
+    }
+
+    private static ReadOnlySpan<byte> GetElementaryPayload(
+        ReadOnlySpan<byte> packet,
+        PacketInfo info,
+        out bool startsNewPes,
+        out int pesHeaderLength)
+    {
         startsNewPes = false;
+        pesHeaderLength = 0;
         if (!info.HasPayload)
             return default;
 
@@ -1030,6 +1087,7 @@ public sealed class TsMultiSourceRepairService
         if (headerLength > payload.Length)
             return default;
         startsNewPes = true;
+        pesHeaderLength = headerLength;
         return payload[headerLength..];
     }
 
@@ -1149,6 +1207,80 @@ public sealed class TsMultiSourceRepairService
                 queue.Dequeue();
             queue.Enqueue(value);
         }
+    }
+
+    private static void TryCreateBeforeElementaryAnchor(
+        Queue<byte> history,
+        out byte[]? anchor,
+        out byte[]? suffix,
+        out int repeatedSuffixLength,
+        out byte repeatedSuffixByte)
+    {
+        anchor = null;
+        suffix = null;
+        repeatedSuffixLength = 0;
+        repeatedSuffixByte = 0;
+        if (history.Count < ElementaryAnchorLength)
+            return;
+
+        var values = history.ToArray();
+        var maximumSuffix = Math.Min(
+            MaxElementaryAnchorSuffixLength, values.Length - ElementaryAnchorLength);
+        var trailingRunLength = 1;
+        while (trailingRunLength < values.Length &&
+               values[^(trailingRunLength + 1)] == values[^1])
+        {
+            trailingRunLength++;
+        }
+        if (trailingRunLength <= MaxElementaryRepeatedSuffixLength &&
+            values.Length >= trailingRunLength + ElementaryAnchorLength)
+        {
+            var anchorStart = values.Length - trailingRunLength - ElementaryAnchorLength;
+            var candidate = values.AsSpan(anchorStart, ElementaryAnchorLength);
+            if (IsDiscriminativeElementaryAnchor(candidate))
+            {
+                anchor = candidate.ToArray();
+                suffix = [];
+                repeatedSuffixLength = trailingRunLength;
+                repeatedSuffixByte = values[^1];
+                return;
+            }
+        }
+        // 若尾部是长 stuffing run，完全位于 run 内的窗口必然不具区分度，直接跳过，
+        // 避免对数千个等价的 0xFF/0x00 窗口重复计算直方图。
+        var minimumSuffix = Math.Min(
+            maximumSuffix, Math.Max(0, trailingRunLength - ElementaryAnchorLength + 1));
+        for (var suffixLength = minimumSuffix;
+             suffixLength <= maximumSuffix;
+             suffixLength++)
+        {
+            var anchorStart = values.Length - ElementaryAnchorLength - suffixLength;
+            var candidate = values.AsSpan(anchorStart, ElementaryAnchorLength);
+            if (!IsDiscriminativeElementaryAnchor(candidate))
+                continue;
+            anchor = candidate.ToArray();
+            suffix = suffixLength == 0
+                ? []
+                : values.AsSpan(anchorStart + ElementaryAnchorLength, suffixLength).ToArray();
+            return;
+        }
+    }
+
+    private static bool IsDiscriminativeElementaryAnchor(ReadOnlySpan<byte> value)
+    {
+        Span<int> counts = stackalloc int[256];
+        var distinct = 0;
+        var maximumCount = 0;
+        foreach (var item in value)
+        {
+            if (counts[item]++ == 0)
+                distinct++;
+            maximumCount = Math.Max(maximumCount, counts[item]);
+        }
+        // 编码流边缘可能存在长串 0x00/0xFF stuffing；这种窗口即使扩大到 128 字节
+        // 仍会在同一 PES 内反复命中。退回到更早的高熵窗口，并把中间已知字节作为
+        // suffix 验证但不重复写入，避免“连续性修好、画面仍花”的假修复。
+        return distinct >= 8 && maximumCount <= value.Length * 7 / 8;
     }
 
     private static ulong ComputeByteHash(ReadOnlySpan<byte> bytes)
@@ -1406,6 +1538,19 @@ public sealed class TsMultiSourceRepairService
                 (nextContinuityCounter - _pendingTransportErrorExpectedCounter + 16) & 0x0F;
             if (replacementPacketModulo != 0 || _pendingTransportErrorOffsets.Count >= 16)
             {
+                byte[]? beforeElementaryAnchor = null;
+                byte[]? beforeElementarySuffix = null;
+                var beforeElementaryRepeatedSuffixLength = 0;
+                byte beforeElementaryRepeatedSuffixByte = 0;
+                if (Track.Gaps.Count + PendingGaps.Count < MaxElementaryRepairGapsPerMapping)
+                {
+                    TryCreateBeforeElementaryAnchor(
+                        RecentElementaryBytes,
+                        out beforeElementaryAnchor,
+                        out beforeElementarySuffix,
+                        out beforeElementaryRepeatedSuffixLength,
+                        out beforeElementaryRepeatedSuffixByte);
+                }
                 PendingGaps.Add(new PendingGap(
                     Track.ReferencePid,
                     _pendingTransportErrorOffsets[0],
@@ -1413,9 +1558,10 @@ public sealed class TsMultiSourceRepairService
                     replacementPacketModulo,
                     _pendingTransportErrorPts90k,
                     RecentHashes.ToArray(),
-                    RecentElementaryBytes.Count == ElementaryAnchorLength
-                        ? RecentElementaryBytes.ToArray()
-                        : null,
+                    beforeElementaryAnchor,
+                    beforeElementarySuffix,
+                    beforeElementaryRepeatedSuffixLength,
+                    beforeElementaryRepeatedSuffixByte,
                     null,
                     null,
                     ElementaryKind,
@@ -1732,6 +1878,9 @@ public sealed class TsMultiSourceRepairService
         long referencePts90k,
         ulong[] beforeHashes,
         byte[]? beforeElementaryAnchor,
+        byte[]? beforeElementarySuffix,
+        int beforeElementaryRepeatedSuffixLength,
+        byte beforeElementaryRepeatedSuffixByte,
         int? elementaryBytesUntilPesEnd,
         int? elementaryBytesUntilFrameEnd,
         TsRepairElementaryKind elementaryKind,
@@ -1768,6 +1917,11 @@ public sealed class TsMultiSourceRepairService
             BeforeAnchor = beforeHashes,
             AfterAnchor = AfterHashes.ToArray(),
             BeforeElementaryAnchor = !ElementaryBoundaryCrossed ? beforeElementaryAnchor : null,
+            BeforeElementarySuffix = !ElementaryBoundaryCrossed ? beforeElementarySuffix : null,
+            BeforeElementaryRepeatedSuffixLength = !ElementaryBoundaryCrossed
+                ? beforeElementaryRepeatedSuffixLength
+                : 0,
+            BeforeElementaryRepeatedSuffixByte = beforeElementaryRepeatedSuffixByte,
             AfterElementaryAnchor = !ElementaryBoundaryCrossed &&
                                     AfterElementaryBytes?.Count == ElementaryAnchorLength
                 ? AfterElementaryBytes.ToArray()
@@ -1923,7 +2077,9 @@ public sealed class TsMultiSourceRepairService
 
         public void ProcessElementaryPayload(
             ReadOnlySpan<byte> payload,
-            string sourcePath)
+            string sourcePath,
+            bool startsNewPes,
+            ReadOnlySpan<byte> pesHeader)
         {
             var needsIdentitySamples = false;
             if (_confirmedTrackState is null)
@@ -1954,11 +2110,15 @@ public sealed class TsMultiSourceRepairService
             var donorPts90k = CurrentPesPts90k;
             if (_confirmedTrackState is { } confirmed)
             {
-                confirmed.ProcessElementaryPayload(payload, sourcePath, donorPts90k);
+                confirmed.ProcessElementaryPayload(
+                    payload, sourcePath, donorPts90k, startsNewPes, pesHeader);
                 return;
             }
             foreach (var state in TrackStates)
-                state.ProcessElementaryPayload(payload, sourcePath, donorPts90k);
+            {
+                state.ProcessElementaryPayload(
+                    payload, sourcePath, donorPts90k, startsNewPes, pesHeader);
+            }
         }
 
         private void TryResolveConfirmedTrackState()
@@ -2246,7 +2406,9 @@ public sealed class TsMultiSourceRepairService
         public void ProcessElementaryPayload(
             ReadOnlySpan<byte> payload,
             string sourcePath,
-            long donorPts90k)
+            long donorPts90k,
+            bool startsNewPes,
+            ReadOnlySpan<byte> pesHeader)
         {
             if (!Mapping.ReferenceState.SupportsElementaryFallback || payload.IsEmpty)
                 return;
@@ -2266,6 +2428,14 @@ public sealed class TsMultiSourceRepairService
             }
             if (!needsGapSearch)
                 return;
+
+            if (startsNewPes)
+            {
+                foreach (var candidate in _activeElementaryCandidates)
+                    candidate.BeginPes(pesHeader);
+            }
+            foreach (var candidate in _activeElementaryCandidates)
+                candidate.BeginPacket();
 
             // PES 头的组织方式和边界可能因复用器而异，因此辅助源侧把 ES 视为连续字节流；
             // 是否会跨越参考源 PES 边界，已由参考源记录的 PES 剩余长度单独约束。
@@ -2418,6 +2588,8 @@ public sealed class TsMultiSourceRepairService
                 .ToArray();
             if (pending.Length == 0)
                 return [];
+            foreach (var item in pending)
+                item.State.SearchTargetPts90k = item.DonorPts90k;
 
             var windows = new List<ElementaryGapSearchWindow>();
             foreach (var item in pending)
@@ -2907,6 +3079,7 @@ public sealed class TsMultiSourceRepairService
         public bool Completed { get; set; }
         public bool PacketActive { get; set; }
         public bool ElementaryActive { get; set; }
+        public long SearchTargetPts90k { get; set; } = long.MinValue;
     }
 
     private sealed class ElementaryGapSearchWindow(long startPts90k, long endPts90k)
@@ -2945,14 +3118,31 @@ public sealed class TsMultiSourceRepairService
         private readonly Dictionary<ulong, List<GapSearchState>> _gapStarts = BuildGapStarts(gapStates);
         private readonly byte[] _window = new byte[ElementaryAnchorLength];
         private readonly List<ActiveElementaryGapCandidate> _activeCandidates = [];
+        private readonly Dictionary<GapSearchState,
+            (TsRepairGapCandidate Candidate, long Distance90k, int PacketDistance)>
+            _bestResults = [];
         private int _windowStart;
         private int _windowCount;
         private ulong _windowHash;
 
-        public List<ElementaryGapCandidateResult> Results { get; } = [];
+        public List<ElementaryGapCandidateResult> Results => _bestResults
+            .OrderBy(item => item.Key.Gap.ReferenceInsertOffset)
+            .Select(item => new ElementaryGapCandidateResult(item.Key, item.Value.Candidate))
+            .ToList();
 
-        public void Process(ReadOnlySpan<byte> payload)
+        public void Process(
+            ReadOnlySpan<byte> payload,
+            bool startsNewPes,
+            ReadOnlySpan<byte> pesHeader,
+            long donorPts90k)
         {
+            if (startsNewPes)
+            {
+                foreach (var candidate in _activeCandidates)
+                    candidate.BeginPes(pesHeader);
+            }
+            foreach (var candidate in _activeCandidates)
+                candidate.BeginPacket();
             foreach (var value in payload)
             {
                 for (var index = _activeCandidates.Count - 1; index >= 0; index--)
@@ -2963,8 +3153,22 @@ public sealed class TsMultiSourceRepairService
                     {
                         if (result is not null)
                         {
-                            candidate.State.Completed = true;
-                            Results.Add(new ElementaryGapCandidateResult(candidate.State, result));
+                            var targetPts90k = candidate.State.SearchTargetPts90k;
+                            var distance90k = candidate.StartPts90k == long.MinValue ||
+                                              targetPts90k == long.MinValue
+                                ? long.MaxValue
+                                : Math.Abs(candidate.StartPts90k - targetPts90k);
+                            var packetDistance = Math.Abs(
+                                candidate.SourcePayloadPacketCount -
+                                candidate.State.Gap.MissingPacketModulo);
+                            if (!_bestResults.TryGetValue(candidate.State, out var existing) ||
+                                distance90k < existing.Distance90k ||
+                                distance90k == existing.Distance90k &&
+                                packetDistance < existing.PacketDistance)
+                            {
+                                _bestResults[candidate.State] =
+                                    (result, distance90k, packetDistance);
+                            }
                         }
                         candidate.State.ElementaryActive = false;
                         RemoveAtSwapBack(_activeCandidates, index);
@@ -2991,7 +3195,7 @@ public sealed class TsMultiSourceRepairService
                         continue;
                     }
                     state.ElementaryActive = true;
-                    _activeCandidates.Add(new ActiveElementaryGapCandidate(state));
+                    _activeCandidates.Add(new ActiveElementaryGapCandidate(state, donorPts90k));
                 }
             }
         }
@@ -3238,17 +3442,25 @@ public sealed class TsMultiSourceRepairService
         }
     }
 
-    private sealed class ActiveElementaryGapCandidate(GapSearchState state)
+    private sealed class ActiveElementaryGapCandidate(
+        GapSearchState state,
+        long startPts90k = long.MinValue)
     {
         private readonly ulong _afterAnchorHash = ComputeByteHash(state.Gap.AfterElementaryAnchor!);
         private ulong _afterWindowHash;
         public GapSearchState State { get; } = state;
         public TsRepairGap Gap => State.Gap;
+        public long StartPts90k { get; } = startPts90k;
+        public int SourcePayloadPacketCount { get; private set; } = 1;
         public int MaximumByteCount { get; } = GetMaximumByteCount(state.Gap);
         public List<byte> Bytes { get; } = new(GetMaximumByteCount(state.Gap));
+        private List<TsRepairPesBoundary> PesBoundaries { get; } = [];
 
         private static int GetMaximumByteCount(TsRepairGap gap) =>
-            Math.Min(MaxElementaryRepairPackets, gap.MissingPacketModulo) * 184 + ElementaryAnchorLength;
+            (gap.BeforeElementarySuffix?.Length ?? 0) +
+            gap.BeforeElementaryRepeatedSuffixLength +
+            Math.Min(MaxElementaryRepairPackets, gap.MissingPacketModulo) * 184 +
+            ElementaryAnchorLength;
 
         public void Append(byte value)
         {
@@ -3264,6 +3476,17 @@ public sealed class TsMultiSourceRepairService
             }
             Bytes.Add(value);
         }
+
+        public void BeginPes(ReadOnlySpan<byte> pesHeader)
+        {
+            if (pesHeader.IsEmpty || pesHeader.Length > 184)
+                return;
+            // 候选缓冲只保存 ES；同时记录 PES 头应插入的 ES 字节位置，输出时才能
+            // 在新的 TS 包边界恢复 PUSI、PTS/DTS，而不是把跨 PES 的内容错误地拼平。
+            PesBoundaries.Add(new TsRepairPesBoundary(Bytes.Count, pesHeader.ToArray()));
+        }
+
+        public void BeginPacket() => SourcePayloadPacketCount++;
 
         public bool TryComplete(string sourcePath, int sourcePid, out bool added)
         {
@@ -3294,11 +3517,35 @@ public sealed class TsMultiSourceRepairService
                 return false;
             }
 
-            var repairByteCount = Bytes.Count - ElementaryAnchorLength;
-            var packetCount = (repairByteCount + 183) / 184;
+            var explicitSuffixLength = Gap.BeforeElementarySuffix?.Length ?? 0;
+            var repeatedSuffixLength = Gap.BeforeElementaryRepeatedSuffixLength;
+            var repairStartOffset = explicitSuffixLength + repeatedSuffixLength;
+            var values = CollectionsMarshal.AsSpan(Bytes);
+            if (Bytes.Count < repairStartOffset ||
+                explicitSuffixLength > 0 &&
+                !values[..explicitSuffixLength].SequenceEqual(Gap.BeforeElementarySuffix))
+            {
+                return false;
+            }
+            for (var index = explicitSuffixLength; index < repairStartOffset; index++)
+            {
+                if (values[index] == Gap.BeforeElementaryRepeatedSuffixByte)
+                    continue;
+                return false;
+            }
+            var repairByteCount = Bytes.Count - ElementaryAnchorLength - repairStartOffset;
+            var packetCount = Gap.MissingPacketModulo;
+            var boundaries = PesBoundaries
+                .Where(item => item.ElementaryOffset >= repairStartOffset &&
+                               item.ElementaryOffset < repairStartOffset + repairByteCount)
+                .Select(item => new TsRepairPesBoundary(
+                    item.ElementaryOffset - repairStartOffset,
+                    NormalizeVideoPesHeader(item.PesHeader, Gap.ElementaryKind)))
+                .ToArray();
             if (repairByteCount <= 0 || packetCount <= 0 || packetCount > MaxElementaryRepairPackets ||
-                (packetCount & 0x0F) != Gap.MissingPacketModulo ||
-                !IsElementaryRepairSafe(repairByteCount))
+                !TsElementaryRepairPacketizer.TryCreateLayout(
+                    repairByteCount, boundaries, packetCount, out _) ||
+                !IsElementaryRepairSafe(repairStartOffset, repairByteCount, boundaries))
             {
                 return false;
             }
@@ -3306,18 +3553,44 @@ public sealed class TsMultiSourceRepairService
             {
                 SourcePath = sourcePath,
                 SourcePid = sourcePid,
-                ElementaryPayload = Bytes.Take(repairByteCount).ToArray(),
-                SynthesizedPacketCount = packetCount
+                ElementaryPayload = Bytes.Skip(repairStartOffset).Take(repairByteCount).ToArray(),
+                PesBoundaries = boundaries,
+                SynthesizedPacketCount = packetCount,
+                SourcePayloadPacketCount = SourcePayloadPacketCount
             };
             return true;
         }
 
-        private bool IsElementaryRepairSafe(int repairByteCount) => Gap.ElementaryKind switch
+        private static byte[] NormalizeVideoPesHeader(
+            byte[] pesHeader,
+            TsRepairElementaryKind elementaryKind)
+        {
+            var result = pesHeader.ToArray();
+            if (result.Length < 6 || elementaryKind is not (
+                    TsRepairElementaryKind.MpegVideo or TsRepairElementaryKind.Cavs or
+                    TsRepairElementaryKind.Avs2 or TsRepairElementaryKind.Avs3 or
+                    TsRepairElementaryKind.H264 or TsRepairElementaryKind.H265))
+            {
+                return result;
+            }
+            // 不同复用器可能在同一 ES 位置采用不同的 PES 分段。视频 PES 允许 packet_length 为 0，
+            // 合成时清零可让解复用器以下一个 PUSI 为边界，避免沿用辅助源长度而截断参考源后续负载。
+            result[4] = 0;
+            result[5] = 0;
+            return result;
+        }
+
+        private bool IsElementaryRepairSafe(
+            int repairStartOffset,
+            int repairByteCount,
+            IReadOnlyList<TsRepairPesBoundary> pesBoundaries) => Gap.ElementaryKind switch
         {
             TsRepairElementaryKind.Audio =>
+                pesBoundaries.Count == 0 &&
                 Gap.ElementaryBytesUntilPesEnd is { } bytesUntilPesEnd &&
                 repairByteCount < bytesUntilPesEnd,
             _ when IsFramedAudioElementaryKind(Gap.ElementaryKind) =>
+                pesBoundaries.Count == 0 &&
                 Gap.ElementaryBytesUntilPesEnd is { } framedAudioPesBytes &&
                 repairByteCount < framedAudioPesBytes &&
                 Gap.ElementaryBytesUntilFrameEnd is { } frameBytes &&
@@ -3325,11 +3598,51 @@ public sealed class TsMultiSourceRepairService
             TsRepairElementaryKind.MpegVideo or TsRepairElementaryKind.Cavs or
                 TsRepairElementaryKind.Avs2 or TsRepairElementaryKind.Avs3 or
                 TsRepairElementaryKind.H264 or TsRepairElementaryKind.H265 =>
-                !ContainsUnsafeVideoStartCodeAroundRepair(repairByteCount),
+                !ContainsUnsafeVideoStartCodeAroundRepair(repairStartOffset, repairByteCount) ||
+                Gap.ReferencePts90k != long.MinValue &&
+                HasAlignedPesVideoBoundaries(
+                    repairStartOffset, repairByteCount, pesBoundaries),
             _ => false
         };
 
-        private bool ContainsUnsafeVideoStartCodeAroundRepair(int repairByteCount)
+        private bool HasAlignedPesVideoBoundaries(
+            int repairStartOffset,
+            int repairByteCount,
+            IReadOnlyList<TsRepairPesBoundary> pesBoundaries)
+        {
+            if (pesBoundaries.Count == 0)
+                return false;
+            foreach (var boundary in pesBoundaries)
+            {
+                var searchEnd = Math.Min(repairByteCount - 4, boundary.ElementaryOffset + 16);
+                var foundStartCode = false;
+                for (var index = boundary.ElementaryOffset; index <= searchEnd; index++)
+                {
+                    var sourceIndex = repairStartOffset + index;
+                    if (Bytes[sourceIndex] != 0 || Bytes[sourceIndex + 1] != 0 ||
+                        Bytes[sourceIndex + 2] != 1)
+                        continue;
+                    var startCode = Bytes[sourceIndex + 3];
+                    foundStartCode = Gap.ElementaryKind switch
+                    {
+                        TsRepairElementaryKind.MpegVideo => startCode is not (>= 0x01 and <= 0xAF),
+                        TsRepairElementaryKind.Cavs or TsRepairElementaryKind.Avs2 or
+                            TsRepairElementaryKind.Avs3 => startCode > 0xAF,
+                        TsRepairElementaryKind.H264 or TsRepairElementaryKind.H265 => true,
+                        _ => false
+                    };
+                    if (foundStartCode)
+                        break;
+                }
+                if (!foundStartCode)
+                    return false;
+            }
+            return true;
+        }
+
+        private bool ContainsUnsafeVideoStartCodeAroundRepair(
+            int repairStartOffset,
+            int repairByteCount)
         {
             const int edgeLength = 4;
             var before = Gap.BeforeElementaryAnchor!;
@@ -3342,7 +3655,7 @@ public sealed class TsMultiSourceRepairService
                     return before[before.Length - edgeLength + index];
                 index -= edgeLength;
                 if (index < repairByteCount)
-                    return Bytes[index];
+                    return Bytes[repairStartOffset + index];
                 return after[index - repairByteCount];
             }
 

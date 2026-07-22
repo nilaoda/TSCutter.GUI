@@ -172,46 +172,59 @@ public sealed class TsStreamFilterService
                     if (insertion.ElementaryPayload is { Length: > 0 } elementaryPayload)
                     {
                         var packetCount = insertion.SynthesizedPacketCount;
-                        if (packetCount <= 0 || elementaryPayload.Length > packetCount * 184 ||
-                            elementaryPayload.Length <= (packetCount - 1) * 184)
+                        if (!TsElementaryRepairPacketizer.TryCreateLayout(
+                                elementaryPayload.Length, insertion.PesBoundaries,
+                                packetCount, out var layout))
                         {
                             throw new TsRepairException(TsRepairErrorCode.InvalidRepairData);
                         }
 
-                        var payloadOffset = 0;
                         var synthesizedContinuityCounter = insertion.StartContinuityCounter;
-                        for (var packetIndex = 0; packetIndex < packetCount; packetIndex++)
+                        foreach (var segment in layout)
                         {
-                            await EnsurePacketSpaceAsync().ConfigureAwait(false);
-                            var packet = outputBuffer.AsSpan(outputLength, PacketSize);
-                            packet.Fill(0xFF);
-                            packet[0] = 0x47;
-                            packet[1] = (byte)((insertion.TargetPid >> 8) & 0x1F);
-                            packet[2] = (byte)insertion.TargetPid;
+                            var segmentPayloadOffset = 0;
+                            for (var packetIndex = 0; packetIndex < segment.PacketCount; packetIndex++)
+                            {
+                                await EnsurePacketSpaceAsync().ConfigureAwait(false);
+                                var packet = outputBuffer.AsSpan(outputLength, PacketSize);
+                                packet.Fill(0xFF);
+                                packet[0] = 0x47;
+                                var payloadStart = packetIndex == 0 && segment.PesHeader is not null;
+                                packet[1] = (byte)((payloadStart ? 0x40 : 0) |
+                                                  ((insertion.TargetPid >> 8) & 0x1F));
+                                packet[2] = (byte)insertion.TargetPid;
 
-                            var copyLength = Math.Min(184, elementaryPayload.Length - payloadOffset);
-                            var targetPayloadOffset = 4;
-                            if (copyLength == 184)
-                            {
-                                packet[3] = (byte)(0x10 | synthesizedContinuityCounter);
+                                var copyLength = TsElementaryRepairPacketizer.GetNextPayloadLength(
+                                    segment, segmentPayloadOffset, packetIndex);
+                                if (copyLength <= 0)
+                                    throw new TsRepairException(TsRepairErrorCode.InvalidRepairData);
+                                var targetPayloadOffset = 4;
+                                if (copyLength == 184)
+                                {
+                                    packet[3] = (byte)(0x10 | synthesizedContinuityCounter);
+                                }
+                                else
+                                {
+                                    // 使用 adaptation stuffing 将同一段 PES/ES 精确摊入参考缺失的包数；
+                                    // 每个包仍至少携带一个字节，因此连续计数器可以逐包递增。
+                                    packet[3] = (byte)(0x30 | synthesizedContinuityCounter);
+                                    var adaptationLength = 183 - copyLength;
+                                    packet[4] = (byte)adaptationLength;
+                                    if (adaptationLength > 0)
+                                        packet[5] = 0;
+                                    targetPayloadOffset = 5 + adaptationLength;
+                                }
+                                TsElementaryRepairPacketizer.CopyPayload(
+                                    elementaryPayload, segment, segmentPayloadOffset,
+                                    packet.Slice(targetPayloadOffset, copyLength));
+                                if (payloadStart)
+                                    RewritePesTimestamps(packet, insertion.TimestampOffset90k);
+                                segmentPayloadOffset += copyLength;
+                                synthesizedContinuityCounter =
+                                    (synthesizedContinuityCounter + 1) & 0x0F;
+                                outputLength += PacketSize;
+                                packetsWritten++;
                             }
-                            else
-                            {
-                                // ES 级回退没有参考源原 adaptation field；以 stuffing 精确填满 188 字节，
-                                // 不虚构 PCR 或 PUSI，只用于确认未跨越 PES 边界的音频缺口。
-                                packet[3] = (byte)(0x30 | synthesizedContinuityCounter);
-                                var adaptationLength = 183 - copyLength;
-                                packet[4] = (byte)adaptationLength;
-                                if (adaptationLength > 0)
-                                    packet[5] = 0;
-                                targetPayloadOffset = 5 + adaptationLength;
-                            }
-                            elementaryPayload.AsSpan(payloadOffset, copyLength)
-                                .CopyTo(packet[targetPayloadOffset..]);
-                            payloadOffset += copyLength;
-                            synthesizedContinuityCounter = (synthesizedContinuityCounter + 1) & 0x0F;
-                            outputLength += PacketSize;
-                            packetsWritten++;
                         }
                         continue;
                     }

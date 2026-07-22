@@ -141,6 +141,9 @@ public sealed class TsRepairGap
     public required ulong[] BeforeAnchor { get; init; }
     public required ulong[] AfterAnchor { get; init; }
     public byte[]? BeforeElementaryAnchor { get; init; }
+    public byte[]? BeforeElementarySuffix { get; init; }
+    public int BeforeElementaryRepeatedSuffixLength { get; init; }
+    public byte BeforeElementaryRepeatedSuffixByte { get; init; }
     public byte[]? AfterElementaryAnchor { get; init; }
     public int? ElementaryBytesUntilPesEnd { get; init; }
     public int? ElementaryBytesUntilFrameEnd { get; init; }
@@ -155,8 +158,12 @@ public sealed class TsRepairGapCandidate
     public required int SourcePid { get; init; }
     public long[] SourcePacketOffsets { get; init; } = [];
     public byte[]? ElementaryPayload { get; init; }
+    public TsRepairPesBoundary[] PesBoundaries { get; init; } = [];
     public int SynthesizedPacketCount { get; init; }
+    public int SourcePayloadPacketCount { get; init; }
 }
+
+public readonly record struct TsRepairPesBoundary(int ElementaryOffset, byte[] PesHeader);
 
 public sealed class TsMultiSourceAnalysisResult
 {
@@ -225,7 +232,9 @@ public sealed class TsPacketInsertion
     public required int StartContinuityCounter { get; init; }
     public long[] SourcePacketOffsets { get; init; } = [];
     public byte[]? ElementaryPayload { get; init; }
+    public TsRepairPesBoundary[] PesBoundaries { get; init; } = [];
     public int SynthesizedPacketCount { get; init; }
+    public long TimestampOffset90k { get; init; }
 }
 
 public sealed class TsPacketReplacement
