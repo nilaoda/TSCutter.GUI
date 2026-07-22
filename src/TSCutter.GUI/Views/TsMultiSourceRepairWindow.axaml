@@ -5,6 +5,7 @@
         xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
         xmlns:models="clr-namespace:TSCutter.GUI.Models"
         xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
         mc:Ignorable="d"
         x:Class="TSCutter.GUI.Views.TsMultiSourceRepairWindow"
         x:DataType="viewModels:TsMultiSourceRepairWindowViewModel"
@@ -27,6 +28,10 @@
         <Style Selector="TextBlock.analysisIssue">
             <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="DataGridRow:selected TextBlock">
+            <Setter Property="Foreground"
+                    Value="{DynamicResource {x:Static common:SystemColors.HighlightTextBrushKey}}" />
         </Style>
     </Window.Styles>
 

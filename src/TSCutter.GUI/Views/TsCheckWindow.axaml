@@ -53,6 +53,21 @@
         <Style Selector="TextBlock.warningVerdict">
             <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
         </Style>
+        <!-- 选中行使用系统高亮文字色，并让局部状态背景服从整行选择背景。 -->
+        <Style Selector="DataGridRow:selected TextBlock">
+            <Setter Property="Foreground"
+                    Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
+        </Style>
+        <Style Selector="DataGridRow:selected Border.errorCell">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="DataGridRow:selected Border.warningCell">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="DataGridRow:selected controls|PacketShareBar">
+            <Setter Property="Fill"
+                    Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
+        </Style>
     </Window.Styles>
 
     <Grid Margin="12" RowDefinitions="Auto,Auto,Auto,*,Auto">
