@@ -6,6 +6,7 @@ public sealed class TsCheckEventView
 {
     public TsCheckEventView(TsCheckEvent item, TsCheckTextFormatter text, TsCheckResult? result = null)
     {
+        Item = item;
         Severity = text.FormatSeverity(item.Severity);
         SourceTime = text.FormatEventSourceTime(item);
         ZeroBasedTime = text.FormatEventZeroBasedTime(item);
@@ -18,6 +19,7 @@ public sealed class TsCheckEventView
         Message = text.FormatEventMessage(item);
     }
 
+    public TsCheckEvent Item { get; }
     public string Severity { get; }
     public string SourceTime { get; }
     public string ZeroBasedTime { get; }

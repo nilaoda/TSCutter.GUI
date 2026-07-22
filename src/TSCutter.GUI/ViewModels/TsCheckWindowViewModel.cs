@@ -16,12 +16,20 @@ using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.ViewModels;
 
+public enum TsCheckViewMode
+{
+    Summary,
+    Details,
+    Timeline
+}
+
 public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
     private const int MaxUiEvents = 5_000;
     private readonly IDialogService _dialogService;
     private readonly TsCheckTextFormatter _text;
     private readonly Dictionary<int, TsCheckPidSummaryView> _pidSummaryRows = [];
+    private readonly List<TsCheckEvent> _liveTimelineEvents = [];
     private CancellationTokenSource? _cancellationTokenSource;
     private TsCheckResult? _result;
     private bool _isClosing;
@@ -32,15 +40,72 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
         _dialogService = dialogService;
         _text = new TsCheckTextFormatter();
         StatusText = _text.Strings.String_TsCheck_Status_Ready;
+        App.LocalizationService.LanguageChanged += OnLanguageChanged;
+        RebuildTimelineStreams();
     }
 
     public bool? DialogResult { get; }
     public string FilePath { get; set; } = string.Empty;
     public ObservableCollection<TsCheckEventView> Events { get; } = [];
     public ObservableCollection<TsCheckPidSummaryView> PidSummaries { get; } = [];
+    public ObservableCollection<TsCheckTimelineStreamView> TimelineStreams { get; } = [];
 
     [ObservableProperty]
-    private bool _isSummaryView = true;
+    [NotifyPropertyChangedFor(nameof(IsSummaryView))]
+    [NotifyPropertyChangedFor(nameof(IsDetailsView))]
+    [NotifyPropertyChangedFor(nameof(IsTimelineView))]
+    private TsCheckViewMode _viewMode = TsCheckViewMode.Summary;
+
+    public bool IsSummaryView
+    {
+        get => ViewMode == TsCheckViewMode.Summary;
+        set
+        {
+            if (value)
+                ViewMode = TsCheckViewMode.Summary;
+        }
+    }
+
+    public bool IsDetailsView
+    {
+        get => ViewMode == TsCheckViewMode.Details;
+        set
+        {
+            if (value)
+                ViewMode = TsCheckViewMode.Details;
+        }
+    }
+
+    public bool IsTimelineView
+    {
+        get => ViewMode == TsCheckViewMode.Timeline;
+        set
+        {
+            if (value)
+                ViewMode = TsCheckViewMode.Timeline;
+        }
+    }
+
+    [ObservableProperty]
+    private IReadOnlyList<TsCheckTimelineBucket> _timelineBuckets = Array.Empty<TsCheckTimelineBucket>();
+
+    [ObservableProperty]
+    private IReadOnlyList<TsCheckEvent> _timelineEvents = Array.Empty<TsCheckEvent>();
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectedTimelinePid))]
+    [NotifyPropertyChangedFor(nameof(SelectedTimelineSeriesName))]
+    private TsCheckTimelineStreamView? _selectedTimelineStream;
+
+    public int SelectedTimelinePid => SelectedTimelineStream?.Pid ?? -1;
+    public string SelectedTimelineSeriesName =>
+        SelectedTimelineStream?.DisplayText ?? _text.Strings.String_TsCheck_Timeline_TotalTs;
+
+    [ObservableProperty]
+    private TsCheckEvent? _selectedTimelineEvent;
+
+    [ObservableProperty]
+    private TsCheckEventView? _selectedEventRow;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanStart))]
@@ -58,6 +123,12 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
 
     [ObservableProperty]
     private string _statusText = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasBroadcastTime;
+
+    [ObservableProperty]
+    private string _broadcastTimeText = string.Empty;
 
     [ObservableProperty]
     private string _speedText = $"{CommonUtil.FormatFileSize(0)}/s";
@@ -112,11 +183,19 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
         Events.Clear();
         PidSummaries.Clear();
         _pidSummaryRows.Clear();
+        _liveTimelineEvents.Clear();
+        TimelineBuckets = Array.Empty<TsCheckTimelineBucket>();
+        TimelineEvents = Array.Empty<TsCheckEvent>();
+        SelectedTimelineEvent = null;
+        SelectedEventRow = null;
+        RebuildTimelineStreams();
         Percent = 0;
         ErrorCount = 0;
         WarningCount = 0;
         VerdictText = "-";
         Verdict = null;
+        HasBroadcastTime = false;
+        BroadcastTimeText = string.Empty;
         StatusText = _text.Strings.String_TsCheck_Status_Scanning;
 
         try
@@ -143,10 +222,14 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
             ElapsedText = result.Elapsed.ToString(@"hh\:mm\:ss\.fff");
             RebuildEvents();
             RebuildPidSummaries();
+            TimelineBuckets = result.Timeline.ToArray();
+            TimelineEvents = result.Events.ToArray();
+            RebuildTimelineStreams();
             ErrorCount = _result.ErrorCount;
             WarningCount = _result.WarningCount;
             Verdict = _result.Verdict;
             VerdictText = _text.FormatVerdict(_result);
+            UpdateBroadcastTime();
             StatusText = _result.WasCancelled
                 ? _text.Strings.String_TsCheck_Status_Cancelled
                 : _text.Strings.String_TsCheck_Status_Completed;
@@ -178,10 +261,15 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
         ElapsedText = progress.Elapsed.ToString(@"hh\:mm\:ss\.fff");
         ErrorCount = progress.ErrorCount;
         WarningCount = progress.WarningCount;
+        TimelineBuckets = progress.Timeline;
         foreach (var pid in progress.Pids)
             UpdatePidSummary(pid, progress.PacketCount);
         if (progress.NewEvent is not null && Events.Count < MaxUiEvents)
+        {
             Events.Add(new TsCheckEventView(progress.NewEvent, _text));
+            _liveTimelineEvents.Add(progress.NewEvent);
+            TimelineEvents = _liveTimelineEvents.ToArray();
+        }
     }
 
     private void RebuildEvents()
@@ -218,6 +306,102 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
                 pid.SupplementaryStreamType, pid.Language,
                 pid.IsPcrPid, pid.IsPmtPid, false), _result.PacketCount);
         }
+    }
+
+    private void RebuildTimelineStreams()
+    {
+        var selectedPid = SelectedTimelineStream?.Pid ?? -1;
+        TimelineStreams.Clear();
+        TimelineStreams.Add(new TsCheckTimelineStreamView(
+            -1, _text.Strings.String_TsCheck_Timeline_TotalTs));
+
+        if (_result is not null)
+        {
+            var pids = new List<int>(_result.Pids.Keys);
+            pids.Sort();
+            foreach (var pidValue in pids)
+            {
+                var pid = _result.Pids[pidValue];
+                if (pid.PacketCount <= 0)
+                    continue;
+                var description = _text.FormatPidDescription(
+                    pid.Pid, pid.ProgramNumber, pid.StreamType, pid.MpegAudioLayer,
+                    pid.SupplementaryStreamType, pid.Language, pid.IsPcrPid, pid.IsPmtPid);
+                TimelineStreams.Add(new TsCheckTimelineStreamView(
+                    pid.Pid, $"{pid.PidText} · {description}"));
+            }
+        }
+
+        SelectedTimelineStream = TimelineStreams.Count > 0
+            ? FindTimelineStream(selectedPid) ?? TimelineStreams[0]
+            : null;
+    }
+
+    private TsCheckTimelineStreamView? FindTimelineStream(int pid)
+    {
+        foreach (var item in TimelineStreams)
+        {
+            if (item.Pid == pid)
+                return item;
+        }
+        return null;
+    }
+
+    partial void OnSelectedTimelineEventChanged(TsCheckEvent? value)
+    {
+        if (value is null)
+            return;
+        ViewMode = TsCheckViewMode.Details;
+        SelectEventRow(value);
+    }
+
+    private void SelectEventRow(TsCheckEvent value)
+    {
+        SelectedEventRow = null;
+        foreach (var item in Events)
+        {
+            if (ReferenceEquals(item.Item, value))
+            {
+                SelectedEventRow = item;
+                break;
+            }
+        }
+        if (SelectedEventRow is null && _result is not null)
+        {
+            // 时间轴可显示全部已保存异常；若目标超出详情表默认的 5,000 行上限，则临时置换末行以便定位。
+            if (Events.Count >= MaxUiEvents)
+                Events.RemoveAt(Events.Count - 1);
+            SelectedEventRow = new TsCheckEventView(value, _text, _result);
+            Events.Add(SelectedEventRow);
+        }
+    }
+
+    private void OnLanguageChanged()
+    {
+        RebuildTimelineStreams();
+        StatusText = IsScanning
+            ? _text.Strings.String_TsCheck_Status_Scanning
+            : _result is null
+                ? _text.Strings.String_TsCheck_Status_Ready
+                : _result.WasCancelled
+                    ? _text.Strings.String_TsCheck_Status_Cancelled
+                    : _text.Strings.String_TsCheck_Status_Completed;
+        if (_result is null)
+            return;
+        RebuildEvents();
+        RebuildPidSummaries();
+        if (SelectedTimelineEvent is { } selectedEvent)
+            SelectEventRow(selectedEvent);
+        VerdictText = _text.FormatVerdict(_result);
+        UpdateBroadcastTime();
+    }
+
+    private void UpdateBroadcastTime()
+    {
+        HasBroadcastTime = _result?.FirstBroadcastTime is not null;
+        BroadcastTimeText = _result?.FirstBroadcastTime is { } first
+            ? _text.FormatBroadcastTime(first, _result.LastBroadcastTime)
+            : string.Empty;
     }
 
     private void UpdatePidSummary(TsCheckPidProgress progress, long totalPacketCount)
@@ -272,11 +456,16 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
             return;
 
         _isClosing = true;
+        App.LocalizationService.LanguageChanged -= OnLanguageChanged;
         _scanGeneration++;
         _cancellationTokenSource?.Cancel();
         _result = null;
         Events.Clear();
         PidSummaries.Clear();
+        TimelineStreams.Clear();
+        _liveTimelineEvents.Clear();
+        TimelineBuckets = Array.Empty<TsCheckTimelineBucket>();
+        TimelineEvents = Array.Empty<TsCheckEvent>();
         _pidSummaryRows.Clear();
     }
 

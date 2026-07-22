@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using TSCutter.GUI.Models;
 
 namespace TSCutter.GUI.Utils;
@@ -19,6 +20,7 @@ public sealed class TsCheckTextFormatter
             TsCheckMessageCode.DuplicatePacket => Strings.String_TsCheck_Message_DuplicatePacket,
             TsCheckMessageCode.ConflictingDuplicate => Strings.String_TsCheck_Message_ConflictingDuplicate,
             TsCheckMessageCode.ContinuityGap => Strings.String_TsCheck_Message_ContinuityGap,
+            TsCheckMessageCode.PesSizeMismatch => Strings.String_TsCheck_Message_PesSizeMismatch,
             TsCheckMessageCode.PcrBackward => Strings.String_TsCheck_Message_PcrBackward,
             TsCheckMessageCode.PcrJump => Strings.String_TsCheck_Message_PcrJump,
             TsCheckMessageCode.PcrGap => Strings.String_TsCheck_Message_PcrGap,
@@ -47,6 +49,7 @@ public sealed class TsCheckTextFormatter
         TsCheckEventType.TrailingBytes => Strings.String_TsCheck_Type_TrailingBytes,
         TsCheckEventType.TransportError => Strings.String_TsCheck_Type_TransportError,
         TsCheckEventType.ContinuityGap => Strings.String_TsCheck_Type_ContinuityGap,
+        TsCheckEventType.PesSizeMismatch => Strings.String_TsCheck_Type_PesSizeMismatch,
         TsCheckEventType.DuplicatePacket => Strings.String_TsCheck_Type_DuplicatePacket,
         TsCheckEventType.ConflictingDuplicate => Strings.String_TsCheck_Type_ConflictingDuplicate,
         TsCheckEventType.PsiCrcError => Strings.String_TsCheck_Type_PsiCrcError,
@@ -168,6 +171,18 @@ public sealed class TsCheckTextFormatter
 
     public string FormatEventZeroBasedTime(TsCheckEvent item) => FormatTime(item.TimeSeconds, item.IsEstimatedTime);
 
+    public string FormatBroadcastTime(TsBroadcastTimeAnchor first, TsBroadcastTimeAnchor? last = null)
+        => FormatBroadcastTime(first.UtcTime, last?.UtcTime);
+
+    public string FormatBroadcastTime(DateTimeOffset first, DateTimeOffset? last = null)
+    {
+        var firstText = first.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        if (last is not { } lastValue || lastValue == first)
+            return string.Format(Strings.String_Ts_BroadcastTime_Value, firstText);
+        var lastText = lastValue.UtcDateTime.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+        return string.Format(Strings.String_Ts_BroadcastTime_Range, firstText, lastText);
+    }
+
     public string FormatPidDescription(TsCheckEvent item, TsCheckResult? result)
     {
         TsCheckProgramSummary? pmtProgram = null;
@@ -205,6 +220,31 @@ public sealed class TsCheckTextFormatter
             return Strings.String_TsCheck_Pid_Pat;
         if (pid == 0x1FFF)
             return Strings.String_TsCheck_Pid_Null;
+
+        // 固定系统 PID 即使当前不深度解析其 section，也应按标准用途标识，避免误报为“未识别”。
+        var wellKnownPid = pid switch
+        {
+            0x0001 => Strings.String_TsCheck_Pid_Cat,
+            0x0002 => Strings.String_TsCheck_Pid_Tsdt,
+            0x0003 => Strings.String_TsCheck_Pid_Ipmp,
+            >= 0x0004 and <= 0x000F => Strings.String_TsCheck_Pid_MpegReserved,
+            0x0010 => Strings.String_TsCheck_Pid_Nit,
+            0x0011 => Strings.String_TsCheck_Pid_SdtBat,
+            0x0012 => Strings.String_TsCheck_Pid_Eit,
+            0x0013 => Strings.String_TsCheck_Pid_Rst,
+            0x0014 => Strings.String_TsCheck_Pid_TdtTot,
+            0x0015 => Strings.String_TsCheck_Pid_NetworkSync,
+            0x0016 => Strings.String_TsCheck_Pid_Rnt,
+            >= 0x0017 and <= 0x001B => Strings.String_TsCheck_Pid_DvbReserved,
+            0x001C => Strings.String_TsCheck_Pid_LinkLocal,
+            0x001D => Strings.String_TsCheck_Pid_Measurement,
+            0x001E => Strings.String_TsCheck_Pid_Dit,
+            0x001F => Strings.String_TsCheck_Pid_Sit,
+            0x1FFB => Strings.String_TsCheck_Pid_AtscPsip,
+            _ => null
+        };
+        if (wellKnownPid is not null)
+            return wellKnownPid;
 
         var program = programNumber is { } number
             ? string.Format(Strings.String_TsCheck_Pid_Program, number)

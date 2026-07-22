@@ -122,7 +122,8 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
             {
                 InventoryOnly = true,
                 MaxBytes = MaxProbeBytes,
-                StablePacketCount = 8_192
+                StablePacketCount = 8_192,
+                Features = TsStreamAnalyzeFeatures.None
             };
             var result = await Task.Run(() => analyzer.AnalyzeAsync(
                 FilePath, progress, cancellationTokenSource.Token, options));

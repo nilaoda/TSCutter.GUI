@@ -18,7 +18,7 @@ namespace TSCutter.GUI;
 
 public partial class App : Application
 {
-    public const string CurrentTag = "alphabuild_20260717";
+    public const string CurrentTag = "alphabuild_20260722";
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -36,6 +36,8 @@ public partial class App : Application
         SplatRegistrations.Register<RawCutterWindowViewModel>();
         SplatRegistrations.Register<TsCheckWindowViewModel>();
         SplatRegistrations.Register<TsFilterWindowViewModel>();
+        SplatRegistrations.Register<TsServiceFilterWindowViewModel>();
+        SplatRegistrations.Register<TsMultiSourceRepairWindowViewModel>();
         SplatRegistrations.Register<AboutWindowViewModel>();
         SplatRegistrations.Register<JumpTimeViewModel>();
         SplatRegistrations.Register<MediainfoWindowViewModel>();
@@ -107,6 +109,8 @@ public partial class App : Application
     public static RawCutterWindowViewModel RawCutterDialog => Locator.Current.GetService<RawCutterWindowViewModel>()!;
     public static TsCheckWindowViewModel TsCheckDialog => Locator.Current.GetService<TsCheckWindowViewModel>()!;
     public static TsFilterWindowViewModel TsFilterDialog => Locator.Current.GetService<TsFilterWindowViewModel>()!;
+    public static TsServiceFilterWindowViewModel TsServiceFilterDialog => Locator.Current.GetService<TsServiceFilterWindowViewModel>()!;
+    public static TsMultiSourceRepairWindowViewModel TsMultiSourceRepairDialog => Locator.Current.GetService<TsMultiSourceRepairWindowViewModel>()!;
     public static JumpTimeViewModel JumpTimeDialog => Locator.Current.GetService<JumpTimeViewModel>()!;
     public static AboutWindowViewModel AboutDialog => Locator.Current.GetService<AboutWindowViewModel>()!;
     public static MediainfoWindowViewModel MediainfoDialog => Locator.Current.GetService<MediainfoWindowViewModel>()!;

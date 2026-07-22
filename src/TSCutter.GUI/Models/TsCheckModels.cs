@@ -24,6 +24,7 @@ public enum TsCheckEventType
     TrailingBytes,
     TransportError,
     ContinuityGap,
+    PesSizeMismatch,
     DuplicatePacket,
     ConflictingDuplicate,
     PsiCrcError,
@@ -53,6 +54,7 @@ public enum TsCheckMessageCode
     DuplicatePacket,
     ConflictingDuplicate,
     ContinuityGap,
+    PesSizeMismatch,
     PcrBackward,
     PcrJump,
     PcrGap,
@@ -124,6 +126,7 @@ public sealed class TsCheckPidSummary
     public long PayloadPacketCount { get; set; }
     public long ContinuityErrors { get; set; }
     public long TransportErrors { get; set; }
+    public long PesSizeErrors { get; set; }
     public long DuplicatePackets { get; set; }
     public int ErrorCount { get; set; }
     public int WarningCount { get; set; }
@@ -146,6 +149,21 @@ public sealed class TsCheckProgramSummary
     public byte[] ProgramDescriptors { get; set; } = [];
     public Dictionary<int, byte> Streams { get; } = [];
     public Dictionary<int, TsStreamDefinition> StreamDefinitions { get; } = [];
+}
+
+public sealed class TsServiceSummary
+{
+    public required int ServiceId { get; init; }
+    public string ServiceName { get; set; } = string.Empty;
+    public string ProviderName { get; set; } = string.Empty;
+    public byte ServiceType { get; set; }
+    public byte SdtVersion { get; set; }
+    public int OriginalNetworkId { get; set; }
+    public bool EitSchedule { get; set; }
+    public bool EitPresentFollowing { get; set; }
+    public byte RunningStatus { get; set; }
+    public bool FreeCaMode { get; set; }
+    public byte[] Descriptors { get; set; } = [];
 }
 
 public sealed class TsStreamDefinition
@@ -171,8 +189,13 @@ public sealed class TsCheckResult
     public int GlobalErrorCount { get; set; }
     public int GlobalWarningCount { get; set; }
     public List<TsCheckEvent> Events { get; } = [];
+    public List<TsCheckTimelineBucket> Timeline { get; } = [];
     public Dictionary<int, TsCheckPidSummary> Pids { get; } = [];
     public Dictionary<int, TsCheckProgramSummary> Programs { get; } = [];
+    public Dictionary<int, TsServiceSummary> Services { get; } = [];
+    public TsBroadcastTimeAnchor? FirstBroadcastTime { get; set; }
+    public TsBroadcastTimeAnchor? LastBroadcastTime { get; set; }
+    public int TimelineReferencePcrPid { get; set; } = -1;
     public int ErrorCount => TotalErrorCount;
     public int WarningCount => TotalWarningCount;
     public TsCheckVerdict Verdict => WasCancelled
@@ -184,11 +207,73 @@ public sealed class TsCheckResult
                 : TsCheckVerdict.Pass;
 }
 
+public readonly record struct TsBroadcastTimeAnchor(
+    DateTimeOffset UtcTime,
+    long Clock90k,
+    long PacketIndex,
+    long FileOffset,
+    int ProgramNumber = -1);
+
+public readonly record struct TsCheckTimelinePidSample(int Pid, double PacketCount);
+
+public sealed class TsCheckTimelineBucket
+{
+    private const int TransportPacketBits = 188 * 8;
+
+    public required double StartSeconds { get; init; }
+    public required double DurationSeconds { get; init; }
+    public required double TotalPacketCount { get; init; }
+    public required int Segment { get; init; }
+    public TsCheckTimelinePidSample[] Pids { get; init; } = [];
+    public double EndSeconds => StartSeconds + DurationSeconds;
+    public double TotalBitrate => DurationSeconds > 0
+        ? TotalPacketCount * TransportPacketBits / DurationSeconds
+        : 0;
+
+    public double GetPidBitrate(int pid)
+    {
+        if (DurationSeconds <= 0)
+            return 0;
+        // 每个桶的 PID 采样已排序，绘图时使用二分查找，避免长时间轴反复线性扫描全部 PID。
+        var low = 0;
+        var high = Pids.Length - 1;
+        while (low <= high)
+        {
+            var middle = low + (high - low) / 2;
+            var sample = Pids[middle];
+            if (sample.Pid == pid)
+                return sample.PacketCount * TransportPacketBits / DurationSeconds;
+            if (sample.Pid < pid)
+                low = middle + 1;
+            else
+                high = middle - 1;
+        }
+        return 0;
+    }
+}
+
 public sealed class TsStreamAnalyzeOptions
 {
     public bool InventoryOnly { get; init; }
+    public bool IncludeServiceMetadata { get; init; }
     public long MaxBytes { get; init; } = long.MaxValue;
     public int StablePacketCount { get; init; } = 8_192;
+    public TsStreamAnalyzeFeatures Features { get; init; } = TsStreamAnalyzeFeatures.Default;
+}
+
+[Flags]
+public enum TsStreamAnalyzeFeatures
+{
+    None = 0,
+    ContinuityValidation = 1 << 0,
+    TimestampValidation = 1 << 1,
+    AvSyncValidation = 1 << 2,
+    DetailedEvents = 1 << 3,
+    Timeline = 1 << 4,
+    PesSizeValidation = 1 << 5,
+    BroadcastClock = 1 << 6,
+    Default = ContinuityValidation | TimestampValidation | AvSyncValidation | DetailedEvents | Timeline |
+              PesSizeValidation | BroadcastClock
 }
 
 public readonly record struct TsCheckPidProgress(
@@ -214,7 +299,8 @@ public readonly record struct TsCheckProgress(
     double BytesPerSecond,
     TimeSpan Elapsed,
     TsCheckPidProgress[] Pids,
-    TsCheckEvent? NewEvent)
+    TsCheckEvent? NewEvent,
+    TsCheckTimelineBucket[] Timeline)
 {
     public double Percent => FileSize > 0 ? BytesScanned * 100.0 / FileSize : 0;
 }

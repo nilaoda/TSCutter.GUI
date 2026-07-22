@@ -121,8 +121,14 @@
                                   Command="{Binding RawCutterClickCommand}" />
                         <MenuItem Header="{DynamicResource String.Menu.TsCheck}"
                                   Command="{Binding TsCheckClickCommand}" />
-                        <MenuItem Header="{DynamicResource String.Menu.TsFilter}"
-                                  Command="{Binding TsFilterClickCommand}" />
+                        <MenuItem Header="{DynamicResource String.Menu.TsFilter}">
+                            <MenuItem Header="{DynamicResource String.Menu.TsFilterPid}"
+                                      Command="{Binding TsFilterClickCommand}" />
+                            <MenuItem Header="{DynamicResource String.Menu.TsFilterService}"
+                                      Command="{Binding TsServiceFilterClickCommand}" />
+                        </MenuItem>
+                        <MenuItem Header="{DynamicResource String.Menu.TsMultiSourceRepair}"
+                                  Command="{Binding TsMultiSourceRepairClickCommand}" />
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.Settings}"
                                   Command="{Binding SettingsClickCommand}" />

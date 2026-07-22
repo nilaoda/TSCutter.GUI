@@ -31,7 +31,33 @@ public sealed class TsCheckReportBuilder(TsCheckTextFormatter text)
         AppendField(builder, strings.String_TsCheck_Report_Elapsed, result.Elapsed.ToString(@"hh\:mm\:ss\.fff"));
         AppendField(builder, strings.String_TsCheck_Report_AverageSpeed,
             $"{CommonUtil.FormatFileSize(result.BytesScanned / Math.Max(0.001, result.Elapsed.TotalSeconds))}/s");
+        if (result.FirstBroadcastTime is { } firstBroadcastTime)
+        {
+            AppendField(builder, strings.String_TsCheck_Report_BroadcastTime,
+                text.FormatBroadcastTime(firstBroadcastTime, result.LastBroadcastTime));
+        }
         builder.AppendLine();
+
+        if (result.Timeline.Count > 0)
+        {
+            var timelineDuration = result.Timeline.Sum(item => item.DurationSeconds);
+            var timelinePackets = result.Timeline.Sum(item => item.TotalPacketCount);
+            var averageBitrate = timelinePackets * TsStreamAnalyzer.PacketSize * 8 /
+                                 Math.Max(0.001, timelineDuration);
+            var peakBitrate = result.Timeline.Max(item => item.TotalBitrate);
+            AppendSection(builder, strings.String_TsCheck_Report_BitrateTimeline);
+            AppendField(builder, strings.String_TsCheck_Report_ReferencePcr,
+                result.TimelineReferencePcrPid >= 0 ? $"0x{result.TimelineReferencePcrPid:X4}" : "-");
+            AppendField(builder, strings.String_TsCheck_Report_TimelineDuration,
+                TsCheckEvent.FormatTime(result.Timeline[^1].EndSeconds));
+            AppendField(builder, strings.String_TsCheck_Report_TimelineSamples,
+                result.Timeline.Count.ToString("N0"));
+            AppendField(builder, strings.String_TsCheck_Report_AverageBitrate,
+                string.Format(strings.String_TsCheck_Report_BitrateValue, averageBitrate / 1_000_000));
+            AppendField(builder, strings.String_TsCheck_Report_PeakBitrate,
+                string.Format(strings.String_TsCheck_Report_BitrateValue, peakBitrate / 1_000_000));
+            builder.AppendLine();
+        }
 
         AppendSection(builder, strings.String_TsCheck_Report_Programs);
         if (result.Programs.Count == 0)
@@ -60,7 +86,7 @@ public sealed class TsCheckReportBuilder(TsCheckTextFormatter text)
         foreach (var pid in result.Pids.Values.OrderBy(item => item.Pid))
         {
             builder.AppendLine($"{pid.PidText,-8} {pid.PacketCount,14:N0} {pid.ContinuityErrors,10:N0} " +
-                               $"{pid.TransportErrors,10:N0} {pid.DuplicatePackets,10:N0}  " +
+                               $"{pid.TransportErrors,10:N0} {pid.PesSizeErrors,10:N0} {pid.DuplicatePackets,10:N0}  " +
                                text.FormatStreamType(
                                    pid.StreamType, pid.MpegAudioLayer, pid.SupplementaryStreamType, pid.Language));
         }
