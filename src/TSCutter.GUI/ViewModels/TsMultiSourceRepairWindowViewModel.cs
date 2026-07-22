@@ -20,6 +20,7 @@ namespace TSCutter.GUI.ViewModels;
 
 public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
+    private static readonly TimeSpan IntensiveStatusDelay = TimeSpan.FromMilliseconds(500);
     private readonly IDialogService _dialogService;
     private readonly TsMultiSourceRepairService _repairService = new();
     private readonly TsCheckTextFormatter _text = new();
@@ -27,7 +28,10 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     private TsMultiSourceAnalysisResult? _analysis;
     private TsRepairOutputResult? _lastOutputResult;
     private TsRepairMapWindowViewModel? _repairMapViewModel;
+    private CancellationTokenSource? _intensiveStatusDelayCancellation;
+    private TsMultiSourceProgress _pendingIntensiveProgress;
     private int _lastIntensiveTaskCompleted;
+    private bool _isIntensiveStatusVisible;
     private bool _isClosing;
 
     public TsMultiSourceRepairWindowViewModel(IDialogService dialogService)
@@ -211,18 +215,12 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                     _lastIntensiveTaskCompleted = Math.Max(
                         _lastIntensiveTaskCompleted, value.IntensiveTaskCompleted);
                 }
-                StatusText = string.Format(
-                    value.IntensiveTaskCount > 0
-                        ? _text.Strings.String_TsRepair_Status_AnalyzingParallel
-                        : value.IsIntensiveAnalysis
-                            ? _text.Strings.String_TsRepair_Status_AnalyzingIntensive
-                            : _text.Strings.String_TsRepair_Status_Analyzing,
-                    value.SourceIndex + 1, value.SourceCount, Path.GetFileName(value.FilePath),
-                    _lastIntensiveTaskCompleted, value.IntensiveTaskCount);
+                UpdateAnalysisStatus(value);
             });
             var sourceCompleted = new Progress<TsRepairSourceCompleted>(UpdateCompletedSourceRow);
             _analysis = await _repairService.AnalyzeAsync(
                 paths, SelectedReference.FilePath, progress, sourceCompleted, cancellationTokenSource.Token);
+            ResetIntensiveStatusDelay();
             if (_isClosing)
                 return;
             UpdateSourceRows(_analysis);
@@ -235,22 +233,99 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         }
         catch (OperationCanceledException)
         {
+            ResetIntensiveStatusDelay();
             if (!_isClosing)
                 StatusText = _text.Strings.String_TsRepair_Status_Cancelled;
         }
         catch (Exception exception)
         {
+            ResetIntensiveStatusDelay();
             if (!_isClosing)
                 StatusText = string.Format(_text.Strings.String_TsRepair_Status_Failed, exception.Message);
         }
         finally
         {
+            ResetIntensiveStatusDelay();
             if (ReferenceEquals(_cancellationTokenSource, cancellationTokenSource))
                 _cancellationTokenSource = null;
             cancellationTokenSource.Dispose();
             IsBusy = false;
             NotifyCommands();
         }
+    }
+
+    private void UpdateAnalysisStatus(TsMultiSourceProgress progress)
+    {
+        var intensive = progress.IsIntensiveAnalysis || progress.IntensiveTaskCount > 0;
+        if (!intensive)
+        {
+            ResetIntensiveStatusDelay();
+            StatusText = FormatAnalysisStatus(progress, intensive: false);
+            return;
+        }
+
+        _pendingIntensiveProgress = progress;
+        if (_isIntensiveStatusVisible)
+        {
+            StatusText = FormatAnalysisStatus(progress, intensive: true);
+            return;
+        }
+
+        // 防抖期间仍显示当前来源的普通分析文案，避免短暂状态造成文字闪烁。
+        StatusText = FormatAnalysisStatus(progress, intensive: false);
+        if (_intensiveStatusDelayCancellation is not null)
+            return;
+        var cancellation = new CancellationTokenSource();
+        _intensiveStatusDelayCancellation = cancellation;
+        _ = ShowIntensiveStatusAfterDelayAsync(cancellation);
+    }
+
+    private async Task ShowIntensiveStatusAfterDelayAsync(CancellationTokenSource cancellation)
+    {
+        var token = cancellation.Token;
+        try
+        {
+            await Task.Delay(IntensiveStatusDelay, token);
+            if (!ReferenceEquals(_intensiveStatusDelayCancellation, cancellation))
+                return;
+            _intensiveStatusDelayCancellation = null;
+            if (_isClosing || !IsBusy)
+                return;
+            _isIntensiveStatusVisible = true;
+            StatusText = FormatAnalysisStatus(_pendingIntensiveProgress, intensive: true);
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested)
+        {
+            // 密集状态未持续到阈值时保持普通分析文案，不让提示在界面上一闪而过。
+        }
+        finally
+        {
+            cancellation.Dispose();
+        }
+    }
+
+    private string FormatAnalysisStatus(TsMultiSourceProgress progress, bool intensive)
+    {
+        var format = intensive
+            ? progress.IntensiveTaskCount > 0
+                ? _text.Strings.String_TsRepair_Status_AnalyzingParallel
+                : _text.Strings.String_TsRepair_Status_AnalyzingIntensive
+            : _text.Strings.String_TsRepair_Status_Analyzing;
+        return string.Format(
+            format,
+            progress.SourceIndex + 1,
+            progress.SourceCount,
+            Path.GetFileName(progress.FilePath),
+            _lastIntensiveTaskCompleted,
+            progress.IntensiveTaskCount);
+    }
+
+    private void ResetIntensiveStatusDelay()
+    {
+        var cancellation = _intensiveStatusDelayCancellation;
+        _intensiveStatusDelayCancellation = null;
+        cancellation?.Cancel();
+        _isIntensiveStatusVisible = false;
     }
 
     [RelayCommand(CanExecute = nameof(CanOutput))]
@@ -644,6 +719,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         if (_isClosing)
             return;
         _isClosing = true;
+        ResetIntensiveStatusDelay();
         App.LocalizationService.LanguageChanged -= OnLanguageChanged;
         Sources.CollectionChanged -= OnSourcesChanged;
         _cancellationTokenSource?.Cancel();
