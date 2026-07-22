@@ -37,6 +37,36 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
     public ObservableCollection<TsRepairMapTrackView> Tracks { get; } = [];
 
     [ObservableProperty]
+    private IReadOnlyList<TsRepairMapSourceView> _matrixSources = [];
+
+    [ObservableProperty]
+    private IReadOnlyList<TsRepairMapMatrixRowView> _matrixRows = [];
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsSourceMatrixDisplay), nameof(IsTimelineDisplay))]
+    private TsRepairMapDisplayMode _displayMode = TsRepairMapDisplayMode.SourceMatrix;
+
+    public bool IsSourceMatrixDisplay
+    {
+        get => DisplayMode == TsRepairMapDisplayMode.SourceMatrix;
+        set
+        {
+            if (value)
+                DisplayMode = TsRepairMapDisplayMode.SourceMatrix;
+        }
+    }
+
+    public bool IsTimelineDisplay
+    {
+        get => DisplayMode == TsRepairMapDisplayMode.Timeline;
+        set
+        {
+            if (value)
+                DisplayMode = TsRepairMapDisplayMode.Timeline;
+        }
+    }
+
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsExpectedView), nameof(IsActualView))]
     private TsRepairMapViewMode _viewMode;
 
@@ -82,12 +112,29 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
     private double _durationSeconds;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsSelectedSuccess), nameof(IsSelectedWarning), nameof(IsSelectedError))]
+    [NotifyPropertyChangedFor(nameof(IsSelectedSuccess), nameof(IsSelectedWarning), nameof(IsSelectedError),
+        nameof(SelectedSourceText), nameof(SelectedMatchText), nameof(SelectedPacketText))]
     private TsRepairMapRegionView? _selectedRegion;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SelectedSourceText), nameof(SelectedMatchText), nameof(SelectedPacketText))]
+    private TsRepairMapSourceCellView? _selectedSourceCell;
+
+    [ObservableProperty]
+    private TsRepairMapMatrixRowView? _selectedMatrixRow;
 
     public bool IsSelectedSuccess => SelectedRegion?.Status == TsRepairMapRegionStatus.Success;
     public bool IsSelectedWarning => SelectedRegion?.Status == TsRepairMapRegionStatus.Warning;
     public bool IsSelectedError => SelectedRegion?.Status == TsRepairMapRegionStatus.Error;
+    public string SelectedSourceText => SelectedSourceCell is not null
+        ? SelectedSourceCell.Candidate?.SourceText ?? SelectedSourceCell.Source.FileName
+        : SelectedRegion?.SourceText ?? string.Empty;
+    public string SelectedMatchText => SelectedSourceCell is not null
+        ? SelectedSourceCell.Candidate?.MatchText ?? _text.Strings.String_TsRepair_Map_NoCandidate
+        : SelectedRegion?.MatchText ?? string.Empty;
+    public string SelectedPacketText => SelectedSourceCell is not null
+        ? SelectedSourceCell.Candidate?.PacketText ?? _text.Strings.String_TsRepair_Map_Matrix_CellNone
+        : SelectedRegion?.PacketText ?? string.Empty;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(ZoomDisplayText))]
@@ -96,6 +143,22 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
     public string ZoomDisplayText => $"{ZoomPercent:0}%";
 
     partial void OnViewModeChanged(TsRepairMapViewMode value) => Rebuild();
+
+    partial void OnDisplayModeChanged(TsRepairMapDisplayMode value) => UpdateHintText();
+
+    partial void OnSelectedRegionChanged(TsRepairMapRegionView? value)
+    {
+        SelectedSourceCell = null;
+        var matrixRow = MatrixRows.FirstOrDefault(item => ReferenceEquals(item.Region, value));
+        if (!ReferenceEquals(SelectedMatrixRow, matrixRow))
+            SelectedMatrixRow = matrixRow;
+    }
+
+    partial void OnSelectedMatrixRowChanged(TsRepairMapMatrixRowView? value)
+    {
+        if (value is not null && !ReferenceEquals(SelectedRegion, value.Region))
+            SelectedRegion = value.Region;
+    }
 
     public void Refresh(
         TsMultiSourceAnalysisResult analysis,
@@ -193,13 +256,13 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
             Tracks.Insert(0, overview);
         }
 
+        BuildSourceMatrix();
+
         SummaryText = actual
             ? string.Format(_text.Strings.String_TsRepair_Map_SummaryActual,
                 total, repairable, _outputResult?.RemainingErrorCount ?? 0)
             : string.Format(_text.Strings.String_TsRepair_Map_SummaryExpected, total, repairable);
-        HintText = actual
-            ? _text.Strings.String_TsRepair_Map_HintActual
-            : _text.Strings.String_TsRepair_Map_HintExpected;
+        UpdateHintText();
         SelectedRegion = Tracks.SelectMany(item => item.Regions)
             .FirstOrDefault(item => item.Key == previousKey)
             ?? Tracks.SelectMany(item => item.Regions).FirstOrDefault();
@@ -221,7 +284,7 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
             var candidate = gap.Candidates.FirstOrDefault(item => insertion is not null &&
                 PathsEqual(item.SourcePath, insertion.SourcePath) && item.SourcePid == insertion.SourcePid)
                 ?? gap.Candidates.FirstOrDefault();
-            row.Regions.Add(new TsRepairMapRegionView
+            var regionView = new TsRepairMapRegionView
             {
                 Key = $"G:{track.ReferencePid}:{gap.ReferenceInsertOffset}",
                 Pid = track.ReferencePid,
@@ -246,7 +309,34 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
                     ? _text.Strings.String_TsRepair_Map_NoCandidate
                     : FormatGapMatch(insertion, candidate),
                 PacketText = FormatGapPackets(gap, insertion, candidate)
-            });
+            };
+            foreach (var item in gap.Candidates)
+            {
+                var chosen = insertion is not null && PathsEqual(item.SourcePath, insertion.SourcePath) &&
+                             item.SourcePid == insertion.SourcePid;
+                regionView.Candidates.Add(new TsRepairMapCandidateView
+                {
+                    SourcePath = item.SourcePath,
+                    SourcePid = item.SourcePid,
+                    SourceText = FormatCandidateSource(item.SourcePath, item.SourcePid),
+                    MatchText = FormatGapMatch(chosen ? insertion : null, item),
+                    PacketText = FormatGapPackets(gap, chosen ? insertion : null, item),
+                    IsChosen = chosen
+                });
+            }
+            if (insertion is not null && !regionView.Candidates.Any(item => item.IsChosen))
+            {
+                regionView.Candidates.Add(new TsRepairMapCandidateView
+                {
+                    SourcePath = insertion.SourcePath,
+                    SourcePid = insertion.SourcePid,
+                    SourceText = FormatCandidateSource(insertion.SourcePath, insertion.SourcePid),
+                    MatchText = FormatGapMatch(insertion, null),
+                    PacketText = FormatGapPackets(gap, insertion, null),
+                    IsChosen = true
+                });
+            }
+            row.Regions.Add(regionView);
         }
     }
 
@@ -278,7 +368,7 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
             var candidate = region.Candidates.FirstOrDefault(item => sourcePath is not null &&
                                 PathsEqual(item.SourcePath, sourcePath) && item.SourcePid == sourcePid)
                             ?? region.Candidates.OrderByDescending(item => item.FingerprintMatches).FirstOrDefault();
-            row.Regions.Add(new TsRepairMapRegionView
+            var regionView = new TsRepairMapRegionView
             {
                 Key = $"R:{track.ReferencePid}:{region.ReferenceStartOffset}",
                 Pid = track.ReferencePid,
@@ -312,8 +402,150 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
                     replacement?.PacketCount ?? (coveringInsertion is not null
                         ? GetInsertionPacketCount(coveringInsertion)
                         : candidate?.PacketCount ?? 0))
-            });
+            };
+            foreach (var item in region.Candidates)
+            {
+                var chosen = sourcePath is not null && PathsEqual(item.SourcePath, sourcePath) &&
+                             item.SourcePid == sourcePid;
+                regionView.Candidates.Add(new TsRepairMapCandidateView
+                {
+                    SourcePath = item.SourcePath,
+                    SourcePid = item.SourcePid,
+                    SourceText = FormatCandidateSource(item.SourcePath, item.SourcePid),
+                    MatchText = chosen && coveringInsertion is not null
+                        ? _text.Strings.String_TsRepair_Map_MatchCoveredByGap
+                        : string.Format(_text.Strings.String_TsRepair_Map_FingerprintMatches,
+                            item.FingerprintMatches),
+                    PacketText = string.Format(_text.Strings.String_TsRepair_Map_RegionPackets,
+                        region.ReferencePacketCount,
+                        chosen
+                            ? replacement?.PacketCount ?? (coveringInsertion is not null
+                                ? GetInsertionPacketCount(coveringInsertion)
+                                : item.PacketCount)
+                            : item.PacketCount),
+                    IsChosen = chosen
+                });
+            }
+            if (sourcePath is not null && sourcePid is not null &&
+                !regionView.Candidates.Any(item => item.IsChosen))
+            {
+                var outputPackets = replacement?.PacketCount ??
+                                    (coveringInsertion is not null ? GetInsertionPacketCount(coveringInsertion) : 0);
+                regionView.Candidates.Add(new TsRepairMapCandidateView
+                {
+                    SourcePath = sourcePath,
+                    SourcePid = sourcePid.Value,
+                    SourceText = FormatCandidateSource(sourcePath, sourcePid),
+                    MatchText = coveringInsertion is not null
+                        ? _text.Strings.String_TsRepair_Map_MatchCoveredByGap
+                        : _text.Strings.String_TsRepair_Map_NoCandidate,
+                    PacketText = string.Format(_text.Strings.String_TsRepair_Map_RegionPackets,
+                        region.ReferencePacketCount, outputPackets),
+                    IsChosen = true
+                });
+            }
+            row.Regions.Add(regionView);
         }
+    }
+
+    private void BuildSourceMatrix()
+    {
+        var sourceViews = _analysis.Sources
+            .Where(item => !item.IsReference)
+            .Select((item, index) => new TsRepairMapSourceView
+            {
+                SourcePath = item.FilePath,
+                Label = string.Format(_text.Strings.String_TsRepair_Map_Matrix_SourceLabel, index + 1),
+                FileName = Path.GetFileName(item.FilePath),
+                CoverageText = string.Empty
+            })
+            .ToArray();
+        var repairableCounts = new int[sourceViews.Length];
+        var uniqueCounts = new int[sourceViews.Length];
+        var chosenCounts = new int[sourceViews.Length];
+        var rows = new List<TsRepairMapMatrixRowView>();
+
+        foreach (var region in Tracks.Where(item => !item.IsOverview)
+                     .SelectMany(item => item.Regions)
+                     .OrderBy(item => item.StartSeconds)
+                     .ThenBy(item => item.Pid))
+        {
+            var row = new TsRepairMapMatrixRowView
+            {
+                Region = region,
+                TimeText = region.TimeText,
+                TrackText = region.TrackText,
+                IssueText = region.IssueText
+            };
+            for (var sourceIndex = 0; sourceIndex < sourceViews.Length; sourceIndex++)
+            {
+                var source = sourceViews[sourceIndex];
+                var candidate = region.Candidates
+                    .Where(item => PathsEqual(item.SourcePath, source.SourcePath))
+                    .OrderByDescending(item => item.IsChosen)
+                    .FirstOrDefault();
+                var status = candidate is null
+                    ? TsRepairMapSourceCellStatus.None
+                    : candidate.IsChosen
+                        ? TsRepairMapSourceCellStatus.Chosen
+                        : TsRepairMapSourceCellStatus.Available;
+                if (candidate is not null)
+                    repairableCounts[sourceIndex]++;
+                if (candidate?.IsChosen == true)
+                    chosenCounts[sourceIndex]++;
+                var displayText = status switch
+                {
+                    TsRepairMapSourceCellStatus.Chosen => ViewMode == TsRepairMapViewMode.Actual
+                        ? _text.Strings.String_TsRepair_Map_Matrix_CellActual
+                        : _text.Strings.String_TsRepair_Map_Matrix_CellExpected,
+                    TsRepairMapSourceCellStatus.Available =>
+                        _text.Strings.String_TsRepair_Map_Matrix_CellAvailable,
+                    _ => _text.Strings.String_TsRepair_Map_Matrix_CellNone
+                };
+                var tooltipText = candidate is null
+                    ? $"{source.FileName}{Environment.NewLine}{_text.Strings.String_TsRepair_Map_NoCandidate}"
+                    : $"{candidate.SourceText}{Environment.NewLine}{candidate.MatchText}{Environment.NewLine}{candidate.PacketText}";
+                row.SourceCells.Add(new TsRepairMapSourceCellView
+                {
+                    Source = source,
+                    Status = status,
+                    DisplayText = displayText,
+                    TooltipText = tooltipText,
+                    Candidate = candidate
+                });
+            }
+
+            var availableCells = row.SourceCells
+                .Select((cell, sourceIndex) => (Cell: cell, SourceIndex: sourceIndex))
+                .Where(item => item.Cell.Status != TsRepairMapSourceCellStatus.None)
+                .ToArray();
+            if (availableCells.Length == 1)
+                uniqueCounts[availableCells[0].SourceIndex]++;
+            rows.Add(row);
+        }
+
+        for (var index = 0; index < sourceViews.Length; index++)
+        {
+            sourceViews[index].CoverageText = string.Format(
+                _text.Strings.String_TsRepair_Map_Matrix_Coverage,
+                repairableCounts[index], uniqueCounts[index], chosenCounts[index]);
+        }
+        MatrixSources = sourceViews;
+        MatrixRows = rows;
+    }
+
+    private void UpdateHintText()
+    {
+        if (DisplayMode == TsRepairMapDisplayMode.SourceMatrix)
+        {
+            HintText = ViewMode == TsRepairMapViewMode.Actual
+                ? _text.Strings.String_TsRepair_Map_Matrix_HintActual
+                : _text.Strings.String_TsRepair_Map_Matrix_HintExpected;
+            return;
+        }
+        HintText = ViewMode == TsRepairMapViewMode.Actual
+            ? _text.Strings.String_TsRepair_Map_HintActual
+            : _text.Strings.String_TsRepair_Map_HintExpected;
     }
 
     private TsRepairMapRegionStatus ResolveStatus(bool selected, bool hasCandidate, bool repaired)

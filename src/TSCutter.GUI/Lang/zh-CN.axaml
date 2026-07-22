@@ -249,6 +249,8 @@
     <x:String x:Key="String.TsRepair.Map.Close">关闭</x:String>
     <x:String x:Key="String.TsRepair.Map.Expected">预计修复</x:String>
     <x:String x:Key="String.TsRepair.Map.Actual">实际结果</x:String>
+    <x:String x:Key="String.TsRepair.Map.SourceMatrix">来源矩阵</x:String>
+    <x:String x:Key="String.TsRepair.Map.Timeline">时间轴</x:String>
     <x:String x:Key="String.TsRepair.Map.Zoom">缩放：</x:String>
     <x:String x:Key="String.TsRepair.Map.Reference">参考源：</x:String>
     <x:String x:Key="String.TsRepair.Map.Track">轨道</x:String>
@@ -264,6 +266,17 @@
     <x:String x:Key="String.TsRepair.Map.SummaryActual">共 {0:N0} 个异常区域，实际修复 {1:N0} 个；复核剩余 {2:N0} 个错误</x:String>
     <x:String x:Key="String.TsRepair.Map.HintExpected">这是分析阶段生成的预计方案；实际输出可能因区间重叠或边界条件而调整。单击色块可查看详情，* 表示按文件位置估算的时间。</x:String>
     <x:String x:Key="String.TsRepair.Map.HintActual">这是最近一次成功输出的实际写入结果。单击色块可查看使用的来源、位置和修复包数量，* 表示按文件位置估算的时间。</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.Time">时间</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.Track">轨道</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.Issue">异常区域</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.SourceLabel">来源 {0}</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.Coverage">{0:N0} 可修 · {1:N0} 独有 · {2:N0} 采用</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.CellAvailable">✓ 可用</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.CellExpected">▶ 预计采用</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.CellActual">✓ 已采用</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.CellNone">—</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.HintExpected">每行对应一个异常区域，每个来源列表示该文件能否修复；▶ 是预计采用来源。单击单元格可查看该候选的 PID、匹配方式和包数量。</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.HintActual">每行对应一个异常区域，✓ 已采用表示实际写入所用来源；其他可用单元格是分析阶段找到的备选来源。单击单元格可查看详情。</x:String>
     <x:String x:Key="String.TsRepair.Map.Detail.Track">轨道：</x:String>
     <x:String x:Key="String.TsRepair.Map.Detail.Status">状态：</x:String>
     <x:String x:Key="String.TsRepair.Map.Detail.Issue">异常：</x:String>

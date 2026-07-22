@@ -249,6 +249,8 @@
     <x:String x:Key="String.TsRepair.Map.Close">Close</x:String>
     <x:String x:Key="String.TsRepair.Map.Expected">Expected Repair</x:String>
     <x:String x:Key="String.TsRepair.Map.Actual">Actual Result</x:String>
+    <x:String x:Key="String.TsRepair.Map.SourceMatrix">Source Matrix</x:String>
+    <x:String x:Key="String.TsRepair.Map.Timeline">Timeline</x:String>
     <x:String x:Key="String.TsRepair.Map.Zoom">Zoom:</x:String>
     <x:String x:Key="String.TsRepair.Map.Reference">Reference:</x:String>
     <x:String x:Key="String.TsRepair.Map.Track">Track</x:String>
@@ -264,6 +266,17 @@
     <x:String x:Key="String.TsRepair.Map.SummaryActual">{0:N0} issue region(s); {1:N0} actually repaired; {2:N0} error(s) remain</x:String>
     <x:String x:Key="String.TsRepair.Map.HintExpected">This is the expected plan from analysis. Actual output may change because of overlapping ranges or boundary conditions. Click a block for details; * marks time estimated from file position.</x:String>
     <x:String x:Key="String.TsRepair.Map.HintActual">This is the data actually written by the latest successful output. Click a block for source, position, and packet count; * marks time estimated from file position.</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.Time">Time</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.Track">Track</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.Issue">Issue Region</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.SourceLabel">Source {0}</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.Coverage">{0:N0} available · {1:N0} unique · {2:N0} chosen</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.CellAvailable">✓ Available</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.CellExpected">▶ Planned</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.CellActual">✓ Used</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.CellNone">—</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.HintExpected">Each row is an issue region and each source column shows whether that file can repair it. ▶ marks the planned source. Click a cell to inspect its PID, match method, and packet count.</x:String>
+    <x:String x:Key="String.TsRepair.Map.Matrix.HintActual">Each row is an issue region. ✓ Used marks the source written to the output; other available cells are alternatives found during analysis. Click a cell for details.</x:String>
     <x:String x:Key="String.TsRepair.Map.Detail.Track">Track:</x:String>
     <x:String x:Key="String.TsRepair.Map.Detail.Status">Status:</x:String>
     <x:String x:Key="String.TsRepair.Map.Detail.Issue">Issue:</x:String>

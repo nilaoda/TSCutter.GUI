@@ -23,29 +23,51 @@
         <Style Selector="TextBlock.mapError">
             <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
         </Style>
+        <Style Selector="TextBlock.matrixAvailable">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusSuccessForegroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.matrixChosen">
+            <Setter Property="Foreground" Value="{DynamicResource AppRepairMapSelectionBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.matrixNone">
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.GrayTextColorKey}}" />
+        </Style>
+        <!-- 窗口级状态样式优先级高于应用主题，因此选中态也必须在同一作用域覆盖。 -->
+        <Style Selector="DataGridRow:selected TextBlock">
+            <Setter Property="Foreground"
+                    Value="{DynamicResource {x:Static common:SystemColors.HighlightTextBrushKey}}" />
+        </Style>
     </Window.Styles>
     <Grid Margin="12" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="8">
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
-            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,*,Auto,150,42" ColumnSpacing="8">
-                <RadioButton Grid.Column="0" GroupName="RepairMapView"
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,150,42" ColumnSpacing="8">
+                <RadioButton Grid.Column="0" GroupName="RepairMapDisplay"
+                             Content="{DynamicResource String.TsRepair.Map.SourceMatrix}"
+                             IsChecked="{Binding IsSourceMatrixDisplay, Mode=TwoWay}" />
+                <RadioButton Grid.Column="1" GroupName="RepairMapDisplay"
+                             Content="{DynamicResource String.TsRepair.Map.Timeline}"
+                             IsChecked="{Binding IsTimelineDisplay, Mode=TwoWay}" />
+                <RadioButton Grid.Column="2" GroupName="RepairMapView" Margin="10,0,0,0"
                              Content="{DynamicResource String.TsRepair.Map.Expected}"
                              IsChecked="{Binding IsExpectedView, Mode=TwoWay}" />
-                <RadioButton Grid.Column="1" GroupName="RepairMapView"
+                <RadioButton Grid.Column="3" GroupName="RepairMapView"
                              Content="{DynamicResource String.TsRepair.Map.Actual}"
                              IsChecked="{Binding IsActualView, Mode=TwoWay}"
                              IsEnabled="{Binding HasActualResult}" />
-                <TextBlock Grid.Column="2" Text="{Binding SummaryText}" VerticalAlignment="Center"
+                <TextBlock Grid.Column="4" Text="{Binding SummaryText}" VerticalAlignment="Center"
                            Margin="8,0,0,0" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                <TextBlock Grid.Column="3" Text="{DynamicResource String.TsRepair.Map.Zoom}"
-                           VerticalAlignment="Center" />
-                <Slider Grid.Column="4" Minimum="100" Maximum="800"
+                <TextBlock Grid.Column="5" Text="{DynamicResource String.TsRepair.Map.Zoom}"
+                           VerticalAlignment="Center" IsVisible="{Binding IsTimelineDisplay}" />
+                <Slider Grid.Column="6" Minimum="100" Maximum="800"
                         TickFrequency="25" SmallChange="25" LargeChange="100"
                         IsSnapToTickEnabled="True"
                         Value="{Binding ZoomPercent, Mode=TwoWay}"
                         ValueChanged="Zoom_OnValueChanged"
-                        VerticalAlignment="Center" />
-                <TextBlock Grid.Column="5" Text="{Binding ZoomDisplayText}"
-                           HorizontalAlignment="Right" VerticalAlignment="Center" />
+                        VerticalAlignment="Center" IsVisible="{Binding IsTimelineDisplay}" />
+                <TextBlock Grid.Column="7" Text="{Binding ZoomDisplayText}"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                           IsVisible="{Binding IsTimelineDisplay}" />
             </Grid>
             <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="6">
                 <TextBlock Grid.Column="0" Text="{DynamicResource String.TsRepair.Map.Reference}" />
@@ -63,7 +85,37 @@
             </Grid>
         </Grid>
 
-        <ClassicBorderDecorator Grid.Row="1" BorderThickness="1" BorderStyle="Sunken" Padding="0">
+        <DataGrid x:Name="SourceMatrixGrid" Grid.Row="1"
+                  ItemsSource="{Binding MatrixRows}"
+                  SelectedItem="{Binding SelectedMatrixRow, Mode=TwoWay}"
+                  AutoGenerateColumns="False" IsReadOnly="True"
+                  CanUserReorderColumns="False" CanUserResizeColumns="True" CanUserSortColumns="False"
+                  FrozenColumnCount="3" RowHeight="34" ColumnHeaderHeight="64"
+                  GridLinesVisibility="All" HeadersVisibility="Column"
+                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto"
+                  IsVisible="{Binding IsSourceMatrixDisplay}">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="{DynamicResource String.TsRepair.Map.Matrix.Time}"
+                                    Binding="{Binding TimeText}" Width="130" IsReadOnly="True" />
+                <DataGridTextColumn Header="{DynamicResource String.TsRepair.Map.Matrix.Track}"
+                                    Binding="{Binding TrackText}" Width="190" IsReadOnly="True" />
+                <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.Map.Matrix.Issue}"
+                                        Width="160" IsReadOnly="True">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate x:DataType="models:TsRepairMapMatrixRowView">
+                            <TextBlock Text="{Binding IssueText}" Margin="6,0"
+                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                                       Classes.mapSuccess="{Binding IsSuccess}"
+                                       Classes.mapWarning="{Binding IsWarning}"
+                                       Classes.mapError="{Binding IsError}" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <ClassicBorderDecorator Grid.Row="1" BorderThickness="1" BorderStyle="Sunken" Padding="0"
+                                IsVisible="{Binding IsTimelineDisplay}">
             <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto"
                           Background="{DynamicResource {x:Static common:SystemColors.WindowColorKey}}">
                 <Grid ColumnDefinitions="230,*">
@@ -141,14 +193,14 @@
                     <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding SelectedRegion.TimeText}" />
 
                     <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource String.TsRepair.Map.Detail.Source}" />
-                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedRegion.SourceText}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding SelectedSourceText}" TextTrimming="CharacterEllipsis" />
                     <TextBlock Grid.Row="2" Grid.Column="2" Text="{DynamicResource String.TsRepair.Map.Detail.Position}" />
                     <TextBlock Grid.Row="2" Grid.Column="3" Text="{Binding SelectedRegion.PositionText}" TextTrimming="CharacterEllipsis" />
 
                     <TextBlock Grid.Row="3" Grid.Column="0" Text="{DynamicResource String.TsRepair.Map.Detail.Match}" />
-                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedRegion.MatchText}" TextWrapping="Wrap" />
+                    <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding SelectedMatchText}" TextWrapping="Wrap" />
                     <TextBlock Grid.Row="3" Grid.Column="2" Text="{DynamicResource String.TsRepair.Map.Detail.Packets}" />
-                    <TextBlock Grid.Row="3" Grid.Column="3" Text="{Binding SelectedRegion.PacketText}" TextWrapping="Wrap" />
+                    <TextBlock Grid.Row="3" Grid.Column="3" Text="{Binding SelectedPacketText}" TextWrapping="Wrap" />
 
                     <TextBlock Grid.Row="4" Grid.Column="0" Text="{DynamicResource String.Ts.BroadcastTime.Label}"
                                IsVisible="{Binding SelectedRegion.HasBroadcastTime}" />
