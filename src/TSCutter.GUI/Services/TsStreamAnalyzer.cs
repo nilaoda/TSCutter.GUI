@@ -27,7 +27,7 @@ public sealed class TsStreamAnalyzer
     private static readonly Encoding Gb18030Encoding = CreateGb18030Encoding();
 
     private readonly Dictionary<int, PidState> _pidStates = [];
-    private readonly Dictionary<int, PsiAssembler> _psiAssemblers = [];
+    private readonly Dictionary<int, TsPsiSectionAssembler> _psiAssemblers = [];
     private readonly Dictionary<int, int> _pmtPidPrograms = [];
     private readonly Dictionary<int, int> _streamPidPrograms = [];
     private readonly Dictionary<int, int> _pcrPidPrograms = [];
@@ -61,6 +61,19 @@ public sealed class TsStreamAnalyzer
     private long _timelineIntervalPacketCount;
     private int _timelineSegment;
     private int _timelineCompactionThreshold = MaxTimelineBuckets;
+
+    private bool NeedsClockProcessing => HasFeature(
+        TsStreamAnalyzeFeatures.TimestampValidation |
+        TsStreamAnalyzeFeatures.AvSyncValidation |
+        TsStreamAnalyzeFeatures.DetailedEvents |
+        TsStreamAnalyzeFeatures.Timeline);
+
+    private bool NeedsPesTimestampProcessing => HasFeature(
+        TsStreamAnalyzeFeatures.TimestampValidation |
+        TsStreamAnalyzeFeatures.AvSyncValidation);
+
+    private bool NeedsPesProcessing => NeedsPesTimestampProcessing ||
+                                       HasFeature(TsStreamAnalyzeFeatures.PesSizeValidation);
 
     public async Task<TsCheckResult> AnalyzeAsync(
         string filePath,
@@ -181,9 +194,11 @@ public sealed class TsStreamAnalyzer
         _timelineIntervalPacketCount = 0;
         _timelineSegment = 0;
         _timelineCompactionThreshold = MaxTimelineBuckets;
-        _psiAssemblers[0] = new PsiAssembler();
+        _psiAssemblers[0] = new TsPsiSectionAssembler();
         if (_options.IncludeServiceMetadata)
-            _psiAssemblers[0x0011] = new PsiAssembler();
+            _psiAssemblers[0x0011] = new TsPsiSectionAssembler();
+        if (HasFeature(TsStreamAnalyzeFeatures.BroadcastClock))
+            _psiAssemblers[TsDvbTimeTableParser.Pid] = new TsPsiSectionAssembler();
     }
 
     private int ProcessBuffer(ReadOnlySpan<byte> data, long absoluteOffset, CancellationToken cancellationToken)
@@ -287,6 +302,8 @@ public sealed class TsStreamAnalyzer
         if (transportError)
         {
             state.DiscardPes();
+            if (_psiAssemblers.TryGetValue(pid, out var damagedAssembler))
+                damagedAssembler.DiscardUntilPayloadStart();
             state.Summary.TransportErrors++;
             if (!_options.InventoryOnly)
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.TransportError, pid, _packetIndex, fileOffset,
@@ -331,18 +348,21 @@ public sealed class TsStreamAnalyzer
         {
             state.ResetContinuity();
             state.ResetTimestamps();
+            if (_psiAssemblers.TryGetValue(pid, out var discontinuousAssembler))
+                discontinuousAssembler.DiscardUntilPayloadStart();
             if (_streamPidPrograms.TryGetValue(pid, out var programNumber) && _programClocks.TryGetValue(programNumber, out var clock))
                 clock.ResetSync();
         }
 
-        if (!pcrBytes.IsEmpty)
+        if (!pcrBytes.IsEmpty && NeedsClockProcessing)
         {
             if (!_options.InventoryOnly)
                 ProcessPcr(pid, pcrBytes, state, fileOffset, discontinuity);
         }
 
         // Null packet 的 CC 没有连续性语义，不参与丢包判断。
-        if (!_options.InventoryOnly && hasPayload && payloadOffset < PacketSize && pid != 0x1FFF &&
+        if (!_options.InventoryOnly && HasFeature(TsStreamAnalyzeFeatures.ContinuityValidation) &&
+            hasPayload && payloadOffset < PacketSize && pid != 0x1FFF &&
             !ProcessContinuity(packet, pid, state, continuityCounter, fileOffset))
             return;
 
@@ -350,8 +370,10 @@ public sealed class TsStreamAnalyzer
             return;
 
         var payload = packet[payloadOffset..];
-        if (pid == 0 || _pmtPidPrograms.ContainsKey(pid) ||
-            (_options.IncludeServiceMetadata && pid == 0x0011))
+        if (!transportError &&
+            (pid == 0 || _pmtPidPrograms.ContainsKey(pid) ||
+             (_options.IncludeServiceMetadata && pid == 0x0011) ||
+             (pid == TsDvbTimeTableParser.Pid && HasFeature(TsStreamAnalyzeFeatures.BroadcastClock))))
             ProcessPsi(pid, payload, payloadStart, fileOffset);
 
         if (_streamPidPrograms.ContainsKey(pid))
@@ -379,6 +401,8 @@ public sealed class TsStreamAnalyzer
                     // 相同 CC 却包含不同 payload 时无法判断哪一份属于当前 PES，放弃长度结算以免二次误报。
                     state.PesHeaderLength = 0;
                     state.DiscardPes();
+                    if (_psiAssemblers.TryGetValue(pid, out var assembler))
+                        assembler.DiscardUntilPayloadStart();
                 }
                 AddEvent(same ? TsCheckSeverity.Warning : TsCheckSeverity.Error,
                     same ? TsCheckEventType.DuplicatePacket : TsCheckEventType.ConflictingDuplicate,
@@ -395,7 +419,7 @@ public sealed class TsStreamAnalyzer
                 state.PesHeaderLength = 0;
                 state.DiscardPes();
                 if (_psiAssemblers.TryGetValue(pid, out var assembler))
-                    assembler.Discard();
+                    assembler.DiscardUntilPayloadStart();
                 var missingModulo = (counter - expected + 16) & 0x0F;
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.ContinuityGap, pid, _packetIndex, fileOffset,
                     TsCheckMessageCode.ContinuityGap, [expected, counter, Math.Max(1, missingModulo)],
@@ -421,7 +445,8 @@ public sealed class TsStreamAnalyzer
         state.LastRawPcr = raw;
         state.PcrWrapOffset = pcr - raw;
 
-        if (!discontinuity && state.LastPcr90k != long.MinValue)
+        if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation) &&
+            !discontinuity && state.LastPcr90k != long.MinValue)
         {
             var delta = (pcr - state.LastPcr90k) / 90_000.0;
             if (delta < -0.001)
@@ -445,8 +470,10 @@ public sealed class TsStreamAnalyzer
         _lastKnownPcr90k = pcr;
         _lastKnownClock90k = pcr;
         SetTimelineOrigin(pcr);
-        UpdateTimeline(pid, ptsToSeconds(pcr), discontinuity);
-        if (_pcrPidPrograms.TryGetValue(pid, out var programNumber))
+        if (HasFeature(TsStreamAnalyzeFeatures.Timeline))
+            UpdateTimeline(pid, ptsToSeconds(pcr), discontinuity);
+        if (HasFeature(TsStreamAnalyzeFeatures.AvSyncValidation) &&
+            _pcrPidPrograms.TryGetValue(pid, out var programNumber))
             CheckAvSyncAtPcr(programNumber, pcr, fileOffset);
     }
 
@@ -454,7 +481,7 @@ public sealed class TsStreamAnalyzer
     {
         if (!_psiAssemblers.TryGetValue(pid, out var assembler))
         {
-            assembler = new PsiAssembler();
+            assembler = new TsPsiSectionAssembler();
             _psiAssemblers[pid] = assembler;
         }
 
@@ -465,6 +492,19 @@ public sealed class TsStreamAnalyzer
     {
         if (section.Length < 8)
             return;
+
+        // TDT/TOT 提供真实 UTC，其中 TDT 不带 CRC，必须在通用 PSI CRC 检查之前单独解析。
+        if (pid == TsDvbTimeTableParser.Pid)
+        {
+            if (TsDvbTimeTableParser.TryParseUtc(section, out var utcTime))
+            {
+                var anchor = new TsBroadcastTimeAnchor(
+                    utcTime, _lastKnownPcr90k, _packetIndex, fileOffset);
+                _result.FirstBroadcastTime ??= anchor;
+                _result.LastBroadcastTime = anchor;
+            }
+            return;
+        }
 
         if (!HasValidPsiCrc(section))
         {
@@ -497,7 +537,7 @@ public sealed class TsStreamAnalyzer
             var catalogChanged = !_pmtPidPrograms.TryGetValue(pmtPid, out var oldProgramNumber) ||
                                  oldProgramNumber != programNumber;
             _pmtPidPrograms[pmtPid] = programNumber;
-            _psiAssemblers.TryAdd(pmtPid, new PsiAssembler());
+            _psiAssemblers.TryAdd(pmtPid, new TsPsiSectionAssembler());
             var pmtSummary = GetPidState(pmtPid).Summary;
             pmtSummary.ProgramNumber = programNumber;
             pmtSummary.IsPmtPid = true;
@@ -753,11 +793,16 @@ public sealed class TsStreamAnalyzer
         long fileOffset, bool payloadIsReliable)
     {
         ProbeMpegAudioLayer(payload, payloadStart, state);
+        if (!NeedsPesProcessing)
+            return;
 
-        if (payloadIsReliable)
+        if (payloadIsReliable && HasFeature(TsStreamAnalyzeFeatures.PesSizeValidation))
             TrackPesSize(pid, payload, payloadStart, state, fileOffset);
-        else
+        else if (!payloadIsReliable)
             state.DiscardPes();
+
+        if (!NeedsPesTimestampProcessing)
+            return;
 
         // 仅解析 PES 头中的 PTS/DTS，不读取 ES 帧内容，扫描速度不受编码复杂度和分辨率影响。
         if (payloadStart)
@@ -957,13 +1002,15 @@ public sealed class TsStreamAnalyzer
             var pts = Unwrap(rawPts.Value, state.LastRawPts, state.PtsWrapOffset);
             state.LastRawPts = rawPts.Value;
             state.PtsWrapOffset = pts - rawPts.Value;
-            CheckPts(pid, state, pts, fileOffset);
+            if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation))
+                CheckPts(pid, state, pts, fileOffset);
             state.LastPts90k = pts;
             _lastKnownClock90k = pts;
             SetTimelineOrigin(pts);
             if (state.PesActive)
                 state.PesStartTimeSeconds = ptsToSeconds(pts);
-            UpdateStreamClock(pid, pts);
+            if (HasFeature(TsStreamAnalyzeFeatures.AvSyncValidation))
+                UpdateStreamClock(pid, pts);
         }
 
         if (rawDts is not null)
@@ -971,12 +1018,14 @@ public sealed class TsStreamAnalyzer
             var dts = Unwrap(rawDts.Value, state.LastRawDts, state.DtsWrapOffset);
             state.LastRawDts = rawDts.Value;
             state.DtsWrapOffset = dts - rawDts.Value;
-            if (state.LastDts90k != long.MinValue && dts + 90 < state.LastDts90k)
+            if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation) &&
+                state.LastDts90k != long.MinValue && dts + 90 < state.LastDts90k)
             {
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.DtsBackward, pid, _packetIndex, fileOffset,
                     TsCheckMessageCode.DtsBackward, [(state.LastDts90k - dts) / 90_000.0], ptsToSeconds(dts), false);
             }
-            if (rawPts is not null && dts > state.LastPts90k + 90)
+            if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation) &&
+                rawPts is not null && dts > state.LastPts90k + 90)
             {
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.DtsAfterPts, pid, _packetIndex, fileOffset,
                     TsCheckMessageCode.DtsAfterPts, [(dts - state.LastPts90k) / 90_000.0], ptsToSeconds(state.LastPts90k), false);
@@ -1236,6 +1285,12 @@ public sealed class TsStreamAnalyzer
         else if (severity == TsCheckSeverity.Warning)
         {
             _globalWarningCount++;
+        }
+
+        if (!HasFeature(TsStreamAnalyzeFeatures.DetailedEvents))
+        {
+            ReportProgress(null, force: false);
+            return;
         }
 
         TsCheckEvent? item = null;
@@ -1531,6 +1586,9 @@ public sealed class TsStreamAnalyzer
             state.TimelineIntervalPacketCount = 0;
     }
 
+    private bool HasFeature(TsStreamAnalyzeFeatures features) =>
+        (_options.Features & features) != 0;
+
     private void ValidateCompletedScan(long fileSize)
     {
         // 完整扫描后再判断结构性缺失，避免在 PAT/PMT 尚未出现时提前误报。
@@ -1719,81 +1777,4 @@ public sealed class TsStreamAnalyzer
         }
     }
 
-    private sealed class PsiAssembler
-    {
-        private readonly byte[] _buffer = new byte[4096];
-        private int _length;
-        private int _expectedLength;
-
-        public void Push(ReadOnlySpan<byte> payload, bool payloadStart, Action<ReadOnlySpan<byte>> sectionHandler)
-        {
-            // PAT/PMT section 可跨多个 TS 包；pointer_field 之前的数据用于补完上一 section。
-            if (payloadStart)
-            {
-                if (payload.IsEmpty)
-                    return;
-                var pointer = payload[0];
-                payload = payload[1..];
-                if (pointer > payload.Length)
-                {
-                    Reset();
-                    return;
-                }
-
-                if (_length > 0 && pointer > 0)
-                    Append(payload[..pointer], sectionHandler);
-                payload = payload[pointer..];
-                Reset();
-            }
-
-            Append(payload, sectionHandler);
-        }
-
-        private void Append(ReadOnlySpan<byte> data, Action<ReadOnlySpan<byte>> sectionHandler)
-        {
-            while (!data.IsEmpty)
-            {
-                if (_length == 0 && data[0] == 0xFF)
-                    return;
-
-                var needed = _expectedLength > 0 ? _expectedLength - _length : Math.Min(3 - _length, data.Length);
-                if (needed <= 0)
-                    needed = data.Length;
-                var take = Math.Min(needed, data.Length);
-                if (_length + take > _buffer.Length)
-                {
-                    Reset();
-                    return;
-                }
-
-                data[..take].CopyTo(_buffer.AsSpan(_length));
-                _length += take;
-                data = data[take..];
-
-                if (_length >= 3 && _expectedLength == 0)
-                {
-                    _expectedLength = 3 + ((_buffer[1] & 0x0F) << 8) + _buffer[2];
-                    if (_expectedLength < 8 || _expectedLength > _buffer.Length)
-                    {
-                        Reset();
-                        return;
-                    }
-                }
-
-                if (_expectedLength > 0 && _length == _expectedLength)
-                {
-                    sectionHandler(_buffer.AsSpan(0, _length));
-                    Reset();
-                }
-            }
-        }
-
-        private void Reset()
-        {
-            _length = 0;
-            _expectedLength = 0;
-        }
-
-        public void Discard() => Reset();
-    }
 }

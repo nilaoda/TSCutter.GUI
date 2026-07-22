@@ -17,22 +17,12 @@
 
     <Window.Resources>
         <ResourceDictionary>
-            <!-- 异常色跟随 ThemeVariant 切换，保证深浅背景下均有足够的文字对比度。 -->
+            <!-- 码率占比色属于当前工具；成功、警告和错误色使用应用级语义资源。 -->
             <ResourceDictionary.ThemeDictionaries>
                 <ResourceDictionary x:Key="Light">
-                    <SolidColorBrush x:Key="TsCheckErrorCellBackgroundBrush" Color="#D32F2F" Opacity="0.14" />
-                    <SolidColorBrush x:Key="TsCheckErrorCellForegroundBrush" Color="#B71C1C" />
-                    <SolidColorBrush x:Key="TsCheckWarningCellBackgroundBrush" Color="#B88600" Opacity="0.14" />
-                    <SolidColorBrush x:Key="TsCheckWarningCellForegroundBrush" Color="#765000" />
-                    <SolidColorBrush x:Key="TsCheckPassForegroundBrush" Color="#1B5E20" />
                     <SolidColorBrush x:Key="TsCheckPacketShareBrush" Color="#2E6FAD" />
                 </ResourceDictionary>
                 <ResourceDictionary x:Key="Dark">
-                    <SolidColorBrush x:Key="TsCheckErrorCellBackgroundBrush" Color="#FF7070" Opacity="0.13" />
-                    <SolidColorBrush x:Key="TsCheckErrorCellForegroundBrush" Color="#FF8585" />
-                    <SolidColorBrush x:Key="TsCheckWarningCellBackgroundBrush" Color="#E6B84A" Opacity="0.13" />
-                    <SolidColorBrush x:Key="TsCheckWarningCellForegroundBrush" Color="#EBC565" />
-                    <SolidColorBrush x:Key="TsCheckPassForegroundBrush" Color="#72C985" />
                     <SolidColorBrush x:Key="TsCheckPacketShareBrush" Color="#5A94D6" />
                 </ResourceDictionary>
             </ResourceDictionary.ThemeDictionaries>
@@ -41,39 +31,58 @@
 
     <Window.Styles>
         <Style Selector="Border.errorCell">
-            <Setter Property="Background" Value="{DynamicResource TsCheckErrorCellBackgroundBrush}" />
+            <Setter Property="Background" Value="{DynamicResource AppStatusErrorBackgroundBrush}" />
         </Style>
         <Style Selector="TextBlock.errorCell">
-            <Setter Property="Foreground" Value="{DynamicResource TsCheckErrorCellForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style Selector="Border.warningCell">
-            <Setter Property="Background" Value="{DynamicResource TsCheckWarningCellBackgroundBrush}" />
+            <Setter Property="Background" Value="{DynamicResource AppStatusWarningBackgroundBrush}" />
         </Style>
         <Style Selector="TextBlock.warningCell">
-            <Setter Property="Foreground" Value="{DynamicResource TsCheckWarningCellForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
         <Style Selector="TextBlock.passVerdict">
-            <Setter Property="Foreground" Value="{DynamicResource TsCheckPassForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusSuccessForegroundBrush}" />
         </Style>
         <Style Selector="TextBlock.errorVerdict">
-            <Setter Property="Foreground" Value="{DynamicResource TsCheckErrorCellForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
         </Style>
         <Style Selector="TextBlock.warningVerdict">
-            <Setter Property="Foreground" Value="{DynamicResource TsCheckWarningCellForegroundBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+        </Style>
+        <!-- 选中行使用系统高亮文字色，并让局部状态背景服从整行选择背景。 -->
+        <Style Selector="DataGridRow:selected TextBlock">
+            <Setter Property="Foreground"
+                    Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
+        </Style>
+        <Style Selector="DataGridRow:selected Border.errorCell">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="DataGridRow:selected Border.warningCell">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="DataGridRow:selected controls|PacketShareBar">
+            <Setter Property="Fill"
+                    Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
         </Style>
     </Window.Styles>
 
     <Grid Margin="12" RowDefinitions="Auto,Auto,Auto,*,Auto">
         <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
-            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="4">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="4">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource String.TsCheck.File}" VerticalAlignment="Center" />
                 <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding FilePath}" IsReadOnly="True" />
                 <TextBlock Grid.Row="0" Grid.Column="2" Text="{DynamicResource String.TsCheck.FileSize}" VerticalAlignment="Center" />
                 <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding FileSizeText}" FontWeight="Bold" VerticalAlignment="Center" />
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource String.TsCheck.Status}" VerticalAlignment="Center" />
                 <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding StatusText}" TextWrapping="Wrap" />
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource String.Ts.BroadcastTime.Label}"
+                           IsVisible="{Binding HasBroadcastTime}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding BroadcastTimeText}"
+                           IsVisible="{Binding HasBroadcastTime}" FontWeight="SemiBold" />
             </Grid>
         </ClassicBorderDecorator>
 
@@ -197,8 +206,8 @@
                                           SecondaryBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
                                           GridBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
                                           TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
-                                          ErrorBrush="{DynamicResource TsCheckErrorCellForegroundBrush}"
-                                          WarningBrush="{DynamicResource TsCheckWarningCellForegroundBrush}"
+                                          ErrorBrush="{DynamicResource AppStatusErrorForegroundBrush}"
+                                          WarningBrush="{DynamicResource AppStatusWarningForegroundBrush}"
                                           TooltipBackgroundBrush="{DynamicResource {x:Static commonControls:SystemColors.InfoColorKey}}"
                                           TooltipTextBrush="{DynamicResource {x:Static commonControls:SystemColors.InfoTextColorKey}}"
                                           TooltipBorderBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowFrameColorKey}}"

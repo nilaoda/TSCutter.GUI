@@ -1,0 +1,173 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        xmlns:models="clr-namespace:TSCutter.GUI.Models"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.TsMultiSourceRepairWindow"
+        x:DataType="viewModels:TsMultiSourceRepairWindowViewModel"
+        Title="{DynamicResource String.TsRepair.Title}"
+        Width="900" Height="580" MinWidth="720" MinHeight="460"
+        WindowStartupLocation="CenterOwner">
+    <Window.Styles>
+        <Style Selector="TextBlock.repairFull">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusSuccessForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.repairPartial">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.repairNone">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.analysisIssue">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="DataGridRow:selected TextBlock">
+            <Setter Property="Foreground"
+                    Value="{DynamicResource {x:Static common:SystemColors.HighlightTextBrushKey}}" />
+        </Style>
+    </Window.Styles>
+
+    <Grid Margin="12" RowDefinitions="210,Auto,*,Auto" RowSpacing="8">
+        <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
+            <Grid RowDefinitions="Auto,*" RowSpacing="6">
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,260,Auto,Auto" ColumnSpacing="8">
+                    <TextBlock Grid.Column="0" Text="{DynamicResource String.TsRepair.Sources}"
+                               FontWeight="Bold" VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Text="{DynamicResource String.TsRepair.Reference}"
+                               VerticalAlignment="Center" />
+                    <ComboBox Grid.Column="3" ItemsSource="{Binding Sources}"
+                              SelectedItem="{Binding SelectedReference, Mode=TwoWay}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="models:TsRepairSourceItem">
+                                <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Grid.Column="4" Content="{DynamicResource String.TsRepair.AddFiles}"
+                            Command="{Binding AddSourcesCommand}" MinWidth="100" />
+                    <Button Grid.Column="5" Content="{DynamicResource String.TsRepair.RemoveFile}"
+                            Command="{Binding RemoveSourceCommand}" MinWidth="80" />
+                </Grid>
+                <DataGrid Grid.Row="1" ItemsSource="{Binding Sources}"
+                          SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
+                          AutoGenerateColumns="False" IsReadOnly="True"
+                          GridLinesVisibility="All" CanUserResizeColumns="True">
+                    <DataGrid.Columns>
+                        <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.File}"
+                                            Binding="{Binding FilePath}" Width="*" />
+                        <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Size}"
+                                            Binding="{Binding FileSizeText}" Width="110" />
+                        <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Status}"
+                                            Binding="{Binding StatusText}" Width="180" />
+                        <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Errors}"
+                                            Binding="{Binding ErrorCount}" Width="120" />
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+        </ClassicBorderDecorator>
+
+        <Grid Grid.Row="1" RowDefinitions="18,Auto,Auto" ColumnDefinitions="*,80" RowSpacing="4" ColumnSpacing="8">
+            <ProgressBar Grid.Row="0" Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding Percent}" Height="18" />
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Percent, StringFormat={}{0:0.00}%}"
+                       TextAlignment="Right" VerticalAlignment="Center" />
+            <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="20">
+                <TextBlock><Run Text="{DynamicResource String.TsRepair.Progress}" /><Run Text=" " /><Run Text="{Binding ProgressText}" FontWeight="Bold" /></TextBlock>
+                <TextBlock><Run Text="{DynamicResource String.TsRepair.Speed}" /><Run Text=" " /><Run Text="{Binding SpeedText}" FontWeight="Bold" /></TextBlock>
+            </StackPanel>
+            <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Text="{Binding StatusText}"
+                       TextWrapping="Wrap"
+                       IsVisible="{Binding IsPlainStatusVisible}" />
+            <WrapPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
+                       IsVisible="{Binding IsAnalysisSummaryVisible}">
+                <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedPrefix}" />
+                <TextBlock Text="{Binding AnalysisIssueCount, StringFormat={}{0:N0}}"
+                           Classes.repairFull="{Binding IsAnalysisClean}"
+                           Classes.analysisIssue="{Binding IsAnalysisIssue}" />
+                <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedMiddle}" />
+                <TextBlock Text="{Binding AnalysisRepairableCount, StringFormat={}{0:N0}}"
+                           Classes.repairFull="{Binding IsAnalysisFullyRepairable}"
+                           Classes.repairPartial="{Binding IsAnalysisPartiallyRepairable}"
+                           Classes.repairNone="{Binding IsAnalysisNotRepairable}" />
+                <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedSuffix}" />
+            </WrapPanel>
+            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2"
+                        IsVisible="{Binding IsOutputSummaryVisible}">
+                <TextBlock Text="{Binding OutputSummaryText}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding OutputVerificationText}" TextWrapping="Wrap"
+                           Classes.repairFull="{Binding IsOutputVerificationPassed}"
+                           Classes.repairPartial="{Binding HasOutputRemainingErrors}" />
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="6">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+                <TextBlock Grid.Column="0" Text="{DynamicResource String.TsRepair.Tracks}"
+                           FontWeight="Bold" VerticalAlignment="Center" />
+                <CheckBox Grid.Column="2" Content="{DynamicResource String.TsRepair.KeepServiceInformation}"
+                          IsChecked="{Binding KeepServiceInformation}" VerticalAlignment="Center" />
+                <Button Grid.Column="3" Content="{DynamicResource String.TsRepair.SelectAll}"
+                        Command="{Binding SelectAllCommand}" MinWidth="80" />
+                <Button Grid.Column="4" Content="{DynamicResource String.TsRepair.ClearAll}"
+                        Command="{Binding ClearAllCommand}" MinWidth="80" />
+            </Grid>
+            <DataGrid Grid.Row="1" ItemsSource="{Binding Tracks}" AutoGenerateColumns="False"
+                      GridLinesVisibility="All" CanUserResizeColumns="True">
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.Column.Keep}" Width="65">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="models:TsRepairTrackItem">
+                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" HorizontalAlignment="Center" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="PID" Binding="{Binding PidText}" Width="80" IsReadOnly="True" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Program}"
+                                        Binding="{Binding ProgramText}" Width="80" IsReadOnly="True" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Stream}"
+                                        Binding="{Binding StreamText}" Width="220" IsReadOnly="True" />
+                    <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.Column.RepairSources}" Width="*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="models:TsRepairTrackItem">
+                                <TextBlock Text="{Binding RepairSourcesText}" TextWrapping="Wrap" Margin="4,2" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Gaps}"
+                                        Binding="{Binding GapCount}" Width="80" IsReadOnly="True" />
+                    <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.Column.Repairable}" Width="90">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="models:TsRepairTrackItem">
+                                <Grid Margin="6,0">
+                                    <TextBlock Text="{Binding RepairableGapCount}"
+                                               Classes.repairFull="{Binding IsFullyRepairable}"
+                                               Classes.repairPartial="{Binding IsPartiallyRepairable}"
+                                               Classes.repairNone="{Binding IsNotRepairable}"
+                                               HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                </DataGrid.Columns>
+            </DataGrid>
+        </Grid>
+
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+            <Button Grid.Column="1" Content="{DynamicResource String.TsRepair.Analyze}"
+                    Command="{Binding AnalyzeCommand}" Width="120" />
+            <Button Grid.Column="2" Content="{DynamicResource String.Cancel}"
+                    Command="{Binding CancelCommand}" Width="100" />
+            <Button Grid.Column="3" Content="{DynamicResource String.TsRepair.Map.Open}"
+                    Command="{Binding OpenRepairMapCommand}" Width="150" />
+            <Button Grid.Column="4" Content="{DynamicResource String.TsRepair.Output}"
+                    Command="{Binding OutputCommand}" Width="150" />
+        </Grid>
+    </Grid>
+</Window>

@@ -193,6 +193,8 @@ public sealed class TsCheckResult
     public Dictionary<int, TsCheckPidSummary> Pids { get; } = [];
     public Dictionary<int, TsCheckProgramSummary> Programs { get; } = [];
     public Dictionary<int, TsServiceSummary> Services { get; } = [];
+    public TsBroadcastTimeAnchor? FirstBroadcastTime { get; set; }
+    public TsBroadcastTimeAnchor? LastBroadcastTime { get; set; }
     public int TimelineReferencePcrPid { get; set; } = -1;
     public int ErrorCount => TotalErrorCount;
     public int WarningCount => TotalWarningCount;
@@ -204,6 +206,13 @@ public sealed class TsCheckResult
                 ? TsCheckVerdict.Warning
                 : TsCheckVerdict.Pass;
 }
+
+public readonly record struct TsBroadcastTimeAnchor(
+    DateTimeOffset UtcTime,
+    long Clock90k,
+    long PacketIndex,
+    long FileOffset,
+    int ProgramNumber = -1);
 
 public readonly record struct TsCheckTimelinePidSample(int Pid, double PacketCount);
 
@@ -249,6 +258,22 @@ public sealed class TsStreamAnalyzeOptions
     public bool IncludeServiceMetadata { get; init; }
     public long MaxBytes { get; init; } = long.MaxValue;
     public int StablePacketCount { get; init; } = 8_192;
+    public TsStreamAnalyzeFeatures Features { get; init; } = TsStreamAnalyzeFeatures.Default;
+}
+
+[Flags]
+public enum TsStreamAnalyzeFeatures
+{
+    None = 0,
+    ContinuityValidation = 1 << 0,
+    TimestampValidation = 1 << 1,
+    AvSyncValidation = 1 << 2,
+    DetailedEvents = 1 << 3,
+    Timeline = 1 << 4,
+    PesSizeValidation = 1 << 5,
+    BroadcastClock = 1 << 6,
+    Default = ContinuityValidation | TimestampValidation | AvSyncValidation | DetailedEvents | Timeline |
+              PesSizeValidation | BroadcastClock
 }
 
 public readonly record struct TsCheckPidProgress(

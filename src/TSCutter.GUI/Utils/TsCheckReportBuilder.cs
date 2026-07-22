@@ -31,6 +31,11 @@ public sealed class TsCheckReportBuilder(TsCheckTextFormatter text)
         AppendField(builder, strings.String_TsCheck_Report_Elapsed, result.Elapsed.ToString(@"hh\:mm\:ss\.fff"));
         AppendField(builder, strings.String_TsCheck_Report_AverageSpeed,
             $"{CommonUtil.FormatFileSize(result.BytesScanned / Math.Max(0.001, result.Elapsed.TotalSeconds))}/s");
+        if (result.FirstBroadcastTime is { } firstBroadcastTime)
+        {
+            AppendField(builder, strings.String_TsCheck_Report_BroadcastTime,
+                text.FormatBroadcastTime(firstBroadcastTime, result.LastBroadcastTime));
+        }
         builder.AppendLine();
 
         if (result.Timeline.Count > 0)
