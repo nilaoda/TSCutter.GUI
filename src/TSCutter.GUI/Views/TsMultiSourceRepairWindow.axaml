@@ -85,25 +85,33 @@
             <TextBlock Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Text="{Binding StatusText}"
                        TextWrapping="Wrap"
                        IsVisible="{Binding IsPlainStatusVisible}" />
-            <WrapPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2"
-                       IsVisible="{Binding IsAnalysisSummaryVisible}">
-                <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedPrefix}" />
-                <TextBlock Text="{Binding AnalysisIssueCount, StringFormat={}{0:N0}}"
-                           Classes.repairFull="{Binding IsAnalysisClean}"
-                           Classes.analysisIssue="{Binding IsAnalysisIssue}" />
-                <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedMiddle}" />
-                <TextBlock Text="{Binding AnalysisRepairableCount, StringFormat={}{0:N0}}"
-                           Classes.repairFull="{Binding IsAnalysisFullyRepairable}"
-                           Classes.repairPartial="{Binding IsAnalysisPartiallyRepairable}"
-                           Classes.repairNone="{Binding IsAnalysisNotRepairable}" />
-                <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedSuffix}" />
-            </WrapPanel>
+            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2"
+                        IsVisible="{Binding IsAnalysisSummaryVisible}">
+                <WrapPanel>
+                    <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedPrefix}" />
+                    <TextBlock Text="{Binding AnalysisIssueCount, StringFormat={}{0:N0}}"
+                               Classes.repairFull="{Binding IsAnalysisClean}"
+                               Classes.analysisIssue="{Binding IsAnalysisIssue}" />
+                    <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedMiddle}" />
+                    <TextBlock Text="{Binding AnalysisRepairableCount, StringFormat={}{0:N0}}"
+                               Classes.repairFull="{Binding IsAnalysisFullyRepairable}"
+                               Classes.repairPartial="{Binding IsAnalysisPartiallyRepairable}"
+                               Classes.repairNone="{Binding IsAnalysisNotRepairable}" />
+                    <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedSuffix}" />
+                </WrapPanel>
+                <TextBlock Text="{DynamicResource String.TsRepair.TimelineNormalizationNote}"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </StackPanel>
             <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2"
                         IsVisible="{Binding IsOutputSummaryVisible}">
                 <TextBlock Text="{Binding OutputSummaryText}" TextWrapping="Wrap" />
                 <TextBlock Text="{Binding OutputVerificationText}" TextWrapping="Wrap"
                            Classes.repairFull="{Binding IsOutputVerificationPassed}"
                            Classes.repairPartial="{Binding HasOutputRemainingErrors}" />
+                <TextBlock Text="{DynamicResource String.TsRepair.TimelineNormalizationNote}"
+                           TextWrapping="Wrap"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
             </StackPanel>
         </Grid>
 

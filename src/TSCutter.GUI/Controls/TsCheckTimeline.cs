@@ -327,7 +327,8 @@ public sealed class TsCheckTimeline : Control
         {
             foreach (var item in events)
             {
-                if (item.TimeSeconds is not { } time || time < 0 || time > _maxTime)
+                if ((item.TimelineTimeSeconds ?? item.TimeSeconds) is not { } time ||
+                    time < 0 || time > _maxTime)
                     continue;
                 var pixel = Math.Clamp((int)(time / _maxTime * (pixelWidth - 1)), 0, pixelWidth - 1);
                 if (_markerEvents[pixel] is null || item.Severity > _markerSeverities[pixel])
@@ -492,7 +493,7 @@ public sealed class TsCheckTimeline : Control
             return result;
         foreach (var item in events)
         {
-            if (item.TimeSeconds is { } time)
+            if ((item.TimelineTimeSeconds ?? item.TimeSeconds) is { } time)
                 result = Math.Max(result, time);
         }
         return result;

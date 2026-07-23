@@ -608,7 +608,9 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     private string GetReadyStatusText() => string.Concat(
         _text.Strings.String_TsRepair_Status_Ready,
         Environment.NewLine,
-        _text.Strings.String_TsRepair_Status_ReadyNote);
+        _text.Strings.String_TsRepair_Status_ReadyNote,
+        Environment.NewLine,
+        _text.Strings.String_TsRepair_TimelineNormalizationNote);
 
     private int _outputRepairedGapCount;
     private int _outputRepairedRegionCount;

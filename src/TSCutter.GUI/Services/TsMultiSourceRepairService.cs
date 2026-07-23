@@ -91,11 +91,30 @@ public sealed class TsMultiSourceRepairService
             });
         }
 
+        // 多源匹配需要稳定的 PTS 搜索窗。这里只在多源工具中额外顺序读取稀疏 PCR，
+        // 建立虚拟校正段；不生成中间文件，也不会让普通快速扫描保存这些样本。
+        var timelineService = new TsTimelineRepairService();
+        for (var index = 0; index < sources.Count; index++)
+        {
+            var source = sources[index];
+            if (source.Catalog.SyncOffset < 0 || source.Catalog.Programs.Count == 0)
+                continue;
+            var sourceIndex = index;
+            var timelineProgress = progress is null
+                ? null
+                : new Progress<TsTimelineRepairProgress>(value => progress.Report(new TsMultiSourceProgress(
+                    sourceIndex, sources.Count, source.FilePath, value.BytesProcessed, value.FileSize,
+                    value.BytesPerSecond, value.Elapsed)));
+            source.TimelineAnalysis = await timelineService.AnalyzeAsync(
+                    source.FilePath, source.Catalog, timelineProgress, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var reference = sources.FirstOrDefault(item => item.IsReference) ??
                         throw new ArgumentException("The reference file must be present in the source list.", nameof(referencePath));
         var result = new TsMultiSourceAnalysisResult { ReferenceSource = reference };
         result.Sources.AddRange(sources);
-        var referenceStates = BuildReferenceTracks(reference.Catalog, result.Tracks);
+        var referenceStates = BuildReferenceTracks(reference, result.Tracks);
 
         var scanOrdinal = 0;
         await ScanReferenceAsync(reference, referenceStates, result.ReferenceBroadcastTimes,
@@ -201,6 +220,13 @@ public sealed class TsMultiSourceRepairService
                     item.SourcePid == candidate.SourcePid &&
                     string.Equals(item.SourcePath, candidate.SourcePath, StringComparison.Ordinal))
                     ?.TimestampOffset90k ?? 0;
+                if (candidate.SourcePacketOffsets.Length > 0)
+                {
+                    timestampOffset90k = ConvertNormalizedOffsetToSourceTimeline(
+                        analysis, timestampOffset90k,
+                        candidate.SourcePath, candidate.SourcePid, candidate.SourcePacketOffsets[0],
+                        analysis.ReferenceSource.FilePath, track.ReferencePid, gap.ReferenceInsertOffset);
+                }
                 var insertion = new TsPacketInsertion
                 {
                     SourcePath = candidate.SourcePath,
@@ -257,7 +283,10 @@ public sealed class TsMultiSourceRepairService
                     SourceStartOffset = candidate.SourceStartOffset,
                     SourceEndOffset = candidate.SourceEndOffset,
                     PacketCount = candidate.PacketCount,
-                    TimestampOffset90k = candidate.TimestampOffset90k,
+                    TimestampOffset90k = ConvertNormalizedOffsetToSourceTimeline(
+                        analysis, candidate.TimestampOffset90k,
+                        candidate.SourcePath, candidate.SourcePid, candidate.SourceStartOffset,
+                        analysis.ReferenceSource.FilePath, track.ReferencePid, referenceStartOffset),
                     ElementaryPayloadOnly = region.Reason ==
                         TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch &&
                         candidate.ElementaryLength == GetReferenceElementaryLength(region, candidate),
@@ -268,6 +297,40 @@ public sealed class TsMultiSourceRepairService
             }
         }
         return plan;
+    }
+
+    private static long ConvertNormalizedOffsetToSourceTimeline(
+        TsMultiSourceAnalysisResult analysis,
+        long normalizedOffset90k,
+        string donorPath,
+        int donorPid,
+        long donorFileOffset,
+        string referencePath,
+        int referencePid,
+        long referenceFileOffset)
+    {
+        var donor = analysis.Sources.First(item => PathsEqual(item.FilePath, donorPath));
+        var reference = analysis.Sources.First(item => PathsEqual(item.FilePath, referencePath));
+        var donorCorrection = GetTimelineCorrection90k(donor, donorPid, donorFileOffset);
+        var referenceCorrection = GetTimelineCorrection90k(reference, referencePid, referenceFileOffset);
+        // 匹配阶段比较的是归一化 PTS；写回原始参考流时需还原两端各自的虚拟校正量，
+        // 否则来自异常时间段的辅助包会携带归一化时间而无法贴合参考流的原始时钟。
+        return normalizedOffset90k + donorCorrection - referenceCorrection;
+    }
+
+    private static long GetTimelineCorrection90k(
+        TsRepairSourceAnalysis source,
+        int streamPid,
+        long fileOffset)
+    {
+        if (source.TimelineAnalysis is not { } timelineAnalysis)
+            return 0;
+        var pcrPid = FindPcrPid(source.Catalog, streamPid);
+        if (pcrPid < 0)
+            return 0;
+        var packetIndex = Math.Max(0, (fileOffset - source.Catalog.SyncOffset) / PacketSize);
+        return TsTimelineRepairService.GetVirtualTimestampCorrection90k(
+            timelineAnalysis, pcrPid, packetIndex);
     }
 
     public async Task<TsRepairOutputResult> OutputAsync(
@@ -337,10 +400,11 @@ public sealed class TsMultiSourceRepairService
     }
 
     private static Dictionary<int, ReferenceTrackState> BuildReferenceTracks(
-        TsCheckResult catalog,
+        TsRepairSourceAnalysis source,
         ICollection<TsRepairTrackAnalysis> output)
     {
         var result = new Dictionary<int, ReferenceTrackState>();
+        var catalog = source.Catalog;
         foreach (var program in catalog.Programs.Values.OrderBy(item => item.ProgramNumber))
         {
             foreach (var stream in program.Streams.OrderBy(item => item.Key))
@@ -356,7 +420,8 @@ public sealed class TsMultiSourceRepairService
                     Language = summary?.Language
                 };
                 output.Add(track);
-                result[track.ReferencePid] = new ReferenceTrackState(track);
+                result[track.ReferencePid] = new ReferenceTrackState(
+                    track, CreateTimelineNormalizer(source, program.PcrPid));
             }
         }
         return result;
@@ -400,7 +465,9 @@ public sealed class TsMultiSourceRepairService
                     Confidence = TsRepairMatchConfidence.Metadata
                 };
                 track.Matches.Add(match);
-                result.Add(new TrackMapping(referenceState, candidate.Pid, match));
+                result.Add(new TrackMapping(
+                    referenceState, candidate.Pid, match,
+                    CreateTimelineNormalizer(donor, FindPcrPid(donor.Catalog, candidate.Pid))));
             }
         }
 
@@ -419,6 +486,23 @@ public sealed class TsMultiSourceRepairService
     private static bool LanguagesCompatible(string? left, string? right) =>
         string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right) ||
         string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+    private static int FindPcrPid(TsCheckResult catalog, int streamPid)
+    {
+        foreach (var program in catalog.Programs.Values)
+        {
+            if (program.Streams.ContainsKey(streamPid))
+                return program.PcrPid;
+        }
+        return -1;
+    }
+
+    private static TimelineTimestampNormalizer? CreateTimelineNormalizer(
+        TsRepairSourceAnalysis source,
+        int pcrPid) =>
+        source.TimelineAnalysis is { Issues.Count: > 0 } analysis && pcrPid >= 0
+            ? new TimelineTimestampNormalizer(analysis, pcrPid, source.Catalog.SyncOffset)
+            : null;
 
     private static TsRepairElementaryKind GetElementaryKind(TsRepairTrackAnalysis track)
     {
@@ -681,7 +765,7 @@ public sealed class TsMultiSourceRepairService
     {
         var states = mappings
             .GroupBy(item => item.SourcePid)
-            .ToDictionary(item => item.Key, item => new DonorPidState(item));
+            .ToDictionary(item => item.Key, item => new DonorPidState(item, item.First().TimelineNormalizer));
         await ScanPacketsAsync(source.FilePath, source.Catalog.SyncOffset, sourceIndex, sourceCount, progress,
             (packet, fileOffset) =>
             {
@@ -922,6 +1006,8 @@ public sealed class TsMultiSourceRepairService
                     {
                         currentPesPts90k = UnwrapTimestamp(
                             rawPts90k, ref lastRawPts90k, ref ptsWrapOffset90k);
+                        currentPesPts90k = job.TimelineNormalizer?.Normalize(
+                            currentPesPts90k, position + offset) ?? currentPesPts90k;
                     }
                     var pesHeader = startsNewPes
                         ? packet.Slice(info.PayloadOffset, pesHeaderLength)
@@ -1466,7 +1552,9 @@ public sealed class TsMultiSourceRepairService
             long FileOffset);
     }
 
-    private sealed class ReferenceTrackState(TsRepairTrackAnalysis track)
+    private sealed class ReferenceTrackState(
+        TsRepairTrackAnalysis track,
+        TimelineTimestampNormalizer? timelineNormalizer)
     {
         public TsRepairTrackAnalysis Track { get; } = track;
         public Queue<ulong> RecentHashes { get; } = new(AnchorLength);
@@ -1582,6 +1670,7 @@ public sealed class TsMultiSourceRepairService
                 if (!TryReadPesStart(packet, info, out var expectedLength, out var rawPts90k))
                     return;
                 var pts90k = UnwrapTimestamp(rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
+                pts90k = timelineNormalizer?.Normalize(pts90k, fileOffset) ?? pts90k;
                 _lastKnownPts90k = pts90k;
                 _lastKnownPtsFileOffset = fileOffset;
                 Track.FirstPts90k = Math.Min(Track.FirstPts90k, pts90k);
@@ -1938,18 +2027,25 @@ public sealed class TsMultiSourceRepairService
     private sealed class TrackMapping(
         ReferenceTrackState referenceState,
         int sourcePid,
-        TsRepairTrackMatch match)
+        TsRepairTrackMatch match,
+        TimelineTimestampNormalizer? timelineNormalizer)
     {
         public ReferenceTrackState ReferenceState { get; } = referenceState;
         public int SourcePid { get; } = sourcePid;
         public TsRepairTrackMatch Match { get; } = match;
+        public TimelineTimestampNormalizer? TimelineNormalizer { get; } = timelineNormalizer;
         public bool MetadataIsAmbiguous { get; set; }
     }
 
     private sealed class DonorPidState
     {
-        public DonorPidState(IEnumerable<TrackMapping> mappings)
+        private readonly TimelineTimestampNormalizer? _timelineNormalizer;
+
+        public DonorPidState(
+            IEnumerable<TrackMapping> mappings,
+            TimelineTimestampNormalizer? timelineNormalizer)
         {
+            _timelineNormalizer = timelineNormalizer;
             TrackStates = mappings.Select(item => new DonorTrackState(item)).ToArray();
             foreach (var state in TrackStates)
             {
@@ -2003,6 +2099,7 @@ public sealed class TsMultiSourceRepairService
                 if (!TryReadPesStart(packet, info, out var expectedLength, out var rawPts90k))
                     return;
                 var pts90k = UnwrapTimestamp(rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
+                pts90k = _timelineNormalizer?.Normalize(pts90k, fileOffset) ?? pts90k;
                 if (pts90k != long.MinValue &&
                     (_lastIndexedPts90k == long.MinValue ||
                      Math.Abs(pts90k - _lastIndexedPts90k) >= DonorTimestampIndexInterval90k))
@@ -2659,7 +2756,7 @@ public sealed class TsMultiSourceRepairService
                     continue;
                 jobs.Add(new ElementaryGapSearchJob(
                     this, sourcePath, Mapping.SourcePid, startOffset, Math.Min(endOffset, fileSize),
-                    window.GapStates.ToArray()));
+                    window.GapStates.ToArray(), Mapping.TimelineNormalizer));
             }
             return jobs;
         }
@@ -3095,7 +3192,8 @@ public sealed class TsMultiSourceRepairService
         int sourcePid,
         long startOffset,
         long endOffset,
-        GapSearchState[] gapStates)
+        GapSearchState[] gapStates,
+        TimelineTimestampNormalizer? timelineNormalizer)
     {
         public DonorTrackState Owner { get; } = owner;
         public string SourcePath { get; } = sourcePath;
@@ -3103,7 +3201,21 @@ public sealed class TsMultiSourceRepairService
         public long StartOffset { get; } = startOffset;
         public long EndOffset { get; } = endOffset;
         public GapSearchState[] GapStates { get; } = gapStates;
+        public TimelineTimestampNormalizer? TimelineNormalizer { get; } = timelineNormalizer;
         public List<ElementaryGapCandidateResult> Results { get; set; } = [];
+    }
+
+    private sealed class TimelineTimestampNormalizer(
+        TsTimelineRepairAnalysis analysis,
+        int pcrPid,
+        long syncOffset)
+    {
+        public long Normalize(long timestamp90k, long fileOffset)
+        {
+            var packetIndex = Math.Max(0, (fileOffset - syncOffset) / PacketSize);
+            return timestamp90k + TsTimelineRepairService.GetVirtualTimestampCorrection90k(
+                analysis, pcrPid, packetIndex);
+        }
     }
 
     private readonly record struct ElementaryGapCandidateResult(

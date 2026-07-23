@@ -110,13 +110,27 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanStart))]
     [NotifyPropertyChangedFor(nameof(CanCancel))]
-    [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(CancelCommand), nameof(ExportCommand))]
+    [NotifyPropertyChangedFor(nameof(CanRepairTimeline))]
+    [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(CancelCommand), nameof(ExportCommand),
+        nameof(RepairTimelineCommand))]
     private bool _isScanning;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanExport))]
+    [NotifyPropertyChangedFor(nameof(CanRepairTimeline))]
     [NotifyCanExecuteChangedFor(nameof(ExportCommand))]
+    [NotifyCanExecuteChangedFor(nameof(RepairTimelineCommand))]
     private bool _hasResult;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRepairTimeline), nameof(ShowTimelineNotice), nameof(TimelineNoticeText))]
+    [NotifyCanExecuteChangedFor(nameof(RepairTimelineCommand))]
+    private bool _hasEstimatedTimeline;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanRepairTimeline), nameof(ShowTimelineNotice), nameof(TimelineNoticeText))]
+    [NotifyCanExecuteChangedFor(nameof(RepairTimelineCommand))]
+    private bool _hasTimelineRepairCandidate;
 
     [ObservableProperty]
     private double _percent;
@@ -164,6 +178,15 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
     public bool CanStart => !IsScanning;
     public bool CanCancel => IsScanning;
     public bool CanExport => HasResult && !IsScanning;
+    // 只有快速扫描确认存在可进一步分析的 PCR 间隔偏差时，才显示修复入口；
+    // 单纯因 TEI/丢包导致的估算时间轴只提供说明，避免把传输错误误导成可修复的时钟问题。
+    public bool ShowTimelineNotice => HasEstimatedTimeline || HasTimelineRepairCandidate;
+    public bool CanRepairTimeline => HasResult && !IsScanning && HasTimelineRepairCandidate;
+    public string TimelineNoticeText => HasTimelineRepairCandidate
+        ? HasEstimatedTimeline
+            ? _text.Strings.String_TsCheck_Timeline_EstimatedNotice
+            : _text.Strings.String_TsCheck_Timeline_RepairCandidateNotice
+        : _text.Strings.String_TsCheck_Timeline_NoRepairCandidateNotice;
     public string FileName => Path.GetFileName(FilePath);
     public string FileSizeText => File.Exists(FilePath) ? CommonUtil.FormatFileSize(new FileInfo(FilePath).Length) : "-";
 
@@ -195,6 +218,8 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
         VerdictText = "-";
         Verdict = null;
         HasBroadcastTime = false;
+        HasEstimatedTimeline = false;
+        HasTimelineRepairCandidate = false;
         BroadcastTimeText = string.Empty;
         StatusText = _text.Strings.String_TsCheck_Status_Scanning;
 
@@ -224,6 +249,8 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
             RebuildPidSummaries();
             TimelineBuckets = result.Timeline.ToArray();
             TimelineEvents = result.Events.ToArray();
+            HasEstimatedTimeline = result.TimelineUsesEstimatedClock;
+            HasTimelineRepairCandidate = result.TimelineHasRepairCandidate;
             RebuildTimelineStreams();
             ErrorCount = _result.ErrorCount;
             WarningCount = _result.WarningCount;
@@ -379,6 +406,7 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
     private void OnLanguageChanged()
     {
         RebuildTimelineStreams();
+        OnPropertyChanged(nameof(TimelineNoticeText));
         StatusText = IsScanning
             ? _text.Strings.String_TsCheck_Status_Scanning
             : _result is null
@@ -441,6 +469,17 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
         var reportBuilder = new TsCheckReportBuilder(_text);
         await reportBuilder.WriteAsync(selected.Path.LocalPath, result);
         StatusText = string.Format(_text.Strings.String_TsCheck_Status_Exported, selected.Path.LocalPath);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRepairTimeline))]
+    private async Task RepairTimelineAsync()
+    {
+        var result = _result;
+        if (result is null)
+            return;
+        var dialogViewModel = _dialogService.CreateViewModel<TsTimelineRepairWindowViewModel>();
+        dialogViewModel.Initialize(FilePath, result);
+        await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
 
     public void OnClosing(CancelEventArgs eventArgs)

@@ -105,6 +105,7 @@ public sealed class TsCheckEvent
     public required long FileOffset { get; init; }
     public double? SourceTimeSeconds { get; init; }
     public double? TimeSeconds { get; init; }
+    public double? TimelineTimeSeconds { get; init; }
     public bool IsEstimatedTime { get; init; }
     public required TsCheckMessageCode MessageCode { get; init; }
     public object[] MessageArguments { get; init; } = [];
@@ -196,6 +197,9 @@ public sealed class TsCheckResult
     public TsBroadcastTimeAnchor? FirstBroadcastTime { get; set; }
     public TsBroadcastTimeAnchor? LastBroadcastTime { get; set; }
     public int TimelineReferencePcrPid { get; set; } = -1;
+    public bool TimelineUsesEstimatedClock { get; set; }
+    // 仅表示 PCR 相邻样本相对稳定包速率存在明显偏差，不代表所有时钟不连续都可修复。
+    public bool TimelineHasRepairCandidate { get; set; }
     public int ErrorCount => TotalErrorCount;
     public int WarningCount => TotalWarningCount;
     public TsCheckVerdict Verdict => WasCancelled

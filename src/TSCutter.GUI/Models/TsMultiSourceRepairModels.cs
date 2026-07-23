@@ -50,6 +50,7 @@ public sealed class TsRepairSourceAnalysis
     public int ContinuityErrors { get; set; }
     public int TransportErrors { get; set; }
     public int PesSizeErrors { get; set; }
+    internal TsTimelineRepairAnalysis? TimelineAnalysis { get; set; }
 }
 
 public sealed class TsRepairTrackMatch
