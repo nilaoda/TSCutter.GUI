@@ -32,6 +32,8 @@ public sealed class TsStreamAnalyzer
     private readonly Dictionary<int, int> _streamPidPrograms = [];
     private readonly Dictionary<int, int> _pcrPidPrograms = [];
     private readonly Dictionary<int, ProgramClockState> _programClocks = [];
+    private readonly Dictionary<(TsCheckSeverity Severity, TsCheckEventType Type, int Pid), TsCheckEvent>
+        _lastMergeableEvents = [];
     private TsCheckResult _result = null!;
     private IProgress<TsCheckProgress>? _progress;
     private Stopwatch _stopwatch = null!;
@@ -161,6 +163,7 @@ public sealed class TsStreamAnalyzer
         _streamPidPrograms.Clear();
         _pcrPidPrograms.Clear();
         _programClocks.Clear();
+        _lastMergeableEvents.Clear();
         _result = new TsCheckResult
         {
             FilePath = filePath,
@@ -296,19 +299,31 @@ public sealed class TsStreamAnalyzer
             state.TimelineIntervalPacketCount++;
             _timelineIntervalPacketCount++;
         }
-        if (hasPayload)
-            state.Summary.PayloadPacketCount++;
 
         if (transportError)
         {
-            state.DiscardPes();
+            var eventTime = GetPacketEventTime(state);
+            // TEI 表示该 TS 包含有不可纠正错误，除同步字节和 TEI 本身外，PID、CC、
+            // adaptation field 与 payload 都可能已经损坏。记录主错误后立即短路，避免
+            // 同一个坏包继续制造 CC、PCR、PES 和非法 adaptation field 等级联误报。
+            state.DiscardUnreliablePayload();
             if (_psiAssemblers.TryGetValue(pid, out var damagedAssembler))
                 damagedAssembler.DiscardUntilPayloadStart();
+            if ((_streamPidPrograms.TryGetValue(pid, out var damagedProgramNumber) ||
+                 _pcrPidPrograms.TryGetValue(pid, out damagedProgramNumber)) &&
+                _programClocks.TryGetValue(damagedProgramNumber, out var damagedClock))
+            {
+                damagedClock.ResetSync();
+            }
             state.Summary.TransportErrors++;
             if (!_options.InventoryOnly)
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.TransportError, pid, _packetIndex, fileOffset,
-                    TsCheckMessageCode.TransportError, [], GetPacketEventTime(state), true);
+                    TsCheckMessageCode.TransportError, [], eventTime, true);
+            return;
         }
+
+        if (hasPayload)
+            state.Summary.PayloadPacketCount++;
 
         if (adaptationControl == 0)
         {
@@ -1295,11 +1310,12 @@ public sealed class TsStreamAnalyzer
 
         TsCheckEvent? item = null;
         var isNewEvent = false;
-        if (_result.Events.Count > 0)
+        var mergeKey = (severity, type, pid);
+        if (_lastMergeableEvents.TryGetValue(mergeKey, out var previous))
         {
-            var previous = _result.Events[^1];
-            // 邻近同类异常合并为一个区间，避免严重坏流生成海量 UI 行和报告文本。
-            if (previous.Type == type && previous.Pid == pid && packetIndex - previous.EndPacket <= 256)
+            // 同一损坏区域内的各 PID 会交错出现。按“级别、类型、PID”分别记住最近事件，
+            // 可跨过其他 PID 的行继续合并，避免连续 TEI 尾段被拆成上千条详情。
+            if (packetIndex - previous.EndPacket <= 256)
             {
                 previous.EndPacket = packetIndex;
                 previous.Occurrences++;
@@ -1332,6 +1348,7 @@ public sealed class TsStreamAnalyzer
                 MessageArguments = messageArguments
             };
             _result.Events.Add(item);
+            _lastMergeableEvents[mergeKey] = item;
             isNewEvent = true;
         }
 
@@ -1732,6 +1749,16 @@ public sealed class TsStreamAnalyzer
         public double TimelineBucketPacketCount;
 
         public void ResetContinuity() => HasContinuity = false;
+
+        public void DiscardUnreliablePayload()
+        {
+            // TEI 包不能作为下一包的连续性基线，也不能保留跨包 PES/音频探测的半成品；
+            // 时间戳基线仍保留，使恢复后的可靠 PTS/PCR 若确有跳变仍能被正常报告。
+            ResetContinuity();
+            PesHeaderLength = 0;
+            DiscardPes();
+            MpegAudioProbeTailLength = 0;
+        }
 
         public void ResetTimestamps()
         {

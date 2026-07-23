@@ -4,6 +4,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TSCutter.GUI", "TSCutter.GU
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TSCutter.GUI.Generators", "TSCutter.GUI.Generators\TSCutter.GUI.Generators.csproj", "{7EF1585C-04F0-4FC6-8307-7B1B21B88058}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "TSCutter.GUI.Tests", "TSCutter.GUI.Tests\TSCutter.GUI.Tests.csproj", "{F21B6DD4-76B9-4D53-89C9-50735583EF2A}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -18,5 +20,9 @@ Global
 		{7EF1585C-04F0-4FC6-8307-7B1B21B88058}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{7EF1585C-04F0-4FC6-8307-7B1B21B88058}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{7EF1585C-04F0-4FC6-8307-7B1B21B88058}.Release|Any CPU.Build.0 = Release|Any CPU
+		{F21B6DD4-76B9-4D53-89C9-50735583EF2A}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{F21B6DD4-76B9-4D53-89C9-50735583EF2A}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{F21B6DD4-76B9-4D53-89C9-50735583EF2A}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{F21B6DD4-76B9-4D53-89C9-50735583EF2A}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 EndGlobal
