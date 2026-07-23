@@ -154,9 +154,11 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
     private string _packetCountText = "0";
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowTimelineNotice))]
     private int _errorCount;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShowTimelineNotice))]
     private int _warningCount;
 
     [ObservableProperty]
@@ -180,7 +182,10 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
     public bool CanExport => HasResult && !IsScanning;
     // 只有快速扫描确认存在可进一步分析的 PCR 间隔偏差时，才显示修复入口；
     // 单纯因 TEI/丢包导致的估算时间轴只提供说明，避免把传输错误误导成可修复的时钟问题。
-    public bool ShowTimelineNotice => HasEstimatedTimeline || HasTimelineRepairCandidate;
+    // 显式 discontinuity 也可能让图表采用估算横轴，但它本身不是错误。
+    // 只有同时存在可供用户检查的诊断项时才显示说明，避免“通过且详情为空”仍提示 PCR 有问题。
+    public bool ShowTimelineNotice => HasTimelineRepairCandidate ||
+                                      HasEstimatedTimeline && (ErrorCount > 0 || WarningCount > 0);
     public bool CanRepairTimeline => HasResult && !IsScanning && HasTimelineRepairCandidate;
     public string TimelineNoticeText => HasTimelineRepairCandidate
         ? HasEstimatedTimeline

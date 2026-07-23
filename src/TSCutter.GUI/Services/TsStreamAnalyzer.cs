@@ -513,7 +513,9 @@ public sealed class TsStreamAnalyzer
         _lastKnownClock90k = pcr;
         SetTimelineOrigin(pcr);
         if (HasFeature(TsStreamAnalyzeFeatures.Timeline))
-            UpdateTimeline(pid, ptsToSeconds(pcr), discontinuity);
+            // 图表内部只关心 PCR 的相邻间隔，不能使用会在 PTS 起点之前截为 0 的展示时间。
+            // 否则录制开头正常的 PTS/PCR 偏移会被误判为时钟停滞，进而错误标记为估算时间轴。
+            UpdateTimeline(pid, pcr / 90_000.0, discontinuity);
         if (HasFeature(TsStreamAnalyzeFeatures.AvSyncValidation) &&
             _pcrPidPrograms.TryGetValue(pid, out var programNumber))
             CheckAvSyncAtPcr(programNumber, pcr, fileOffset);
