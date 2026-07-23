@@ -18,7 +18,7 @@ namespace TSCutter.GUI;
 
 public partial class App : Application
 {
-    public const string CurrentTag = "alphabuild_20260722";
+    public const string CurrentTag = "alphabuild_20260724";
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -35,6 +35,7 @@ public partial class App : Application
         SplatRegistrations.Register<OutputWindowViewModel>();
         SplatRegistrations.Register<RawCutterWindowViewModel>();
         SplatRegistrations.Register<TsCheckWindowViewModel>();
+        SplatRegistrations.Register<TsTimelineRepairWindowViewModel>();
         SplatRegistrations.Register<TsFilterWindowViewModel>();
         SplatRegistrations.Register<TsServiceFilterWindowViewModel>();
         SplatRegistrations.Register<TsMultiSourceRepairWindowViewModel>();
@@ -108,6 +109,7 @@ public partial class App : Application
     public static OutputWindowViewModel OutputDialog => Locator.Current.GetService<OutputWindowViewModel>()!;
     public static RawCutterWindowViewModel RawCutterDialog => Locator.Current.GetService<RawCutterWindowViewModel>()!;
     public static TsCheckWindowViewModel TsCheckDialog => Locator.Current.GetService<TsCheckWindowViewModel>()!;
+    public static TsTimelineRepairWindowViewModel TsTimelineRepairDialog => Locator.Current.GetService<TsTimelineRepairWindowViewModel>()!;
     public static TsFilterWindowViewModel TsFilterDialog => Locator.Current.GetService<TsFilterWindowViewModel>()!;
     public static TsServiceFilterWindowViewModel TsServiceFilterDialog => Locator.Current.GetService<TsServiceFilterWindowViewModel>()!;
     public static TsMultiSourceRepairWindowViewModel TsMultiSourceRepairDialog => Locator.Current.GetService<TsMultiSourceRepairWindowViewModel>()!;
