@@ -18,7 +18,7 @@ namespace TSCutter.GUI;
 
 public partial class App : Application
 {
-    public const string CurrentTag = "alphabuild_20260722";
+    public const string CurrentTag = "alphabuild_20260724";
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
