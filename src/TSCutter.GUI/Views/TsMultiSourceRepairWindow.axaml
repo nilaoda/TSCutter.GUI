@@ -37,7 +37,7 @@
 
     <Grid Margin="12" RowDefinitions="210,Auto,*,Auto" RowSpacing="8">
         <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
-            <Grid RowDefinitions="Auto,*" RowSpacing="6">
+            <Grid RowDefinitions="Auto,Auto,*" RowSpacing="6">
                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,260,Auto,Auto" ColumnSpacing="8">
                     <TextBlock Grid.Column="0" Text="{DynamicResource String.TsRepair.Sources}"
                                FontWeight="Bold" VerticalAlignment="Center" />
@@ -56,7 +56,11 @@
                     <Button Grid.Column="5" Content="{DynamicResource String.TsRepair.RemoveFile}"
                             Command="{Binding RemoveSourceCommand}" MinWidth="80" />
                 </Grid>
-                <DataGrid Grid.Row="1" ItemsSource="{Binding Sources}"
+                <CheckBox Grid.Row="1" Content="{DynamicResource String.TsRepair.AutoNormalizeTimeline}"
+                          IsChecked="{Binding AutoNormalizeTimeline, Mode=TwoWay}"
+                          IsEnabled="{Binding CanConfigureTimeline}"
+                          ToolTip.Tip="{DynamicResource String.TsRepair.AutoNormalizeTimelineHint}" />
+                <DataGrid Grid.Row="2" ItemsSource="{Binding Sources}"
                           SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
                           AutoGenerateColumns="False" IsReadOnly="True"
                           GridLinesVisibility="All" CanUserResizeColumns="True">
@@ -99,9 +103,6 @@
                                Classes.repairNone="{Binding IsAnalysisNotRepairable}" />
                     <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedSuffix}" />
                 </WrapPanel>
-                <TextBlock Text="{DynamicResource String.TsRepair.TimelineNormalizationNote}"
-                           TextWrapping="Wrap"
-                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
             </StackPanel>
             <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2"
                         IsVisible="{Binding IsOutputSummaryVisible}">
@@ -109,9 +110,6 @@
                 <TextBlock Text="{Binding OutputVerificationText}" TextWrapping="Wrap"
                            Classes.repairFull="{Binding IsOutputVerificationPassed}"
                            Classes.repairPartial="{Binding HasOutputRemainingErrors}" />
-                <TextBlock Text="{DynamicResource String.TsRepair.TimelineNormalizationNote}"
-                           TextWrapping="Wrap"
-                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
             </StackPanel>
         </Grid>
 

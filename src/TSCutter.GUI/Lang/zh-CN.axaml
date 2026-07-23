@@ -221,9 +221,16 @@
     <x:String x:Key="String.TsRepair.Match.Item">{0}：PID {1} · {2}</x:String>
     <x:String x:Key="String.TsRepair.Status.Ready">请添加至少两份同源、同时段的 TS 录制文件。</x:String>
     <x:String x:Key="String.TsRepair.Status.ReadyNote">可以使用不同录制工具，PID、封包方式和轨道组合也可以不同；不同播出时段或重新编码的内容不适用。</x:String>
+    <x:String x:Key="String.TsRepair.AutoNormalizeTimeline">匹配时自动校正时间轴</x:String>
+    <x:String x:Key="String.TsRepair.AutoNormalizeTimelineHint">开启后会额外分析辅助源的 PCR/PTS 时间轴，以提高存在时钟偏移时的匹配率；关闭后每个源只进行一次主扫描。</x:String>
     <x:String x:Key="String.TsRepair.TimelineNormalizationNote">匹配阶段会自动归一化检测到的 PCR/PTS 时间轴偏移，仅用于跨来源对齐；不会单独修改源文件时间轴，也不会掩盖传输或 PES 错误。</x:String>
+    <x:String x:Key="String.TsRepair.TimelineNormalizationDisabledNote">时间轴自动校正已关闭：每个源只进行一次主扫描；若来源间存在 PCR/PTS 偏移，部分可修复区域可能无法匹配。</x:String>
     <x:String x:Key="String.TsRepair.Status.NeedSources">请添加至少两份有效的录制文件，并选择其中一份作为参考源。</x:String>
     <x:String x:Key="String.TsRepair.Status.Analyzing">正在分析来源 {0}/{1}：{2}</x:String>
+    <x:String x:Key="String.TsRepair.Status.ScanningReference">正在扫描参考源 {0}/{1}：{2}</x:String>
+    <x:String x:Key="String.TsRepair.Status.AnalyzingDonorTimeline">正在分析辅助源 {0}/{1} 的时间轴：{2}</x:String>
+    <x:String x:Key="String.TsRepair.Status.ScanningDonor">正在扫描辅助源 {0}/{1} 并匹配修复区域：{2}</x:String>
+    <x:String x:Key="String.TsRepair.Status.RescanningDonor">正在第二次扫描辅助源 {0}/{1} 并匹配修复区域：{2}</x:String>
     <x:String x:Key="String.TsRepair.Status.AnalyzingIntensive">正在匹配来源 {0}/{1} 中的异常密集区：{2}（计算量较大，请稍候）</x:String>
     <x:String x:Key="String.TsRepair.Status.AnalyzingParallel">正在并行匹配来源 {0}/{1} 的异常区域 {3}/{4}：{2}</x:String>
     <x:String x:Key="String.TsRepair.Status.AnalysisCompleted">分析完成：发现 {0:N0} 个丢包缺口或媒体异常区域，其中 {1:N0} 个可保守修复。</x:String>

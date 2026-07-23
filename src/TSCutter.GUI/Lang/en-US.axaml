@@ -221,9 +221,16 @@
     <x:String x:Key="String.TsRepair.Match.Item">{0}: PID {1} · {2}</x:String>
     <x:String x:Key="String.TsRepair.Status.Ready">Add at least two TS recordings of the same broadcast feed and time period.</x:String>
     <x:String x:Key="String.TsRepair.Status.ReadyNote">Different recorders, PIDs, packetization, and track selections are supported; recordings from different airings or re-encoded content are not compatible.</x:String>
+    <x:String x:Key="String.TsRepair.AutoNormalizeTimeline">Normalize timeline during matching</x:String>
+    <x:String x:Key="String.TsRepair.AutoNormalizeTimelineHint">When enabled, donor PCR/PTS timelines are analyzed separately to improve matching across clock offsets. When disabled, each source has only one main scan.</x:String>
     <x:String x:Key="String.TsRepair.TimelineNormalizationNote">During matching, detected PCR/PTS timeline offsets are normalized for cross-source alignment only. Source timelines are not separately rewritten, and transport or PES errors are not hidden.</x:String>
+    <x:String x:Key="String.TsRepair.TimelineNormalizationDisabledNote">Automatic timeline normalization is off: each source has only one main scan. PCR/PTS offsets between sources may prevent some repairable regions from matching.</x:String>
     <x:String x:Key="String.TsRepair.Status.NeedSources">Add at least two existing recordings and select one as the reference.</x:String>
     <x:String x:Key="String.TsRepair.Status.Analyzing">Analyzing source {0}/{1}: {2}</x:String>
+    <x:String x:Key="String.TsRepair.Status.ScanningReference">Scanning reference source {0}/{1}: {2}</x:String>
+    <x:String x:Key="String.TsRepair.Status.AnalyzingDonorTimeline">Analyzing the timeline of donor source {0}/{1}: {2}</x:String>
+    <x:String x:Key="String.TsRepair.Status.ScanningDonor">Scanning donor source {0}/{1} and matching repair regions: {2}</x:String>
+    <x:String x:Key="String.TsRepair.Status.RescanningDonor">Scanning donor source {0}/{1} a second time to match repair regions: {2}</x:String>
     <x:String x:Key="String.TsRepair.Status.AnalyzingIntensive">Matching an issue-dense region in source {0}/{1}: {2} (additional processing may take a moment)</x:String>
     <x:String x:Key="String.TsRepair.Status.AnalyzingParallel">Matching issue regions in parallel for source {0}/{1} ({3}/{4}): {2}</x:String>
     <x:String x:Key="String.TsRepair.Status.AnalysisCompleted">Analysis completed: {0:N0} packet gap(s) or media issue region(s), {1:N0} conservatively repairable.</x:String>

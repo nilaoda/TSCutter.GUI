@@ -58,15 +58,26 @@ public sealed class TsTimelineRepairService
             fullPath, finalCheckResult.SyncOffset, fileSize, performsBaseAnalysis,
             stopwatch, progress, cancellationToken)
             .ConfigureAwait(false);
+        return BuildAnalysisFromPcrSamples(fullPath, finalCheckResult, samples);
+    }
+
+    // 多源修复的参考源会在主扫描中同时收集 PCR 样本，因此不能再从网络盘单独读取一遍。
+    // 这里复用同一套候选判定逻辑，在主扫描完成后从已收集的样本构造时间轴方案。
+    internal static TsTimelineRepairAnalysis BuildAnalysisFromPcrSamples(
+        string filePath,
+        TsCheckResult checkResult,
+        IReadOnlyDictionary<int, List<PcrSample>> samples)
+    {
+        var fullPath = Path.GetFullPath(filePath);
         var analysis = new TsTimelineRepairAnalysis
         {
             FilePath = fullPath,
-            FileSize = fileSize,
-            SyncOffset = finalCheckResult.SyncOffset,
-            CheckResult = finalCheckResult
+            FileSize = checkResult.FileSize,
+            SyncOffset = checkResult.SyncOffset,
+            CheckResult = checkResult
         };
         foreach (var pair in samples)
-            BuildPidPlan(pair.Key, pair.Value, finalCheckResult, analysis);
+            BuildPidPlan(pair.Key, pair.Value, checkResult, analysis);
         return analysis;
     }
 
@@ -731,7 +742,7 @@ public sealed class TsTimelineRepairService
     private static StringComparison PathComparison =>
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-    private readonly record struct PcrSample(long PacketIndex, long Pcr90k, bool Discontinuity);
+    internal readonly record struct PcrSample(long PacketIndex, long Pcr90k, bool Discontinuity);
 
     private sealed class InputPcrState
     {

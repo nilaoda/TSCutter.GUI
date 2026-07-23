@@ -101,9 +101,10 @@ public sealed class TsRepairPesRegion
     public required long ReferenceEndOffset { get; init; }
     public required int ReferenceStartContinuityCounter { get; init; }
     public required int ReferencePacketCount { get; init; }
-    public required long ReferenceFirstPts90k { get; init; }
-    public required long ReferenceLastPts90k { get; init; }
-    public required long[] ReferencePts90k { get; init; }
+    public required long ReferenceFirstPts90k { get; set; }
+    public required long ReferenceLastPts90k { get; set; }
+    public required long[] ReferencePts90k { get; set; }
+    internal long[] ReferencePtsFileOffsets { get; init; } = [];
     public required int MismatchCount { get; init; }
     public TsRepairPesRegionReason Reason { get; init; } = TsRepairPesRegionReason.PesSizeMismatch;
     public required TsRepairPesSignature[] BeforeAnchor { get; init; }
@@ -138,7 +139,7 @@ public sealed class TsRepairGap
     public required long ReferenceInsertOffset { get; init; }
     public required int ExpectedContinuityCounter { get; init; }
     public required int MissingPacketModulo { get; init; }
-    public long ReferencePts90k { get; init; } = long.MinValue;
+    public long ReferencePts90k { get; set; } = long.MinValue;
     public required ulong[] BeforeAnchor { get; init; }
     public required ulong[] AfterAnchor { get; init; }
     public byte[]? BeforeElementaryAnchor { get; init; }
@@ -186,6 +187,14 @@ public sealed class TsMultiSourceAnalysisResult
     }
 }
 
+public enum TsMultiSourceProgressPhase
+{
+    ReferenceScan,
+    DonorTimelineAnalysis,
+    DonorScan,
+    DonorMatchingScan
+}
+
 public readonly record struct TsMultiSourceProgress(
     int SourceIndex,
     int SourceCount,
@@ -196,7 +205,8 @@ public readonly record struct TsMultiSourceProgress(
     TimeSpan Elapsed,
     bool IsIntensiveAnalysis = false,
     int IntensiveTaskCompleted = 0,
-    int IntensiveTaskCount = 0)
+    int IntensiveTaskCount = 0,
+    TsMultiSourceProgressPhase Phase = TsMultiSourceProgressPhase.DonorMatchingScan)
 {
     public double Percent => FileSize > 0 ? BytesProcessed * 100.0 / FileSize : 0;
 }

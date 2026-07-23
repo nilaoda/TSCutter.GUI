@@ -58,6 +58,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     [NotifyPropertyChangedFor(nameof(CanAnalyze))]
     [NotifyPropertyChangedFor(nameof(CanOutput))]
     [NotifyPropertyChangedFor(nameof(CanCancel))]
+    [NotifyPropertyChangedFor(nameof(CanConfigureTimeline))]
     [NotifyCanExecuteChangedFor(nameof(AddSourcesCommand), nameof(RemoveSourceCommand), nameof(AnalyzeCommand),
         nameof(OutputCommand), nameof(CancelCommand), nameof(OpenRepairMapCommand))]
     private bool _isBusy;
@@ -70,6 +71,10 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
 
     [ObservableProperty]
     private bool _keepServiceInformation = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TimelineNormalizationNote))]
+    private bool _autoNormalizeTimeline = true;
 
     [ObservableProperty]
     private double _percent;
@@ -126,6 +131,10 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     public bool CanOutput => !IsBusy && HasAnalysis && Tracks.Any(item => item.IsSelected);
     public bool CanCancel => IsBusy;
     public bool CanOpenRepairMap => !IsBusy && HasAnalysis;
+    public bool CanConfigureTimeline => !IsBusy;
+    public string TimelineNormalizationNote => AutoNormalizeTimeline
+        ? _text.Strings.String_TsRepair_TimelineNormalizationNote
+        : _text.Strings.String_TsRepair_TimelineNormalizationDisabledNote;
 
     [RelayCommand(CanExecute = nameof(CanModifySources))]
     private async Task AddSourcesAsync()
@@ -219,7 +228,8 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
             });
             var sourceCompleted = new Progress<TsRepairSourceCompleted>(UpdateCompletedSourceRow);
             _analysis = await _repairService.AnalyzeAsync(
-                paths, SelectedReference.FilePath, progress, sourceCompleted, cancellationTokenSource.Token);
+                paths, SelectedReference.FilePath, AutoNormalizeTimeline, progress, sourceCompleted,
+                cancellationTokenSource.Token);
             ResetIntensiveStatusDelay();
             if (_isClosing)
                 return;
@@ -310,7 +320,18 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
             ? progress.IntensiveTaskCount > 0
                 ? _text.Strings.String_TsRepair_Status_AnalyzingParallel
                 : _text.Strings.String_TsRepair_Status_AnalyzingIntensive
-            : _text.Strings.String_TsRepair_Status_Analyzing;
+            : progress.Phase switch
+            {
+                TsMultiSourceProgressPhase.ReferenceScan =>
+                    _text.Strings.String_TsRepair_Status_ScanningReference,
+                TsMultiSourceProgressPhase.DonorTimelineAnalysis =>
+                    _text.Strings.String_TsRepair_Status_AnalyzingDonorTimeline,
+                TsMultiSourceProgressPhase.DonorScan =>
+                    _text.Strings.String_TsRepair_Status_ScanningDonor,
+                TsMultiSourceProgressPhase.DonorMatchingScan =>
+                    _text.Strings.String_TsRepair_Status_RescanningDonor,
+                _ => _text.Strings.String_TsRepair_Status_Analyzing
+            };
         return string.Format(
             format,
             progress.SourceIndex + 1,
@@ -576,6 +597,16 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
             InvalidateAnalysis();
     }
 
+    partial void OnAutoNormalizeTimelineChanged(bool value)
+    {
+        if (IsBusy)
+            return;
+        if (_analysis is not null)
+            InvalidateAnalysis();
+        else
+            StatusText = GetReadyStatusText();
+    }
+
     private void OnSourcesChanged(object? sender, NotifyCollectionChangedEventArgs eventArgs)
     {
         OnPropertyChanged(nameof(CanAnalyze));
@@ -586,6 +617,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
 
     private void OnLanguageChanged()
     {
+        OnPropertyChanged(nameof(TimelineNormalizationNote));
         if (_analysis is not null)
         {
             UpdateSourceRows(_analysis);
@@ -610,7 +642,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         Environment.NewLine,
         _text.Strings.String_TsRepair_Status_ReadyNote,
         Environment.NewLine,
-        _text.Strings.String_TsRepair_TimelineNormalizationNote);
+        TimelineNormalizationNote);
 
     private int _outputRepairedGapCount;
     private int _outputRepairedRegionCount;
