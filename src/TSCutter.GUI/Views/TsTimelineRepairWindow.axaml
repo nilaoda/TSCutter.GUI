@@ -1,0 +1,112 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.TsTimelineRepairWindow"
+        x:DataType="viewModels:TsTimelineRepairWindowViewModel"
+        Title="{DynamicResource String.TsTimelineRepair.Title}"
+        Width="900" Height="580" MinWidth="720" MinHeight="460"
+        WindowStartupLocation="CenterOwner">
+
+    <Window.Styles>
+        <Style Selector="TextBlock.successStatus">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusSuccessForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.warningStatus">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.errorStatus">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+    </Window.Styles>
+
+    <Grid Margin="12" RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="9">
+        <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto,Auto"
+                  ColumnSpacing="8" RowSpacing="5">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource String.TsTimelineRepair.File}"
+                           VerticalAlignment="Center" />
+                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding FilePath}" IsReadOnly="True" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="{DynamicResource String.TsTimelineRepair.FileSize}"
+                           VerticalAlignment="Center" />
+                <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding FileSizeText}" FontWeight="Bold"
+                           VerticalAlignment="Center" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource String.TsTimelineRepair.Output}"
+                           VerticalAlignment="Center" />
+                <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding OutputPath}"
+                         IsReadOnly="True" />
+                <Button Grid.Row="1" Grid.Column="3" Content="{DynamicResource String.TsTimelineRepair.Browse}"
+                        Command="{Binding ChooseOutputCommand}" MinWidth="90" />
+
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource String.TsTimelineRepair.Status}"
+                           VerticalAlignment="Top" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding StatusText}"
+                           TextWrapping="Wrap"
+                           Classes.successStatus="{Binding IsSuccessStatus}"
+                           Classes.warningStatus="{Binding IsWarningStatus}"
+                           Classes.errorStatus="{Binding IsErrorStatus}" />
+            </Grid>
+        </ClassicBorderDecorator>
+
+        <Grid Grid.Row="1" RowDefinitions="18,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="12" RowSpacing="5">
+            <ProgressBar Grid.Row="0" Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding Percent}"
+                         Height="18" />
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Percent, StringFormat={}{0:0.00}%}"
+                       MinWidth="70" TextAlignment="Right" VerticalAlignment="Center" />
+            <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="20">
+                <TextBlock><Run Text="{DynamicResource String.TsTimelineRepair.Progress}" /><Run Text=" " /><Run Text="{Binding ProgressText}" FontWeight="Bold" /></TextBlock>
+                <TextBlock><Run Text="{DynamicResource String.TsTimelineRepair.Speed}" /><Run Text=" " /><Run Text="{Binding SpeedText}" FontWeight="Bold" /></TextBlock>
+                <TextBlock><Run Text="{DynamicResource String.TsTimelineRepair.Elapsed}" /><Run Text=" " /><Run Text="{Binding ElapsedText}" FontWeight="Bold" /></TextBlock>
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto"
+              ColumnSpacing="12" RowSpacing="3">
+            <TextBlock Grid.Row="0" Grid.Column="0" Text="{Binding SummaryText}" FontWeight="SemiBold"
+                       VerticalAlignment="Center" TextWrapping="Wrap" />
+            <CheckBox Grid.Row="0" Grid.Column="1" Content="{DynamicResource String.TsTimelineRepair.Option.SyncTimestamps}"
+                      IsChecked="{Binding SynchronizePtsDts}"
+                      ToolTip.Tip="{DynamicResource String.TsTimelineRepair.Option.SyncTimestampsHint}"
+                      VerticalAlignment="Center" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                       Text="{DynamicResource String.TsTimelineRepair.ScopeNote}"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                       TextWrapping="Wrap" />
+        </Grid>
+
+        <DataGrid Grid.Row="3" ItemsSource="{Binding Issues}" IsReadOnly="True" AutoGenerateColumns="False"
+                  GridLinesVisibility="All" CanUserResizeColumns="True"
+                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="{DynamicResource String.TsTimelineRepair.Column.Time}"
+                                    Binding="{Binding TimeText}" Width="120" />
+                <DataGridTextColumn Header="{DynamicResource String.TsTimelineRepair.Column.Type}"
+                                    Binding="{Binding KindText}" Width="190" />
+                <DataGridTextColumn Header="{DynamicResource String.TsTimelineRepair.Column.PcrPid}"
+                                    Binding="{Binding PcrPidText}" Width="90" />
+                <DataGridTextColumn Header="{DynamicResource String.TsTimelineRepair.Column.Range}"
+                                    Binding="{Binding RangeText}" Width="245" />
+                <DataGridTextColumn Header="{DynamicResource String.TsTimelineRepair.Column.Correction}"
+                                    Binding="{Binding CorrectionText}" Width="110" />
+                <DataGridTextColumn Header="{DynamicResource String.TsTimelineRepair.Column.Timestamps}"
+                                    Binding="{Binding TimestampText}" Width="130" />
+                <DataGridTextColumn Header="{DynamicResource String.TsTimelineRepair.Column.Repairable}"
+                                    Binding="{Binding RepairableText}" Width="90" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <StackPanel Grid.Row="4" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="{DynamicResource String.TsTimelineRepair.Analyze}"
+                    Command="{Binding AnalyzeCommand}" Width="110" />
+            <Button Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}" Width="100" />
+            <Button Content="{DynamicResource String.TsTimelineRepair.Repair}"
+                    Command="{Binding RepairCommand}" Width="150" />
+        </StackPanel>
+    </Grid>
+</Window>

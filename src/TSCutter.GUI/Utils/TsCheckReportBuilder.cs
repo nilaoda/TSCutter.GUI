@@ -50,6 +50,12 @@ public sealed class TsCheckReportBuilder(TsCheckTextFormatter text)
                 result.TimelineReferencePcrPid >= 0 ? $"0x{result.TimelineReferencePcrPid:X4}" : "-");
             AppendField(builder, strings.String_TsCheck_Report_TimelineDuration,
                 TsCheckEvent.FormatTime(result.Timeline[^1].EndSeconds));
+            if (result.TimelineUsesEstimatedClock &&
+                (result.ErrorCount > 0 || result.WarningCount > 0))
+            {
+                AppendField(builder, strings.String_TsCheck_Report_TimelineClock,
+                    strings.String_TsCheck_Report_TimelineClockEstimated);
+            }
             AppendField(builder, strings.String_TsCheck_Report_TimelineSamples,
                 result.Timeline.Count.ToString("N0"));
             AppendField(builder, strings.String_TsCheck_Report_AverageBitrate,

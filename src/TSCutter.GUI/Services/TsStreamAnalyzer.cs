@@ -21,6 +21,7 @@ public sealed class TsStreamAnalyzer
     private const long TimestampWrap = 1L << 33;
     private const double PcrGapThresholdSeconds = 0.5;
     private const double TimestampJumpThresholdSeconds = 10;
+    private const long TimelineRepairBoundary90k = 22_500;
     private const double AvDriftThresholdSeconds = 0.5;
     private const int MaxTimelineBuckets = 4_096;
     private const double InitialTimelineBucketSeconds = 1;
@@ -57,6 +58,8 @@ public sealed class TsStreamAnalyzer
     private int _timelineReferencePcrPid = -1;
     private bool _timelineStarted;
     private double _timelineLastClockSeconds;
+    private double _timelineLastDisplaySeconds;
+    private double _timelineSecondsPerPacket;
     private double _timelineBucketStartSeconds;
     private double _timelineBucketDurationSeconds = InitialTimelineBucketSeconds;
     private double _timelineBucketPacketCount;
@@ -191,6 +194,8 @@ public sealed class TsStreamAnalyzer
         _timelineReferencePcrPid = -1;
         _timelineStarted = false;
         _timelineLastClockSeconds = 0;
+        _timelineLastDisplaySeconds = 0;
+        _timelineSecondsPerPacket = 0;
         _timelineBucketStartSeconds = 0;
         _timelineBucketDurationSeconds = InitialTimelineBucketSeconds;
         _timelineBucketPacketCount = 0;
@@ -460,6 +465,28 @@ public sealed class TsStreamAnalyzer
         state.LastRawPcr = raw;
         state.PcrWrapOffset = pcr - raw;
 
+        if (HasFeature(TsStreamAnalyzeFeatures.Timeline) && !discontinuity &&
+            state.LastPcr90k != long.MinValue && state.LastPcrPacketIndex >= 0)
+        {
+            var packetDelta = _packetIndex - state.LastPcrPacketIndex;
+            var clockDelta = pcr - state.LastPcr90k;
+            // 每个 PCR PID 独立维护轻量包速率基线，使多节目 TS 的非图表参考节目也能给出候选提示。
+            // 仅使用短且正向的正常间隔更新基线，与专用修复器筛选中位速率的条件保持一致。
+            if (state.PcrTicksPerPacket > 0 && packetDelta > 0 &&
+                Math.Abs(clockDelta - packetDelta * state.PcrTicksPerPacket) >= TimelineRepairBoundary90k)
+            {
+                _result.TimelineHasRepairCandidate = true;
+            }
+            if (packetDelta > 0 && clockDelta > 0 && clockDelta < 45_000)
+            {
+                var currentRate = clockDelta / (double)packetDelta;
+                state.PcrTicksPerPacket = state.PcrTicksPerPacket <= 0
+                    ? currentRate
+                    : state.PcrTicksPerPacket * 0.875 + currentRate * 0.125;
+            }
+        }
+        state.LastPcrPacketIndex = _packetIndex;
+
         if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation) &&
             !discontinuity && state.LastPcr90k != long.MinValue)
         {
@@ -486,7 +513,9 @@ public sealed class TsStreamAnalyzer
         _lastKnownClock90k = pcr;
         SetTimelineOrigin(pcr);
         if (HasFeature(TsStreamAnalyzeFeatures.Timeline))
-            UpdateTimeline(pid, ptsToSeconds(pcr), discontinuity);
+            // 图表内部只关心 PCR 的相邻间隔，不能使用会在 PTS 起点之前截为 0 的展示时间。
+            // 否则录制开头正常的 PTS/PCR 偏移会被误判为时钟停滞，进而错误标记为估算时间轴。
+            UpdateTimeline(pid, pcr / 90_000.0, discontinuity);
         if (HasFeature(TsStreamAnalyzeFeatures.AvSyncValidation) &&
             _pcrPidPrograms.TryGetValue(pid, out var programNumber))
             CheckAvSyncAtPcr(programNumber, pcr, fileOffset);
@@ -1343,6 +1372,7 @@ public sealed class TsStreamAnalyzer
                     ? value + (_timelineOrigin90k == long.MinValue ? 0 : _timelineOrigin90k / 90_000.0)
                     : null,
                 TimeSeconds = timeSeconds,
+                TimelineTimeSeconds = GetTimelineDisplayTime(),
                 IsEstimatedTime = estimated,
                 MessageCode = messageCode,
                 MessageArguments = messageArguments
@@ -1422,23 +1452,54 @@ public sealed class TsStreamAnalyzer
         if (pid != _timelineReferencePcrPid || !_timelineStarted)
             return;
 
-        var intervalDuration = clockSeconds - _timelineLastClockSeconds;
-        if (discontinuity || intervalDuration <= 0 || intervalDuration > TimestampJumpThresholdSeconds)
+        var rawIntervalDuration = clockSeconds - _timelineLastClockSeconds;
+        var clockIsAbnormal = rawIntervalDuration <= 0 ||
+                              rawIntervalDuration > TimestampJumpThresholdSeconds;
+        var startsNewSegment = discontinuity || clockIsAbnormal;
+        var displayIntervalDuration = rawIntervalDuration;
+        if (clockIsAbnormal)
         {
-            // 时钟不连续时保留已有片段并开启新段，不能把跳变区间平均成虚假的低码率。
-            FlushTimelineBucket(_timelineLastClockSeconds - _timelineBucketStartSeconds);
+            // PCR 跳变只影响原始时钟。图表横轴使用最近正常 PCR 间隔推算本段长度，
+            // 既避免数秒/数小时的异常空白，也不丢弃跳变边界之间已经统计的 TS 包。
+            displayIntervalDuration = _timelineSecondsPerPacket > 0
+                ? _timelineIntervalPacketCount * _timelineSecondsPerPacket
+                : 0;
+            _result.TimelineUsesEstimatedClock = true;
+        }
+        else if (_timelineIntervalPacketCount > 0)
+        {
+            var currentSecondsPerPacket = rawIntervalDuration / _timelineIntervalPacketCount;
+            // 轻量指数平滑能吸收录制抖动，同时不需要为普通快速扫描保存 PCR 样本。
+            _timelineSecondsPerPacket = _timelineSecondsPerPacket <= 0
+                ? currentSecondsPerPacket
+                : _timelineSecondsPerPacket * 0.875 + currentSecondsPerPacket * 0.125;
+        }
+
+        AppendTimelineInterval(displayIntervalDuration);
+        _timelineLastClockSeconds = clockSeconds;
+        _timelineLastDisplaySeconds += Math.Max(0, displayIntervalDuration);
+
+        if (startsNewSegment)
+        {
+            // 曲线在异常或显式 discontinuity 边界处断开，避免用直线暗示跨段连续。
             _timelineSegment++;
-            ResetTimelineCounters();
-            _timelineBucketStartSeconds = Math.Max(clockSeconds, GetTimelineEndSeconds());
-            _timelineLastClockSeconds = _timelineBucketStartSeconds;
+        }
+    }
+
+    private void AppendTimelineInterval(double intervalDuration)
+    {
+        if (intervalDuration <= 0)
+        {
+            ResetTimelineIntervalCounters();
             return;
         }
 
-        var cursor = _timelineLastClockSeconds;
-        while (cursor < clockSeconds)
+        var cursor = _timelineLastDisplaySeconds;
+        var intervalEnd = cursor + intervalDuration;
+        while (cursor < intervalEnd)
         {
             var bucketEnd = _timelineBucketStartSeconds + _timelineBucketDurationSeconds;
-            var overlap = Math.Min(clockSeconds, bucketEnd) - cursor;
+            var overlap = Math.Min(intervalEnd, bucketEnd) - cursor;
             if (overlap <= 0)
                 break;
 
@@ -1453,14 +1514,14 @@ public sealed class TsStreamAnalyzer
         }
 
         ResetTimelineIntervalCounters();
-        _timelineLastClockSeconds = clockSeconds;
     }
 
     private void StartTimeline(double clockSeconds)
     {
         _timelineStarted = true;
         _timelineLastClockSeconds = clockSeconds;
-        _timelineBucketStartSeconds = clockSeconds;
+        _timelineLastDisplaySeconds = 0;
+        _timelineBucketStartSeconds = 0;
         ResetTimelineCounters();
     }
 
@@ -1468,7 +1529,11 @@ public sealed class TsStreamAnalyzer
     {
         if (!_timelineStarted)
             return;
-        FlushTimelineBucket(_timelineLastClockSeconds - _timelineBucketStartSeconds);
+        var pendingDuration = _timelineSecondsPerPacket > 0
+            ? _timelineIntervalPacketCount * _timelineSecondsPerPacket
+            : 0;
+        AppendTimelineInterval(pendingDuration);
+        FlushTimelineBucket(_timelineLastDisplaySeconds + pendingDuration - _timelineBucketStartSeconds);
         ResetTimelineIntervalCounters();
         _timelineStarted = false;
     }
@@ -1584,9 +1649,15 @@ public sealed class TsStreamAnalyzer
         };
     }
 
-    private double GetTimelineEndSeconds() => _result.Timeline.Count > 0
-        ? _result.Timeline[^1].EndSeconds
-        : 0;
+    private double? GetTimelineDisplayTime()
+    {
+        if (!_timelineStarted)
+            return null;
+        var pendingDuration = _timelineSecondsPerPacket > 0
+            ? _timelineIntervalPacketCount * _timelineSecondsPerPacket
+            : 0;
+        return _timelineLastDisplaySeconds + pendingDuration;
+    }
 
     private void ResetTimelineCounters()
     {
@@ -1725,6 +1796,8 @@ public sealed class TsStreamAnalyzer
         public long LastRawPcr = long.MinValue;
         public long PcrWrapOffset;
         public long LastPcr90k = long.MinValue;
+        public long LastPcrPacketIndex = -1;
+        public double PcrTicksPerPacket;
         public long LastRawPts = long.MinValue;
         public long PtsWrapOffset;
         public long LastPts90k = long.MinValue;
@@ -1765,6 +1838,8 @@ public sealed class TsStreamAnalyzer
             LastRawPcr = LastRawPts = LastRawDts = long.MinValue;
             LastPcr90k = LastPts90k = LastDts90k = long.MinValue;
             PcrWrapOffset = PtsWrapOffset = DtsWrapOffset = 0;
+            LastPcrPacketIndex = -1;
+            PcrTicksPerPacket = 0;
             PesHeaderLength = 0;
             DiscardPes();
             MpegAudioProbeTailLength = 0;

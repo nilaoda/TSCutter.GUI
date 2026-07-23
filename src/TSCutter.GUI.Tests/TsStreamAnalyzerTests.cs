@@ -98,6 +98,31 @@ public sealed class TsStreamAnalyzerTests
         Assert.Equal(2, events.Single(item => item.Pid == 0x0101).Occurrences);
     }
 
+    [Fact]
+    public async Task PtsBeforeFirstTimelinePcrDoesNotCreateEstimatedTimeline()
+    {
+        const int pmtPid = 0x0100;
+        const int videoPid = 0x0101;
+        var packets = new[]
+        {
+            CreatePsiPacket(0x0000, 0, BuildPatSection(pmtPid)),
+            CreatePsiPacket(pmtPid, 0, BuildPmtSection(videoPid)),
+            CreatePesPacket(videoPid, 0, 200_000),
+            CreatePacket(videoPid, 1, pcrBase: 199_000),
+            CreatePacket(videoPid, 2, pcrBase: 199_300),
+            CreatePacket(videoPid, 3, pcrBase: 199_600),
+            CreatePacket(videoPid, 4, pcrBase: 199_900),
+            CreatePacket(videoPid, 5, pcrBase: 200_200)
+        };
+
+        var result = await AnalyzeAsync(packets);
+
+        Assert.Equal(videoPid, result.TimelineReferencePcrPid);
+        Assert.False(result.TimelineUsesEstimatedClock);
+        Assert.Equal(0, Count(result, TsCheckEventType.PcrBackward));
+        Assert.Equal(0, Count(result, TsCheckEventType.PcrJump));
+    }
+
     private static int Count(TsCheckResult result, TsCheckEventType type) => result.Events
         .Where(item => item.Type == type)
         .Sum(item => item.Occurrences);
@@ -146,5 +171,69 @@ public sealed class TsStreamAnalyzerTests
         packet[10] = (byte)(((pcr & 1) << 7) | 0x7E);
         packet[11] = 0;
         return packet;
+    }
+
+    private static byte[] CreatePsiPacket(int pid, int continuityCounter, byte[] section)
+    {
+        var packet = CreatePacket(pid, continuityCounter);
+        packet[1] |= 0x40;
+        packet[4] = 0;
+        section.CopyTo(packet.AsSpan(5));
+        packet.AsSpan(5 + section.Length).Fill(0xFF);
+        return packet;
+    }
+
+    private static byte[] CreatePesPacket(int pid, int continuityCounter, long pts)
+    {
+        var packet = CreatePacket(pid, continuityCounter);
+        packet[1] |= 0x40;
+        var payload = packet.AsSpan(4);
+        payload[0] = 0;
+        payload[1] = 0;
+        payload[2] = 1;
+        payload[3] = 0xE0;
+        payload[4] = 0;
+        payload[5] = 0;
+        payload[6] = 0x80;
+        payload[7] = 0x80;
+        payload[8] = 5;
+        WritePts(payload.Slice(9, 5), pts);
+        return packet;
+    }
+
+    private static byte[] BuildPatSection(int pmtPid) => AppendCrc([
+        0x00, 0xB0, 0x0D, 0x00, 0x01, 0xC1, 0x00, 0x00,
+        0x00, 0x01, (byte)(0xE0 | (pmtPid >> 8)), (byte)pmtPid
+    ]);
+
+    private static byte[] BuildPmtSection(int pcrPid) => AppendCrc([
+        0x02, 0xB0, 0x12, 0x00, 0x01, 0xC1, 0x00, 0x00,
+        (byte)(0xE0 | (pcrPid >> 8)), (byte)pcrPid, 0xF0, 0x00,
+        0x1B, (byte)(0xE0 | (pcrPid >> 8)), (byte)pcrPid, 0xF0, 0x00
+    ]);
+
+    private static byte[] AppendCrc(byte[] section)
+    {
+        uint crc = uint.MaxValue;
+        foreach (var value in section)
+            crc = UpdateCrc(crc, value);
+        return [.. section, (byte)(crc >> 24), (byte)(crc >> 16), (byte)(crc >> 8), (byte)crc];
+    }
+
+    private static uint UpdateCrc(uint crc, byte value)
+    {
+        crc ^= (uint)value << 24;
+        for (var bit = 0; bit < 8; bit++)
+            crc = (crc & 0x80000000) != 0 ? (crc << 1) ^ 0x04C11DB7 : crc << 1;
+        return crc;
+    }
+
+    private static void WritePts(Span<byte> value, long pts)
+    {
+        value[0] = (byte)(0x21 | (((pts >> 30) & 0x07) << 1));
+        value[1] = (byte)(pts >> 22);
+        value[2] = (byte)(0x01 | (((pts >> 15) & 0x7F) << 1));
+        value[3] = (byte)(pts >> 7);
+        value[4] = (byte)(0x01 | ((pts & 0x7F) << 1));
     }
 }

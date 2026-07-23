@@ -286,6 +286,23 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task TsTimelineRepairClickAsync()
+    {
+        var settings = new OpenFileDialogSettings
+        {
+            Title = LocalizationManager.Instance.String_TsTimelineRepair_OpenFile,
+            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
+        };
+        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+        if (!result.Any())
+            return;
+
+        var dialogViewModel = _dialogService.CreateViewModel<TsTimelineRepairWindowViewModel>();
+        dialogViewModel.Initialize(result[0].LocalPath);
+        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+    }
+
+    [RelayCommand]
     private async Task TsFilterClickAsync()
     {
         var settings = new OpenFileDialogSettings
