@@ -41,31 +41,45 @@
     </Window.Styles>
     <Grid Margin="12" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="8">
         <Grid Grid.Row="0" RowDefinitions="Auto,Auto,Auto" RowSpacing="6">
-            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,Auto,*,Auto,150,42" ColumnSpacing="8">
-                <RadioButton Grid.Column="0" GroupName="RepairMapDisplay"
-                             Content="{DynamicResource String.TsRepair.Map.SourceMatrix}"
-                             IsChecked="{Binding IsSourceMatrixDisplay, Mode=TwoWay}" />
-                <RadioButton Grid.Column="1" GroupName="RepairMapDisplay"
-                             Content="{DynamicResource String.TsRepair.Map.Timeline}"
-                             IsChecked="{Binding IsTimelineDisplay, Mode=TwoWay}" />
-                <RadioButton Grid.Column="2" GroupName="RepairMapView" Margin="10,0,0,0"
-                             Content="{DynamicResource String.TsRepair.Map.Expected}"
-                             IsChecked="{Binding IsExpectedView, Mode=TwoWay}" />
-                <RadioButton Grid.Column="3" GroupName="RepairMapView"
-                             Content="{DynamicResource String.TsRepair.Map.Actual}"
-                             IsChecked="{Binding IsActualView, Mode=TwoWay}"
-                             IsEnabled="{Binding HasActualResult}" />
-                <TextBlock Grid.Column="4" Text="{Binding SummaryText}" VerticalAlignment="Center"
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,*,Auto,150,42"
+                  ColumnSpacing="8" MinHeight="32">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="8"
+                            VerticalAlignment="Center">
+                    <TextBlock Text="{DynamicResource String.TsRepair.Map.DisplayGroup}"
+                               VerticalAlignment="Center" FontWeight="SemiBold" />
+                    <RadioButton GroupName="RepairMapDisplay"
+                                 Content="{DynamicResource String.TsRepair.Map.SourceMatrix}"
+                                 IsChecked="{Binding IsSourceMatrixDisplay, Mode=TwoWay}" />
+                    <RadioButton GroupName="RepairMapDisplay"
+                                 Content="{DynamicResource String.TsRepair.Map.Timeline}"
+                                 IsChecked="{Binding IsTimelineDisplay, Mode=TwoWay}" />
+                </StackPanel>
+                <Border Grid.Column="1" Width="1" Height="22" Margin="4,0"
+                        VerticalAlignment="Center"
+                        Background="{DynamicResource {x:Static common:SystemColors.GrayTextColorKey}}" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8"
+                            VerticalAlignment="Center">
+                    <TextBlock Text="{DynamicResource String.TsRepair.Map.ResultGroup}"
+                               VerticalAlignment="Center" FontWeight="SemiBold" />
+                    <RadioButton GroupName="RepairMapView"
+                                 Content="{DynamicResource String.TsRepair.Map.Expected}"
+                                 IsChecked="{Binding IsExpectedView, Mode=TwoWay}" />
+                    <RadioButton GroupName="RepairMapView"
+                                 Content="{DynamicResource String.TsRepair.Map.Actual}"
+                                 IsChecked="{Binding IsActualView, Mode=TwoWay}"
+                                 IsEnabled="{Binding HasActualResult}" />
+                </StackPanel>
+                <TextBlock Grid.Column="3" Text="{Binding SummaryText}" VerticalAlignment="Center"
                            Margin="8,0,0,0" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                <TextBlock Grid.Column="5" Text="{DynamicResource String.TsRepair.Map.Zoom}"
+                <TextBlock Grid.Column="4" Text="{DynamicResource String.TsRepair.Map.Zoom}"
                            VerticalAlignment="Center" IsVisible="{Binding IsTimelineDisplay}" />
-                <Slider Grid.Column="6" Minimum="100" Maximum="800"
+                <Slider Grid.Column="5" Minimum="100" Maximum="800" Height="24"
                         TickFrequency="25" SmallChange="25" LargeChange="100"
                         IsSnapToTickEnabled="True"
                         Value="{Binding ZoomPercent, Mode=TwoWay}"
                         ValueChanged="Zoom_OnValueChanged"
                         VerticalAlignment="Center" IsVisible="{Binding IsTimelineDisplay}" />
-                <TextBlock Grid.Column="7" Text="{Binding ZoomDisplayText}"
+                <TextBlock Grid.Column="6" Text="{Binding ZoomDisplayText}"
                            HorizontalAlignment="Right" VerticalAlignment="Center"
                            IsVisible="{Binding IsTimelineDisplay}" />
             </Grid>
