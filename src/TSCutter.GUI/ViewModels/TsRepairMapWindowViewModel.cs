@@ -16,6 +16,7 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
     private readonly TsMultiSourceRepairService _repairService = new();
     private TsMultiSourceAnalysisResult _analysis;
     private IReadOnlySet<int> _selectedPids;
+    private IReadOnlySet<long> _selectedLargeGapOffsets;
     private TsRepairOutputResult? _outputResult;
     private TsBroadcastTimeAnchor[] _broadcastAnchors = [];
     private IReadOnlyDictionary<int, TsBroadcastTimeAnchor[]> _broadcastAnchorsByProgram =
@@ -24,10 +25,12 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
     public TsRepairMapWindowViewModel(
         TsMultiSourceAnalysisResult analysis,
         IReadOnlySet<int> selectedPids,
+        IReadOnlySet<long> selectedLargeGapOffsets,
         TsRepairOutputResult? outputResult)
     {
         _analysis = analysis;
         _selectedPids = selectedPids;
+        _selectedLargeGapOffsets = selectedLargeGapOffsets;
         _outputResult = outputResult;
         _viewMode = outputResult is null ? TsRepairMapViewMode.Expected : TsRepairMapViewMode.Actual;
         App.LocalizationService.LanguageChanged += OnLanguageChanged;
@@ -163,11 +166,13 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
     public void Refresh(
         TsMultiSourceAnalysisResult analysis,
         IReadOnlySet<int> selectedPids,
+        IReadOnlySet<long> selectedLargeGapOffsets,
         TsRepairOutputResult? outputResult,
         bool preferActual = false)
     {
         _analysis = analysis;
         _selectedPids = selectedPids;
+        _selectedLargeGapOffsets = selectedLargeGapOffsets;
         _outputResult = outputResult;
         if (preferActual && outputResult is not null)
             ViewMode = TsRepairMapViewMode.Actual;
@@ -205,10 +210,15 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
         var actual = ViewMode == TsRepairMapViewMode.Actual;
         var activePlan = actual
             ? _outputResult?.Plan
-            : _repairService.BuildOutputPlan(_analysis, _selectedPids, includeServiceInformation: true);
+            : _repairService.BuildOutputPlan(
+                _analysis, _selectedPids, includeServiceInformation: true,
+                _selectedLargeGapOffsets);
         var activeSelectedPids = actual && activePlan is not null
             ? activePlan.SelectedPids
             : _selectedPids;
+        var activeSelectedLargeGapOffsets = actual && activePlan is not null
+            ? activePlan.SelectedLargeGapOffsets
+            : _selectedLargeGapOffsets;
 
         var total = 0;
         var repairable = 0;
@@ -216,7 +226,9 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
                      .OrderBy(item => item.ProgramNumber)
                      .ThenBy(item => item.ReferencePid))
         {
-            if (track.IssueCount == 0)
+            var hasLargeGap = _analysis.LargeGaps.Any(gap =>
+                gap.Tracks.Any(item => item.ReferencePid == track.ReferencePid));
+            if (track.IssueCount == 0 && !hasLargeGap)
                 continue;
             var isSelected = activeSelectedPids.Contains(track.ReferencePid);
             var row = new TsRepairMapTrackView
@@ -228,6 +240,8 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
             };
             AddGapRegions(row, track, isSelected, activePlan);
             AddPesRegions(row, track, isSelected, activePlan);
+            AddLargeGapRegions(
+                row, track, isSelected, activeSelectedLargeGapOffsets, activePlan);
             row.Regions.Sort((left, right) => left.StartSeconds.CompareTo(right.StartSeconds));
             var successful = row.Regions.Count(region => region.Status == TsRepairMapRegionStatus.Success);
             row.StatusText = isSelected
@@ -277,6 +291,8 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
         for (var index = 0; index < track.Gaps.Count; index++)
         {
             var gap = track.Gaps[index];
+            if (IsCoveredByLargeGapInsertion(plan, track.ReferencePid, gap.ReferenceInsertOffset))
+                continue;
             var insertion = FindGapInsertion(plan, track.ReferencePid, gap.ReferenceInsertOffset);
             var status = ResolveStatus(isSelected, gap.Candidates.Count > 0, insertion is not null);
             var start = GetTimeSeconds(gap.ReferencePts90k, gap.ReferenceInsertOffset);
@@ -340,6 +356,98 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
         }
     }
 
+    private void AddLargeGapRegions(
+        TsRepairMapTrackView row,
+        TsRepairTrackAnalysis track,
+        bool isTrackSelected,
+        IReadOnlySet<long> selectedLargeGapOffsets,
+        TsRepairOutputPlan? plan)
+    {
+        foreach (var gap in _analysis.LargeGaps.Where(item =>
+                     item.Tracks.Any(boundary => boundary.ReferencePid == track.ReferencePid)))
+        {
+            var boundary = gap.Tracks.First(item => item.ReferencePid == track.ReferencePid);
+            var isGapSelected = selectedLargeGapOffsets.Contains(gap.ReferenceInsertOffset);
+            FindLargeGapInsertion(
+                plan, gap.ReferenceInsertOffset, track.ReferencePid,
+                out var insertion, out var trackInsertion);
+            var trackCandidates = gap.Candidates
+                .Select(candidate => new
+                {
+                    Candidate = candidate,
+                    Track = candidate.Tracks.FirstOrDefault(item =>
+                        item.ReferencePid == track.ReferencePid)
+                })
+                .Where(item => item.Track is not null)
+                .ToArray();
+            var candidate = trackCandidates.FirstOrDefault(item =>
+                                insertion is not null &&
+                                PathsEqual(item.Candidate.SourcePath, insertion.SourcePath) &&
+                                item.Track!.SourcePid == trackInsertion?.SourcePid)
+                            ?? trackCandidates.FirstOrDefault();
+            var status = ResolveStatus(
+                isTrackSelected && isGapSelected,
+                trackCandidates.Length > 0,
+                insertion is not null && trackInsertion is not null);
+            var start = GetLargeGapTimeSeconds(gap.ReferenceMissingStartPts90k);
+            var end = GetLargeGapTimeSeconds(gap.ReferenceAfterPts90k);
+            if (end <= start)
+                end = Math.Min(DurationSeconds, start + gap.MissingDuration90k / 90_000.0);
+            var sourcePath = insertion?.SourcePath ?? candidate?.Candidate.SourcePath;
+            var sourcePid = trackInsertion?.SourcePid ?? candidate?.Track?.SourcePid;
+            var outputPacketCount = trackInsertion?.SourcePacketCount ??
+                                    candidate?.Track?.SourcePacketCount ?? 0;
+            var regionView = new TsRepairMapRegionView
+            {
+                Key = $"L:{track.ReferencePid}:{gap.ReferenceInsertOffset}",
+                Pid = track.ReferencePid,
+                Kind = TsRepairMapIssueKind.LongGap,
+                Status = status,
+                StartSeconds = start,
+                EndSeconds = end,
+                IsEstimatedTime = false,
+                StartOffset = gap.ReferenceInsertOffset,
+                EndOffset = boundary.ReferenceAfterOffset,
+                TrackText = row.DisplayText,
+                IssueText = _text.Strings.String_TsRepair_Map_IssueLongGap,
+                StatusText = FormatStatus(status),
+                TimeText = FormatTimeRange(start, end, estimated: false),
+                BroadcastTimeText = FormatBroadcastTimeRange(
+                    track.ProgramNumber,
+                    gap.ReferenceMissingStartPts90k, gap.ReferenceAfterPts90k,
+                    gap.ReferenceInsertOffset, boundary.ReferenceAfterOffset, estimated: false),
+                PositionText = FormatPosition(gap.ReferenceInsertOffset, boundary.ReferenceAfterOffset),
+                SourceText = FormatCandidateSource(sourcePath, sourcePid),
+                MatchText = candidate is null
+                    ? _text.Strings.String_TsRepair_Map_NoCandidate
+                    : _text.Strings.String_TsRepair_Map_MatchLongGap,
+                PacketText = string.Format(
+                    _text.Strings.String_TsRepair_Map_LongGapPackets,
+                    TsCheckEvent.FormatTime(gap.MissingDuration90k / 90_000.0),
+                    outputPacketCount)
+            };
+            foreach (var item in trackCandidates)
+            {
+                var chosen = insertion is not null && trackInsertion is not null &&
+                             PathsEqual(item.Candidate.SourcePath, insertion.SourcePath) &&
+                             item.Track!.SourcePid == trackInsertion.SourcePid;
+                regionView.Candidates.Add(new TsRepairMapCandidateView
+                {
+                    SourcePath = item.Candidate.SourcePath,
+                    SourcePid = item.Track!.SourcePid,
+                    SourceText = FormatCandidateSource(item.Candidate.SourcePath, item.Track.SourcePid),
+                    MatchText = _text.Strings.String_TsRepair_Map_MatchLongGap,
+                    PacketText = string.Format(
+                        _text.Strings.String_TsRepair_Map_LongGapPackets,
+                        TsCheckEvent.FormatTime(gap.MissingDuration90k / 90_000.0),
+                        item.Track.SourcePacketCount),
+                    IsChosen = chosen
+                });
+            }
+            row.Regions.Add(regionView);
+        }
+    }
+
     private void AddPesRegions(
         TsRepairMapTrackView row,
         TsRepairTrackAnalysis track,
@@ -354,8 +462,13 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
             var coveringInsertion = replacement is null
                 ? FindCoveringInsertion(plan, track.ReferencePid, region.ReferenceStartOffset, region.ReferenceEndOffset)
                 : null;
+            FindCoveringLargeGapInsertion(
+                replacement is null && coveringInsertion is null ? plan : null,
+                track.ReferencePid, region.ReferenceStartOffset, region.ReferenceEndOffset,
+                out var coveringLargeGap, out var coveringLargeGapTrack);
             var status = ResolveStatus(
-                isSelected, region.Candidates.Count > 0, replacement is not null || coveringInsertion is not null);
+                isSelected, region.Candidates.Count > 0 || coveringLargeGap is not null,
+                replacement is not null || coveringInsertion is not null || coveringLargeGap is not null);
             var hasPts = region.ReferenceFirstPts90k != long.MinValue;
             var start = GetTimeSeconds(region.ReferenceFirstPts90k, region.ReferenceStartOffset);
             var end = region.ReferenceLastPts90k != long.MinValue
@@ -363,11 +476,16 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
                 : GetTimeSeconds(long.MinValue, region.ReferenceEndOffset);
             if (end <= start)
                 end = Math.Min(DurationSeconds, start + GetMarkerDuration());
-            var sourcePath = replacement?.SourcePath ?? coveringInsertion?.SourcePath;
-            var sourcePid = replacement?.SourcePid ?? coveringInsertion?.SourcePid;
+            var sourcePath = replacement?.SourcePath ?? coveringInsertion?.SourcePath ??
+                             coveringLargeGap?.SourcePath;
+            var sourcePid = replacement?.SourcePid ?? coveringInsertion?.SourcePid ??
+                            coveringLargeGapTrack?.SourcePid;
             var candidate = region.Candidates.FirstOrDefault(item => sourcePath is not null &&
                                 PathsEqual(item.SourcePath, sourcePath) && item.SourcePid == sourcePid)
                             ?? region.Candidates.OrderByDescending(item => item.FingerprintMatches).FirstOrDefault();
+            var coveredPacketCount = coveringInsertion is not null
+                ? GetInsertionPacketCount(coveringInsertion)
+                : coveringLargeGapTrack?.SourcePacketCount;
             var regionView = new TsRepairMapRegionView
             {
                 Key = $"R:{track.ReferencePid}:{region.ReferenceStartOffset}",
@@ -391,7 +509,7 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
                     region.ReferenceStartOffset, region.ReferenceEndOffset, !hasPts),
                 PositionText = FormatPosition(region.ReferenceStartOffset, region.ReferenceEndOffset),
                 SourceText = FormatCandidateSource(sourcePath ?? candidate?.SourcePath, sourcePid ?? candidate?.SourcePid),
-                MatchText = coveringInsertion is not null
+                MatchText = coveringInsertion is not null || coveringLargeGap is not null
                     ? _text.Strings.String_TsRepair_Map_MatchCoveredByGap
                     : candidate is null
                     ? _text.Strings.String_TsRepair_Map_NoCandidate
@@ -399,9 +517,7 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
                         candidate.FingerprintMatches),
                 PacketText = string.Format(_text.Strings.String_TsRepair_Map_RegionPackets,
                     region.ReferencePacketCount,
-                    replacement?.PacketCount ?? (coveringInsertion is not null
-                        ? GetInsertionPacketCount(coveringInsertion)
-                        : candidate?.PacketCount ?? 0))
+                    replacement?.PacketCount ?? coveredPacketCount ?? candidate?.PacketCount ?? 0)
             };
             foreach (var item in region.Candidates)
             {
@@ -412,16 +528,14 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
                     SourcePath = item.SourcePath,
                     SourcePid = item.SourcePid,
                     SourceText = FormatCandidateSource(item.SourcePath, item.SourcePid),
-                    MatchText = chosen && coveringInsertion is not null
+                    MatchText = chosen && (coveringInsertion is not null || coveringLargeGap is not null)
                         ? _text.Strings.String_TsRepair_Map_MatchCoveredByGap
                         : string.Format(_text.Strings.String_TsRepair_Map_FingerprintMatches,
                             item.FingerprintMatches),
                     PacketText = string.Format(_text.Strings.String_TsRepair_Map_RegionPackets,
                         region.ReferencePacketCount,
                         chosen
-                            ? replacement?.PacketCount ?? (coveringInsertion is not null
-                                ? GetInsertionPacketCount(coveringInsertion)
-                                : item.PacketCount)
+                            ? replacement?.PacketCount ?? coveredPacketCount ?? item.PacketCount
                             : item.PacketCount),
                     IsChosen = chosen
                 });
@@ -429,14 +543,13 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
             if (sourcePath is not null && sourcePid is not null &&
                 !regionView.Candidates.Any(item => item.IsChosen))
             {
-                var outputPackets = replacement?.PacketCount ??
-                                    (coveringInsertion is not null ? GetInsertionPacketCount(coveringInsertion) : 0);
+                var outputPackets = replacement?.PacketCount ?? coveredPacketCount ?? 0;
                 regionView.Candidates.Add(new TsRepairMapCandidateView
                 {
                     SourcePath = sourcePath,
                     SourcePid = sourcePid.Value,
                     SourceText = FormatCandidateSource(sourcePath, sourcePid),
-                    MatchText = coveringInsertion is not null
+                    MatchText = coveringInsertion is not null || coveringLargeGap is not null
                         ? _text.Strings.String_TsRepair_Map_MatchCoveredByGap
                         : _text.Strings.String_TsRepair_Map_NoCandidate,
                     PacketText = string.Format(_text.Strings.String_TsRepair_Map_RegionPackets,
@@ -585,6 +698,71 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
         return null;
     }
 
+    private static bool IsCoveredByLargeGapInsertion(TsRepairOutputPlan? plan, int pid, long offset)
+    {
+        if (plan is null)
+            return false;
+        foreach (var insertion in plan.LargeGapInsertions.Values.SelectMany(item => item))
+        {
+            // 衔接点本身对应恢复后的首个参考包，其 CC 异常也已由整段插入重新衔接。
+            if (insertion.Tracks.Any(item => item.TargetPid == pid &&
+                                             offset >= item.ReferenceDiscardStartOffset &&
+                                             offset <= item.ReferenceDiscardEndOffset))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool FindCoveringLargeGapInsertion(
+        TsRepairOutputPlan? plan,
+        int pid,
+        long startOffset,
+        long endOffset,
+        out TsLargeGapInsertion? insertion,
+        out TsLargeGapTrackInsertion? trackInsertion)
+    {
+        insertion = null;
+        trackInsertion = null;
+        if (plan is null)
+            return false;
+        foreach (var value in plan.LargeGapInsertions.Values.SelectMany(item => item))
+        {
+            var track = value.Tracks.FirstOrDefault(item => item.TargetPid == pid &&
+                startOffset < item.ReferenceDiscardEndOffset &&
+                endOffset > item.ReferenceDiscardStartOffset);
+            if (track is null)
+                continue;
+            insertion = value;
+            trackInsertion = track;
+            return true;
+        }
+        return false;
+    }
+
+    private static bool FindLargeGapInsertion(
+        TsRepairOutputPlan? plan,
+        long referenceInsertOffset,
+        int targetPid,
+        out TsLargeGapInsertion? insertion,
+        out TsLargeGapTrackInsertion? trackInsertion)
+    {
+        insertion = null;
+        trackInsertion = null;
+        if (plan is null ||
+            !plan.LargeGapInsertions.TryGetValue(referenceInsertOffset, out var values))
+            return false;
+        foreach (var value in values)
+        {
+            var track = value.Tracks.FirstOrDefault(item => item.TargetPid == targetPid);
+            if (track is null)
+                continue;
+            insertion = value;
+            trackInsertion = track;
+            return true;
+        }
+        return false;
+    }
+
     private double GetTimeSeconds(long pts90k, long fileOffset)
     {
         if (pts90k != long.MinValue && _analysis.TimelineStartPts90k != long.MinValue)
@@ -593,13 +771,31 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
         return Math.Clamp(fileOffset / (double)size * DurationSeconds, 0, DurationSeconds);
     }
 
+    private double GetLargeGapTimeSeconds(long pts90k)
+    {
+        if (pts90k == long.MinValue || _analysis.LargeGapTimelineStartPts90k == long.MinValue)
+            return 0;
+        return Math.Clamp(
+            (pts90k - _analysis.LargeGapTimelineStartPts90k) / 90_000.0,
+            0, DurationSeconds);
+    }
+
     private double GetMarkerDuration() => Math.Max(0.2, DurationSeconds / 700.0);
 
     private static double GetTimelineDuration(TsMultiSourceAnalysisResult analysis)
     {
-        if (analysis.TimelineStartPts90k != long.MinValue && analysis.TimelineEndPts90k > analysis.TimelineStartPts90k)
-            return Math.Max(1, (analysis.TimelineEndPts90k - analysis.TimelineStartPts90k) / 90_000.0);
-        return Math.Max(1, analysis.ReferenceSource.Catalog.PacketCount / 25_000.0);
+        var normalizedDuration = analysis.TimelineStartPts90k != long.MinValue &&
+                                 analysis.TimelineEndPts90k > analysis.TimelineStartPts90k
+            ? (analysis.TimelineEndPts90k - analysis.TimelineStartPts90k) / 90_000.0
+            : 0;
+        var rawLargeGapDuration = analysis.LargeGapTimelineStartPts90k != long.MinValue &&
+                                  analysis.LargeGaps.Count > 0
+            ? (analysis.LargeGaps.Max(item => item.ReferenceAfterPts90k) -
+               analysis.LargeGapTimelineStartPts90k) / 90_000.0
+            : 0;
+        return Math.Max(1, Math.Max(
+            Math.Max(normalizedDuration, rawLargeGapDuration),
+            analysis.ReferenceSource.Catalog.PacketCount / 25_000.0));
     }
 
     private string FormatTrack(TsRepairTrackAnalysis track) => _text.FormatStreamType(

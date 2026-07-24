@@ -51,6 +51,21 @@ public sealed class TsMultiSourceRepairService
     private const int MaxIndexedVideoPes = 500_000;
     private const int MaxVideoRegionCandidatesPerSource = 32;
     private const long CorrelatedVideoPadding90k = 45_000;
+    private const int LargeGapAnchorCount = 4;
+    private const int LargeGapRecentDeltaCount = 31;
+    private const int MaxLargeGapsPerTrack = 4_096;
+    private const long MinimumLargeGap90k = 90_000;
+    private const long MaximumLargeGap90k = 10L * 60 * 90_000;
+    private const long LargeGapMatchTolerance90k = 18_000;
+    private const long LargeGapPesBoundaryTolerance90k = 900;
+    private const long LargeGapTrackCorrelationTolerance90k = 90_000;
+    private const long LargeGapRangeInspectionPaddingBytes = 8L * 1024 * 1024;
+    private const long LargeGapIncidentHistoryWindow90k = 60L * 90_000;
+    private const long LargeGapIncidentWeakMaximumLookback90k = 15L * 90_000;
+    private const long LargeGapIncidentMaximumHealthyInterval90k = 2L * 90_000;
+    private const long LargeGapIncidentCorrelatedTrackWindow90k = 90_000;
+    private const int MaxLargeGapIncidentSnapshotsPerTrack = 64;
+    private const int MaxLargeGapIncidentHistoryPesPerTrack = 16_384;
     private const ulong ElementaryHashBase = 257;
     private static readonly ulong ElementaryHashOldestFactor =
         ComputePower(ElementaryHashBase, ElementaryAnchorLength - 1);
@@ -111,6 +126,11 @@ public sealed class TsMultiSourceRepairService
             .ConfigureAwait(false);
         foreach (var state in referenceStates.Values)
             state.CompletePesRegions();
+        var rawTimedTracks = result.Tracks
+            .Where(track => track.FirstPts90k != long.MaxValue)
+            .ToArray();
+        if (rawTimedTracks.Length > 0)
+            result.LargeGapTimelineStartPts90k = rawTimedTracks.Min(track => track.FirstPts90k);
         if (referencePcrCollector is not null)
         {
             reference.TimelineAnalysis = TsTimelineRepairService.BuildAnalysisFromPcrSamples(
@@ -118,7 +138,10 @@ public sealed class TsMultiSourceRepairService
             ApplyReferenceTimelineNormalization(
                 reference, referenceStates.Values, result.ReferenceBroadcastTimes);
         }
+        // 先把音频 PES 故障关联到同时间的视频 ES 区域，复合大段缺口才能从
+        // 同次事故中最早的视频异常开始，而不是只看到稍后的音频/CC 异常。
         CreateCorrelatedVideoRegions(referenceStates.Values);
+        CreateLargeGaps(referenceStates.Values, result.LargeGaps);
         foreach (var track in result.Tracks)
         {
             track.PesSizeErrorCount = track.PesRegions
@@ -184,6 +207,219 @@ public sealed class TsMultiSourceRepairService
         return result;
     }
 
+    public async Task MatchLargeGapsAsync(
+        TsMultiSourceAnalysisResult analysis,
+        IProgress<TsMultiSourceProgress>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        foreach (var gap in analysis.LargeGaps)
+            gap.Candidates.Clear();
+        if (analysis.LargeGaps.Count == 0)
+            return;
+
+        var donors = analysis.Sources.Where(item => !item.IsReference).ToArray();
+        for (var donorIndex = 0; donorIndex < donors.Length; donorIndex++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var donor = donors[donorIndex];
+            var matchers = new List<LargeGapAnchorMatcher>();
+            foreach (var gap in analysis.LargeGaps)
+            {
+                var anchorTrack = analysis.Tracks.FirstOrDefault(item =>
+                    item.ReferencePid == gap.AnchorReferencePid);
+                var match = anchorTrack?.Matches
+                    .Where(item => PathsEqual(item.SourcePath, donor.FilePath))
+                    .OrderByDescending(item => item.Confidence)
+                    .ThenByDescending(item => item.FingerprintMatches)
+                    .FirstOrDefault();
+                if (match is null)
+                    continue;
+                matchers.Add(new LargeGapAnchorMatcher(gap, match));
+            }
+            if (matchers.Count == 0)
+                continue;
+
+            await ScanLargeGapAnchorsAsync(
+                    donor, matchers, donorIndex, donors.Length, progress, cancellationToken)
+                .ConfigureAwait(false);
+            foreach (var matcher in matchers)
+            {
+                foreach (var range in matcher.Results)
+                {
+                    var candidate = await InspectLargeGapRangeAsync(
+                            analysis, donor, range, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (candidate.Tracks.Count == 0 || matcher.Gap.Candidates.Any(item =>
+                            PathsEqual(item.SourcePath, candidate.SourcePath) &&
+                            item.SourceStartOffset == candidate.SourceStartOffset &&
+                            item.SourceEndOffset == candidate.SourceEndOffset))
+                    {
+                        continue;
+                    }
+                    matcher.Gap.Candidates.Add(candidate);
+                }
+            }
+        }
+    }
+
+    private static async Task ScanLargeGapAnchorsAsync(
+        TsRepairSourceAnalysis donor,
+        IReadOnlyList<LargeGapAnchorMatcher> matchers,
+        int sourceIndex,
+        int sourceCount,
+        IProgress<TsMultiSourceProgress>? progress,
+        CancellationToken cancellationToken)
+    {
+        var states = matchers
+            .GroupBy(item => item.Match.SourcePid)
+            .ToDictionary(group => group.Key, group => new LargeGapDonorPidState(group, null));
+        await ScanPacketsAsync(
+            donor.FilePath, donor.Catalog.SyncOffset, sourceIndex, sourceCount, progress,
+            TsMultiSourceProgressPhase.LargeGapMatching,
+            (packet, fileOffset) =>
+            {
+                if (!TryParsePacket(packet, out var info) ||
+                    !states.TryGetValue(info.Pid, out var state))
+                {
+                    return;
+                }
+                if (info.TransportError || info.Discontinuity)
+                {
+                    state.ResetForDiscontinuity();
+                    return;
+                }
+                if (info.HasPayload && state.HasContinuity)
+                {
+                    var expected = (state.LastContinuityCounter + 1) & 0x0F;
+                    if (info.ContinuityCounter == state.LastContinuityCounter)
+                        return;
+                    if (info.ContinuityCounter != expected)
+                        state.ResetForDiscontinuity();
+                }
+                if (info.HasPayload)
+                {
+                    state.HasContinuity = true;
+                    state.LastContinuityCounter = info.ContinuityCounter;
+                }
+                var elementaryPayload = info.HasPayload
+                    ? GetElementaryPayload(packet, info, out _)
+                    : default;
+                state.ProcessPes(packet, info, fileOffset, elementaryPayload, donor.FilePath);
+            }, cancellationToken).ConfigureAwait(false);
+        foreach (var state in states.Values)
+            state.Complete(donor.Catalog.FileSize, donor.FilePath);
+    }
+
+    private static async Task<TsRepairLargeGapCandidate> InspectLargeGapRangeAsync(
+        TsMultiSourceAnalysisResult analysis,
+        TsRepairSourceAnalysis donor,
+        LargeGapRangeMatch range,
+        CancellationToken cancellationToken)
+    {
+        var inspections = new Dictionary<int, LargeGapRangeTrackInspection>();
+        var usedSourcePids = new HashSet<int>();
+        foreach (var boundary in range.Gap.Tracks)
+        {
+            var referenceTrack = analysis.Tracks.First(item =>
+                item.ReferencePid == boundary.ReferencePid);
+            var match = referenceTrack.Matches
+                .Where(item => PathsEqual(item.SourcePath, donor.FilePath) &&
+                               !usedSourcePids.Contains(item.SourcePid))
+                .OrderByDescending(item => item.SourcePid == boundary.ReferencePid)
+                .ThenByDescending(item => item.Confidence)
+                .ThenByDescending(item => item.FingerprintMatches)
+                .FirstOrDefault();
+            if (match is null)
+                continue;
+            if (boundary.ReferencePid == range.Gap.AnchorReferencePid &&
+                match.SourcePid != range.SourcePid)
+            {
+                continue;
+            }
+            usedSourcePids.Add(match.SourcePid);
+            // 大段缺失必须使用原始 PTS 差值；虚拟时间轴校正可能正好把真实缺片
+            // 压缩成连续时间，若混用会把需要补回的数秒内容误判为不存在。
+            var timestampOffset90k = range.TimestampOffset90k;
+            inspections[match.SourcePid] = new LargeGapRangeTrackInspection(
+                boundary, match.SourcePid, timestampOffset90k, null);
+        }
+
+        var buffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize);
+        try
+        {
+            await using var stream = new FileStream(
+                donor.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            // 视频前后锚点可能早于或晚于同时间的音频 PES。只扩展一个固定的小窗口，
+            // 让各轨道分别落到自己的 PES 边界，同时仍避免重新扫描整份辅助文件。
+            var scanStartOffset = Math.Max(
+                donor.Catalog.SyncOffset,
+                range.SourceStartOffset - LargeGapRangeInspectionPaddingBytes);
+            scanStartOffset -= (scanStartOffset - donor.Catalog.SyncOffset) % PacketSize;
+            var scanEndOffset = Math.Min(
+                donor.Catalog.FileSize,
+                range.SourceEndOffset + LargeGapRangeInspectionPaddingBytes);
+            scanEndOffset -= (scanEndOffset - donor.Catalog.SyncOffset) % PacketSize;
+            stream.Position = scanStartOffset;
+            var remaining = scanEndOffset - scanStartOffset;
+            var fileOffset = scanStartOffset;
+            while (remaining > 0)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var requested = (int)Math.Min(buffer.Length, remaining);
+                requested -= requested % PacketSize;
+                if (requested <= 0)
+                    throw new TsRepairException(TsRepairErrorCode.SourceChanged);
+                await stream.ReadExactlyAsync(buffer.AsMemory(0, requested), cancellationToken)
+                    .ConfigureAwait(false);
+                for (var offset = 0; offset < requested; offset += PacketSize)
+                {
+                    var packet = buffer.AsSpan(offset, PacketSize);
+                    if (!TryParsePacket(packet, out var info))
+                        throw new TsRepairException(TsRepairErrorCode.SourceChanged);
+                    if (inspections.TryGetValue(info.Pid, out var inspection))
+                        inspection.Process(packet, info, fileOffset + offset);
+                }
+                fileOffset += requested;
+                remaining -= requested;
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
+
+        var usableInspections = inspections.Values
+            .Where(item => item.IsUsable())
+            .OrderBy(item => item.Boundary.ReferencePid)
+            .ToArray();
+        var candidate = new TsRepairLargeGapCandidate
+        {
+            SourcePath = donor.FilePath,
+            SourceStartOffset = usableInspections.Length > 0
+                ? usableInspections.Min(item => item.SourceStartOffset)
+                : range.SourceStartOffset,
+            SourceEndOffset = usableInspections.Length > 0
+                ? usableInspections.Max(item => item.SourceEndOffset)
+                : range.SourceEndOffset,
+            TimestampOffset90k = range.TimestampOffset90k
+        };
+        foreach (var inspection in usableInspections)
+        {
+            candidate.Tracks.Add(new TsRepairLargeGapTrackCandidate
+            {
+                ReferencePid = inspection.Boundary.ReferencePid,
+                SourcePid = inspection.SourcePid,
+                SourcePacketCount = inspection.PacketCount,
+                SourcePayloadPacketCount = inspection.PayloadPacketCount,
+                TimestampOffset90k = inspection.TimestampOffset90k,
+                SourceStartOffset = inspection.SourceStartOffset,
+                SourceEndOffset = inspection.SourceEndOffset
+            });
+        }
+        return candidate;
+    }
+
     private static void ReportSourceCompleted(
         TsRepairSourceAnalysis source,
         IProgress<TsRepairSourceCompleted>? progress) =>
@@ -198,7 +434,8 @@ public sealed class TsMultiSourceRepairService
     public TsRepairOutputPlan BuildOutputPlan(
         TsMultiSourceAnalysisResult analysis,
         IReadOnlySet<int> selectedPids,
-        bool includeServiceInformation)
+        bool includeServiceInformation,
+        IReadOnlySet<long>? selectedLargeGapOffsets = null)
     {
         var plan = new TsRepairOutputPlan
         {
@@ -206,6 +443,8 @@ public sealed class TsMultiSourceRepairService
             IncludeServiceInformation = includeServiceInformation
         };
         plan.SelectedPids.UnionWith(selectedPids);
+        if (selectedLargeGapOffsets is not null)
+            plan.SelectedLargeGapOffsets.UnionWith(selectedLargeGapOffsets);
 
         var sourceRank = new Dictionary<string, (int Errors, int Order)>(StringComparer.Ordinal);
         for (var index = 0; index < analysis.Sources.Count; index++)
@@ -215,6 +454,78 @@ public sealed class TsMultiSourceRepairService
                 source.ContinuityErrors + source.TransportErrors + source.PesSizeErrors, index);
         }
 
+        var largeGapCoveredBoundaries = new HashSet<(int Pid, long Offset)>();
+        var largeGapCoveredRanges = new List<(int Pid, long StartOffset, long EndOffset)>();
+        if (selectedLargeGapOffsets is not null)
+        {
+            foreach (var gap in analysis.LargeGaps.Where(item =>
+                         selectedLargeGapOffsets.Contains(item.ReferenceInsertOffset)))
+            {
+                var candidate = gap.Candidates
+                    .Select(item => new
+                    {
+                        Candidate = item,
+                        SelectedTrackCount = item.Tracks.Count(track =>
+                            selectedPids.Contains(track.ReferencePid))
+                    })
+                    .Where(item => item.SelectedTrackCount > 0)
+                    .OrderByDescending(item => item.SelectedTrackCount)
+                    .ThenBy(item => sourceRank.GetValueOrDefault(item.Candidate.SourcePath).Errors)
+                    .ThenBy(item => sourceRank.GetValueOrDefault(item.Candidate.SourcePath).Order)
+                    .Select(item => item.Candidate)
+                    .FirstOrDefault();
+                if (candidate is null)
+                    continue;
+
+                var insertion = new TsLargeGapInsertion
+                {
+                    SourcePath = candidate.SourcePath,
+                    SourceStartOffset = candidate.SourceStartOffset,
+                    SourceEndOffset = candidate.SourceEndOffset,
+                    Duration90k = gap.MissingDuration90k
+                };
+                foreach (var candidateTrack in candidate.Tracks.Where(item =>
+                             selectedPids.Contains(item.ReferencePid)))
+                {
+                    var boundary = gap.Tracks.First(item =>
+                        item.ReferencePid == candidateTrack.ReferencePid);
+                    var startContinuityCounter =
+                        (boundary.ReferenceAfterContinuityCounter -
+                         (candidateTrack.SourcePayloadPacketCount & 0x0F) + 16) & 0x0F;
+                    insertion.Tracks.Add(new TsLargeGapTrackInsertion
+                    {
+                        SourcePid = candidateTrack.SourcePid,
+                        TargetPid = candidateTrack.ReferencePid,
+                        StartContinuityCounter = startContinuityCounter,
+                        SourcePacketCount = candidateTrack.SourcePacketCount,
+                        SourcePayloadPacketCount = candidateTrack.SourcePayloadPacketCount,
+                        TimestampOffset90k = candidateTrack.TimestampOffset90k,
+                        SourceStartOffset = candidateTrack.SourceStartOffset,
+                        SourceEndOffset = candidateTrack.SourceEndOffset,
+                        ReferenceDiscardStartOffset = gap.ReferenceInsertOffset,
+                        ReferenceDiscardEndOffset = boundary.ReferenceAfterOffset
+                    });
+                    largeGapCoveredBoundaries.Add((
+                        candidateTrack.ReferencePid, boundary.ReferenceAfterOffset));
+                    largeGapCoveredRanges.Add((
+                        candidateTrack.ReferencePid, gap.ReferenceInsertOffset,
+                        boundary.ReferenceAfterOffset));
+                    plan.RepairedPacketCount += candidateTrack.SourcePacketCount;
+                }
+                if (insertion.Tracks.Count == 0)
+                    continue;
+                if (!plan.LargeGapInsertions.TryGetValue(
+                        gap.ReferenceInsertOffset, out var insertions))
+                {
+                    insertions = [];
+                    plan.LargeGapInsertions[gap.ReferenceInsertOffset] = insertions;
+                }
+                insertions.Add(insertion);
+                plan.RepairedLargeGapCount++;
+                plan.RepairedLargeGapDuration90k += gap.MissingDuration90k;
+            }
+        }
+
         foreach (var track in analysis.Tracks)
         {
             if (!selectedPids.Contains(track.ReferencePid))
@@ -222,6 +533,18 @@ public sealed class TsMultiSourceRepairService
             var selectedInsertionOffsets = new List<long>();
             foreach (var gap in track.Gaps)
             {
+                if (largeGapCoveredBoundaries.Contains((
+                        track.ReferencePid, gap.ReferenceInsertOffset)))
+                {
+                    continue;
+                }
+                if (largeGapCoveredRanges.Any(range =>
+                        range.Pid == track.ReferencePid &&
+                        gap.ReferenceInsertOffset >= range.StartOffset &&
+                        gap.ReferenceInsertOffset < range.EndOffset))
+                {
+                    continue;
+                }
                 if (gap.Candidates.Count == 0)
                     continue;
                 var candidate = gap.Candidates
@@ -266,6 +589,13 @@ public sealed class TsMultiSourceRepairService
             }
             foreach (var region in track.PesRegions)
             {
+                if (largeGapCoveredRanges.Any(range =>
+                        range.Pid == track.ReferencePid &&
+                        region.ReferenceStartOffset < range.EndOffset &&
+                        region.ReferenceEndOffset > range.StartOffset))
+                {
+                    continue;
+                }
                 if (region.Candidates.Count == 0)
                     continue;
                 var candidate = region.Candidates
@@ -367,6 +697,7 @@ public sealed class TsMultiSourceRepairService
             plan.Analysis.ReferenceSource.Catalog,
             filterPlan,
             plan.Insertions,
+            plan.LargeGapInsertions,
             plan.Replacements,
             plan.DiscardPacketOffsets,
             outputValidator,
@@ -392,6 +723,8 @@ public sealed class TsMultiSourceRepairService
                 RepairedGapCount = plan.RepairedGapCount,
                 RepairedPacketCount = plan.RepairedPacketCount,
                 RepairedPesRegionCount = plan.RepairedPesRegionCount,
+                RepairedLargeGapCount = plan.RepairedLargeGapCount,
+                RepairedLargeGapDuration90k = plan.RepairedLargeGapDuration90k,
                 ReferenceErrorCount = referenceErrors,
                 RemainingErrorCount = verificationErrors,
                 Plan = plan
@@ -580,6 +913,203 @@ public sealed class TsMultiSourceRepairService
         var kind = GetElementaryKind(track);
         return IsFramedAudioElementaryKind(kind) ? new AudioFrameTracker(kind) : null;
     }
+
+    private static void CreateLargeGaps(
+        IEnumerable<ReferenceTrackState> states,
+        ICollection<TsRepairLargeGap> output)
+    {
+        foreach (var program in states.GroupBy(item => item.Track.ProgramNumber))
+        {
+            var programStates = program.ToArray();
+            foreach (var anchorState in programStates.Where(item =>
+                         TsStreamTypes.IsVideo(item.Track.StreamType)))
+            {
+                foreach (var boundary in anchorState.LargeGapBoundaries)
+                {
+                    if (output.Any(item => item.ProgramNumber == anchorState.Track.ProgramNumber &&
+                                           Math.Abs(item.ReferenceAfterPts90k -
+                                               boundary.ReferenceAfterPts90k) <=
+                                           LargeGapTrackCorrelationTolerance90k))
+                    {
+                        continue;
+                    }
+
+                    if (boundary.BeforeAnchor.Length != LargeGapAnchorCount ||
+                        boundary.AfterAnchor.Count != LargeGapAnchorCount)
+                    {
+                        continue;
+                    }
+
+                    var correlatedBoundaries = programStates
+                        .SelectMany(state => state.LargeGapBoundaries.Select(item =>
+                            (State: state, Boundary: item)))
+                        .Where(item =>
+                            Math.Abs(item.Boundary.ReferenceAfterPts90k -
+                                boundary.ReferenceAfterPts90k) <=
+                            LargeGapTrackCorrelationTolerance90k &&
+                            Math.Abs(item.Boundary.ReferenceMissingStartPts90k -
+                                boundary.ReferenceMissingStartPts90k) <=
+                            LargeGapTrackCorrelationTolerance90k)
+                        .GroupBy(item => item.State.Track.ReferencePid)
+                        .Select(group => group.OrderBy(item => Math.Abs(
+                            item.Boundary.ReferenceAfterPts90k - boundary.ReferenceAfterPts90k)).First())
+                        .ToArray();
+                    if (correlatedBoundaries.Length == 0)
+                        continue;
+
+                    var originalMissingStartPts90k = boundary.ReferenceMissingStartPts90k;
+                    var originalInsertOffset = correlatedBoundaries.Min(item =>
+                        item.Boundary.ReferenceAfterOffset);
+                    // 硬盘或网络写入故障常先产生一串 CC/TEI/PES 异常，随后才完全丢失
+                    // 一段媒体数据。若这些异常紧邻大段 PTS 跳变，则将其视为同一故障簇；
+                    // 匹配阶段仍需辅助源两端锚点通过，不能仅凭时间距离直接替换。
+                    var incidentIssueCandidates = correlatedBoundaries
+                        .SelectMany(item => item.State.Track.Gaps
+                            .Where(item => item.ReferencePts90k != long.MinValue)
+                            .Select(gapItem => new LargeGapIncidentIssue(
+                                gapItem.ReferencePts90k + Math.Max(0,
+                                    item.Boundary.ReferenceMissingStartPts90k -
+                                    item.Boundary.ReferenceBeforePts90k),
+                                gapItem.ReferenceInsertOffset,
+                                item.State.Track.ReferencePid)))
+                        .Concat(programStates.SelectMany(state => state.Track.PesRegions
+                            .Where(item => item.ReferenceFirstPts90k != long.MinValue)
+                            .Select(item => new LargeGapIncidentIssue(
+                                item.ReferenceFirstPts90k, item.ReferenceStartOffset,
+                                state.Track.ReferencePid))))
+                        .Where(item => item.FileOffset < originalInsertOffset &&
+                                       item.Pts90k < originalMissingStartPts90k &&
+                                       originalMissingStartPts90k - item.Pts90k <=
+                                       LargeGapIncidentHistoryWindow90k)
+                        .ToArray();
+                    // 单轨异常只按短距离连续簇合并；若同一节目至少两个 PID 在 1 秒内
+                    // 同时异常，则视为强 I/O 故障信号，允许在 60 秒历史内整体回溯。
+                    var precedingIssues = FindAdjacentLargeGapIncidentIssues(
+                        incidentIssueCandidates, originalMissingStartPts90k);
+                    var proposedRepairStartPts90k = precedingIssues.Length > 0
+                        ? precedingIssues.Min(item => item.Pts90k)
+                        : originalMissingStartPts90k;
+                    var incidentTrackStartOffsets = correlatedBoundaries
+                        .Select(item =>
+                        {
+                            var issueOffset = precedingIssues
+                                .Where(issue => issue.Pid == item.State.Track.ReferencePid &&
+                                                Math.Abs(issue.Pts90k - proposedRepairStartPts90k) <=
+                                                LargeGapPesBoundaryTolerance90k)
+                                .Select(issue => (long?)issue.FileOffset)
+                                .Min();
+                            if (issueOffset is not null)
+                                return issueOffset;
+                            return item.Boundary.IncidentHistory
+                                .Where(pes => pes.Pts90k >= proposedRepairStartPts90k -
+                                              LargeGapPesBoundaryTolerance90k &&
+                                              pes.Pts90k <= proposedRepairStartPts90k +
+                                              MinimumLargeGap90k)
+                                .Select(pes => (long?)pes.StartOffset)
+                                .FirstOrDefault();
+                        })
+                        .ToArray();
+                    var includesPrecedingDamage = precedingIssues.Length > 0 &&
+                                                  incidentTrackStartOffsets.All(item => item is not null);
+                    var repairStartPts90k = includesPrecedingDamage
+                        ? proposedRepairStartPts90k
+                        : originalMissingStartPts90k;
+                    var repairInsertOffset = includesPrecedingDamage
+                        ? incidentTrackStartOffsets.Min(item => item!.Value)
+                        : originalInsertOffset;
+
+                    var gap = new TsRepairLargeGap
+                    {
+                        ProgramNumber = anchorState.Track.ProgramNumber,
+                        AnchorReferencePid = anchorState.Track.ReferencePid,
+                        ReferenceInsertOffset = repairInsertOffset,
+                        ReferenceBeforePts90k = boundary.ReferenceBeforePts90k,
+                        ReferenceOriginalMissingStartPts90k = originalMissingStartPts90k,
+                        ReferenceMissingStartPts90k = repairStartPts90k,
+                        ReferenceAfterPts90k = boundary.ReferenceAfterPts90k,
+                        BeforeAnchor = boundary.BeforeAnchor,
+                        AfterAnchor = boundary.AfterAnchor.ToArray()
+                    };
+                    foreach (var item in correlatedBoundaries)
+                    {
+                        var packetGap = item.State.Track.Gaps.FirstOrDefault(value =>
+                            value.ReferenceInsertOffset == item.Boundary.ReferenceAfterOffset);
+                        gap.Tracks.Add(new TsRepairLargeGapTrackBoundary
+                        {
+                            ReferencePid = item.State.Track.ReferencePid,
+                            ReferenceMissingStartPts90k = repairStartPts90k,
+                            ReferenceAfterPts90k = item.Boundary.ReferenceAfterPts90k,
+                            ReferenceAfterOffset = item.Boundary.ReferenceAfterOffset,
+                            ReferenceAfterContinuityCounter =
+                                item.Boundary.ReferenceAfterContinuityCounter,
+                            // 扩展区间必须按 PTS 找到统一的故障簇起点；原小缺口包锚点只对应
+                            // 真正缺失部分，继续使用会把前面的损坏数据留在参考文件中。
+                            BeforePacketAnchor = includesPrecedingDamage
+                                ? []
+                                : packetGap?.BeforeAnchor ?? [],
+                            AfterPacketAnchor = includesPrecedingDamage
+                                ? []
+                                : packetGap?.AfterAnchor ?? []
+                        });
+                    }
+                    output.Add(gap);
+                }
+            }
+        }
+    }
+
+    private static LargeGapIncidentIssue[] FindAdjacentLargeGapIncidentIssues(
+        IEnumerable<LargeGapIncidentIssue> candidates,
+        long missingStartPts90k)
+    {
+        var ordered = candidates.OrderBy(item => item.Pts90k)
+            .ThenBy(item => item.FileOffset)
+            .ToArray();
+        if (ordered.Length == 0)
+            return [];
+
+        long? earliestPts90k = null;
+        var frontierPts90k = missingStartPts90k;
+        foreach (var issue in ordered
+                     .Where(item => missingStartPts90k - item.Pts90k <=
+                                    LargeGapIncidentWeakMaximumLookback90k)
+                     .OrderByDescending(item => item.Pts90k)
+                     .ThenByDescending(item => item.FileOffset))
+        {
+            if (frontierPts90k - issue.Pts90k > LargeGapIncidentMaximumHealthyInterval90k)
+                break;
+            earliestPts90k = issue.Pts90k;
+            frontierPts90k = Math.Min(frontierPts90k, issue.Pts90k);
+        }
+
+        // 滑动窗口按不同 PID 计数，避免异常较密集时做 O(n^2) 两两比较。
+        var pidCounts = new Dictionary<int, int>();
+        var left = 0;
+        for (var right = 0; right < ordered.Length; right++)
+        {
+            var rightIssue = ordered[right];
+            pidCounts[rightIssue.Pid] = pidCounts.GetValueOrDefault(rightIssue.Pid) + 1;
+            while (rightIssue.Pts90k - ordered[left].Pts90k >
+                   LargeGapIncidentCorrelatedTrackWindow90k)
+            {
+                var leftPid = ordered[left++].Pid;
+                if (--pidCounts[leftPid] == 0)
+                    pidCounts.Remove(leftPid);
+            }
+            if (pidCounts.Count >= 2)
+            {
+                earliestPts90k = earliestPts90k is { } current
+                    ? Math.Min(current, ordered[left].Pts90k)
+                    : ordered[left].Pts90k;
+            }
+        }
+
+        return earliestPts90k is { } startPts90k
+            ? ordered.Where(item => item.Pts90k >= startPts90k).ToArray()
+            : [];
+    }
+
+    private readonly record struct LargeGapIncidentIssue(long Pts90k, long FileOffset, int Pid);
 
     private static void CreateCorrelatedVideoRegions(IEnumerable<ReferenceTrackState> states)
     {
@@ -1688,6 +2218,10 @@ public sealed class TsMultiSourceRepairService
         private ReferencePesInfo? _activePes;
         private ReferencePesRegionBuilder? _activePesRegion;
         private readonly List<ReferencePesInfo> _indexedVideoPes = [];
+        private readonly Queue<ReferencePesInfo> _recentLargeGapPes = new(LargeGapAnchorCount);
+        private readonly Queue<ReferencePesInfo> _recentIncidentPes = [];
+        private readonly Queue<long> _recentPtsDeltas = new(LargeGapRecentDeltaCount);
+        private ReferencePesInfo? _previousCompletedPes;
         private readonly List<long> _pendingTransportErrorOffsets = [];
         private int _pendingTransportErrorExpectedCounter;
         private long _pendingTransportErrorPts90k = long.MinValue;
@@ -1702,6 +2236,8 @@ public sealed class TsMultiSourceRepairService
         public void ResetContinuity() => HasContinuity = false;
         public long CurrentPesPts90k => _activePes?.Pts90k ?? _lastKnownPts90k;
         public long CurrentPesPtsFileOffset => _activePes?.StartOffset ?? _lastKnownPtsFileOffset;
+        public IReadOnlyList<ReferencePesInfo> IndexedVideoPes => _indexedVideoPes;
+        public List<DetectedTrackLargeGap> LargeGapBoundaries { get; } = [];
 
         public void AddSamplePts(ulong hash, long fileOffset)
         {
@@ -1874,6 +2410,7 @@ public sealed class TsMultiSourceRepairService
             pes.EndOffset = endOffset;
             pes.Signature = CreatePesSignature(pes.Hash, pes.ElementaryLength);
             pes.IsMismatch = pes.ExpectedLength > 0 && pes.ActualLength != pes.ExpectedLength;
+            DetectLargeGap(pes);
 
             // H.264/H.265 广播流通常把 PES_packet_length 写成 0，无法靠 PES 长度判断损坏。
             // 多源修复模式下仅保存紧凑的 PES/ES 指纹索引，供同节目音频异常时间窗关联；
@@ -1915,6 +2452,107 @@ public sealed class TsMultiSourceRepairService
             if (_recentGoodPes.Count == PesRegionAnchorCount)
                 _recentGoodPes.Dequeue();
             _recentGoodPes.Enqueue(pes);
+        }
+
+        private void DetectLargeGap(ReferencePesInfo pes)
+        {
+            // 已发现的缺口只继续收集少量后锚点，不为整份文件建立新的 PES 索引。
+            foreach (var boundary in LargeGapBoundaries)
+            {
+                if (boundary.AfterAnchor.Count < LargeGapAnchorCount)
+                    boundary.AfterAnchor.Add(pes.Signature);
+            }
+
+            var previous = _previousCompletedPes;
+            _previousCompletedPes = pes;
+            if (previous is null || previous.Pts90k == long.MinValue ||
+                pes.Pts90k == long.MinValue)
+            {
+                AddRecentLargeGapPes(pes);
+                AddRecentIncidentPes(pes);
+                return;
+            }
+
+            var delta90k = pes.Pts90k - previous.Pts90k;
+            if (delta90k <= 0 || delta90k > MaximumLargeGap90k)
+            {
+                AddRecentLargeGapPes(pes);
+                AddRecentIncidentPes(pes);
+                return;
+            }
+
+            // 正常音视频 PES 间隔远小于一秒。先做常量时间快速判断，只有真正可疑的
+            // 跳变才计算滚动中位数，避免默认扫描路径反复排序和产生临时数组。
+            if (delta90k > MinimumLargeGap90k &&
+                _recentPtsDeltas.Count >= 4 &&
+                _recentLargeGapPes.Count == LargeGapAnchorCount &&
+                LargeGapBoundaries.Count < MaxLargeGapsPerTrack)
+            {
+                var ordered = _recentPtsDeltas.Order().ToArray();
+                var nominalDelta90k = ordered[ordered.Length / 2];
+                var threshold90k = Math.Max(MinimumLargeGap90k, nominalDelta90k * 4);
+                if (delta90k > threshold90k)
+                {
+                    // 大段内容缺失只保存前后 PTS 和一个参考包边界；即使默认不开启匹配，
+                    // 长文件也不会因此建立逐包索引或显著增加常驻内存。
+                    LargeGapBoundaries.Add(new DetectedTrackLargeGap
+                    {
+                        ReferenceBeforePts90k = previous.Pts90k,
+                        ReferenceBeforeOffset = previous.StartOffset,
+                        ReferenceMissingStartPts90k = previous.Pts90k + nominalDelta90k,
+                        ReferenceAfterPts90k = pes.Pts90k,
+                        ReferenceAfterOffset = pes.StartOffset,
+                        ReferenceAfterContinuityCounter = pes.StartContinuityCounter,
+                        BeforeAnchor = _recentLargeGapPes
+                            .Select(item => item.Signature).ToArray(),
+                        AfterAnchor = [pes.Signature],
+                        IncidentHistory = LargeGapBoundaries.Count <
+                                          MaxLargeGapIncidentSnapshotsPerTrack
+                            ? _recentIncidentPes.ToArray()
+                            : []
+                    });
+                    AddRecentLargeGapPes(pes);
+                    AddRecentIncidentPes(pes);
+                    return;
+                }
+            }
+
+            if (delta90k <= MinimumLargeGap90k)
+            {
+                if (_recentPtsDeltas.Count == LargeGapRecentDeltaCount)
+                    _recentPtsDeltas.Dequeue();
+                _recentPtsDeltas.Enqueue(delta90k);
+            }
+            AddRecentLargeGapPes(pes);
+            AddRecentIncidentPes(pes);
+        }
+
+        private void AddRecentLargeGapPes(ReferencePesInfo pes)
+        {
+            if (_recentLargeGapPes.Count == LargeGapAnchorCount)
+                _recentLargeGapPes.Dequeue();
+            _recentLargeGapPes.Enqueue(pes);
+        }
+
+        private void AddRecentIncidentPes(ReferencePesInfo pes)
+        {
+            if (pes.Pts90k == long.MinValue)
+                return;
+            // 时间戳重置时，旧时间轴上的 PES 已不能作为当前缺口起点；同时用数量
+            // 上限兜底，避免异常时间戳令 60 秒淘汰条件长期失效并持续占用内存。
+            if (_recentIncidentPes.Count > 0 &&
+                pes.Pts90k + LargeGapIncidentHistoryWindow90k < _recentIncidentPes.Peek().Pts90k)
+            {
+                _recentIncidentPes.Clear();
+            }
+            _recentIncidentPes.Enqueue(pes);
+            while (_recentIncidentPes.Count > MaxLargeGapIncidentHistoryPesPerTrack ||
+                   (_recentIncidentPes.Count > 0 &&
+                    pes.Pts90k - _recentIncidentPes.Peek().Pts90k >
+                    LargeGapIncidentHistoryWindow90k))
+            {
+                _recentIncidentPes.Dequeue();
+            }
         }
 
         public void TryAddCorrelatedVideoRegion(long startPts90k, long endPts90k)
@@ -2064,7 +2702,24 @@ public sealed class TsMultiSourceRepairService
             _ptsWrapOffset90k = 0;
             _lastKnownPts90k = long.MinValue;
             _lastKnownPtsFileOffset = -1;
+            _previousCompletedPes = null;
+            _recentLargeGapPes.Clear();
+            _recentIncidentPes.Clear();
+            _recentPtsDeltas.Clear();
         }
+    }
+
+    private sealed class DetectedTrackLargeGap
+    {
+        public required long ReferenceBeforePts90k { get; set; }
+        public required long ReferenceBeforeOffset { get; init; }
+        public required long ReferenceMissingStartPts90k { get; set; }
+        public required long ReferenceAfterPts90k { get; set; }
+        public required long ReferenceAfterOffset { get; init; }
+        public required int ReferenceAfterContinuityCounter { get; init; }
+        public required TsRepairPesSignature[] BeforeAnchor { get; init; }
+        public required List<TsRepairPesSignature> AfterAnchor { get; init; }
+        public required ReferencePesInfo[] IncidentHistory { get; init; }
     }
 
     private sealed class ReferencePesInfo(
@@ -2442,6 +3097,429 @@ public sealed class TsMultiSourceRepairService
         public TsRepairPesSignature Signature { get; set; }
         public bool IsValid { get; set; }
     }
+
+    private sealed class LargeGapDonorPidState(
+        IEnumerable<LargeGapAnchorMatcher> matchers,
+        TimelineTimestampNormalizer? timelineNormalizer)
+    {
+        private readonly LargeGapAnchorMatcher[] _matchers = matchers.ToArray();
+        private readonly Queue<DonorPesInfo> _repairHistory = [];
+        private DonorPesInfo? _activePes;
+        private long _lastRawPts90k = long.MinValue;
+        private long _ptsWrapOffset90k;
+        public bool HasContinuity { get; set; }
+        public int LastContinuityCounter { get; set; }
+
+        public void ProcessPes(
+            ReadOnlySpan<byte> packet,
+            PacketInfo info,
+            long fileOffset,
+            ReadOnlySpan<byte> elementaryPayload,
+            string sourcePath)
+        {
+            if (info.PayloadStart)
+            {
+                FinishPes(fileOffset);
+                if (!TryReadPesStart(packet, info, out var expectedLength, out var rawPts90k))
+                    return;
+                var pts90k = UnwrapTimestamp(rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
+                pts90k = timelineNormalizer?.Normalize(pts90k, fileOffset) ?? pts90k;
+                _activePes = new DonorPesInfo(fileOffset, expectedLength, pts90k);
+            }
+            if (_activePes is null)
+                return;
+            _activePes.PacketCount++;
+            if (!info.HasPayload)
+                return;
+            _activePes.ActualLength += PacketSize - info.PayloadOffset;
+            _activePes.ElementaryLength += elementaryPayload.Length;
+            _activePes.Hash = ComputePesHash(_activePes.Hash, elementaryPayload);
+        }
+
+        public void Complete(long fileSize, string sourcePath) => FinishPes(fileSize);
+
+        private void FinishPes(long endOffset)
+        {
+            var pes = _activePes;
+            _activePes = null;
+            if (pes is null)
+                return;
+            pes.EndOffset = endOffset;
+            pes.Signature = CreatePesSignature(pes.Hash, pes.ElementaryLength);
+            pes.IsValid = pes.ExpectedLength == 0 || pes.ActualLength == pes.ExpectedLength;
+            if (!pes.IsValid)
+            {
+                foreach (var matcher in _matchers)
+                    matcher.ResetForDiscontinuity();
+                return;
+            }
+            if (pes.Pts90k != long.MinValue)
+            {
+                _repairHistory.Enqueue(pes);
+                while (_repairHistory.Count > 0 &&
+                       pes.Pts90k - _repairHistory.Peek().Pts90k >
+                       LargeGapIncidentHistoryWindow90k + MinimumLargeGap90k)
+                {
+                    _repairHistory.Dequeue();
+                }
+            }
+            foreach (var matcher in _matchers)
+                matcher.ProcessPes(pes, _repairHistory);
+        }
+
+        public void ResetForDiscontinuity()
+        {
+            HasContinuity = false;
+            _activePes = null;
+            _repairHistory.Clear();
+            _lastRawPts90k = long.MinValue;
+            _ptsWrapOffset90k = 0;
+            foreach (var matcher in _matchers)
+                matcher.ResetForDiscontinuity();
+        }
+    }
+
+    private sealed class LargeGapAnchorMatcher(
+        TsRepairLargeGap gap,
+        TsRepairTrackMatch match)
+    {
+        private readonly Queue<DonorPesInfo> _recentPes = new(LargeGapAnchorCount);
+        private ActiveLargeGapAnchorMatch? _activeMatch;
+        public TsRepairLargeGap Gap { get; } = gap;
+        public TsRepairTrackMatch Match { get; } = match;
+        public List<LargeGapRangeMatch> Results { get; } = [];
+
+        public void ProcessPes(
+            DonorPesInfo pes,
+            IReadOnlyCollection<DonorPesInfo> repairHistory)
+        {
+            if (_activeMatch is not null)
+            {
+                if (_activeMatch.TryAppend(pes, out var result, out var completed))
+                {
+                    if (result is { } value && !Results.Any(item =>
+                            item.SourceStartOffset == value.SourceStartOffset &&
+                            item.SourceEndOffset == value.SourceEndOffset))
+                    {
+                        Results.Add(value);
+                    }
+                }
+                if (completed)
+                    _activeMatch = null;
+            }
+
+            _recentPes.Enqueue(pes);
+            while (_recentPes.Count > LargeGapAnchorCount)
+                _recentPes.Dequeue();
+            if (_activeMatch is not null ||
+                !QueueEndsWithPesAnchors(_recentPes, Gap.BeforeAnchor) ||
+                pes.Pts90k == long.MinValue)
+            {
+                return;
+            }
+
+            var timestampOffset90k = Gap.ReferenceBeforePts90k - pes.Pts90k;
+            if (Match.TimestampOffset90k is { } expectedOffset &&
+                Math.Abs(timestampOffset90k - expectedOffset) > LargeGapTrackCorrelationTolerance90k * 2)
+            {
+                return;
+            }
+            var sourceScanStartOffset = _recentPes.Peek().StartOffset;
+            if (Gap.IncludesPrecedingDamage)
+            {
+                var expectedRepairStartPts90k =
+                    Gap.ReferenceMissingStartPts90k - timestampOffset90k;
+                var repairStart = repairHistory.FirstOrDefault(item =>
+                    item.Pts90k >= expectedRepairStartPts90k -
+                    LargeGapPesBoundaryTolerance90k);
+                if (repairStart is null ||
+                    repairStart.Pts90k > expectedRepairStartPts90k + MinimumLargeGap90k)
+                {
+                    return;
+                }
+                sourceScanStartOffset = repairStart.StartOffset;
+            }
+            _activeMatch = new ActiveLargeGapAnchorMatch(
+                Gap, Match.SourcePid, sourceScanStartOffset,
+                pes.EndOffset, timestampOffset90k);
+        }
+
+        public void ResetForDiscontinuity()
+        {
+            _recentPes.Clear();
+            _activeMatch = null;
+        }
+    }
+
+    private sealed class ActiveLargeGapAnchorMatch(
+        TsRepairLargeGap gap,
+        int sourcePid,
+        long sourceScanStartOffset,
+        long sourceContentStartOffset,
+        long timestampOffset90k)
+    {
+        private int _afterAnchorIndex;
+        private long _sourceEndOffset = -1;
+
+        public bool TryAppend(
+            DonorPesInfo pes,
+            out LargeGapRangeMatch? result,
+            out bool completed)
+        {
+            result = null;
+            completed = false;
+            if (pes.Pts90k != long.MinValue &&
+                pes.Pts90k + timestampOffset90k >
+                gap.ReferenceAfterPts90k + LargeGapTrackCorrelationTolerance90k)
+            {
+                completed = true;
+                return false;
+            }
+
+            if (_afterAnchorIndex == 0)
+            {
+                if (pes.Signature != gap.AfterAnchor[0] || pes.Pts90k == long.MinValue ||
+                    Math.Abs(pes.Pts90k + timestampOffset90k - gap.ReferenceAfterPts90k) >
+                    LargeGapMatchTolerance90k)
+                {
+                    return false;
+                }
+                _sourceEndOffset = pes.StartOffset;
+                _afterAnchorIndex = 1;
+            }
+            else
+            {
+                if (_afterAnchorIndex >= gap.AfterAnchor.Length ||
+                    pes.Signature != gap.AfterAnchor[_afterAnchorIndex])
+                {
+                    completed = true;
+                    return false;
+                }
+                _afterAnchorIndex++;
+            }
+
+            if (_afterAnchorIndex < gap.AfterAnchor.Length)
+                return false;
+            completed = true;
+            if (_sourceEndOffset <= sourceContentStartOffset)
+                return false;
+            result = new LargeGapRangeMatch(
+                gap, sourcePid, sourceScanStartOffset, pes.EndOffset, timestampOffset90k);
+            return true;
+        }
+    }
+
+    private sealed class LargeGapRangeTrackInspection(
+        TsRepairLargeGapTrackBoundary boundary,
+        int sourcePid,
+        long timestampOffset90k,
+        TimelineTimestampNormalizer? timelineNormalizer)
+    {
+        private readonly Queue<(ulong Hash, long Offset)> _recentPayloadHashes = [];
+        private readonly Queue<(long Offset, bool HasPayload)> _recentSourcePackets = [];
+        private bool _hasContinuity;
+        private int _lastContinuityCounter;
+        private long _lastRawPts90k = long.MinValue;
+        private long _ptsWrapOffset90k;
+        private long _lastPts90k = long.MinValue;
+        private int _ptsCount;
+        private bool _invalid;
+        private bool _waitingForFirstContentPacket;
+        private bool _contentStarted;
+        private bool _contentEnded;
+        public TsRepairLargeGapTrackBoundary Boundary { get; } = boundary;
+        public int SourcePid { get; } = sourcePid;
+        public long TimestampOffset90k { get; } = timestampOffset90k;
+        public long SourceStartOffset { get; private set; } = -1;
+        public long SourceEndOffset { get; private set; } = -1;
+        public int PacketCount { get; private set; }
+        public int PayloadPacketCount { get; private set; }
+        public long FirstPts90k { get; private set; } = long.MinValue;
+        public long LastPts90k { get; private set; } = long.MinValue;
+        public long MaximumPtsGap90k { get; private set; }
+
+        public void Process(ReadOnlySpan<byte> packet, PacketInfo info, long fileOffset)
+        {
+            var contentWasStarted = _contentStarted;
+            var continuityInvalid = false;
+            if (info.HasPayload)
+            {
+                if (_hasContinuity)
+                {
+                    var expected = (_lastContinuityCounter + 1) & 0x0F;
+                    if (info.ContinuityCounter != expected)
+                        continuityInvalid = true;
+                }
+                _hasContinuity = true;
+                _lastContinuityCounter = info.ContinuityCounter;
+            }
+
+            long? pts90k = null;
+            if (info.PayloadStart &&
+                TryReadPesStart(packet, info, out _, out var rawPts90k))
+            {
+                var value = UnwrapTimestamp(rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
+                pts90k = timelineNormalizer?.Normalize(value, fileOffset) ?? value;
+            }
+
+            var hasPacketAnchors = Boundary.BeforePacketAnchor.Length > 0 &&
+                                   Boundary.AfterPacketAnchor.Length > 0;
+            if (!hasPacketAnchors && !_contentStarted && pts90k is { } startPts90k)
+            {
+                var referencePts90k = startPts90k + TimestampOffset90k;
+                if (referencePts90k >=
+                        Boundary.ReferenceMissingStartPts90k - LargeGapPesBoundaryTolerance90k &&
+                    referencePts90k < Boundary.ReferenceAfterPts90k - LargeGapPesBoundaryTolerance90k)
+                {
+                    StartContent(fileOffset);
+                }
+            }
+            if (!hasPacketAnchors && _contentStarted && !_contentEnded && pts90k is { } endPts90k &&
+                endPts90k + TimestampOffset90k >=
+                Boundary.ReferenceAfterPts90k - LargeGapPesBoundaryTolerance90k)
+            {
+                SourceEndOffset = fileOffset;
+                _contentEnded = true;
+                return;
+            }
+
+            if (hasPacketAnchors && _waitingForFirstContentPacket && !_contentStarted)
+                StartContent(fileOffset);
+            if (_contentStarted && !_contentEnded &&
+                (info.TransportError || info.Discontinuity ||
+                 (contentWasStarted && continuityInvalid)))
+            {
+                // 定位扫描会在候选前后读取额外 padding。只有实际准备写入的区间必须
+                // 完全健康，不能让 padding 内无关的 CC/TEI 淘汰一个有效候选。
+                _invalid = true;
+            }
+            if (_contentStarted && !_contentEnded)
+            {
+                PacketCount++;
+                if (info.HasPayload)
+                    PayloadPacketCount++;
+                if (hasPacketAnchors)
+                    _recentSourcePackets.Enqueue((fileOffset, info.HasPayload));
+            }
+
+            if (pts90k is { } contentPts90k && _contentStarted && !_contentEnded)
+                AddPts(contentPts90k);
+            if (!hasPacketAnchors || !info.HasPayload)
+                return;
+
+            var hash = ComputePayloadHash(packet[info.PayloadOffset..]);
+            _recentPayloadHashes.Enqueue((hash, fileOffset));
+            while (_recentPayloadHashes.Count > Math.Max(
+                       Boundary.BeforePacketAnchor.Length, Boundary.AfterPacketAnchor.Length))
+            {
+                _recentPayloadHashes.Dequeue();
+            }
+            if (_contentStarted && _recentPayloadHashes.Count > 0)
+            {
+                var earliestRecentPayloadOffset = _recentPayloadHashes.Peek().Offset;
+                while (_recentSourcePackets.Count > 0 &&
+                       _recentSourcePackets.Peek().Offset < earliestRecentPayloadOffset)
+                {
+                    _recentSourcePackets.Dequeue();
+                }
+            }
+            if (!_contentStarted &&
+                PacketAnchorsMatch(_recentPayloadHashes, Boundary.BeforePacketAnchor))
+            {
+                _waitingForFirstContentPacket = true;
+                return;
+            }
+            if (!_contentStarted ||
+                !PacketAnchorsMatch(_recentPayloadHashes, Boundary.AfterPacketAnchor))
+            {
+                return;
+            }
+
+            SourceEndOffset = _recentPayloadHashes
+                .Skip(_recentPayloadHashes.Count - Boundary.AfterPacketAnchor.Length)
+                .First().Offset;
+            while (_recentSourcePackets.Count > 0 &&
+                   _recentSourcePackets.Peek().Offset < SourceEndOffset)
+            {
+                _recentSourcePackets.Dequeue();
+            }
+            foreach (var item in _recentSourcePackets)
+            {
+                PacketCount--;
+                if (item.HasPayload)
+                    PayloadPacketCount--;
+            }
+            _contentEnded = true;
+        }
+
+        private void StartContent(long fileOffset)
+        {
+            SourceStartOffset = fileOffset;
+            _contentStarted = true;
+            _waitingForFirstContentPacket = false;
+            _recentSourcePackets.Clear();
+        }
+
+        private void AddPts(long pts90k)
+        {
+            if (_lastPts90k != long.MinValue)
+            {
+                var delta90k = pts90k - _lastPts90k;
+                // 带 B 帧的视频 PES 按解码顺序复用时，PTS 会在一个很小的窗口内回摆；
+                // 这不是缺片。这里只用明显的正向大跳变否决辅助区间。
+                if (delta90k > 0)
+                    MaximumPtsGap90k = Math.Max(MaximumPtsGap90k, delta90k);
+            }
+            FirstPts90k = FirstPts90k == long.MinValue ? pts90k : Math.Min(FirstPts90k, pts90k);
+            LastPts90k = Math.Max(LastPts90k, pts90k);
+            _lastPts90k = pts90k;
+            _ptsCount++;
+        }
+
+        private static bool PacketAnchorsMatch(
+            Queue<(ulong Hash, long Offset)> values,
+            IReadOnlyList<ulong> anchors)
+        {
+            if (anchors.Count == 0 || values.Count < anchors.Count)
+                return false;
+            var skip = values.Count - anchors.Count;
+            var index = 0;
+            foreach (var item in values)
+            {
+                if (skip > 0)
+                {
+                    skip--;
+                    continue;
+                }
+                if (item.Hash != anchors[index++])
+                    return false;
+            }
+            return index == anchors.Count;
+        }
+
+        public bool IsUsable()
+        {
+            if (_invalid || !_contentEnded || SourceEndOffset <= SourceStartOffset ||
+                PacketCount == 0 || PayloadPacketCount == 0)
+                return false;
+            if (Boundary.BeforePacketAnchor.Length > 0 && Boundary.AfterPacketAnchor.Length > 0)
+                return true;
+            if (_ptsCount < 2)
+                return false;
+            var expectedStartPts90k = Boundary.ReferenceMissingStartPts90k - TimestampOffset90k;
+            var expectedEndPts90k = Boundary.ReferenceAfterPts90k - TimestampOffset90k;
+            return FirstPts90k <= expectedStartPts90k + MinimumLargeGap90k &&
+                   LastPts90k >= expectedEndPts90k - MinimumLargeGap90k &&
+                   MaximumPtsGap90k <= MinimumLargeGap90k;
+        }
+    }
+
+    private readonly record struct LargeGapRangeMatch(
+        TsRepairLargeGap Gap,
+        int SourcePid,
+        long SourceStartOffset,
+        long SourceEndOffset,
+        long TimestampOffset90k);
 
     private readonly record struct DonorTimestampIndexEntry(long FileOffset, long Pts90k);
 
