@@ -265,7 +265,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<RawCutterWindowViewModel>();
         dialogViewModel.Initialize(filePath);
-        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        _dialogService.Show(this, dialogViewModel);
     }
 
     [RelayCommand]
@@ -282,7 +282,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<TsCheckWindowViewModel>();
         dialogViewModel.FilePath = result[0].LocalPath;
-        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        _dialogService.Show(this, dialogViewModel);
     }
 
     [RelayCommand]
@@ -299,7 +299,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<TsTimelineRepairWindowViewModel>();
         dialogViewModel.Initialize(result[0].LocalPath);
-        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        _dialogService.Show(this, dialogViewModel);
     }
 
     [RelayCommand]
@@ -316,7 +316,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<TsFilterWindowViewModel>();
         dialogViewModel.FilePath = result[0].LocalPath;
-        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        _dialogService.Show(this, dialogViewModel);
     }
 
     [RelayCommand]
@@ -333,14 +333,14 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<TsServiceFilterWindowViewModel>();
         dialogViewModel.FilePath = result[0].LocalPath;
-        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        _dialogService.Show(this, dialogViewModel);
     }
 
     [RelayCommand]
-    private async Task TsMultiSourceRepairClickAsync()
+    private void TsMultiSourceRepairClick()
     {
         var dialogViewModel = _dialogService.CreateViewModel<TsMultiSourceRepairWindowViewModel>();
-        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        _dialogService.Show(this, dialogViewModel);
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]

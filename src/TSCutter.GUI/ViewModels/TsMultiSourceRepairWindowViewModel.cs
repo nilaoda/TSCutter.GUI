@@ -53,7 +53,12 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AnalyzeCommand))]
+    [NotifyPropertyChangedFor(nameof(WindowTitle))]
     private TsRepairSourceItem? _selectedReference;
+
+    public string WindowTitle => SelectedReference is null
+        ? _text.Strings.String_TsRepair_Title
+        : $"{_text.Strings.String_TsRepair_Title} - {SelectedReference.FileName}";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAnalyze))]
@@ -903,6 +908,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
 
     private void OnLanguageChanged()
     {
+        OnPropertyChanged(nameof(WindowTitle));
         OnPropertyChanged(nameof(TimelineNormalizationNote));
         OnPropertyChanged(nameof(LargeGapMatchButtonText));
         if (_analysis is not null)

@@ -14,7 +14,7 @@
         CanMaximize="False"
         WindowStartupLocation="CenterOwner"
         x:DataType="viewModels:RawCutterWindowViewModel"
-        Title="{DynamicResource String.RawCutter.Title}">
+        Title="{Binding WindowTitle}">
 
     <Window.Styles>
         <Style Selector="TextBlock.Label">
