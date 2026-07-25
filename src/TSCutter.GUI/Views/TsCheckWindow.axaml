@@ -10,7 +10,7 @@
         mc:Ignorable="d"
         x:Class="TSCutter.GUI.Views.TsCheckWindow"
         x:DataType="viewModels:TsCheckWindowViewModel"
-        Title="{DynamicResource String.TsCheck.Title}"
+        Title="{Binding WindowTitle}"
         Width="900" Height="580"
         MinWidth="720" MinHeight="460"
         WindowStartupLocation="CenterOwner">

@@ -6,7 +6,7 @@
         mc:Ignorable="d"
         x:Class="TSCutter.GUI.Views.TsTimelineRepairWindow"
         x:DataType="viewModels:TsTimelineRepairWindowViewModel"
-        Title="{DynamicResource String.TsTimelineRepair.Title}"
+        Title="{Binding WindowTitle}"
         Width="900" Height="580" MinWidth="720" MinHeight="460"
         WindowStartupLocation="CenterOwner">
 

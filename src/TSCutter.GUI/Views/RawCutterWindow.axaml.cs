@@ -10,6 +10,7 @@ public partial class RawCutterWindow : ClassicWindow
     {
         InitializeComponent();
         Loaded += OnInitialized;
+        Closed += OnClosed;
     }
 
     private void OnInitialized(object? sender, EventArgs e)
@@ -18,5 +19,14 @@ public partial class RawCutterWindow : ClassicWindow
         {
             vm.RequestClose += Close;
         }
+    }
+
+    private void OnClosed(object? sender, EventArgs e)
+    {
+        if (DataContext is not RawCutterWindowViewModel viewModel)
+            return;
+
+        viewModel.RequestClose -= Close;
+        viewModel.OnClosed();
     }
 }
