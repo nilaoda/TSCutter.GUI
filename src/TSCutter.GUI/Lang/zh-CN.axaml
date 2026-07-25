@@ -239,9 +239,9 @@
     <x:String x:Key="String.TsRepair.LargeGap.ResultNone">无法安全补齐</x:String>
     <x:String x:Key="String.TsRepair.LargeGap.TimeRange">{0} – {1}</x:String>
     <x:String x:Key="String.TsRepair.LargeGap.SummaryDetected">发现 {0:N0} 处疑似大段内容缺失，共 {1}。标准修复不会处理这些区域。</x:String>
-    <x:String x:Key="String.TsRepair.LargeGap.SummaryMatched">大段内容缺失：共 {0:N0} 处，{1:N0} 处可完整补齐，{2:N0} 处可部分补齐，总时长 {3}。请在“大段缺口”页确认需要写入的项目。</x:String>
-    <x:String x:Key="String.TsRepair.LargeGap.SummaryMatchedFull">大段内容缺失：共 {0:N0} 处，{1:N0} 处可完整补齐，总时长 {2}。请在“大段缺口”页确认需要写入的项目。</x:String>
-    <x:String x:Key="String.TsRepair.LargeGap.SummaryMatchedPartial">大段内容缺失：共 {0:N0} 处，{1:N0} 处可部分补齐，总时长 {2}。请在“大段缺口”页确认需要写入的项目。</x:String>
+    <x:String x:Key="String.TsRepair.LargeGap.SummaryMatched">大段内容缺失：共 {0:N0} 处，{1:N0} 处可完整补齐，{2:N0} 处可部分补齐，总时长 {3}。可修复项目已自动选中；如需调整，请在“大段缺口”页手动勾选或取消。</x:String>
+    <x:String x:Key="String.TsRepair.LargeGap.SummaryMatchedFull">大段内容缺失：共 {0:N0} 处，{1:N0} 处可完整补齐，总时长 {2}。可修复项目已自动选中；如需调整，请在“大段缺口”页手动勾选或取消。</x:String>
+    <x:String x:Key="String.TsRepair.LargeGap.SummaryMatchedPartial">大段内容缺失：共 {0:N0} 处，{1:N0} 处可部分补齐，总时长 {2}。可修复项目已自动选中；如需调整，请在“大段缺口”页手动勾选或取消。</x:String>
     <x:String x:Key="String.TsRepair.LargeGap.SummaryMatchedNone">大段内容缺失：共 {0:N0} 处，总时长 {1}。未找到可安全补齐这些区域的辅助源内容。</x:String>
     <x:String x:Key="String.TsRepair.TimelineNormalizationNote">匹配阶段会自动归一化检测到的 PCR/PTS 时间轴偏移，仅用于跨来源对齐；不会单独修改源文件时间轴，也不会掩盖传输或 PES 错误。</x:String>
     <x:String x:Key="String.TsRepair.TimelineNormalizationAndOutputNote">匹配阶段会归一化 PCR/PTS 偏移；输出时在同一遍写入中同步修复已确认的参考时间轴异常，不会掩盖传输、丢包或 PES 错误。</x:String>

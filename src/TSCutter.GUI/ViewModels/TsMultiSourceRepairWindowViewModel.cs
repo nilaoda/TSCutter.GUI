@@ -673,7 +673,8 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     private void BuildLargeGapRows(TsMultiSourceAnalysisResult analysis)
     {
         var previousSelections = LargeGaps.ToDictionary(
-            item => item.Analysis.ReferenceInsertOffset, item => item.IsSelected);
+            item => item.Analysis.ReferenceInsertOffset,
+            item => (item.IsSelected, item.Status));
         LargeGaps.Clear();
         var originPts90k = analysis.LargeGapTimelineStartPts90k;
         foreach (var gap in analysis.LargeGaps.OrderBy(item => item.ReferenceMissingStartPts90k))
@@ -723,9 +724,14 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                 SourceText = sourceText,
                 ResultText = resultText,
                 Status = status,
-                // 匹配和写入是两个独立决定。即使找到了完整候选，也必须由用户明确勾选后才会输出。
+                // 首次完成匹配时自动选择所有可安全写入的完整或部分候选，使其与普通
+                // 错误的自动修复行为一致；后续因语言切换等刷新列表时保留用户手工选择。
                 IsSelected = previousSelections.TryGetValue(
-                    gap.ReferenceInsertOffset, out var selected) && selected
+                                 gap.ReferenceInsertOffset, out var previous) &&
+                             previous.Status != TsRepairLargeGapViewStatus.Pending
+                    ? previous.IsSelected
+                    : status is TsRepairLargeGapViewStatus.Full or
+                        TsRepairLargeGapViewStatus.Partial
             };
             row.SelectionChanged += OnLargeGapSelectionChanged;
             LargeGaps.Add(row);
