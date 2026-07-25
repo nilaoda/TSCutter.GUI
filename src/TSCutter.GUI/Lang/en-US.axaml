@@ -138,6 +138,7 @@
     <x:String x:Key="String.ClearQueue">Clear Queue</x:String>
     <x:String x:Key="String.Clips">Clips</x:String>
     <x:String x:Key="String.QueueRemove">Remove</x:String>
+    <x:String x:Key="String.ExportQueue.DuplicateOutputPath">The output path “{0}” is already present in the export queue. Choose a different file name or folder.</x:String>
     <x:String x:Key="String.Menu.TsCheck">TS Quick _Check...</x:String>
     <x:String x:Key="String.Menu.TsTimelineRepair">TS _Timeline Repair...</x:String>
     <x:String x:Key="String.Menu.TsFilter">TS Stream _Filter</x:String>
