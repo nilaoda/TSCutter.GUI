@@ -46,6 +46,7 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
 
     public bool? DialogResult { get; }
     public string FilePath { get; set; } = string.Empty;
+    public string WindowTitle => $"{_text.Strings.String_TsCheck_Title} - {Path.GetFileName(FilePath)}";
     public ObservableCollection<TsCheckEventView> Events { get; } = [];
     public ObservableCollection<TsCheckPidSummaryView> PidSummaries { get; } = [];
     public ObservableCollection<TsCheckTimelineStreamView> TimelineStreams { get; } = [];
@@ -410,6 +411,7 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
 
     private void OnLanguageChanged()
     {
+        OnPropertyChanged(nameof(WindowTitle));
         RebuildTimelineStreams();
         OnPropertyChanged(nameof(TimelineNoticeText));
         StatusText = IsScanning

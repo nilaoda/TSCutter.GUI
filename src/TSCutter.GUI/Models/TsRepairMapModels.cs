@@ -25,7 +25,8 @@ public enum TsRepairMapRegionStatus
 public enum TsRepairMapIssueKind
 {
     PacketGap,
-    MediaRegion
+    MediaRegion,
+    LongGap
 }
 
 public enum TsRepairMapSourceCellStatus

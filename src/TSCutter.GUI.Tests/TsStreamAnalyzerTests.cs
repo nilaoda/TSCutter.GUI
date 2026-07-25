@@ -123,6 +123,68 @@ public sealed class TsStreamAnalyzerTests
         Assert.Equal(0, Count(result, TsCheckEventType.PcrJump));
     }
 
+    [Fact]
+    public async Task IsolatedPcrSchedulingOutlierDoesNotCreateTimelineRepairCandidate()
+    {
+        var packets = new List<byte[]>();
+        const int pid = 0x0101;
+        var continuity = 0;
+        for (var sample = 0; sample < 80; sample++)
+        {
+            var packetIndex = sample * 100;
+            while (packets.Count < packetIndex)
+                packets.Add(CreatePacket(pid, continuity++ & 0x0F));
+
+            // 模拟 HLS 分片拼接边界：单次 PCR 采样间隔不均匀，但 PCR 时钟本身连续。
+            var pcr = sample * 90_000L;
+            packets.Add(CreatePacket(pid, continuity++ & 0x0F, pcrBase: pcr));
+        }
+
+        var result = await AnalyzeAsync(packets);
+
+        Assert.False(result.TimelineHasRepairCandidate);
+    }
+
+    [Fact]
+    public async Task LargePcrJumpKeepsTimelineRepairCandidate()
+    {
+        var packets = new List<byte[]>();
+        const int pid = 0x0101;
+        for (var sample = 0; sample < 12; sample++)
+        {
+            var pcr = sample == 6 ? 6 * 30_000L + 120_000L : sample * 30_000L;
+            packets.Add(CreatePacket(pid, sample & 0x0F, pcrBase: pcr));
+            for (var filler = 0; filler < 9; filler++)
+                packets.Add(CreatePacket(pid, (sample * 10 + filler + 1) & 0x0F));
+        }
+
+        var result = await AnalyzeAsync(packets);
+
+        Assert.True(result.TimelineHasRepairCandidate);
+    }
+
+    [Fact]
+    public async Task MidGopStartupOffsetDoesNotCreateAvSyncDrift()
+    {
+        var offsets90k = new[] { -81_000L, -9_000L, -10_800L, -8_100L, -9_900L,
+            -9_000L, -10_800L, -8_100L, -9_900L, -9_000L };
+
+        var result = await AnalyzeAsync(CreateAvSyncPackets(offsets90k));
+
+        Assert.Equal(0, Count(result, TsCheckEventType.AvSyncDrift));
+    }
+
+    [Fact]
+    public async Task SustainedAvOffsetChangeAfterBaselineIsReported()
+    {
+        var offsets90k = new[] { -9_000L, -9_000L, -9_000L, -9_000L, -9_000L,
+            54_000L, 54_000L, 54_000L, 54_000L };
+
+        var result = await AnalyzeAsync(CreateAvSyncPackets(offsets90k));
+
+        Assert.True(Count(result, TsCheckEventType.AvSyncDrift) > 0);
+    }
+
     private static int Count(TsCheckResult result, TsCheckEventType type) => result.Events
         .Where(item => item.Type == type)
         .Sum(item => item.Occurrences);
@@ -142,6 +204,26 @@ public sealed class TsStreamAnalyzerTests
         finally
         {
             File.Delete(path);
+        }
+    }
+
+    private static IEnumerable<byte[]> CreateAvSyncPackets(IReadOnlyList<long> audioOffsets90k)
+    {
+        const int pmtPid = 0x0100;
+        const int videoPid = 0x0101;
+        const int audioPid = 0x0102;
+        yield return CreatePsiPacket(0x0000, 0, BuildPatSection(pmtPid));
+        yield return CreatePsiPacket(
+            pmtPid, 0, BuildPmtSection(videoPid, (0x1B, videoPid), (0x03, audioPid)));
+
+        const long startPts90k = 900_000;
+        for (var index = 0; index < audioOffsets90k.Count; index++)
+        {
+            var videoPts = startPts90k + index * 90_000L;
+            yield return CreatePesPacket(videoPid, index * 2 & 0x0F, videoPts, 0xE0);
+            yield return CreatePesPacket(
+                audioPid, index & 0x0F, videoPts + audioOffsets90k[index], 0xC0);
+            yield return CreatePacket(videoPid, index * 2 + 1 & 0x0F, pcrBase: videoPts);
         }
     }
 
@@ -183,7 +265,8 @@ public sealed class TsStreamAnalyzerTests
         return packet;
     }
 
-    private static byte[] CreatePesPacket(int pid, int continuityCounter, long pts)
+    private static byte[] CreatePesPacket(
+        int pid, int continuityCounter, long pts, byte streamId = 0xE0)
     {
         var packet = CreatePacket(pid, continuityCounter);
         packet[1] |= 0x40;
@@ -191,7 +274,7 @@ public sealed class TsStreamAnalyzerTests
         payload[0] = 0;
         payload[1] = 0;
         payload[2] = 1;
-        payload[3] = 0xE0;
+        payload[3] = streamId;
         payload[4] = 0;
         payload[5] = 0;
         payload[6] = 0x80;
@@ -211,6 +294,28 @@ public sealed class TsStreamAnalyzerTests
         (byte)(0xE0 | (pcrPid >> 8)), (byte)pcrPid, 0xF0, 0x00,
         0x1B, (byte)(0xE0 | (pcrPid >> 8)), (byte)pcrPid, 0xF0, 0x00
     ]);
+
+    private static byte[] BuildPmtSection(
+        int pcrPid,
+        params (int StreamType, int Pid)[] streams)
+    {
+        var sectionLength = 9 + streams.Length * 5 + 4;
+        var section = new List<byte>
+        {
+            0x02, (byte)(0xB0 | (sectionLength >> 8)), (byte)sectionLength,
+            0x00, 0x01, 0xC1, 0x00, 0x00,
+            (byte)(0xE0 | (pcrPid >> 8)), (byte)pcrPid, 0xF0, 0x00
+        };
+        foreach (var stream in streams)
+        {
+            section.Add((byte)stream.StreamType);
+            section.Add((byte)(0xE0 | (stream.Pid >> 8)));
+            section.Add((byte)stream.Pid);
+            section.Add(0xF0);
+            section.Add(0x00);
+        }
+        return AppendCrc(section.ToArray());
+    }
 
     private static byte[] AppendCrc(byte[] section)
     {

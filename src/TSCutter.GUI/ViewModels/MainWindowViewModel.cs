@@ -83,6 +83,7 @@ public partial class MainWindowViewModel : ViewModelBase
     public partial ObservableCollection<PickedClip> Clips { get; set; } = new();
 
     private long _queueIdCounter;
+    private string? _lastQueueOutputDirectory;
     public ObservableCollection<ExportQueueItem> ExportQueue { get; } = new();
 
     public bool HasExportQueue => ExportQueue.Count > 0;
@@ -265,7 +266,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<RawCutterWindowViewModel>();
         dialogViewModel.Initialize(filePath);
-        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        // 工具窗口需要与主窗口自由切换前后层级，因此不设置 Owner；文件选择框等
+        // 真正的对话框仍继续以主窗口为 Owner。
+        _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
@@ -282,7 +285,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<TsCheckWindowViewModel>();
         dialogViewModel.FilePath = result[0].LocalPath;
-        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
@@ -299,7 +302,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<TsTimelineRepairWindowViewModel>();
         dialogViewModel.Initialize(result[0].LocalPath);
-        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
@@ -316,7 +319,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<TsFilterWindowViewModel>();
         dialogViewModel.FilePath = result[0].LocalPath;
-        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
@@ -333,14 +336,14 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<TsServiceFilterWindowViewModel>();
         dialogViewModel.FilePath = result[0].LocalPath;
-        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
-    private async Task TsMultiSourceRepairClickAsync()
+    private void TsMultiSourceRepairClick()
     {
         var dialogViewModel = _dialogService.CreateViewModel<TsMultiSourceRepairWindowViewModel>();
-        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]
@@ -798,13 +801,29 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]
     private async Task AddToQueueAsync()
     {
-        var defaultName = Path.GetFileNameWithoutExtension(SelectedClip!.InFileInfo.FullName)
-            + $"_({CommonUtil.FormatSeconds(SelectedClip!.StartTime, true)}-{CommonUtil.FormatSeconds(SelectedClip!.EndTime, true)}).ts";
+        var sourceDirectory = Path.GetDirectoryName(SelectedClip!.InFileInfo.FullName)!;
+        var generatedName = GenerateQueueFileName(
+            SelectedClip!.InFileInfo.FullName, SelectedClip!.StartTime, SelectedClip!.EndTime);
+        var previousItem = ExportQueue.LastOrDefault();
+        // 只有上一项确实偏离系统默认名称时，才把它当作用户的手工命名参照；如果用户
+        // 始终沿用默认名称，则每个源文件继续独立生成文件名，仅记住输出目录。
+        var suggestedName = previousItem is not null && !FileNamesEqual(
+            previousItem.OutputFileName,
+            GenerateQueueFileName(
+                previousItem.SourceFilePath,
+                previousItem.StartTimeSeconds,
+                previousItem.EndTimeSeconds))
+            ? previousItem.OutputFileName
+            : generatedName;
+        var suggestedDirectory = !string.IsNullOrWhiteSpace(_lastQueueOutputDirectory) &&
+                                 Directory.Exists(_lastQueueOutputDirectory)
+            ? _lastQueueOutputDirectory
+            : sourceDirectory;
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_AddToQueue,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(SelectedClip!.InFileInfo.FullName)!),
-            SuggestedFileName = defaultName,
+            SuggestedStartLocation = new DesktopDialogStorageFolder(suggestedDirectory),
+            SuggestedFileName = suggestedName,
             Filters = new List<FileFilter>()
             {
                 new(LocalizationManager.Instance.String_TsFiles, new[] { "ts" }),
@@ -813,13 +832,25 @@ public partial class MainWindowViewModel : ViewModelBase
             DefaultExtension = "ts"
         };
         var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
-        if (result is null) return;
+        if (result?.Path is null) return;
+
+        var outputPath = result.Path.LocalPath;
+        if (ExportQueue.Any(item => PathsEqual(item.OutputFilePath, outputPath)))
+        {
+            await ShowMessageAsync(
+                string.Format(
+                    LocalizationManager.Instance.String_ExportQueue_DuplicateOutputPath,
+                    outputPath),
+                LocalizationManager.Instance.String_Error,
+                MessageBoxIcon.Error);
+            return;
+        }
 
         var item = new ExportQueueItem
         {
             QueueItemId = Interlocked.Increment(ref _queueIdCounter),
             SourceFilePath = SelectedClip!.InFileInfo.FullName,
-            OutputFilePath = result!.Path!.LocalPath,
+            OutputFilePath = outputPath,
             StartPosition = SelectedClip!.StartPosition,
             EndPosition = SelectedClip!.EndPosition,
             SourceFileName = Path.GetFileName(SelectedClip!.InFileInfo.FullName),
@@ -830,6 +861,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 - SelectedClip!.StartPosition),
         };
         ExportQueue.Add(item);
+        _lastQueueOutputDirectory = Path.GetDirectoryName(outputPath);
         OnPropertyChanged(nameof(HasExportQueue));
         OnPropertyChanged(nameof(ExportQueueCount));
         AddToQueueCommand.NotifyCanExecuteChanged();
@@ -861,6 +893,21 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     private bool HasExportQueueItems => ExportQueue.Count > 0;
+
+    private static string GenerateQueueFileName(
+        string sourceFilePath,
+        double startTimeSeconds,
+        double endTimeSeconds) =>
+        Path.GetFileNameWithoutExtension(sourceFilePath) +
+        $"_({CommonUtil.FormatSeconds(startTimeSeconds, true)}-{CommonUtil.FormatSeconds(endTimeSeconds, true)}).ts";
+
+    private static bool FileNamesEqual(string left, string right) => string.Equals(
+        left, right,
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+
+    private static bool PathsEqual(string left, string right) => string.Equals(
+        Path.GetFullPath(left), Path.GetFullPath(right),
+        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
     [RelayCommand(CanExecute = nameof(HasExportQueueItems))]
     private async Task BatchExportQueueAsync()

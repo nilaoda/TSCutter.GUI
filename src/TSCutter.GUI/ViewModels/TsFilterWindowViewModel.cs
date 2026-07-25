@@ -34,10 +34,12 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
     {
         _dialogService = dialogService;
         StatusText = LocalizationManager.Instance.String_TsFilter_Status_Ready;
+        App.LocalizationService.LanguageChanged += OnLanguageChanged;
     }
 
     public bool? DialogResult { get; }
     public string FilePath { get; set; } = string.Empty;
+    public string WindowTitle => $"{LocalizationManager.Instance.String_TsFilter_Title} - {Path.GetFileName(FilePath)}";
     public ObservableCollection<TsFilterPidItem> Pids { get; } = [];
     public string FileSizeText => File.Exists(FilePath)
         ? CommonUtil.FormatFileSize(new FileInfo(FilePath).Length)
@@ -385,6 +387,7 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
         if (_isClosing)
             return;
         _isClosing = true;
+        App.LocalizationService.LanguageChanged -= OnLanguageChanged;
         _generation++;
         _cancellationTokenSource?.Cancel();
         foreach (var row in _allPids)
@@ -394,4 +397,6 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
         _catalog = null;
         _plan = null;
     }
+
+    private void OnLanguageChanged() => OnPropertyChanged(nameof(WindowTitle));
 }

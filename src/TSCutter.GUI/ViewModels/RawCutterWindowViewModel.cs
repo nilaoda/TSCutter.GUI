@@ -24,14 +24,19 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
     private bool _isOutputting; // 防止输出命令重入
     private CancellationTokenSource? _statusCts; // 状态消息自动消失计时
     private bool _syncingSlider; // 防止滑块与输入框循环同步
+    private bool _isClosing;
 
     public RawCutterWindowViewModel(IDialogService dialogService)
     {
         _dialogService = dialogService;
+        App.LocalizationService.LanguageChanged += OnLanguageChanged;
     }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WindowTitle))]
     private string _filePath = string.Empty;
+
+    public string WindowTitle => $"{LocalizationManager.Instance.String_RawCutter_Title} - {Path.GetFileName(FilePath)}";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SyncInfo))]
@@ -361,8 +366,23 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
 
     public void OnClosing(CancelEventArgs e)
     {
-        _statusCts?.Cancel();
+        ReleaseForClose();
     }
+
+    public void OnClosed() => ReleaseForClose();
+
+    private void ReleaseForClose()
+    {
+        if (_isClosing)
+            return;
+        _isClosing = true;
+        App.LocalizationService.LanguageChanged -= OnLanguageChanged;
+        _statusCts?.Cancel();
+        _statusCts?.Dispose();
+        _statusCts = null;
+    }
+
+    private void OnLanguageChanged() => OnPropertyChanged(nameof(WindowTitle));
 
     public event Action? RequestClose;
 

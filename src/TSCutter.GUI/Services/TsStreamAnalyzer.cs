@@ -22,7 +22,11 @@ public sealed class TsStreamAnalyzer
     private const double PcrGapThresholdSeconds = 0.5;
     private const double TimestampJumpThresholdSeconds = 10;
     private const long TimelineRepairBoundary90k = 22_500;
+    private const long TimelineImmediateCandidateThreshold90k = 90_000;
+    private const int PcrRateSampleWindow = 31;
+    private const int MinimumPcrRateSamples = 5;
     private const double AvDriftThresholdSeconds = 0.5;
+    private const int AvSyncBaselineSampleCount = 5;
     private const int MaxTimelineBuckets = 4_096;
     private const double InitialTimelineBucketSeconds = 1;
     private static readonly Encoding Gb18030Encoding = CreateGb18030Encoding();
@@ -472,17 +476,44 @@ public sealed class TsStreamAnalyzer
             var clockDelta = pcr - state.LastPcr90k;
             // 每个 PCR PID 独立维护轻量包速率基线，使多节目 TS 的非图表参考节目也能给出候选提示。
             // 仅使用短且正向的正常间隔更新基线，与专用修复器筛选中位速率的条件保持一致。
-            if (state.PcrTicksPerPacket > 0 && packetDelta > 0 &&
-                Math.Abs(clockDelta - packetDelta * state.PcrTicksPerPacket) >= TimelineRepairBoundary90k)
+            if (packetDelta > 0 && state.PcrRateSampleCount >= MinimumPcrRateSamples)
             {
-                _result.TimelineHasRepairCandidate = true;
+                var baseline = state.GetPcrRateMedian();
+                var rateError = Math.Abs(clockDelta - packetDelta * baseline);
+                if (rateError >= TimelineImmediateCandidateThreshold90k)
+                {
+                    // 明显的单次时钟跳变应立即保留候选，即使该间隔本身不属于正常 PCR 采样范围。
+                    _result.TimelineHasRepairCandidate = true;
+                }
             }
+
             if (packetDelta > 0 && clockDelta > 0 && clockDelta < 45_000)
             {
                 var currentRate = clockDelta / (double)packetDelta;
-                state.PcrTicksPerPacket = state.PcrTicksPerPacket <= 0
-                    ? currentRate
-                    : state.PcrTicksPerPacket * 0.875 + currentRate * 0.125;
+                // PCR 间隔受 TS 复用调度影响很大。使用近期正常样本的中位数建立基线，
+                // 不让单个分片边界或短间隔样本污染后续判断；异常样本不回灌窗口。
+                if (state.PcrRateSampleCount >= MinimumPcrRateSamples)
+                {
+                    var baseline = state.GetPcrRateMedian();
+                    var rateError = Math.Abs(clockDelta - packetDelta * baseline);
+                    if (rateError >= TimelineRepairBoundary90k)
+                    {
+                        // 单个 PCR 调度离群点不足以说明时间轴损坏；要求连续多个异常
+                        // 样本，避免 HLS 分片边界或复用抖动触发误报。
+                        state.PcrRateAnomalyCount++;
+                        if (state.PcrRateAnomalyCount >= 3)
+                            _result.TimelineHasRepairCandidate = true;
+                    }
+                    else
+                    {
+                        state.PcrRateAnomalyCount = 0;
+                        state.AddPcrRateSample(currentRate);
+                    }
+                }
+                else
+                {
+                    state.AddPcrRateSample(currentRate);
+                }
             }
         }
         state.LastPcrPacketIndex = _packetIndex;
@@ -1236,14 +1267,11 @@ public sealed class TsStreamAnalyzer
             {
                 clock.VideoPid = pid;
                 clock.VideoPts90k = pts;
-                if (clock.FirstVideoPts90k == long.MinValue)
-                    clock.FirstVideoPts90k = pts;
             }
         }
         else if (TsStreamTypes.IsAudio(streamType, _result.Pids[pid].SupplementaryStreamType))
         {
             clock.AudioPts90k[pid] = pts;
-            clock.FirstAudioPts90k.TryAdd(pid, pts);
         }
         else
         {
@@ -1255,20 +1283,26 @@ public sealed class TsStreamAnalyzer
     private void CheckAvSyncAtPcr(int programNumber, long pcr, long fileOffset)
     {
         if (!_programClocks.TryGetValue(programNumber, out var clock) ||
-            clock.FirstVideoPts90k == long.MinValue ||
+            clock.VideoPts90k == long.MinValue ||
             (clock.LastSyncSamplePcr90k != long.MinValue && pcr - clock.LastSyncSamplePcr90k < 90_000))
             return;
 
         clock.LastSyncSamplePcr90k = pcr;
         foreach (var pair in clock.AudioPts90k)
         {
-            if (!clock.FirstAudioPts90k.TryGetValue(pair.Key, out var firstAudioPts))
+            if (!clock.AudioSyncStates.TryGetValue(pair.Key, out var syncState))
+            {
+                syncState = new AudioSyncState();
+                clock.AudioSyncStates[pair.Key] = syncState;
+            }
+
+            var currentOffset90k = pair.Value - clock.VideoPts90k;
+            // 文件可能从半个 GOP 开始，首组 PTS 往往不是同一播放时刻；用少量样本中位数
+            // 建立固定偏移基线，可过滤启动离群值且只占每条音轨几十字节内存。
+            if (!syncState.TryGetBaseline(currentOffset90k, out var baselineOffset90k))
                 continue;
 
-            // 分别计算两条轨道从各自起点推进的时长，消除 TS 复用交错顺序造成的瞬时偏移。
-            var videoElapsed = clock.VideoPts90k - clock.FirstVideoPts90k;
-            var audioElapsed = pair.Value - firstAudioPts;
-            var drift = (audioElapsed - videoElapsed) / 90_000.0;
+            var drift = (currentOffset90k - baselineOffset90k) / 90_000.0;
             if (Math.Abs(drift) >= AvDriftThresholdSeconds)
             {
                 var consecutiveCount = clock.SyncDriftCounts.GetValueOrDefault(pair.Key) + 1;
@@ -1278,7 +1312,7 @@ public sealed class TsStreamAnalyzer
                 {
                     AddEvent(TsCheckSeverity.Warning, TsCheckEventType.AvSyncDrift, pair.Key, _packetIndex, fileOffset,
                         TsCheckMessageCode.AvSyncDrift,
-                        [(firstAudioPts - clock.FirstVideoPts90k) / 90.0, (pair.Value - clock.VideoPts90k) / 90.0, drift * 1000],
+                        [baselineOffset90k / 90.0, currentOffset90k / 90.0, drift * 1000],
                         ptsToSeconds(pcr), false);
                     clock.LastDriftReport90k = pcr;
                 }
@@ -1797,7 +1831,10 @@ public sealed class TsStreamAnalyzer
         public long PcrWrapOffset;
         public long LastPcr90k = long.MinValue;
         public long LastPcrPacketIndex = -1;
-        public double PcrTicksPerPacket;
+        private readonly double[] _pcrRateSamples = new double[PcrRateSampleWindow];
+        public int PcrRateSampleCount { get; private set; }
+        public int PcrRateAnomalyCount { get; set; }
+        private int _pcrRateSampleIndex;
         public long LastRawPts = long.MinValue;
         public long PtsWrapOffset;
         public long LastPts90k = long.MinValue;
@@ -1839,10 +1876,32 @@ public sealed class TsStreamAnalyzer
             LastPcr90k = LastPts90k = LastDts90k = long.MinValue;
             PcrWrapOffset = PtsWrapOffset = DtsWrapOffset = 0;
             LastPcrPacketIndex = -1;
-            PcrTicksPerPacket = 0;
+            PcrRateSampleCount = 0;
+            _pcrRateSampleIndex = 0;
+            PcrRateAnomalyCount = 0;
             PesHeaderLength = 0;
             DiscardPes();
             MpegAudioProbeTailLength = 0;
+        }
+
+        public void AddPcrRateSample(double value)
+        {
+            _pcrRateSamples[_pcrRateSampleIndex] = value;
+            _pcrRateSampleIndex = (_pcrRateSampleIndex + 1) % PcrRateSampleWindow;
+            PcrRateSampleCount = Math.Min(PcrRateSampleCount + 1, PcrRateSampleWindow);
+        }
+
+        public double GetPcrRateMedian()
+        {
+            Span<double> values = stackalloc double[PcrRateSampleWindow];
+            for (var index = 0; index < PcrRateSampleCount; index++)
+            {
+                var sourceIndex = (_pcrRateSampleIndex - PcrRateSampleCount + index +
+                                   PcrRateSampleWindow) % PcrRateSampleWindow;
+                values[index] = _pcrRateSamples[sourceIndex];
+            }
+            values[..PcrRateSampleCount].Sort();
+            return values[PcrRateSampleCount / 2];
         }
 
         public void DiscardPes()
@@ -1860,9 +1919,8 @@ public sealed class TsStreamAnalyzer
     {
         public int VideoPid = -1;
         public long VideoPts90k = long.MinValue;
-        public long FirstVideoPts90k = long.MinValue;
         public Dictionary<int, long> AudioPts90k { get; } = [];
-        public Dictionary<int, long> FirstAudioPts90k { get; } = [];
+        public Dictionary<int, AudioSyncState> AudioSyncStates { get; } = [];
         public Dictionary<int, int> SyncDriftCounts { get; } = [];
         public long LastSyncSamplePcr90k = long.MinValue;
         public long LastDriftReport90k = long.MinValue;
@@ -1870,12 +1928,36 @@ public sealed class TsStreamAnalyzer
         public void ResetSync()
         {
             VideoPts90k = long.MinValue;
-            FirstVideoPts90k = long.MinValue;
             AudioPts90k.Clear();
-            FirstAudioPts90k.Clear();
+            AudioSyncStates.Clear();
             SyncDriftCounts.Clear();
             LastSyncSamplePcr90k = long.MinValue;
             LastDriftReport90k = long.MinValue;
+        }
+    }
+
+    private sealed class AudioSyncState
+    {
+        private readonly long[] _baselineSamples = new long[AvSyncBaselineSampleCount];
+        private int _sampleCount;
+        private long _baselineOffset90k;
+
+        public bool TryGetBaseline(long currentOffset90k, out long baselineOffset90k)
+        {
+            if (_sampleCount < AvSyncBaselineSampleCount)
+            {
+                _baselineSamples[_sampleCount++] = currentOffset90k;
+                if (_sampleCount == AvSyncBaselineSampleCount)
+                {
+                    Span<long> sorted = stackalloc long[AvSyncBaselineSampleCount];
+                    _baselineSamples.CopyTo(sorted);
+                    sorted.Sort();
+                    _baselineOffset90k = sorted[AvSyncBaselineSampleCount / 2];
+                }
+            }
+
+            baselineOffset90k = _baselineOffset90k;
+            return _sampleCount >= AvSyncBaselineSampleCount;
         }
     }
 

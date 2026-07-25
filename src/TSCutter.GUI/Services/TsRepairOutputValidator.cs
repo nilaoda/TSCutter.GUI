@@ -5,7 +5,7 @@ using TSCutter.GUI.Models;
 namespace TSCutter.GUI.Services;
 
 /// <summary>
-/// 在修复结果写盘时同步检查所选 PID，不保存事件、时间轴或媒体负载。
+/// 在修复结果写盘时同步检查实际输出 PID，不保存事件、时间轴或媒体负载。
 /// </summary>
 internal sealed class TsRepairOutputValidator(IReadOnlySet<int> selectedPids)
 {

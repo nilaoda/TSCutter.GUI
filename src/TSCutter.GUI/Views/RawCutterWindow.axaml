@@ -12,9 +12,9 @@
         d:DataContext="{x:Static local:App.RawCutterDialog}"
         CanMinimize="False"
         CanMaximize="False"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="CenterScreen"
         x:DataType="viewModels:RawCutterWindowViewModel"
-        Title="{DynamicResource String.RawCutter.Title}">
+        Title="{Binding WindowTitle}">
 
     <Window.Styles>
         <Style Selector="TextBlock.Label">

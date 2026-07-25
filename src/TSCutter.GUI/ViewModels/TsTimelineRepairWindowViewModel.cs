@@ -41,7 +41,10 @@ public partial class TsTimelineRepairWindowViewModel : ViewModelBase, IModalDial
     public ObservableCollection<TsTimelineRepairIssueView> Issues { get; } = [];
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WindowTitle))]
     private string _filePath = string.Empty;
+
+    public string WindowTitle => $"{LocalizationManager.Instance.String_TsTimelineRepair_Title} - {Path.GetFileName(FilePath)}";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanRepair))]
@@ -321,6 +324,7 @@ public partial class TsTimelineRepairWindowViewModel : ViewModelBase, IModalDial
 
     private void OnLanguageChanged()
     {
+        OnPropertyChanged(nameof(WindowTitle));
         RebuildIssueRows();
         if (_analysis is not null)
         {

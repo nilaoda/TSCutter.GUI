@@ -6,9 +6,9 @@
         mc:Ignorable="d"
         x:Class="TSCutter.GUI.Views.TsFilterWindow"
         x:DataType="viewModels:TsFilterWindowViewModel"
-        Title="{DynamicResource String.TsFilter.Title}"
+        Title="{Binding WindowTitle}"
         Width="860" Height="560" MinWidth="700" MinHeight="440"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterScreen">
     <Grid Margin="12" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
         <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
             <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="4">

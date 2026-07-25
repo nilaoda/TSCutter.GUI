@@ -45,6 +45,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     public bool? DialogResult { get; }
     public ObservableCollection<TsRepairSourceItem> Sources { get; } = [];
     public ObservableCollection<TsRepairTrackItem> Tracks { get; } = [];
+    public ObservableCollection<TsRepairLargeGapItem> LargeGaps { get; } = [];
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(RemoveSourceCommand))]
@@ -52,21 +53,30 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(AnalyzeCommand))]
+    [NotifyPropertyChangedFor(nameof(WindowTitle))]
     private TsRepairSourceItem? _selectedReference;
+
+    public string WindowTitle => SelectedReference is null
+        ? _text.Strings.String_TsRepair_Title
+        : $"{_text.Strings.String_TsRepair_Title} - {SelectedReference.FileName}";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanAnalyze))]
     [NotifyPropertyChangedFor(nameof(CanOutput))]
     [NotifyPropertyChangedFor(nameof(CanCancel))]
     [NotifyPropertyChangedFor(nameof(CanConfigureTimeline))]
+    [NotifyPropertyChangedFor(nameof(IsLargeGapPromptVisible), nameof(CanMatchLargeGaps))]
     [NotifyCanExecuteChangedFor(nameof(AddSourcesCommand), nameof(RemoveSourceCommand), nameof(AnalyzeCommand),
-        nameof(OutputCommand), nameof(CancelCommand), nameof(OpenRepairMapCommand))]
+        nameof(OutputCommand), nameof(CancelCommand), nameof(OpenRepairMapCommand),
+        nameof(MatchLargeGapsCommand))]
     private bool _isBusy;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanOutput))]
     [NotifyPropertyChangedFor(nameof(CanOpenRepairMap))]
-    [NotifyCanExecuteChangedFor(nameof(OutputCommand), nameof(OpenRepairMapCommand))]
+    [NotifyPropertyChangedFor(nameof(IsLargeGapPromptVisible), nameof(CanMatchLargeGaps))]
+    [NotifyCanExecuteChangedFor(nameof(OutputCommand), nameof(OpenRepairMapCommand),
+        nameof(MatchLargeGapsCommand))]
     private bool _hasAnalysis;
 
     [ObservableProperty]
@@ -75,6 +85,35 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(TimelineNormalizationNote))]
     private bool _autoNormalizeTimeline = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TimelineNormalizationNote))]
+    private bool _repairTimelineOnOutput = true;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsLargeGapPromptVisible), nameof(CanOutput))]
+    [NotifyCanExecuteChangedFor(nameof(MatchLargeGapsCommand), nameof(OutputCommand))]
+    private bool _isLargeGapMatchingCompleted;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasLargeGaps), nameof(IsLargeGapPromptVisible),
+        nameof(LargeGapMatchButtonText))]
+    private int _largeGapCount;
+
+    [ObservableProperty]
+    private int _selectedRepairTabIndex;
+
+    [ObservableProperty]
+    private string _largeGapSummaryText = string.Empty;
+
+    [ObservableProperty]
+    private bool _isLargeGapSummarySuccess;
+
+    [ObservableProperty]
+    private bool _isLargeGapSummaryWarning;
+
+    [ObservableProperty]
+    private bool _isLargeGapSummaryError;
 
     [ObservableProperty]
     private double _percent;
@@ -103,6 +142,18 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     private string _outputVerificationText = string.Empty;
 
     [ObservableProperty]
+    private string _outputTimelineText = string.Empty;
+
+    [ObservableProperty]
+    private bool _hasOutputTimelineSummary;
+
+    [ObservableProperty]
+    private bool _isOutputTimelinePassed;
+
+    [ObservableProperty]
+    private bool _hasOutputTimelineWarnings;
+
+    [ObservableProperty]
     private bool _isOutputVerificationPassed;
 
     [ObservableProperty]
@@ -128,13 +179,34 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     public bool IsAnalysisNotRepairable => AnalysisIssueCount > 0 && AnalysisRepairableCount == 0;
 
     public bool CanAnalyze => !IsBusy && Sources.Count >= 2 && SelectedReference is not null;
-    public bool CanOutput => !IsBusy && HasAnalysis && Tracks.Any(item => item.IsSelected);
+    public bool CanOutput => !IsBusy && HasAnalysis &&
+                             (HasSelectedStandardRepair() || HasSelectedLargeGapRepair());
     public bool CanCancel => IsBusy;
     public bool CanOpenRepairMap => !IsBusy && HasAnalysis;
     public bool CanConfigureTimeline => !IsBusy;
+    public bool HasLargeGaps => LargeGapCount > 0;
+    public bool IsLargeGapPromptVisible => HasAnalysis && HasLargeGaps &&
+                                           !IsLargeGapMatchingCompleted && !IsBusy;
+    public bool CanMatchLargeGaps => !IsBusy && HasAnalysis && HasLargeGaps &&
+                                     !IsLargeGapMatchingCompleted;
+    public string LargeGapMatchButtonText => string.Format(
+        _text.Strings.String_TsRepair_LargeGap_MatchCount, LargeGapCount);
     public string TimelineNormalizationNote => AutoNormalizeTimeline
-        ? _text.Strings.String_TsRepair_TimelineNormalizationNote
+        ? RepairTimelineOnOutput
+            ? _text.Strings.String_TsRepair_TimelineNormalizationAndOutputNote
+            : _text.Strings.String_TsRepair_TimelineNormalizationNote
         : _text.Strings.String_TsRepair_TimelineNormalizationDisabledNote;
+
+    private bool HasSelectedStandardRepair() => Tracks.Any(item =>
+        item.Analysis.RepairableIssueCount > 0);
+
+    private bool HasSelectedLargeGapRepair()
+    {
+        if (!IsLargeGapMatchingCompleted)
+            return false;
+        return LargeGaps.Any(item => item.IsSelected &&
+            item.Analysis.Candidates.Any(candidate => candidate.Tracks.Count > 0));
+    }
 
     [RelayCommand(CanExecute = nameof(CanModifySources))]
     private async Task AddSourcesAsync()
@@ -202,6 +274,11 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         _analysis = null;
         _lastOutputResult = null;
         Tracks.Clear();
+        LargeGaps.Clear();
+        LargeGapCount = 0;
+        LargeGapSummaryText = string.Empty;
+        IsLargeGapMatchingCompleted = false;
+        SelectedRepairTabIndex = 0;
         Percent = 0;
         ProgressText = "0 / 0";
         SpeedText = $"{CommonUtil.FormatFileSize(0)}/s";
@@ -235,11 +312,15 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                 return;
             UpdateSourceRows(_analysis);
             BuildTrackRows(_analysis);
+            BuildLargeGapRows(_analysis);
+            if (_analysis.LargeGaps.Count > 0)
+                SelectedRepairTabIndex = 1;
             HasAnalysis = true;
             Percent = 100;
             AnalysisIssueCount = _analysis.TotalGapCount;
             AnalysisRepairableCount = _analysis.RepairableGapCount;
             IsAnalysisSummaryVisible = true;
+            RefreshLargeGapSummary();
         }
         catch (OperationCanceledException)
         {
@@ -290,6 +371,65 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         _ = ShowIntensiveStatusAfterDelayAsync(cancellation);
     }
 
+    [RelayCommand(CanExecute = nameof(CanMatchLargeGaps))]
+    private async Task MatchLargeGapsAsync()
+    {
+        var analysis = _analysis;
+        if (analysis is null || analysis.LargeGaps.Count == 0)
+            return;
+
+        var cancellationTokenSource = new CancellationTokenSource();
+        _cancellationTokenSource?.Dispose();
+        _cancellationTokenSource = cancellationTokenSource;
+        IsBusy = true;
+        IsAnalysisSummaryVisible = false;
+        IsOutputSummaryVisible = false;
+        Percent = 0;
+        try
+        {
+            var progress = new Progress<TsMultiSourceProgress>(value =>
+            {
+                if (_isClosing)
+                    return;
+                Percent = value.Percent;
+                ProgressText = $"{CommonUtil.FormatFileSize(value.BytesProcessed)} / " +
+                               CommonUtil.FormatFileSize(value.FileSize);
+                SpeedText = $"{CommonUtil.FormatFileSize(value.BytesPerSecond)}/s";
+                UpdateAnalysisStatus(value);
+            });
+            await _repairService.MatchLargeGapsAsync(
+                analysis, progress, cancellationTokenSource.Token);
+            if (_isClosing)
+                return;
+            IsLargeGapMatchingCompleted = true;
+            Percent = 100;
+            BuildLargeGapRows(analysis);
+            RefreshLargeGapSummary();
+            SelectedRepairTabIndex = 1;
+            IsAnalysisSummaryVisible = true;
+            RefreshOpenRepairMap();
+        }
+        catch (OperationCanceledException)
+        {
+            if (!_isClosing)
+                StatusText = _text.Strings.String_TsRepair_Status_Cancelled;
+        }
+        catch (Exception exception)
+        {
+            if (!_isClosing)
+                StatusText = string.Format(
+                    _text.Strings.String_TsRepair_Status_Failed, exception.Message);
+        }
+        finally
+        {
+            if (ReferenceEquals(_cancellationTokenSource, cancellationTokenSource))
+                _cancellationTokenSource = null;
+            cancellationTokenSource.Dispose();
+            IsBusy = false;
+            NotifyCommands();
+        }
+    }
+
     private async Task ShowIntensiveStatusAfterDelayAsync(CancellationTokenSource cancellation)
     {
         var token = cancellation.Token;
@@ -330,6 +470,8 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                     _text.Strings.String_TsRepair_Status_ScanningDonor,
                 TsMultiSourceProgressPhase.DonorMatchingScan =>
                     _text.Strings.String_TsRepair_Status_RescanningDonor,
+                TsMultiSourceProgressPhase.LargeGapMatching =>
+                    _text.Strings.String_TsRepair_Status_MatchingLargeGaps,
                 _ => _text.Strings.String_TsRepair_Status_Analyzing
             };
         return string.Format(
@@ -355,12 +497,11 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         var analysis = _analysis;
         if (analysis is null)
             return;
-        var selectedPids = Tracks.Where(item => item.IsSelected)
-            .Select(item => item.Analysis.ReferencePid)
-            .ToHashSet();
-        if (selectedPids.Count == 0)
+        // 多源修复始终保留参考源的全部轨道；用户只决定是否写入已匹配的大段缺口。
+        var selectedPids = Tracks.Select(item => item.Analysis.ReferencePid).ToHashSet();
+        if (!HasSelectedStandardRepair() && !HasSelectedLargeGapRepair())
         {
-            StatusText = _text.Strings.String_TsRepair_Status_NoTrack;
+            StatusText = _text.Strings.String_TsRepair_Status_NoRepairSelected;
             return;
         }
 
@@ -395,7 +536,9 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         StatusText = _text.Strings.String_TsRepair_Status_Outputting;
         try
         {
-            var plan = _repairService.BuildOutputPlan(analysis, selectedPids, KeepServiceInformation);
+            var plan = _repairService.BuildOutputPlan(
+                analysis, selectedPids, KeepServiceInformation, GetSelectedLargeGapOffsets(),
+                RepairTimelineOnOutput);
             var progress = new Progress<TsFilterProgress>(value =>
             {
                 if (_isClosing)
@@ -445,21 +588,25 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         }
     }
 
-    [RelayCommand]
-    private void SelectAll()
+    [RelayCommand(CanExecute = nameof(CanSelectAllLargeGaps))]
+    private void SelectAllLargeGaps()
     {
-        foreach (var item in Tracks)
+        foreach (var item in LargeGaps.Where(item => item.CanSelect))
             item.IsSelected = true;
-        OutputCommand.NotifyCanExecuteChanged();
     }
 
-    [RelayCommand]
-    private void ClearAll()
+    private bool CanSelectAllLargeGaps() => !IsBusy && IsLargeGapMatchingCompleted &&
+                                            LargeGaps.Any(item => item.CanSelect && !item.IsSelected);
+
+    [RelayCommand(CanExecute = nameof(CanClearAllLargeGaps))]
+    private void ClearAllLargeGaps()
     {
-        foreach (var item in Tracks)
+        foreach (var item in LargeGaps)
             item.IsSelected = false;
-        OutputCommand.NotifyCanExecuteChanged();
     }
+
+    private bool CanClearAllLargeGaps() => !IsBusy && IsLargeGapMatchingCompleted &&
+                                           LargeGaps.Any(item => item.IsSelected);
 
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel() => _cancellationTokenSource?.Cancel();
@@ -470,16 +617,17 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         var analysis = _analysis;
         if (analysis is null)
             return;
-        var selectedPids = Tracks.Where(item => item.IsSelected)
-            .Select(item => item.Analysis.ReferencePid)
-            .ToHashSet();
+        var selectedPids = Tracks.Select(item => item.Analysis.ReferencePid).ToHashSet();
+        var selectedLargeGapOffsets = GetSelectedLargeGapOffsets();
         if (_repairMapViewModel is not null && _dialogService.Activate(_repairMapViewModel))
         {
-            _repairMapViewModel.Refresh(analysis, selectedPids, _lastOutputResult);
+            _repairMapViewModel.Refresh(
+                analysis, selectedPids, selectedLargeGapOffsets, _lastOutputResult);
             return;
         }
 
-        _repairMapViewModel = new TsRepairMapWindowViewModel(analysis, selectedPids, _lastOutputResult);
+        _repairMapViewModel = new TsRepairMapWindowViewModel(
+            analysis, selectedPids, selectedLargeGapOffsets, _lastOutputResult);
         _dialogService.Show(this, _repairMapViewModel);
     }
 
@@ -493,11 +641,17 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         var analysis = _analysis;
         if (analysis is null || _repairMapViewModel is null)
             return;
-        var selectedPids = Tracks.Where(item => item.IsSelected)
-            .Select(item => item.Analysis.ReferencePid)
-            .ToHashSet();
-        _repairMapViewModel.Refresh(analysis, selectedPids, _lastOutputResult, preferActual);
+        var selectedPids = Tracks.Select(item => item.Analysis.ReferencePid).ToHashSet();
+        _repairMapViewModel.Refresh(
+            analysis, selectedPids, GetSelectedLargeGapOffsets(),
+            _lastOutputResult, preferActual);
     }
+
+    private IReadOnlySet<long> GetSelectedLargeGapOffsets() =>
+        IsLargeGapMatchingCompleted
+            ? LargeGaps.Where(item => item.IsSelected)
+                .Select(item => item.Analysis.ReferenceInsertOffset).ToHashSet()
+            : new HashSet<long>();
 
     private void BuildTrackRows(TsMultiSourceAnalysisResult analysis)
     {
@@ -512,10 +666,135 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                 StreamText = FormatTrack(track),
                 RepairSourcesText = FormatRepairSources(track)
             };
-            row.SelectionChanged += OutputCommand.NotifyCanExecuteChanged;
-            row.SelectionChanged += RefreshOpenRepairMap;
             Tracks.Add(row);
         }
+    }
+
+    private void BuildLargeGapRows(TsMultiSourceAnalysisResult analysis)
+    {
+        var previousSelections = LargeGaps.ToDictionary(
+            item => item.Analysis.ReferenceInsertOffset,
+            item => (item.IsSelected, item.Status));
+        LargeGaps.Clear();
+        var originPts90k = analysis.LargeGapTimelineStartPts90k;
+        foreach (var gap in analysis.LargeGaps.OrderBy(item => item.ReferenceMissingStartPts90k))
+        {
+            var startSeconds = originPts90k == long.MinValue
+                ? 0
+                : Math.Max(0, (gap.ReferenceMissingStartPts90k - originPts90k) / 90_000.0);
+            var endSeconds = startSeconds + gap.MissingDuration90k / 90_000.0;
+            var trackTexts = gap.Tracks
+                .Select(boundary => analysis.Tracks.FirstOrDefault(track =>
+                    track.ReferencePid == boundary.ReferencePid))
+                .Where(track => track is not null)
+                .Select(track => $"0x{track!.ReferencePid:X4} {FormatTrack(track)}")
+                .ToArray();
+            var status = !IsLargeGapMatchingCompleted
+                ? TsRepairLargeGapViewStatus.Pending
+                : gap.IsFullyRepairable
+                    ? TsRepairLargeGapViewStatus.Full
+                    : gap.IsPartiallyRepairable
+                        ? TsRepairLargeGapViewStatus.Partial
+                        : TsRepairLargeGapViewStatus.None;
+            var sourceText = gap.Candidates.Count == 0
+                ? _text.Strings.String_TsRepair_LargeGap_NoSource
+                : string.Join(Environment.NewLine, gap.Candidates
+                    .OrderByDescending(candidate => candidate.Tracks.Count)
+                    .Select(candidate => Path.GetFileName(candidate.SourcePath))
+                    .Distinct(StringComparer.Ordinal));
+            var resultText = status switch
+            {
+                TsRepairLargeGapViewStatus.Pending =>
+                    _text.Strings.String_TsRepair_LargeGap_ResultPending,
+                TsRepairLargeGapViewStatus.Full =>
+                    _text.Strings.String_TsRepair_LargeGap_ResultFull,
+                TsRepairLargeGapViewStatus.Partial =>
+                    _text.Strings.String_TsRepair_LargeGap_ResultPartial,
+                _ => _text.Strings.String_TsRepair_LargeGap_ResultNone
+            };
+            var row = new TsRepairLargeGapItem
+            {
+                Analysis = gap,
+                TimeText = string.Format(
+                    _text.Strings.String_TsRepair_LargeGap_TimeRange,
+                    TsCheckEvent.FormatTime(startSeconds), TsCheckEvent.FormatTime(endSeconds)),
+                DurationText = TsCheckEvent.FormatTime(gap.MissingDuration90k / 90_000.0),
+                TracksText = string.Join(
+                    _text.Strings.String_TsRepair_Status_ItemSeparator, trackTexts),
+                SourceText = sourceText,
+                ResultText = resultText,
+                Status = status,
+                // 首次完成匹配时自动选择所有可安全写入的完整或部分候选，使其与普通
+                // 错误的自动修复行为一致；后续因语言切换等刷新列表时保留用户手工选择。
+                IsSelected = previousSelections.TryGetValue(
+                                 gap.ReferenceInsertOffset, out var previous) &&
+                             previous.Status != TsRepairLargeGapViewStatus.Pending
+                    ? previous.IsSelected
+                    : status is TsRepairLargeGapViewStatus.Full or
+                        TsRepairLargeGapViewStatus.Partial
+            };
+            row.SelectionChanged += OnLargeGapSelectionChanged;
+            LargeGaps.Add(row);
+        }
+        LargeGapCount = LargeGaps.Count;
+        NotifyLargeGapSelectionCommands();
+    }
+
+    private void OnLargeGapSelectionChanged()
+    {
+        OutputCommand.NotifyCanExecuteChanged();
+        NotifyLargeGapSelectionCommands();
+        RefreshOpenRepairMap();
+    }
+
+    private void NotifyLargeGapSelectionCommands()
+    {
+        SelectAllLargeGapsCommand.NotifyCanExecuteChanged();
+        ClearAllLargeGapsCommand.NotifyCanExecuteChanged();
+    }
+
+    private void RefreshLargeGapSummary()
+    {
+        IsLargeGapSummarySuccess = false;
+        IsLargeGapSummaryWarning = false;
+        IsLargeGapSummaryError = false;
+        if (_analysis is not { } analysis || analysis.LargeGaps.Count == 0)
+        {
+            LargeGapSummaryText = string.Empty;
+            return;
+        }
+
+        var durationText = TsCheckEvent.FormatTime(
+            analysis.LargeGapDuration90k / 90_000.0);
+        if (!IsLargeGapMatchingCompleted)
+        {
+            LargeGapSummaryText = string.Format(
+                _text.Strings.String_TsRepair_LargeGap_SummaryDetected,
+                analysis.LargeGaps.Count, durationText);
+            IsLargeGapSummaryWarning = true;
+            return;
+        }
+
+        var fullCount = analysis.LargeGaps.Count(item => item.IsFullyRepairable);
+        var partialCount = analysis.LargeGaps.Count(item => item.IsPartiallyRepairable);
+        if (fullCount + partialCount == 0)
+        {
+            LargeGapSummaryText = string.Format(
+                _text.Strings.String_TsRepair_LargeGap_SummaryMatchedNone,
+                analysis.LargeGaps.Count, durationText);
+            IsLargeGapSummaryError = true;
+            return;
+        }
+        var format = fullCount == 0
+            ? _text.Strings.String_TsRepair_LargeGap_SummaryMatchedPartial
+            : partialCount == 0
+                ? _text.Strings.String_TsRepair_LargeGap_SummaryMatchedFull
+                : _text.Strings.String_TsRepair_LargeGap_SummaryMatched;
+        LargeGapSummaryText = fullCount == 0 || partialCount == 0
+            ? string.Format(format, analysis.LargeGaps.Count, Math.Max(fullCount, partialCount), durationText)
+            : string.Format(format, analysis.LargeGaps.Count, fullCount, partialCount, durationText);
+        IsLargeGapSummarySuccess = fullCount == analysis.LargeGaps.Count;
+        IsLargeGapSummaryWarning = !IsLargeGapSummarySuccess;
     }
 
     private string FormatTrack(TsRepairTrackAnalysis track) => _text.FormatStreamType(
@@ -582,6 +861,11 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         IsAnalysisSummaryVisible = false;
         IsOutputSummaryVisible = false;
         Tracks.Clear();
+        LargeGaps.Clear();
+        LargeGapCount = 0;
+        LargeGapSummaryText = string.Empty;
+        IsLargeGapMatchingCompleted = false;
+        SelectedRepairTabIndex = 0;
         foreach (var source in Sources)
         {
             source.ErrorCount = 0;
@@ -601,9 +885,25 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
     {
         if (IsBusy)
             return;
+        if (!value && RepairTimelineOnOutput)
+            RepairTimelineOnOutput = false;
         if (_analysis is not null)
             InvalidateAnalysis();
         else
+            StatusText = GetReadyStatusText();
+    }
+
+    partial void OnRepairTimelineOnOutputChanged(bool value)
+    {
+        if (IsBusy)
+            return;
+        // 输出校正复用匹配阶段采集的参考时间轴；用户开启输出校正时同步打开该分析。
+        if (value && !AutoNormalizeTimeline)
+            AutoNormalizeTimeline = true;
+        OnPropertyChanged(nameof(TimelineNormalizationNote));
+        OnPropertyChanged(nameof(CanOutput));
+        OutputCommand.NotifyCanExecuteChanged();
+        if (_analysis is null)
             StatusText = GetReadyStatusText();
     }
 
@@ -617,7 +917,9 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
 
     private void OnLanguageChanged()
     {
+        OnPropertyChanged(nameof(WindowTitle));
         OnPropertyChanged(nameof(TimelineNormalizationNote));
+        OnPropertyChanged(nameof(LargeGapMatchButtonText));
         if (_analysis is not null)
         {
             UpdateSourceRows(_analysis);
@@ -626,6 +928,8 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                 row.StreamText = FormatTrack(row.Analysis);
                 row.RepairSourcesText = FormatRepairSources(row.Analysis);
             }
+            BuildLargeGapRows(_analysis);
+            RefreshLargeGapSummary();
         }
         if (IsOutputSummaryVisible)
             RefreshOutputSummaryText();
@@ -646,24 +950,39 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
 
     private int _outputRepairedGapCount;
     private int _outputRepairedRegionCount;
+    private int _outputRepairedLargeGapCount;
+    private long _outputRepairedLargeGapDuration90k;
     private long _outputRepairedPacketCount;
     private long _outputBytesWritten;
     private long _outputRemainingErrorCount;
+    private int _outputRepairedTimelineIssueCount;
+    private long _outputRewrittenPcrCount;
+    private long _outputRewrittenTimestampCount;
+    private int _outputRemainingTimelineErrorCount;
+    private int _outputRemainingTimelineWarningCount;
 
     private void SetOutputSummary(TsRepairOutputResult result)
     {
         _outputRepairedGapCount = result.RepairedGapCount;
         _outputRepairedRegionCount = result.RepairedPesRegionCount;
+        _outputRepairedLargeGapCount = result.RepairedLargeGapCount;
+        _outputRepairedLargeGapDuration90k = result.RepairedLargeGapDuration90k;
         _outputRepairedPacketCount = result.RepairedPacketCount;
         _outputBytesWritten = result.FilterResult.BytesWritten;
         _outputRemainingErrorCount = result.RemainingErrorCount;
+        _outputRepairedTimelineIssueCount = result.RepairedTimelineIssueCount;
+        _outputRewrittenPcrCount = result.RewrittenPcrCount;
+        _outputRewrittenTimestampCount = result.RewrittenTimestampCount;
+        _outputRemainingTimelineErrorCount = result.RemainingTimelineErrorCount;
+        _outputRemainingTimelineWarningCount = result.RemainingTimelineWarningCount;
         RefreshOutputSummaryText();
         IsOutputSummaryVisible = true;
     }
 
     private void RefreshOutputSummaryText()
     {
-        if (_outputRepairedGapCount == 0 && _outputRepairedRegionCount == 0)
+        if (_outputRepairedGapCount == 0 && _outputRepairedRegionCount == 0 &&
+            _outputRepairedLargeGapCount == 0 && _outputRepairedTimelineIssueCount == 0)
         {
             OutputSummaryText = string.Format(
                 _text.Strings.String_TsRepair_Status_OutputNoRepair,
@@ -671,7 +990,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         }
         else
         {
-            var repairedItems = new List<string>(2);
+            var repairedItems = new List<string>(4);
             if (_outputRepairedGapCount > 0)
             {
                 repairedItems.Add(string.Format(
@@ -683,6 +1002,19 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                 repairedItems.Add(string.Format(
                     _text.Strings.String_TsRepair_Status_RepairedRegions,
                     _outputRepairedRegionCount));
+            }
+            if (_outputRepairedLargeGapCount > 0)
+            {
+                repairedItems.Add(string.Format(
+                    _text.Strings.String_TsRepair_Status_RepairedLargeGaps,
+                    _outputRepairedLargeGapCount,
+                    TsCheckEvent.FormatTime(_outputRepairedLargeGapDuration90k / 90_000.0)));
+            }
+            if (_outputRepairedTimelineIssueCount > 0)
+            {
+                repairedItems.Add(string.Format(
+                    _text.Strings.String_TsRepair_Status_RepairedTimeline,
+                    _outputRepairedTimelineIssueCount));
             }
             OutputSummaryText = string.Format(
                 _text.Strings.String_TsRepair_Status_OutputSummary,
@@ -698,6 +1030,24 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
             : string.Format(
                 _text.Strings.String_TsRepair_Status_VerificationRemaining,
                 _outputRemainingErrorCount);
+        HasOutputTimelineSummary = _outputRepairedTimelineIssueCount > 0;
+        IsOutputTimelinePassed = HasOutputTimelineSummary &&
+                                 _outputRemainingTimelineErrorCount == 0 &&
+                                 _outputRemainingTimelineWarningCount == 0;
+        HasOutputTimelineWarnings = HasOutputTimelineSummary && !IsOutputTimelinePassed;
+        OutputTimelineText = !HasOutputTimelineSummary
+            ? string.Empty
+            : _outputRemainingTimelineErrorCount == 0 && _outputRemainingTimelineWarningCount == 0
+                ? string.Format(
+                    _text.Strings.String_TsRepair_Status_TimelineRepaired,
+                    _outputRepairedTimelineIssueCount,
+                    _outputRewrittenPcrCount,
+                    _outputRewrittenTimestampCount)
+                : string.Format(
+                    _text.Strings.String_TsRepair_Status_TimelineRepairedWarning,
+                    _outputRepairedTimelineIssueCount,
+                    _outputRemainingTimelineErrorCount,
+                    _outputRemainingTimelineWarningCount);
     }
 
     private string FormatRepairError(TsRepairException exception)
@@ -738,6 +1088,8 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         OutputCommand.NotifyCanExecuteChanged();
         CancelCommand.NotifyCanExecuteChanged();
         OpenRepairMapCommand.NotifyCanExecuteChanged();
+        MatchLargeGapsCommand.NotifyCanExecuteChanged();
+        NotifyLargeGapSelectionCommands();
     }
 
     private static bool PathsEqual(string left, string right) => string.Equals(
@@ -761,6 +1113,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         _lastOutputResult = null;
         CloseRepairMap();
         Tracks.Clear();
+        LargeGaps.Clear();
         Sources.Clear();
     }
 

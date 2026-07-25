@@ -215,7 +215,8 @@ public sealed class TsTimelineRepairService
         long correction = 0;
         foreach (var segment in analysis.Segments)
         {
-            if (segment.PcrPid != pcrPid || packetIndex < segment.StartPacket ||
+            if (!segment.AffectsStreamTimestamps || segment.PcrPid != pcrPid ||
+                packetIndex < segment.StartPacket ||
                 packetIndex >= segment.EndPacketExclusive)
             {
                 continue;
@@ -223,6 +224,89 @@ public sealed class TsTimelineRepairService
             correction += GetTimestampCorrection(segment, packetIndex);
         }
         return correction;
+    }
+
+    /// <summary>
+    /// 在其他工具的单遍输出管线中复用时间轴修复规则。调用方负责先把辅助包换算到
+    /// 参考源原始时钟，再按该包在参考文件中的目标位置调用本类，避免重复应用校正量。
+    /// </summary>
+    internal sealed class OutputPacketRewriter
+    {
+        private readonly TsTimelineRepairAnalysis _analysis;
+        private readonly List<TsTimelineCorrectionSegment> _segments;
+        private readonly Dictionary<int, List<TsTimelineCorrectionSegment>> _streamSegments;
+        private readonly Dictionary<int, OutputPcrState> _pcrStates = [];
+
+        public OutputPacketRewriter(
+            TsTimelineRepairAnalysis analysis,
+            IReadOnlyList<(int Pid, long StartOffset, long EndOffset)>? replacedRanges = null)
+        {
+            _analysis = analysis;
+            _segments = analysis.Segments.Where(segment =>
+            {
+                var startBoundaryOffset = analysis.SyncOffset + segment.StartPacket * PacketSize;
+                var endBoundaryOffset = segment.EndPacketExclusive == long.MaxValue
+                    ? long.MaxValue
+                    : analysis.SyncOffset + segment.EndPacketExclusive * PacketSize;
+                return replacedRanges is null || !replacedRanges.Any(range =>
+                    range.Pid == segment.PcrPid &&
+                    (IsInsideReplacedRange(startBoundaryOffset, range) ||
+                     IsInsideReplacedRange(endBoundaryOffset, range)));
+            }).ToList();
+            // 若大段内容缺失本身造成 PCR 跨越，补回完整内容已经消除了该断点。
+            // 永久阶跃的断点在段首，渐进漂移的闭合断点则在段尾；两端都要判断，且
+            // 补段边界采用闭区间，避免再次施加同一校正而在接缝处制造反向跳变。
+            _streamSegments = BuildStreamSegmentMap(analysis, _segments);
+        }
+
+        private static bool IsInsideReplacedRange(
+            long boundaryOffset,
+            (int Pid, long StartOffset, long EndOffset) range) =>
+            boundaryOffset >= range.StartOffset && boundaryOffset <= range.EndOffset;
+
+        public int RepairedIssueCount => _segments.Count;
+        public long RewrittenPcrCount { get; private set; }
+        public long RewrittenTimestampCount { get; private set; }
+        public int RemainingPcrErrorCount { get; private set; }
+        public int RemainingPcrWarningCount { get; private set; }
+
+        public void ProcessPacket(
+            Span<byte> packet,
+            long referenceFileOffset,
+            bool applyPcrCorrection,
+            bool applyTimestampCorrection)
+        {
+            if (packet[0] != 0x47 || (packet[1] & 0x80) != 0)
+                return;
+
+            var packetIndex = Math.Max(
+                0, (referenceFileOffset - _analysis.SyncOffset) / PacketSize);
+            var pid = ((packet[1] & 0x1F) << 8) | packet[2];
+            if (TryGetPcr(packet, out var rawPcr90k, out var pcrOffset, out var discontinuity))
+            {
+                var state = GetOutputPcrState(_pcrStates, pid);
+                var unwrapped = Unwrap(rawPcr90k, state.LastRawPcr90k, state.WrapOffset90k);
+                state.LastRawPcr90k = rawPcr90k;
+                state.WrapOffset90k = unwrapped - rawPcr90k;
+                var correction = applyPcrCorrection
+                    ? FindCorrection(_segments, pid, packetIndex, unwrapped)
+                    : 0;
+                var corrected = unwrapped + correction;
+                if (correction != 0)
+                {
+                    WritePcrBase(packet.Slice(pcrOffset, 5), corrected);
+                    RewrittenPcrCount++;
+                }
+                var errors = RemainingPcrErrorCount;
+                var warnings = RemainingPcrWarningCount;
+                ValidateOutputPcr(state, corrected, discontinuity, ref errors, ref warnings);
+                RemainingPcrErrorCount = errors;
+                RemainingPcrWarningCount = warnings;
+            }
+
+            if (applyTimestampCorrection && _streamSegments.TryGetValue(pid, out var segments))
+                RewrittenTimestampCount += PatchPacketTimestamps(packet, packetIndex, segments);
+        }
     }
 
     private static async Task<Dictionary<int, List<PcrSample>>> CollectPcrSamplesAsync(
@@ -534,12 +618,14 @@ public sealed class TsTimelineRepairService
     }
 
     private static Dictionary<int, List<TsTimelineCorrectionSegment>> BuildStreamSegmentMap(
-        TsTimelineRepairAnalysis analysis)
+        TsTimelineRepairAnalysis analysis,
+        IReadOnlyList<TsTimelineCorrectionSegment>? sourceSegments = null)
     {
         var result = new Dictionary<int, List<TsTimelineCorrectionSegment>>();
+        var allSegments = sourceSegments ?? analysis.Segments;
         foreach (var program in analysis.CheckResult.Programs.Values)
         {
-            var segments = analysis.Segments
+            var segments = allSegments
                 .Where(item => item.PcrPid == program.PcrPid && item.AffectsStreamTimestamps)
                 .ToList();
             if (segments.Count == 0)

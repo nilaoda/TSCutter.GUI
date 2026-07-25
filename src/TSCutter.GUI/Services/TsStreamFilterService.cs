@@ -84,7 +84,7 @@ public sealed class TsStreamFilterService
         TsFilterPlan plan,
         IProgress<TsFilterProgress>? progress = null,
         CancellationToken cancellationToken = default) =>
-        FilterCoreAsync(sourcePath, outputPath, catalog, plan, null, null, null, null,
+        FilterCoreAsync(sourcePath, outputPath, catalog, plan, null, null, null, null, null, null,
             progress, cancellationToken);
 
     internal Task<TsFilterResult> FilterWithInsertionsAsync(
@@ -93,13 +93,15 @@ public sealed class TsStreamFilterService
         TsCheckResult catalog,
         TsFilterPlan plan,
         IReadOnlyDictionary<long, List<TsPacketInsertion>> insertions,
+        IReadOnlyDictionary<long, List<TsLargeGapInsertion>> largeGapInsertions,
         IReadOnlyList<TsPacketReplacement> replacements,
         IReadOnlySet<long> discardPacketOffsets,
         TsRepairOutputValidator outputValidator,
+        TsTimelineRepairService.OutputPacketRewriter? timelineRewriter,
         IProgress<TsFilterProgress>? progress = null,
         CancellationToken cancellationToken = default) =>
-        FilterCoreAsync(sourcePath, outputPath, catalog, plan, insertions, replacements,
-            discardPacketOffsets, outputValidator, progress, cancellationToken);
+        FilterCoreAsync(sourcePath, outputPath, catalog, plan, insertions, largeGapInsertions, replacements,
+            discardPacketOffsets, outputValidator, timelineRewriter, progress, cancellationToken);
 
     private async Task<TsFilterResult> FilterCoreAsync(
         string sourcePath,
@@ -107,9 +109,11 @@ public sealed class TsStreamFilterService
         TsCheckResult catalog,
         TsFilterPlan plan,
         IReadOnlyDictionary<long, List<TsPacketInsertion>>? insertions,
+        IReadOnlyDictionary<long, List<TsLargeGapInsertion>>? largeGapInsertions,
         IReadOnlyList<TsPacketReplacement>? replacements,
         IReadOnlySet<long>? discardPacketOffsets,
         TsRepairOutputValidator? outputValidator,
+        TsTimelineRepairService.OutputPacketRewriter? timelineRewriter,
         IProgress<TsFilterProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -134,8 +138,29 @@ public sealed class TsStreamFilterService
         Array.Fill(pendingContinuity, -1);
         var continuityOffsets = new int[8192];
         var hasContinuityOffset = new bool[8192];
+        var nextServiceInformationContinuity = new int[8192];
+        var hasServiceInformationContinuity = new bool[8192];
         var activeReplacements = new Dictionary<int, ActiveReplacementWriter>();
         var activeElementaryReplacements = new Dictionary<int, ActiveElementaryReplacementWriter>();
+        var largeGapDiscardRanges = new Dictionary<int, (long StartOffset, long EndOffset)>();
+        var largeGapBoundaryOffsets = largeGapInsertions?.Keys.Order().ToArray() ?? [];
+        var nextWrittenContinuity = new int[8192];
+        var hasWrittenContinuity = new bool[8192];
+        var continuityTrackedLength = 0;
+
+        void CompletePacket(
+            long referenceFileOffset,
+            bool applyPcrCorrection,
+            bool applyTimestampCorrection)
+        {
+            // 辅助包已经在计划阶段落到修复后的参考时间轴，这里只参与最终 PCR
+            // 连续性复核；保留的参考包才应用校正，二者共同维护同一个输出时钟状态。
+            timelineRewriter?.ProcessPacket(
+                outputBuffer.AsSpan(outputLength, PacketSize), referenceFileOffset,
+                applyPcrCorrection, applyTimestampCorrection);
+            outputLength += PacketSize;
+            packetsWritten++;
+        }
 
         try
         {
@@ -151,12 +176,16 @@ public sealed class TsStreamFilterService
             {
                 if (outputLength == 0)
                     return;
+                TrackWrittenContinuity(
+                    outputBuffer.AsSpan(continuityTrackedLength, outputLength - continuityTrackedLength),
+                    nextWrittenContinuity, hasWrittenContinuity);
                 await output.WriteAsync(outputBuffer.AsMemory(0, outputLength), cancellationToken)
                     .ConfigureAwait(false);
                 // 对刚写出的最终字节同步做轻量复检，避免输出完成后再次读取整个文件。
                 outputValidator?.ProcessPackets(outputBuffer.AsSpan(0, outputLength));
                 bytesWritten += outputLength;
                 outputLength = 0;
+                continuityTrackedLength = 0;
             }
 
             async ValueTask EnsurePacketSpaceAsync()
@@ -165,7 +194,9 @@ public sealed class TsStreamFilterService
                     await FlushAsync().ConfigureAwait(false);
             }
 
-            async ValueTask WriteInsertionsAsync(IReadOnlyList<TsPacketInsertion> packetInsertions)
+            async ValueTask WriteInsertionsAsync(
+                IReadOnlyList<TsPacketInsertion> packetInsertions,
+                long referenceFileOffset)
             {
                 foreach (var insertion in packetInsertions)
                 {
@@ -222,8 +253,7 @@ public sealed class TsStreamFilterService
                                 segmentPayloadOffset += copyLength;
                                 synthesizedContinuityCounter =
                                     (synthesizedContinuityCounter + 1) & 0x0F;
-                                outputLength += PacketSize;
-                                packetsWritten++;
+                                CompletePacket(referenceFileOffset, false, false);
                             }
                         }
                         continue;
@@ -259,8 +289,113 @@ public sealed class TsStreamFilterService
                         packet[3] = (byte)((packet[3] & 0xF0) | continuityCounter);
                         if (((packet[3] >> 4) & 0x01) != 0)
                             continuityCounter = (continuityCounter + 1) & 0x0F;
-                        outputLength += PacketSize;
-                        packetsWritten++;
+                        if ((packet[1] & 0x40) != 0)
+                            RewritePesTimestamps(packet, insertion.TimestampOffset90k);
+                        RewritePcrTimestamp(packet, insertion.PcrTimestampOffset90k);
+                        CompletePacket(referenceFileOffset, true, false);
+                    }
+                }
+            }
+
+            async ValueTask WriteLargeGapInsertionsAsync(
+                IReadOnlyList<TsLargeGapInsertion> rangeInsertions,
+                long referenceFileOffset)
+            {
+                // 计划阶段只能从缺口后的参考包反推 CC；不同录制工具的封包数量可能
+                // 模 16 不一致。插入前以实际已写出的最后一包为准，避免在接缝起点造出 miss。
+                TrackWrittenContinuity(
+                    outputBuffer.AsSpan(continuityTrackedLength, outputLength - continuityTrackedLength),
+                    nextWrittenContinuity, hasWrittenContinuity);
+                continuityTrackedLength = outputLength;
+
+                // 整段媒体缺失时不复制辅助源的业务表，以免把其他录制源的节目元数据混入输出。
+                // 缺口结束后业务表的首个包仍需接上参考源缺口前的 CC 序列。
+                foreach (var pid in plan.ServiceInformationPids)
+                {
+                    if (hasServiceInformationContinuity[pid])
+                        pendingContinuity[pid] = nextServiceInformationContinuity[pid];
+                }
+
+                foreach (var insertion in rangeInsertions)
+                {
+                    if (!donorStreams.TryGetValue(insertion.SourcePath, out var donor))
+                    {
+                        donor = new FileStream(
+                            insertion.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                            ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                        donorStreams[insertion.SourcePath] = donor;
+                    }
+
+                    var tracks = insertion.Tracks.ToDictionary(item => item.SourcePid);
+                    var continuityCounters = insertion.Tracks.ToDictionary(
+                        item => item.TargetPid,
+                        item => hasWrittenContinuity[item.TargetPid]
+                            ? nextWrittenContinuity[item.TargetPid]
+                            : item.StartContinuityCounter);
+                    var packetCounts = insertion.Tracks.ToDictionary(item => item.TargetPid, _ => 0);
+                    var payloadPacketCounts = insertion.Tracks.ToDictionary(item => item.TargetPid, _ => 0);
+                    donor.Position = insertion.SourceStartOffset;
+                    while (donor.Position < insertion.SourceEndOffset)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var sourceOffset = donor.Position;
+                        await donor.ReadExactlyAsync(
+                                repairPacket.AsMemory(0, PacketSize), cancellationToken)
+                            .ConfigureAwait(false);
+                        if (repairPacket[0] != 0x47)
+                            throw new TsRepairException(TsRepairErrorCode.SourceChanged);
+                        var sourcePid = ((repairPacket[1] & 0x1F) << 8) | repairPacket[2];
+                        if (!tracks.TryGetValue(sourcePid, out var track) ||
+                            sourceOffset < track.SourceStartOffset ||
+                            sourceOffset >= track.SourceEndOffset)
+                        {
+                            continue;
+                        }
+                        if ((repairPacket[1] & 0x80) != 0)
+                            throw new TsRepairException(TsRepairErrorCode.SourceChanged);
+
+                        await EnsurePacketSpaceAsync().ConfigureAwait(false);
+                        var packet = outputBuffer.AsSpan(outputLength, PacketSize);
+                        repairPacket.CopyTo(packet);
+                        packet[1] = (byte)((packet[1] & 0x60) | ((track.TargetPid >> 8) & 0x1F));
+                        packet[2] = (byte)track.TargetPid;
+                        var continuityCounter = continuityCounters[track.TargetPid];
+                        packet[3] = (byte)((packet[3] & 0xF0) | continuityCounter);
+                        var hasPayload = (((packet[3] >> 4) & 0x03) & 0x01) != 0;
+                        if (hasPayload)
+                        {
+                            continuityCounters[track.TargetPid] = (continuityCounter + 1) & 0x0F;
+                            payloadPacketCounts[track.TargetPid]++;
+                        }
+                        if ((packet[1] & 0x40) != 0)
+                            RewritePesTimestamps(packet, track.TimestampOffset90k);
+                        RewritePcrTimestamp(packet, track.PcrTimestampOffset90k);
+                        packetCounts[track.TargetPid]++;
+                        CompletePacket(referenceFileOffset, true, false);
+                    }
+
+                    foreach (var track in insertion.Tracks)
+                    {
+                        if (packetCounts[track.TargetPid] != track.SourcePacketCount ||
+                            payloadPacketCounts[track.TargetPid] != track.SourcePayloadPacketCount)
+                        {
+                            throw new TsRepairException(TsRepairErrorCode.SourceChanged);
+                        }
+                        // 大段补入结束后沿用实际写出的下一个 CC；后续参考包只应用固定偏移，
+                        // 不会顺手重编号并掩盖参考源中原本存在的其他 continuity 异常。
+                        pendingContinuity[track.TargetPid] = continuityCounters[track.TargetPid];
+                        if (largeGapDiscardRanges.TryGetValue(track.TargetPid, out var existingRange))
+                        {
+                            largeGapDiscardRanges[track.TargetPid] = (
+                                Math.Min(existingRange.StartOffset, track.ReferenceDiscardStartOffset),
+                                Math.Max(existingRange.EndOffset, track.ReferenceDiscardEndOffset));
+                        }
+                        else
+                        {
+                            largeGapDiscardRanges[track.TargetPid] = (
+                                track.ReferenceDiscardStartOffset,
+                                track.ReferenceDiscardEndOffset);
+                        }
                     }
                 }
             }
@@ -299,7 +434,7 @@ public sealed class TsStreamFilterService
                     packet[2] = (byte)replacement.TargetPid;
                     if ((packet[1] & 0x40) != 0)
                         RewritePesTimestamps(packet, replacement.TimestampOffset90k);
-                    RewritePcrTimestamp(packet, replacement.TimestampOffset90k);
+                    RewritePcrTimestamp(packet, replacement.PcrTimestampOffset90k);
                     copiedPackets++;
                 }
                 if (copiedPackets != replacement.PacketCount)
@@ -344,13 +479,14 @@ public sealed class TsStreamFilterService
                 return elementary;
             }
 
-            async ValueTask WriteReplacementPacketAsync(ActiveReplacementWriter writer)
+            async ValueTask WriteReplacementPacketAsync(
+                ActiveReplacementWriter writer,
+                long referenceFileOffset)
             {
                 await EnsurePacketSpaceAsync().ConfigureAwait(false);
                 var packet = outputBuffer.AsSpan(outputLength, PacketSize);
                 writer.CopyNextPacket(packet);
-                outputLength += PacketSize;
-                packetsWritten++;
+                CompletePacket(referenceFileOffset, true, false);
             }
 
             while (true)
@@ -375,7 +511,8 @@ public sealed class TsStreamFilterService
                         absoluteOffset >= endingWriter.Replacement.ReferenceEndOffset)
                     {
                         while (endingWriter.PacketsWritten < endingWriter.Replacement.PacketCount)
-                            await WriteReplacementPacketAsync(endingWriter).ConfigureAwait(false);
+                            await WriteReplacementPacketAsync(endingWriter, absoluteOffset)
+                                .ConfigureAwait(false);
                         pendingContinuity[pid] = endingWriter.NextContinuityCounter;
                         activeReplacements.Remove(pid);
                     }
@@ -388,16 +525,30 @@ public sealed class TsStreamFilterService
                     }
                     // 区域结束点与下一处缺口可能位于同一个参考包。必须先写完前一区域，
                     // 再插入属于当前包之前的缺失内容，才能保持媒体字节的先后顺序。
+                    if (largeGapInsertions is not null &&
+                        largeGapInsertions.TryGetValue(absoluteOffset, out var rangeInsertions))
+                    {
+                        await WriteLargeGapInsertionsAsync(rangeInsertions, absoluteOffset)
+                            .ConfigureAwait(false);
+                    }
                     if (insertions is not null &&
                         insertions.TryGetValue(absoluteOffset, out var packetInsertions))
                     {
-                        await WriteInsertionsAsync(packetInsertions).ConfigureAwait(false);
+                        await WriteInsertionsAsync(packetInsertions, absoluteOffset)
+                            .ConfigureAwait(false);
                     }
 
                     // TEI 包仍占据参考文件的物理包位。候选补包已在同一位置写入后，
                     // 必须跳过这些已确认损坏的原包，否则输出仍会携带坏负载和 TEI 标志。
                     if (discardPacketOffsets?.Contains(absoluteOffset) == true)
                         continue;
+                    if (largeGapDiscardRanges.TryGetValue(pid, out var discardRange) &&
+                        absoluteOffset >= discardRange.StartOffset)
+                    {
+                        if (absoluteOffset < discardRange.EndOffset)
+                            continue;
+                        largeGapDiscardRanges.Remove(pid);
+                    }
 
                     // 先结束前一区域，再启动同一位置开始的新区域，避免相邻替换互相覆盖状态。
                     if (replacementByStart.TryGetValue(absoluteOffset, out var replacement))
@@ -434,7 +585,8 @@ public sealed class TsStreamFilterService
                             (double)writer.Replacement.ReferencePacketCount);
                         targetWritten = Math.Min(targetWritten, writer.Replacement.PacketCount);
                         while (writer.PacketsWritten < targetWritten)
-                            await WriteReplacementPacketAsync(writer).ConfigureAwait(false);
+                            await WriteReplacementPacketAsync(writer, absoluteOffset)
+                                .ConfigureAwait(false);
                         continue;
                     }
                     if (activeElementaryReplacements.TryGetValue(pid, out var elementaryWriter))
@@ -445,8 +597,7 @@ public sealed class TsStreamFilterService
                         var packet = outputBuffer.AsSpan(outputLength, PacketSize);
                         inputBuffer.AsSpan(offset, PacketSize).CopyTo(packet);
                         elementaryWriter.ReplacePayload(packet);
-                        outputLength += PacketSize;
-                        packetsWritten++;
+                        CompletePacket(absoluteOffset, true, true);
                         continue;
                     }
                     var payloadStart = (inputBuffer[offset + 1] & 0x40) != 0;
@@ -476,8 +627,7 @@ public sealed class TsStreamFilterService
                             var copyLength = Math.Min(PacketSize - payloadOffset, section.Length - sectionOffset);
                             section.AsSpan(sectionOffset, copyLength).CopyTo(packet[payloadOffset..]);
                             sectionOffset += copyLength;
-                            outputLength += PacketSize;
-                            packetsWritten++;
+                            CompletePacket(absoluteOffset, false, false);
                             firstPacket = false;
                         }
                     }
@@ -486,6 +636,9 @@ public sealed class TsStreamFilterService
                         await EnsurePacketSpaceAsync().ConfigureAwait(false);
                         if (!TryWritePcrOnlyPacket(inputBuffer.AsSpan(offset, PacketSize), outputBuffer, ref outputLength))
                             continue;
+                        timelineRewriter?.ProcessPacket(
+                            outputBuffer.AsSpan(outputLength - PacketSize, PacketSize), absoluteOffset,
+                            applyPcrCorrection: true, applyTimestampCorrection: true);
                         packetsWritten++;
                     }
                     else if (plan.EffectivePids.Contains(pid))
@@ -493,13 +646,28 @@ public sealed class TsStreamFilterService
                         await EnsurePacketSpaceAsync().ConfigureAwait(false);
                         var packet = outputBuffer.AsSpan(outputLength, PacketSize);
                         inputBuffer.AsSpan(offset, PacketSize).CopyTo(packet);
+                        if (plan.ServiceInformationPids.Contains(pid) &&
+                            HasUnexpectedServiceInformationContinuity(
+                                packet, pid, nextServiceInformationContinuity,
+                                hasServiceInformationContinuity) &&
+                            IsNearLargeGapBoundary(absoluteOffset, largeGapBoundaryOffsets))
+                        {
+                            // SI 包可能在复用顺序上位于首个媒体包之前。只在选中缺口附近且
+                            // 实际观察到 CC 跳变时校正，避免把其他位置的真实 SI 错误抹掉。
+                            pendingContinuity[pid] = nextServiceInformationContinuity[pid];
+                        }
                         if (pendingContinuity[pid] >= 0 || hasContinuityOffset[pid])
                         {
                             RewriteContinuityPreservingGaps(
                                 packet, pid, pendingContinuity, continuityOffsets, hasContinuityOffset);
                         }
-                        outputLength += PacketSize;
-                        packetsWritten++;
+                        if (plan.ServiceInformationPids.Contains(pid))
+                        {
+                            TrackServiceInformationContinuity(
+                                packet, pid, nextServiceInformationContinuity,
+                                hasServiceInformationContinuity);
+                        }
+                        CompletePacket(absoluteOffset, true, true);
                     }
                 }
 
@@ -651,6 +819,89 @@ public sealed class TsStreamFilterService
                     : originalCounter;
             packet[3] = (byte)((packet[3] & 0xF0) | counter);
         }
+    }
+
+    private static void TrackServiceInformationContinuity(
+        ReadOnlySpan<byte> packet,
+        int pid,
+        int[] nextContinuity,
+        bool[] hasContinuity)
+    {
+        if ((packet[1] & 0x80) != 0)
+        {
+            hasContinuity[pid] = false;
+            return;
+        }
+
+        var adaptationControl = (packet[3] >> 4) & 0x03;
+        if ((adaptationControl & 0x02) != 0 && packet[4] > 0 &&
+            (packet[5] & 0x80) != 0)
+        {
+            hasContinuity[pid] = false;
+        }
+        if ((adaptationControl & 0x01) == 0)
+            return;
+
+        nextContinuity[pid] = ((packet[3] & 0x0F) + 1) & 0x0F;
+        hasContinuity[pid] = true;
+    }
+
+    private static void TrackWrittenContinuity(
+        ReadOnlySpan<byte> packets,
+        int[] nextContinuity,
+        bool[] hasContinuity)
+    {
+        for (var offset = 0; offset + PacketSize <= packets.Length; offset += PacketSize)
+        {
+            var packet = packets.Slice(offset, PacketSize);
+            if (packet[0] != 0x47)
+                continue;
+            var pid = ((packet[1] & 0x1F) << 8) | packet[2];
+            var adaptationControl = (packet[3] >> 4) & 0x03;
+            if ((packet[1] & 0x80) != 0 ||
+                (adaptationControl & 0x02) != 0 && packet[4] > 0 &&
+                (packet[5] & 0x80) != 0)
+            {
+                hasContinuity[pid] = false;
+                continue;
+            }
+            if ((adaptationControl & 0x01) == 0)
+                continue;
+
+            nextContinuity[pid] = ((packet[3] & 0x0F) + 1) & 0x0F;
+            hasContinuity[pid] = true;
+        }
+    }
+
+    private static bool HasUnexpectedServiceInformationContinuity(
+        ReadOnlySpan<byte> packet,
+        int pid,
+        int[] nextContinuity,
+        bool[] hasContinuity)
+    {
+        var adaptationControl = (packet[3] >> 4) & 0x03;
+        return (packet[1] & 0x80) == 0 &&
+               (adaptationControl & 0x01) != 0 &&
+               hasContinuity[pid] &&
+               (packet[3] & 0x0F) != nextContinuity[pid] &&
+               (packet[3] & 0x0F) != ((nextContinuity[pid] + 15) & 0x0F);
+    }
+
+    private static bool IsNearLargeGapBoundary(
+        long fileOffset,
+        long[] boundaries)
+    {
+        if (boundaries.Length == 0)
+            return false;
+        // SI 包数量很多而缺口数可能达到数千；对有序边界二分，仅检查插入点两侧，
+        // 避免输出热路径退化为“SI 包数 × 缺口数”的线性扫描。
+        var index = Array.BinarySearch(boundaries, fileOffset);
+        if (index >= 0)
+            return true;
+        index = ~index;
+        var tolerance = ReadBufferSize * 4L;
+        return index < boundaries.Length && boundaries[index] - fileOffset <= tolerance ||
+               index > 0 && fileOffset - boundaries[index - 1] <= tolerance;
     }
 
     private static void RewritePesTimestamps(Span<byte> packet, long offset90k)

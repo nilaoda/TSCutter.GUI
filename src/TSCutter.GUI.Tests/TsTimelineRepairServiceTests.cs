@@ -81,6 +81,26 @@ public sealed class TsTimelineRepairServiceTests
     }
 
     [Fact]
+    public async Task VirtualTimestampCorrectionIgnoresPcrOnlySegments()
+    {
+        var fixture = await CreateFixtureAsync(static sample => sample >= 50 ? 450_000 : 0);
+        try
+        {
+            var analysis = await AnalyzeAsync(fixture);
+            var issue = Assert.Single(analysis.Issues);
+            Assert.Equal(TsTimelineIssueKind.PersistentClockDiscontinuity, issue.Kind);
+            Assert.False(issue.AffectsStreamTimestamps);
+
+            Assert.Equal(0, TsTimelineRepairService.GetVirtualTimestampCorrection90k(
+                analysis, issue.PcrPid, issue.StartPacket + 1));
+        }
+        finally
+        {
+            DeleteFixture(fixture);
+        }
+    }
+
+    [Fact]
     public async Task CancelledRepairDeletesIncompleteOutput()
     {
         var fixture = await CreateFixtureAsync(static sample => sample >= 50 ? 450_000 : 0);
@@ -132,6 +152,144 @@ public sealed class TsTimelineRepairServiceTests
         {
             DeleteFixture(fixture);
             File.Delete(output);
+        }
+    }
+
+    [Fact]
+    public async Task OutputPacketRewriterRepairsReferencePacketsWithoutRewritingMappedDonorAgain()
+    {
+        var fixture = await CreateFixtureAsync(static sample => sample is >= 50 and < 80 ? 450_000 : 0);
+        try
+        {
+            var analysis = await AnalyzeAsync(fixture);
+            Assert.Single(analysis.Issues);
+            var original = await File.ReadAllBytesAsync(fixture.Path);
+            var source = original.ToArray();
+            var rewriter = new TsTimelineRepairService.OutputPacketRewriter(analysis);
+
+            for (var offset = 0; offset < source.Length; offset += TsStreamAnalyzer.PacketSize)
+            {
+                rewriter.ProcessPacket(
+                    source.AsSpan(offset, TsStreamAnalyzer.PacketSize), offset,
+                    applyPcrCorrection: true, applyTimestampCorrection: true);
+            }
+
+            Assert.True(rewriter.RewrittenPcrCount > 0);
+            Assert.Equal(0, rewriter.RemainingPcrErrorCount);
+            Assert.Equal(0, rewriter.RemainingPcrWarningCount);
+
+            var mappedDonorPacket = original.AsSpan(
+                600 * TsStreamAnalyzer.PacketSize, TsStreamAnalyzer.PacketSize).ToArray();
+            var donorRewriter = new TsTimelineRepairService.OutputPacketRewriter(analysis);
+            donorRewriter.ProcessPacket(
+                mappedDonorPacket, 600L * TsStreamAnalyzer.PacketSize,
+                applyPcrCorrection: true, applyTimestampCorrection: false);
+
+            Assert.Equal(
+                source.AsSpan(600 * TsStreamAnalyzer.PacketSize, TsStreamAnalyzer.PacketSize).ToArray(),
+                mappedDonorPacket);
+            Assert.Equal(1, donorRewriter.RewrittenPcrCount);
+        }
+        finally
+        {
+            DeleteFixture(fixture);
+        }
+    }
+
+    [Fact]
+    public async Task OutputPacketRewriterSkipsTimelineBoundaryCoveredByLongGapReplacement()
+    {
+        var fixture = await CreateFixtureAsync(static sample => sample >= 50 ? 450_000 : 0);
+        try
+        {
+            var analysis = await AnalyzeAsync(fixture);
+            var issue = Assert.Single(analysis.Issues);
+            var boundaryOffset = issue.StartPacket * TsStreamAnalyzer.PacketSize;
+            var rewriter = new TsTimelineRepairService.OutputPacketRewriter(
+                analysis,
+                [(issue.PcrPid, boundaryOffset - TsStreamAnalyzer.PacketSize,
+                    boundaryOffset)]);
+            var source = await File.ReadAllBytesAsync(fixture.Path);
+
+            for (var offset = 0; offset < source.Length; offset += TsStreamAnalyzer.PacketSize)
+            {
+                rewriter.ProcessPacket(
+                    source.AsSpan(offset, TsStreamAnalyzer.PacketSize), offset,
+                    applyPcrCorrection: true, applyTimestampCorrection: true);
+            }
+
+            Assert.Equal(0, rewriter.RepairedIssueCount);
+            Assert.Equal(0, rewriter.RewrittenPcrCount);
+        }
+        finally
+        {
+            DeleteFixture(fixture);
+        }
+    }
+
+    [Fact]
+    public async Task OutputPacketRewriterDoesNotSuppressTimelineForDifferentReplacedPid()
+    {
+        var fixture = await CreateFixtureAsync(static sample => sample >= 50 ? 450_000 : 0);
+        try
+        {
+            var analysis = await AnalyzeAsync(fixture);
+            var issue = Assert.Single(analysis.Issues);
+            var boundaryOffset = issue.StartPacket * TsStreamAnalyzer.PacketSize;
+            var rewriter = new TsTimelineRepairService.OutputPacketRewriter(
+                analysis,
+                [(issue.PcrPid + 1, boundaryOffset - TsStreamAnalyzer.PacketSize,
+                    boundaryOffset)]);
+            var source = await File.ReadAllBytesAsync(fixture.Path);
+
+            for (var offset = 0; offset < source.Length; offset += TsStreamAnalyzer.PacketSize)
+            {
+                rewriter.ProcessPacket(
+                    source.AsSpan(offset, TsStreamAnalyzer.PacketSize), offset,
+                    applyPcrCorrection: true, applyTimestampCorrection: true);
+            }
+
+            Assert.Equal(1, rewriter.RepairedIssueCount);
+            Assert.True(rewriter.RewrittenPcrCount > 0);
+            Assert.Equal(0, rewriter.RemainingPcrErrorCount);
+        }
+        finally
+        {
+            DeleteFixture(fixture);
+        }
+    }
+
+    [Fact]
+    public async Task OutputPacketRewriterSkipsGradualRepairEndingAtLongGapBoundary()
+    {
+        var fixture = await CreateFixtureAsync(static sample => sample switch
+        {
+            >= 50 and < 100 => (sample - 50) * 9_000L,
+            _ => 0
+        });
+        try
+        {
+            var analysis = await AnalyzeAsync(fixture);
+            var issue = Assert.Single(analysis.Issues);
+            Assert.Equal(TsTimelineIssueKind.GradualPcrDrift, issue.Kind);
+            var boundaryOffset = issue.EndPacket * TsStreamAnalyzer.PacketSize;
+            var rewriter = new TsTimelineRepairService.OutputPacketRewriter(
+                analysis, [(issue.PcrPid, boundaryOffset, boundaryOffset)]);
+            var source = await File.ReadAllBytesAsync(fixture.Path);
+
+            for (var offset = 0; offset < source.Length; offset += TsStreamAnalyzer.PacketSize)
+            {
+                rewriter.ProcessPacket(
+                    source.AsSpan(offset, TsStreamAnalyzer.PacketSize), offset,
+                    applyPcrCorrection: true, applyTimestampCorrection: true);
+            }
+
+            Assert.Equal(0, rewriter.RepairedIssueCount);
+            Assert.Equal(0, rewriter.RewrittenPcrCount);
+        }
+        finally
+        {
+            DeleteFixture(fixture);
         }
     }
 
