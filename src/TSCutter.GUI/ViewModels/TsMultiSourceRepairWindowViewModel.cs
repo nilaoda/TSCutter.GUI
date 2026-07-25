@@ -787,9 +787,14 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
             IsLargeGapSummaryError = true;
             return;
         }
-        LargeGapSummaryText = string.Format(
-            _text.Strings.String_TsRepair_LargeGap_SummaryMatched,
-            analysis.LargeGaps.Count, fullCount, partialCount, durationText);
+        var format = fullCount == 0
+            ? _text.Strings.String_TsRepair_LargeGap_SummaryMatchedPartial
+            : partialCount == 0
+                ? _text.Strings.String_TsRepair_LargeGap_SummaryMatchedFull
+                : _text.Strings.String_TsRepair_LargeGap_SummaryMatched;
+        LargeGapSummaryText = fullCount == 0 || partialCount == 0
+            ? string.Format(format, analysis.LargeGaps.Count, Math.Max(fullCount, partialCount), durationText)
+            : string.Format(format, analysis.LargeGaps.Count, fullCount, partialCount, durationText);
         IsLargeGapSummarySuccess = fullCount == analysis.LargeGaps.Count;
         IsLargeGapSummaryWarning = !IsLargeGapSummarySuccess;
     }

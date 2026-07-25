@@ -239,6 +239,8 @@
     <x:String x:Key="String.TsRepair.LargeGap.TimeRange">{0} – {1}</x:String>
     <x:String x:Key="String.TsRepair.LargeGap.SummaryDetected">Detected {0:N0} possible long missing section(s), totaling {1}. Standard repair will not process these regions.</x:String>
     <x:String x:Key="String.TsRepair.LargeGap.SummaryMatched">Long missing sections: {0:N0} total, {1:N0} fully restorable, {2:N0} partially restorable; total duration {3}. Select the items to write on the Long gaps tab.</x:String>
+    <x:String x:Key="String.TsRepair.LargeGap.SummaryMatchedFull">Long missing sections: {0:N0} total, {1:N0} fully restorable; total duration {2}. Select the items to write on the Long gaps tab.</x:String>
+    <x:String x:Key="String.TsRepair.LargeGap.SummaryMatchedPartial">Long missing sections: {0:N0} total, {1:N0} partially restorable; total duration {2}. Select the items to write on the Long gaps tab.</x:String>
     <x:String x:Key="String.TsRepair.LargeGap.SummaryMatchedNone">Long missing sections: {0:N0} total, with a total duration of {1}. No donor content was found that can safely restore these regions.</x:String>
     <x:String x:Key="String.TsRepair.TimelineNormalizationNote">During matching, detected PCR/PTS timeline offsets are normalized for cross-source alignment only. Source timelines are not separately rewritten, and transport or PES errors are not hidden.</x:String>
     <x:String x:Key="String.TsRepair.TimelineNormalizationDisabledNote">Automatic timeline normalization is off: each source has only one main scan. PCR/PTS offsets between sources may prevent some repairable regions from matching.</x:String>
