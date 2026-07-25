@@ -13,7 +13,7 @@
         Title="{Binding WindowTitle}"
         Width="900" Height="580"
         MinWidth="720" MinHeight="460"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterScreen">
 
     <Window.Resources>
         <ResourceDictionary>

@@ -12,7 +12,7 @@
         d:DataContext="{x:Static local:App.RawCutterDialog}"
         CanMinimize="False"
         CanMaximize="False"
-        WindowStartupLocation="CenterOwner"
+        WindowStartupLocation="CenterScreen"
         x:DataType="viewModels:RawCutterWindowViewModel"
         Title="{Binding WindowTitle}">
 

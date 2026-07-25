@@ -265,7 +265,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<RawCutterWindowViewModel>();
         dialogViewModel.Initialize(filePath);
-        _dialogService.Show(this, dialogViewModel);
+        // 工具窗口需要与主窗口自由切换前后层级，因此不设置 Owner；文件选择框等
+        // 真正的对话框仍继续以主窗口为 Owner。
+        _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
@@ -282,7 +284,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<TsCheckWindowViewModel>();
         dialogViewModel.FilePath = result[0].LocalPath;
-        _dialogService.Show(this, dialogViewModel);
+        _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
@@ -299,7 +301,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<TsTimelineRepairWindowViewModel>();
         dialogViewModel.Initialize(result[0].LocalPath);
-        _dialogService.Show(this, dialogViewModel);
+        _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
@@ -316,7 +318,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<TsFilterWindowViewModel>();
         dialogViewModel.FilePath = result[0].LocalPath;
-        _dialogService.Show(this, dialogViewModel);
+        _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
@@ -333,14 +335,14 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var dialogViewModel = _dialogService.CreateViewModel<TsServiceFilterWindowViewModel>();
         dialogViewModel.FilePath = result[0].LocalPath;
-        _dialogService.Show(this, dialogViewModel);
+        _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
     private void TsMultiSourceRepairClick()
     {
         var dialogViewModel = _dialogService.CreateViewModel<TsMultiSourceRepairWindowViewModel>();
-        _dialogService.Show(this, dialogViewModel);
+        _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]

@@ -11,7 +11,7 @@
         x:DataType="viewModels:TsMultiSourceRepairWindowViewModel"
         Title="{Binding WindowTitle}"
         Width="900" Height="580" MinWidth="720" MinHeight="460"
-        WindowStartupLocation="CenterOwner">
+        WindowStartupLocation="CenterScreen">
     <Window.Styles>
         <Style Selector="TextBlock.repairFull">
             <Setter Property="Foreground" Value="{DynamicResource AppStatusSuccessForegroundBrush}" />
