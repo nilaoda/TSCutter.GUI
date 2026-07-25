@@ -51,6 +51,7 @@ public sealed class TsRepairSourceAnalysis
     public int ContinuityErrors { get; set; }
     public int TransportErrors { get; set; }
     public int PesSizeErrors { get; set; }
+    public int ServiceInformationContinuityErrors { get; set; }
     internal TsTimelineRepairAnalysis? TimelineAnalysis { get; set; }
 }
 
@@ -173,6 +174,7 @@ public sealed class TsRepairLargeGapTrackBoundary
     public required long ReferenceAfterPts90k { get; set; }
     public required long ReferenceAfterOffset { get; init; }
     public required int ReferenceAfterContinuityCounter { get; init; }
+    public TsRepairPesSignature? ReferenceStartSignature { get; init; }
     public ulong[] BeforePacketAnchor { get; init; } = [];
     public ulong[] AfterPacketAnchor { get; init; } = [];
 }
@@ -286,6 +288,7 @@ public sealed class TsRepairOutputPlan
     public HashSet<int> SelectedPids { get; } = [];
     public HashSet<long> SelectedLargeGapOffsets { get; } = [];
     public bool IncludeServiceInformation { get; init; } = true;
+    public bool RepairTimelineOnOutput { get; init; }
     public Dictionary<long, List<TsPacketInsertion>> Insertions { get; } = [];
     public Dictionary<long, List<TsLargeGapInsertion>> LargeGapInsertions { get; } = [];
     public List<TsPacketReplacement> Replacements { get; } = [];
@@ -305,6 +308,7 @@ public sealed class TsLargeGapTrackInsertion
     public required int SourcePacketCount { get; init; }
     public required int SourcePayloadPacketCount { get; init; }
     public required long TimestampOffset90k { get; init; }
+    public required long PcrTimestampOffset90k { get; init; }
     public required long SourceStartOffset { get; init; }
     public required long SourceEndOffset { get; init; }
     public required long ReferenceDiscardStartOffset { get; init; }
@@ -331,6 +335,7 @@ public sealed class TsPacketInsertion
     public TsRepairPesBoundary[] PesBoundaries { get; init; } = [];
     public int SynthesizedPacketCount { get; init; }
     public long TimestampOffset90k { get; init; }
+    public long PcrTimestampOffset90k { get; init; }
 }
 
 public sealed class TsPacketReplacement
@@ -346,6 +351,7 @@ public sealed class TsPacketReplacement
     public required long SourceEndOffset { get; init; }
     public required int PacketCount { get; init; }
     public required long TimestampOffset90k { get; init; }
+    public required long PcrTimestampOffset90k { get; init; }
     public bool ElementaryPayloadOnly { get; init; }
     public int ElementaryLength { get; init; }
 }
@@ -360,5 +366,10 @@ public sealed class TsRepairOutputResult
     public required long RepairedLargeGapDuration90k { get; init; }
     public required long ReferenceErrorCount { get; init; }
     public required long RemainingErrorCount { get; init; }
+    public required int RepairedTimelineIssueCount { get; init; }
+    public required long RewrittenPcrCount { get; init; }
+    public required long RewrittenTimestampCount { get; init; }
+    public required int RemainingTimelineErrorCount { get; init; }
+    public required int RemainingTimelineWarningCount { get; init; }
     public required TsRepairOutputPlan Plan { get; init; }
 }

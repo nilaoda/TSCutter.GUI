@@ -35,13 +35,6 @@ public sealed partial class TsRepairTrackItem : ObservableObject
     public bool IsFullyRepairable => GapCount > 0 && RepairableGapCount == GapCount;
     public bool IsPartiallyRepairable => RepairableGapCount > 0 && RepairableGapCount < GapCount;
     public bool IsNotRepairable => GapCount > 0 && RepairableGapCount == 0;
-
-    [ObservableProperty]
-    private bool _isSelected = true;
-
-    public event Action? SelectionChanged;
-
-    partial void OnIsSelectedChanged(bool value) => SelectionChanged?.Invoke();
 }
 
 public enum TsRepairLargeGapViewStatus

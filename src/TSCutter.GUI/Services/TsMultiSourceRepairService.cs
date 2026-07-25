@@ -64,6 +64,7 @@ public sealed class TsMultiSourceRepairService
     private const long LargeGapIncidentWeakMaximumLookback90k = 15L * 90_000;
     private const long LargeGapIncidentMaximumHealthyInterval90k = 2L * 90_000;
     private const long LargeGapIncidentCorrelatedTrackWindow90k = 90_000;
+    private const long LargeGapMultiplexBoundaryCoalesceBytes = PacketSize * 32L;
     private const int MaxLargeGapIncidentSnapshotsPerTrack = 64;
     private const int MaxLargeGapIncidentHistoryPesPerTrack = 16_384;
     private const ulong ElementaryHashBase = 257;
@@ -435,12 +436,14 @@ public sealed class TsMultiSourceRepairService
         TsMultiSourceAnalysisResult analysis,
         IReadOnlySet<int> selectedPids,
         bool includeServiceInformation,
-        IReadOnlySet<long>? selectedLargeGapOffsets = null)
+        IReadOnlySet<long>? selectedLargeGapOffsets = null,
+        bool repairTimelineOnOutput = false)
     {
         var plan = new TsRepairOutputPlan
         {
             Analysis = analysis,
-            IncludeServiceInformation = includeServiceInformation
+            IncludeServiceInformation = includeServiceInformation,
+            RepairTimelineOnOutput = repairTimelineOnOutput
         };
         plan.SelectedPids.UnionWith(selectedPids);
         if (selectedLargeGapOffsets is not null)
@@ -492,6 +495,11 @@ public sealed class TsMultiSourceRepairService
                     var startContinuityCounter =
                         (boundary.ReferenceAfterContinuityCounter -
                          (candidateTrack.SourcePayloadPacketCount & 0x0F) + 16) & 0x0F;
+                    var referenceTimelineCorrection = repairTimelineOnOutput
+                        ? GetTimelineCorrection90k(
+                            analysis.ReferenceSource, candidateTrack.ReferencePid,
+                            gap.ReferenceInsertOffset)
+                        : 0;
                     insertion.Tracks.Add(new TsLargeGapTrackInsertion
                     {
                         SourcePid = candidateTrack.SourcePid,
@@ -499,7 +507,11 @@ public sealed class TsMultiSourceRepairService
                         StartContinuityCounter = startContinuityCounter,
                         SourcePacketCount = candidateTrack.SourcePacketCount,
                         SourcePayloadPacketCount = candidateTrack.SourcePayloadPacketCount,
-                        TimestampOffset90k = candidateTrack.TimestampOffset90k,
+                        TimestampOffset90k = candidateTrack.TimestampOffset90k +
+                                             referenceTimelineCorrection,
+                        // PCR 先映射回参考源原始时钟，写出时再按实际包位置统一校正；
+                        // PTS 已直接落到修复后时钟，不能重复应用同一偏移。
+                        PcrTimestampOffset90k = candidateTrack.TimestampOffset90k,
                         SourceStartOffset = candidateTrack.SourceStartOffset,
                         SourceEndOffset = candidateTrack.SourceEndOffset,
                         ReferenceDiscardStartOffset = gap.ReferenceInsertOffset,
@@ -557,29 +569,47 @@ public sealed class TsMultiSourceRepairService
                     ?.TimestampOffset90k ?? 0;
                 if (candidate.SourcePacketOffsets.Length > 0)
                 {
+                    var originalTimelineOffset90k = ConvertNormalizedOffsetToSourceTimeline(
+                        analysis, timestampOffset90k,
+                        candidate.SourcePath, candidate.SourcePid, candidate.SourcePacketOffsets[0],
+                        analysis.ReferenceSource.FilePath, track.ReferencePid, gap.ReferenceInsertOffset,
+                        repairTimelineOnOutput: false);
                     timestampOffset90k = ConvertNormalizedOffsetToSourceTimeline(
                         analysis, timestampOffset90k,
                         candidate.SourcePath, candidate.SourcePid, candidate.SourcePacketOffsets[0],
-                        analysis.ReferenceSource.FilePath, track.ReferencePid, gap.ReferenceInsertOffset);
+                        analysis.ReferenceSource.FilePath, track.ReferencePid, gap.ReferenceInsertOffset,
+                        repairTimelineOnOutput);
+                    var insertion = new TsPacketInsertion
+                    {
+                        SourcePath = candidate.SourcePath,
+                        SourcePid = candidate.SourcePid,
+                        TargetPid = track.ReferencePid,
+                        StartContinuityCounter = gap.ExpectedContinuityCounter,
+                        SourcePacketOffsets = candidate.SourcePacketOffsets,
+                        ElementaryPayload = candidate.ElementaryPayload,
+                        PesBoundaries = candidate.PesBoundaries,
+                        SynthesizedPacketCount = candidate.SynthesizedPacketCount,
+                        TimestampOffset90k = timestampOffset90k,
+                        PcrTimestampOffset90k = originalTimelineOffset90k
+                    };
+                    AddInsertion(plan, gap.ReferenceInsertOffset, insertion);
                 }
-                var insertion = new TsPacketInsertion
+                else
                 {
-                    SourcePath = candidate.SourcePath,
-                    SourcePid = candidate.SourcePid,
-                    TargetPid = track.ReferencePid,
-                    StartContinuityCounter = gap.ExpectedContinuityCounter,
-                    SourcePacketOffsets = candidate.SourcePacketOffsets,
-                    ElementaryPayload = candidate.ElementaryPayload,
-                    PesBoundaries = candidate.PesBoundaries,
-                    SynthesizedPacketCount = candidate.SynthesizedPacketCount,
-                    TimestampOffset90k = timestampOffset90k
-                };
-                if (!plan.Insertions.TryGetValue(gap.ReferenceInsertOffset, out var insertions))
-                {
-                    insertions = [];
-                    plan.Insertions[gap.ReferenceInsertOffset] = insertions;
+                    AddInsertion(plan, gap.ReferenceInsertOffset, new TsPacketInsertion
+                    {
+                        SourcePath = candidate.SourcePath,
+                        SourcePid = candidate.SourcePid,
+                        TargetPid = track.ReferencePid,
+                        StartContinuityCounter = gap.ExpectedContinuityCounter,
+                        SourcePacketOffsets = candidate.SourcePacketOffsets,
+                        ElementaryPayload = candidate.ElementaryPayload,
+                        PesBoundaries = candidate.PesBoundaries,
+                        SynthesizedPacketCount = candidate.SynthesizedPacketCount,
+                        TimestampOffset90k = timestampOffset90k,
+                        PcrTimestampOffset90k = timestampOffset90k
+                    });
                 }
-                insertions.Add(insertion);
                 selectedInsertionOffsets.Add(gap.ReferenceInsertOffset);
                 plan.DiscardPacketOffsets.UnionWith(gap.ReferenceDiscardOffsets);
                 plan.RepairedGapCount++;
@@ -628,7 +658,13 @@ public sealed class TsMultiSourceRepairService
                     TimestampOffset90k = ConvertNormalizedOffsetToSourceTimeline(
                         analysis, candidate.TimestampOffset90k,
                         candidate.SourcePath, candidate.SourcePid, candidate.SourceStartOffset,
-                        analysis.ReferenceSource.FilePath, track.ReferencePid, referenceStartOffset),
+                        analysis.ReferenceSource.FilePath, track.ReferencePid, referenceStartOffset,
+                        repairTimelineOnOutput),
+                    PcrTimestampOffset90k = ConvertNormalizedOffsetToSourceTimeline(
+                        analysis, candidate.TimestampOffset90k,
+                        candidate.SourcePath, candidate.SourcePid, candidate.SourceStartOffset,
+                        analysis.ReferenceSource.FilePath, track.ReferencePid, referenceStartOffset,
+                        repairTimelineOnOutput: false),
                     ElementaryPayloadOnly = region.Reason ==
                         TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch &&
                         candidate.ElementaryLength == GetReferenceElementaryLength(region, candidate),
@@ -641,6 +677,19 @@ public sealed class TsMultiSourceRepairService
         return plan;
     }
 
+    private static void AddInsertion(
+        TsRepairOutputPlan plan,
+        long referenceOffset,
+        TsPacketInsertion insertion)
+    {
+        if (!plan.Insertions.TryGetValue(referenceOffset, out var insertions))
+        {
+            insertions = [];
+            plan.Insertions[referenceOffset] = insertions;
+        }
+        insertions.Add(insertion);
+    }
+
     private static long ConvertNormalizedOffsetToSourceTimeline(
         TsMultiSourceAnalysisResult analysis,
         long normalizedOffset90k,
@@ -649,15 +698,17 @@ public sealed class TsMultiSourceRepairService
         long donorFileOffset,
         string referencePath,
         int referencePid,
-        long referenceFileOffset)
+        long referenceFileOffset,
+        bool repairTimelineOnOutput)
     {
         var donor = analysis.Sources.First(item => PathsEqual(item.FilePath, donorPath));
         var reference = analysis.Sources.First(item => PathsEqual(item.FilePath, referencePath));
         var donorCorrection = GetTimelineCorrection90k(donor, donorPid, donorFileOffset);
         var referenceCorrection = GetTimelineCorrection90k(reference, referencePid, referenceFileOffset);
-        // 匹配阶段比较的是归一化 PTS；写回原始参考流时需还原两端各自的虚拟校正量，
-        // 否则来自异常时间段的辅助包会携带归一化时间而无法贴合参考流的原始时钟。
-        return normalizedOffset90k + donorCorrection - referenceCorrection;
+        // 匹配阶段比较的是归一化 PTS。保留原时间轴时还原参考端校正量；输出同时
+        // 修复时间轴时则保留归一化结果，使辅助包直接落到修复后的参考时钟。
+        return normalizedOffset90k + donorCorrection -
+               (repairTimelineOnOutput ? 0 : referenceCorrection);
     }
 
     private static long GetTimelineCorrection90k(
@@ -690,7 +741,22 @@ public sealed class TsMultiSourceRepairService
             plan.Analysis.ReferenceSource.Catalog,
             plan.SelectedPids,
             plan.IncludeServiceInformation);
-        var outputValidator = new TsRepairOutputValidator(plan.SelectedPids);
+        var validationPids = filterPlan.EffectivePids
+            .Where(pid => pid != 0x1FFF)
+            .ToHashSet();
+        var outputValidator = new TsRepairOutputValidator(validationPids);
+        var replacedTimelineRanges = plan.LargeGapInsertions
+            .SelectMany(pair => pair.Value.SelectMany(item => item.Tracks.Select(track => (
+                Pid: track.TargetPid,
+                StartOffset: pair.Key,
+                EndOffset: track.ReferenceDiscardEndOffset))))
+            .ToArray();
+        var timelineRewriter = plan.RepairTimelineOnOutput &&
+                               plan.Analysis.ReferenceSource.TimelineAnalysis is
+                                   { RepairableIssueCount: > 0 } timelineAnalysis
+            ? new TsTimelineRepairService.OutputPacketRewriter(
+                timelineAnalysis, replacedTimelineRanges)
+            : null;
         var filterResult = await filter.FilterWithInsertionsAsync(
             plan.Analysis.ReferenceSource.FilePath,
             outputPath,
@@ -701,6 +767,7 @@ public sealed class TsMultiSourceRepairService
             plan.Replacements,
             plan.DiscardPacketOffsets,
             outputValidator,
+            timelineRewriter,
             progress,
             cancellationToken).ConfigureAwait(false);
         // 输出缓冲在写盘时已经同步经过轻量结构复检，不需要重新打开并顺序读取完整文件。
@@ -709,10 +776,24 @@ public sealed class TsMultiSourceRepairService
         {
             cancellationToken.ThrowIfCancellationRequested();
             var verificationErrors = outputValidator.TotalErrors;
+            // 输出包含的 PSI/SI 也必须参与同一遍复检，否则媒体轨修好后仍可能遗留表 PID 的 CC 错误。
             var referenceErrors = plan.Analysis.Tracks
                 .Where(track => plan.SelectedPids.Contains(track.ReferencePid))
                 .Sum(track => track.ContinuityErrorCount + track.TransportErrorCount + track.PesSizeErrorCount);
-            if (referenceErrors == 0 ? verificationErrors > 0 : verificationErrors >= referenceErrors)
+            if (plan.IncludeServiceInformation)
+                referenceErrors += plan.Analysis.ReferenceSource.ServiceInformationContinuityErrors;
+            var hasMediaRepairs = plan.RepairedGapCount > 0 || plan.RepairedPesRegionCount > 0 ||
+                                  plan.RepairedLargeGapCount > 0;
+            var mediaImproved = hasMediaRepairs && (referenceErrors == 0
+                ? verificationErrors == 0
+                : verificationErrors < referenceErrors);
+            var timelineImproved = timelineRewriter is
+            {
+                RepairedIssueCount: > 0,
+                RewrittenPcrCount: > 0,
+                RemainingPcrErrorCount: 0
+            };
+            if (!mediaImproved && !timelineImproved)
             {
                 throw new TsRepairException(
                     TsRepairErrorCode.NoImprovement, referenceErrors, verificationErrors);
@@ -727,6 +808,11 @@ public sealed class TsMultiSourceRepairService
                 RepairedLargeGapDuration90k = plan.RepairedLargeGapDuration90k,
                 ReferenceErrorCount = referenceErrors,
                 RemainingErrorCount = verificationErrors,
+                RepairedTimelineIssueCount = timelineRewriter?.RepairedIssueCount ?? 0,
+                RewrittenPcrCount = timelineRewriter?.RewrittenPcrCount ?? 0,
+                RewrittenTimestampCount = timelineRewriter?.RewrittenTimestampCount ?? 0,
+                RemainingTimelineErrorCount = timelineRewriter?.RemainingPcrErrorCount ?? 0,
+                RemainingTimelineWarningCount = timelineRewriter?.RemainingPcrWarningCount ?? 0,
                 Plan = plan
             };
         }
@@ -1017,6 +1103,35 @@ public sealed class TsMultiSourceRepairService
                     var repairInsertOffset = includesPrecedingDamage
                         ? incidentTrackStartOffsets.Min(item => item!.Value)
                         : originalInsertOffset;
+                    if (includesPrecedingDamage)
+                    {
+                        // 全局插入点按复用后的最早包位置决定，可能落在另一条音频 PES 中间。
+                        // 若保留前半个参考 PES 再写入辅助源，输出会留下 PES 长度异常；因此
+                        // 只扩展“最初插入点”切到的 PES，并合并同一复用边界附近的相邻
+                        // PUSI；不能按新起点继续链式回溯，否则会沿音视频交错 PES 一路
+                        // 扩到很久以前。
+                        var incidentHistory = correlatedBoundaries
+                            .SelectMany(item => item.Boundary.IncidentHistory)
+                            .Where(pes => pes.Pts90k != long.MinValue)
+                            .ToArray();
+                        var containingPeses = incidentHistory
+                            .Where(pes => pes.StartOffset < repairInsertOffset &&
+                                          pes.EndOffset > repairInsertOffset)
+                            .ToArray();
+                        if (containingPeses.Length > 0)
+                        {
+                            var expandedInsertOffset = containingPeses.Min(pes => pes.StartOffset);
+                            var coalesceStartOffset = expandedInsertOffset -
+                                                      LargeGapMultiplexBoundaryCoalesceBytes;
+                            foreach (var pes in containingPeses.Concat(incidentHistory.Where(pes =>
+                                             pes.StartOffset >= coalesceStartOffset &&
+                                             pes.StartOffset < expandedInsertOffset)))
+                            {
+                                repairInsertOffset = Math.Min(repairInsertOffset, pes.StartOffset);
+                                repairStartPts90k = Math.Min(repairStartPts90k, pes.Pts90k);
+                            }
+                        }
+                    }
 
                     var gap = new TsRepairLargeGap
                     {
@@ -1032,16 +1147,33 @@ public sealed class TsMultiSourceRepairService
                     };
                     foreach (var item in correlatedBoundaries)
                     {
+                        var trackRepairStartPts90k = repairStartPts90k;
+                        ReferencePesInfo? trackStartPes = null;
+                        if (includesPrecedingDamage)
+                        {
+                            // 整体替换窗口可以从最早轨道的 PES 边界开始，但各 PID 写入
+                            // 辅助源时应从本轨道自己的第一个 PES 起点开始；否则视频 B 帧
+                            // 或音频交错会把更早的 donor PES 插入到较晚的参考 PES 之后。
+                            trackStartPes = item.Boundary.IncidentHistory
+                                .Where(pes => pes.Pts90k != long.MinValue &&
+                                              pes.StartOffset >= repairInsertOffset &&
+                                              pes.StartOffset <= item.Boundary.ReferenceAfterOffset)
+                                .OrderBy(pes => pes.StartOffset)
+                                .FirstOrDefault();
+                            if (trackStartPes is not null)
+                                trackRepairStartPts90k = trackStartPes.Pts90k;
+                        }
                         var packetGap = item.State.Track.Gaps.FirstOrDefault(value =>
                             value.ReferenceInsertOffset == item.Boundary.ReferenceAfterOffset);
                         gap.Tracks.Add(new TsRepairLargeGapTrackBoundary
                         {
                             ReferencePid = item.State.Track.ReferencePid,
-                            ReferenceMissingStartPts90k = repairStartPts90k,
+                            ReferenceMissingStartPts90k = trackRepairStartPts90k,
                             ReferenceAfterPts90k = item.Boundary.ReferenceAfterPts90k,
                             ReferenceAfterOffset = item.Boundary.ReferenceAfterOffset,
                             ReferenceAfterContinuityCounter =
                                 item.Boundary.ReferenceAfterContinuityCounter,
+                            ReferenceStartSignature = trackStartPes?.Signature,
                             // 扩展区间必须按 PTS 找到统一的故障簇起点；原小缺口包锚点只对应
                             // 真正缺失部分，继续使用会把前面的损坏数据留在参考文件中。
                             BeforePacketAnchor = includesPrecedingDamage
@@ -1184,12 +1316,30 @@ public sealed class TsMultiSourceRepairService
         CancellationToken cancellationToken)
     {
         var broadcastClock = new ReferenceBroadcastClockCollector(broadcastTimes, source.Catalog.SyncOffset);
+        var serviceInformationContinuity = new int[8192];
+        Array.Fill(serviceInformationContinuity, -1);
         await ScanPacketsAsync(source.FilePath, source.Catalog.SyncOffset, sourceIndex, sourceCount, progress,
             TsMultiSourceProgressPhase.ReferenceScan,
             (packet, fileOffset) =>
             {
                 if (!TryParsePacket(packet, out var info))
                     return;
+                if (info.Pid is 0x0010 or 0x0011 or 0x0012 or 0x0013 or 0x0014 or 0x1FFB &&
+                    info.HasPayload)
+                {
+                    var last = serviceInformationContinuity[info.Pid];
+                    if (info.TransportError || info.Discontinuity)
+                    {
+                        serviceInformationContinuity[info.Pid] = -1;
+                    }
+                    else if (last >= 0 && info.ContinuityCounter != last &&
+                             info.ContinuityCounter != ((last + 1) & 0x0F))
+                    {
+                        source.ServiceInformationContinuityErrors++;
+                    }
+                    if (!info.TransportError)
+                        serviceInformationContinuity[info.Pid] = info.ContinuityCounter;
+                }
                 pcrCollector?.Process(packet, info, fileOffset);
                 if (info.Pid == TsDvbTimeTableParser.Pid)
                 {
@@ -3327,6 +3477,7 @@ public sealed class TsMultiSourceRepairService
         private bool _waitingForFirstContentPacket;
         private bool _contentStarted;
         private bool _contentEnded;
+        private InspectionPes? _activeInspectionPes;
         public TsRepairLargeGapTrackBoundary Boundary { get; } = boundary;
         public int SourcePid { get; } = sourcePid;
         public long TimestampOffset90k { get; } = timestampOffset90k;
@@ -3342,6 +3493,9 @@ public sealed class TsMultiSourceRepairService
         {
             var contentWasStarted = _contentStarted;
             var continuityInvalid = false;
+            var elementaryPayload = info.HasPayload
+                ? GetElementaryPayload(packet, info, out _)
+                : default;
             if (info.HasPayload)
             {
                 if (_hasContinuity)
@@ -3355,16 +3509,39 @@ public sealed class TsMultiSourceRepairService
             }
 
             long? pts90k = null;
+            if (info.PayloadStart)
+                FinishInspectionPes();
             if (info.PayloadStart &&
                 TryReadPesStart(packet, info, out _, out var rawPts90k))
             {
                 var value = UnwrapTimestamp(rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
                 pts90k = timelineNormalizer?.Normalize(value, fileOffset) ?? value;
+                _activeInspectionPes = new InspectionPes(fileOffset, pts90k.Value);
+            }
+            if (_activeInspectionPes is not null)
+            {
+                // 起始 PES 的指纹可能与健康源相同，但 TEI 位只存在于 TS 头中；必须
+                // 单独记住其传输状态，否则会把“负载相同但明确标坏”的 PES 当作安全起点。
+                if (info.TransportError || info.Discontinuity ||
+                    (!info.PayloadStart && continuityInvalid))
+                {
+                    _activeInspectionPes.IsInvalid = true;
+                }
+                _activeInspectionPes.PacketCount++;
+                if (info.HasPayload)
+                {
+                    _activeInspectionPes.PayloadPacketCount++;
+                    _activeInspectionPes.ElementaryLength += elementaryPayload.Length;
+                    _activeInspectionPes.Hash = ComputePesHash(
+                        _activeInspectionPes.Hash, elementaryPayload);
+                }
             }
 
             var hasPacketAnchors = Boundary.BeforePacketAnchor.Length > 0 &&
                                    Boundary.AfterPacketAnchor.Length > 0;
-            if (!hasPacketAnchors && !_contentStarted && pts90k is { } startPts90k)
+            var hasStartSignature = Boundary.ReferenceStartSignature is not null;
+            if (!hasPacketAnchors && !hasStartSignature && !_contentStarted &&
+                pts90k is { } startPts90k)
             {
                 var referencePts90k = startPts90k + TimestampOffset90k;
                 if (referencePts90k >=
@@ -3387,7 +3564,7 @@ public sealed class TsMultiSourceRepairService
                 StartContent(fileOffset);
             if (_contentStarted && !_contentEnded &&
                 (info.TransportError || info.Discontinuity ||
-                 (contentWasStarted && continuityInvalid)))
+                 ((contentWasStarted || SourceStartOffset < fileOffset) && continuityInvalid)))
             {
                 // 定位扫描会在候选前后读取额外 padding。只有实际准备写入的区间必须
                 // 完全健康，不能让 padding 内无关的 CC/TEI 淘汰一个有效候选。
@@ -3460,6 +3637,27 @@ public sealed class TsMultiSourceRepairService
             _recentSourcePackets.Clear();
         }
 
+        private void FinishInspectionPes()
+        {
+            var pes = _activeInspectionPes;
+            _activeInspectionPes = null;
+            if (pes is null || _contentStarted || _contentEnded ||
+                pes.IsInvalid || Boundary.ReferenceStartSignature is not { } signature)
+            {
+                return;
+            }
+
+            if (CreatePesSignature(pes.Hash, pes.ElementaryLength) != signature)
+                return;
+
+            // H.264/H.265 PTS 可能因 B 帧在解码顺序中回摆；整段修复起点用 PES
+            // 指纹定位，可以避免按“第一个 PTS 达标包”误选到更早的解码位置。
+            StartContent(pes.StartOffset);
+            PacketCount += pes.PacketCount;
+            PayloadPacketCount += pes.PayloadPacketCount;
+            AddPts(pes.Pts90k);
+        }
+
         private void AddPts(long pts90k)
         {
             if (_lastPts90k != long.MinValue)
@@ -3499,6 +3697,7 @@ public sealed class TsMultiSourceRepairService
 
         public bool IsUsable()
         {
+            FinishInspectionPes();
             if (_invalid || !_contentEnded || SourceEndOffset <= SourceStartOffset ||
                 PacketCount == 0 || PayloadPacketCount == 0)
                 return false;
@@ -3511,6 +3710,17 @@ public sealed class TsMultiSourceRepairService
             return FirstPts90k <= expectedStartPts90k + MinimumLargeGap90k &&
                    LastPts90k >= expectedEndPts90k - MinimumLargeGap90k &&
                    MaximumPtsGap90k <= MinimumLargeGap90k;
+        }
+
+        private sealed class InspectionPes(long startOffset, long pts90k)
+        {
+            public long StartOffset { get; } = startOffset;
+            public long Pts90k { get; } = pts90k;
+            public int PacketCount { get; set; }
+            public int PayloadPacketCount { get; set; }
+            public ulong Hash { get; set; } = 1469598103934665603UL;
+            public int ElementaryLength { get; set; }
+            public bool IsInvalid { get; set; }
         }
     }
 

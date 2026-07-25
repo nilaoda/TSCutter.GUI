@@ -27,26 +27,28 @@
 
     <Grid Margin="12" RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="9">
         <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
-            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto,Auto"
+            <!-- 两行输入框共用同一个弹性列和固定的右侧列，避免源文件行与输出行宽度不一致。 -->
+            <Grid ColumnDefinitions="Auto,*,110" RowDefinitions="Auto,Auto,Auto"
                   ColumnSpacing="8" RowSpacing="5">
                 <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource String.TsTimelineRepair.File}"
                            VerticalAlignment="Center" />
                 <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding FilePath}" IsReadOnly="True" />
-                <TextBlock Grid.Row="0" Grid.Column="2" Text="{DynamicResource String.TsTimelineRepair.FileSize}"
-                           VerticalAlignment="Center" />
-                <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding FileSizeText}" FontWeight="Bold"
-                           VerticalAlignment="Center" />
+                <StackPanel Grid.Row="0" Grid.Column="2" Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{DynamicResource String.TsTimelineRepair.FileSize}"
+                               VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding FileSizeText}" FontWeight="Bold"
+                               VerticalAlignment="Center" />
+                </StackPanel>
 
                 <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource String.TsTimelineRepair.Output}"
                            VerticalAlignment="Center" />
-                <TextBox Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding OutputPath}"
-                         IsReadOnly="True" />
-                <Button Grid.Row="1" Grid.Column="3" Content="{DynamicResource String.TsTimelineRepair.Browse}"
-                        Command="{Binding ChooseOutputCommand}" MinWidth="90" />
+                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding OutputPath}" IsReadOnly="True" />
+                <Button Grid.Row="1" Grid.Column="2" Content="{DynamicResource String.TsTimelineRepair.Browse}"
+                        Command="{Binding ChooseOutputCommand}" MinWidth="90" HorizontalAlignment="Stretch" />
 
                 <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource String.TsTimelineRepair.Status}"
                            VerticalAlignment="Top" />
-                <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding StatusText}"
+                <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="2" Text="{Binding StatusText}"
                            TextWrapping="Wrap"
                            Classes.successStatus="{Binding IsSuccessStatus}"
                            Classes.warningStatus="{Binding IsWarningStatus}"

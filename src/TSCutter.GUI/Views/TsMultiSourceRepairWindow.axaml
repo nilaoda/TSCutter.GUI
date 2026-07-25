@@ -56,10 +56,16 @@
                     <Button Grid.Column="5" Content="{DynamicResource String.TsRepair.RemoveFile}"
                             Command="{Binding RemoveSourceCommand}" MinWidth="80" />
                 </Grid>
-                <CheckBox Grid.Row="1" Content="{DynamicResource String.TsRepair.AutoNormalizeTimeline}"
-                          IsChecked="{Binding AutoNormalizeTimeline, Mode=TwoWay}"
-                          IsEnabled="{Binding CanConfigureTimeline}"
-                          ToolTip.Tip="{DynamicResource String.TsRepair.AutoNormalizeTimelineHint}" />
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="20">
+                    <CheckBox Content="{DynamicResource String.TsRepair.AutoNormalizeTimeline}"
+                              IsChecked="{Binding AutoNormalizeTimeline, Mode=TwoWay}"
+                              IsEnabled="{Binding CanConfigureTimeline}"
+                              ToolTip.Tip="{DynamicResource String.TsRepair.AutoNormalizeTimelineHint}" />
+                    <CheckBox Content="{DynamicResource String.TsRepair.RepairTimelineOnOutput}"
+                              IsChecked="{Binding RepairTimelineOnOutput, Mode=TwoWay}"
+                              IsEnabled="{Binding CanConfigureTimeline}"
+                              ToolTip.Tip="{DynamicResource String.TsRepair.RepairTimelineOnOutputHint}" />
+                </StackPanel>
                 <DataGrid Grid.Row="2" ItemsSource="{Binding Sources}"
                           SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
                           AutoGenerateColumns="False" IsReadOnly="True"
@@ -115,30 +121,23 @@
                 <TextBlock Text="{Binding OutputVerificationText}" TextWrapping="Wrap"
                            Classes.repairFull="{Binding IsOutputVerificationPassed}"
                            Classes.repairPartial="{Binding HasOutputRemainingErrors}" />
+                <TextBlock Text="{Binding OutputTimelineText}" TextWrapping="Wrap"
+                           IsVisible="{Binding HasOutputTimelineSummary}"
+                           Classes.repairFull="{Binding IsOutputTimelinePassed}"
+                           Classes.repairPartial="{Binding HasOutputTimelineWarnings}" />
             </StackPanel>
         </Grid>
 
         <TabControl Grid.Row="2" SelectedIndex="{Binding SelectedRepairTabIndex, Mode=TwoWay}">
             <TabItem Header="{DynamicResource String.TsRepair.Tracks}">
                 <Grid RowDefinitions="Auto,*" RowSpacing="6" Margin="6">
-                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" ColumnSpacing="8">
                         <CheckBox Grid.Column="1" Content="{DynamicResource String.TsRepair.KeepServiceInformation}"
                                   IsChecked="{Binding KeepServiceInformation}" VerticalAlignment="Center" />
-                        <Button Grid.Column="2" Content="{DynamicResource String.TsRepair.SelectAll}"
-                                Command="{Binding SelectAllCommand}" MinWidth="80" />
-                        <Button Grid.Column="3" Content="{DynamicResource String.TsRepair.ClearAll}"
-                                Command="{Binding ClearAllCommand}" MinWidth="80" />
                     </Grid>
                     <DataGrid Grid.Row="1" ItemsSource="{Binding Tracks}" AutoGenerateColumns="False"
                               GridLinesVisibility="All" CanUserResizeColumns="True">
                         <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.Column.Keep}" Width="65">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate x:DataType="models:TsRepairTrackItem">
-                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" HorizontalAlignment="Center" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
                             <DataGridTextColumn Header="PID" Binding="{Binding PidText}" Width="80" IsReadOnly="True" />
                             <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Program}"
                                                 Binding="{Binding ProgramText}" Width="80" IsReadOnly="True" />
