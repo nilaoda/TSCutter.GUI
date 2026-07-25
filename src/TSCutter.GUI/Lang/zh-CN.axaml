@@ -138,6 +138,7 @@
     <x:String x:Key="String.ClearQueue">清空队列</x:String>
     <x:String x:Key="String.Clips">片段</x:String>
     <x:String x:Key="String.QueueRemove">移除</x:String>
+    <x:String x:Key="String.ExportQueue.DuplicateOutputPath">输出路径“{0}”已存在于导出队列中，请选择其他文件名或目录。</x:String>
     <x:String x:Key="String.Menu.TsCheck">TS 快速检查(_C)...</x:String>
     <x:String x:Key="String.Menu.TsTimelineRepair">TS 时间轴修复(_T)...</x:String>
     <x:String x:Key="String.Menu.TsFilter">TS 流过滤器(_F)</x:String>
