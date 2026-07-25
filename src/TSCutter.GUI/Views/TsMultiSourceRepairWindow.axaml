@@ -103,6 +103,11 @@
                                Classes.repairNone="{Binding IsAnalysisNotRepairable}" />
                     <TextBlock Text="{DynamicResource String.TsRepair.Status.AnalysisCompletedSuffix}" />
                 </WrapPanel>
+                <TextBlock Text="{Binding LargeGapSummaryText}" TextWrapping="Wrap"
+                           IsVisible="{Binding HasLargeGaps}"
+                           Classes.repairFull="{Binding IsLargeGapSummarySuccess}"
+                           Classes.repairPartial="{Binding IsLargeGapSummaryWarning}"
+                           Classes.repairNone="{Binding IsLargeGapSummaryError}" />
             </StackPanel>
             <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2"
                         IsVisible="{Binding IsOutputSummaryVisible}">
@@ -113,57 +118,119 @@
             </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="2" RowDefinitions="Auto,*" RowSpacing="6">
-            <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
-                <TextBlock Grid.Column="0" Text="{DynamicResource String.TsRepair.Tracks}"
-                           FontWeight="Bold" VerticalAlignment="Center" />
-                <CheckBox Grid.Column="2" Content="{DynamicResource String.TsRepair.KeepServiceInformation}"
-                          IsChecked="{Binding KeepServiceInformation}" VerticalAlignment="Center" />
-                <Button Grid.Column="3" Content="{DynamicResource String.TsRepair.SelectAll}"
-                        Command="{Binding SelectAllCommand}" MinWidth="80" />
-                <Button Grid.Column="4" Content="{DynamicResource String.TsRepair.ClearAll}"
-                        Command="{Binding ClearAllCommand}" MinWidth="80" />
-            </Grid>
-            <DataGrid Grid.Row="1" ItemsSource="{Binding Tracks}" AutoGenerateColumns="False"
-                      GridLinesVisibility="All" CanUserResizeColumns="True">
-                <DataGrid.Columns>
-                    <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.Column.Keep}" Width="65">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="models:TsRepairTrackItem">
-                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" HorizontalAlignment="Center" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="PID" Binding="{Binding PidText}" Width="80" IsReadOnly="True" />
-                    <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Program}"
-                                        Binding="{Binding ProgramText}" Width="80" IsReadOnly="True" />
-                    <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Stream}"
-                                        Binding="{Binding StreamText}" Width="220" IsReadOnly="True" />
-                    <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.Column.RepairSources}" Width="*">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="models:TsRepairTrackItem">
-                                <TextBlock Text="{Binding RepairSourcesText}" TextWrapping="Wrap" Margin="4,2" />
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                    <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Gaps}"
-                                        Binding="{Binding GapCount}" Width="80" IsReadOnly="True" />
-                    <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.Column.Repairable}" Width="90">
-                        <DataGridTemplateColumn.CellTemplate>
-                            <DataTemplate x:DataType="models:TsRepairTrackItem">
-                                <Grid Margin="6,0">
-                                    <TextBlock Text="{Binding RepairableGapCount}"
-                                               Classes.repairFull="{Binding IsFullyRepairable}"
-                                               Classes.repairPartial="{Binding IsPartiallyRepairable}"
-                                               Classes.repairNone="{Binding IsNotRepairable}"
-                                               HorizontalAlignment="Left" VerticalAlignment="Center" />
-                                </Grid>
-                            </DataTemplate>
-                        </DataGridTemplateColumn.CellTemplate>
-                    </DataGridTemplateColumn>
-                </DataGrid.Columns>
-            </DataGrid>
-        </Grid>
+        <TabControl Grid.Row="2" SelectedIndex="{Binding SelectedRepairTabIndex, Mode=TwoWay}">
+            <TabItem Header="{DynamicResource String.TsRepair.Tracks}">
+                <Grid RowDefinitions="Auto,*" RowSpacing="6" Margin="6">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto,Auto" ColumnSpacing="8">
+                        <CheckBox Grid.Column="1" Content="{DynamicResource String.TsRepair.KeepServiceInformation}"
+                                  IsChecked="{Binding KeepServiceInformation}" VerticalAlignment="Center" />
+                        <Button Grid.Column="2" Content="{DynamicResource String.TsRepair.SelectAll}"
+                                Command="{Binding SelectAllCommand}" MinWidth="80" />
+                        <Button Grid.Column="3" Content="{DynamicResource String.TsRepair.ClearAll}"
+                                Command="{Binding ClearAllCommand}" MinWidth="80" />
+                    </Grid>
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding Tracks}" AutoGenerateColumns="False"
+                              GridLinesVisibility="All" CanUserResizeColumns="True">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.Column.Keep}" Width="65">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="models:TsRepairTrackItem">
+                                        <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" HorizontalAlignment="Center" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="PID" Binding="{Binding PidText}" Width="80" IsReadOnly="True" />
+                            <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Program}"
+                                                Binding="{Binding ProgramText}" Width="80" IsReadOnly="True" />
+                            <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Stream}"
+                                                Binding="{Binding StreamText}" Width="220" IsReadOnly="True" />
+                            <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.Column.RepairSources}" Width="*">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="models:TsRepairTrackItem">
+                                        <TextBlock Text="{Binding RepairSourcesText}" TextWrapping="Wrap" Margin="4,2" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="{DynamicResource String.TsRepair.Column.Gaps}"
+                                                Binding="{Binding GapCount}" Width="80" IsReadOnly="True" />
+                            <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.Column.Repairable}" Width="90">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate x:DataType="models:TsRepairTrackItem">
+                                        <Grid Margin="6,0">
+                                            <TextBlock Text="{Binding RepairableGapCount}"
+                                                       Classes.repairFull="{Binding IsFullyRepairable}"
+                                                       Classes.repairPartial="{Binding IsPartiallyRepairable}"
+                                                       Classes.repairNone="{Binding IsNotRepairable}"
+                                                       HorizontalAlignment="Left" VerticalAlignment="Center" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+            <TabItem Header="{DynamicResource String.TsRepair.LargeGap.Tab}"
+                     IsVisible="{Binding HasLargeGaps}">
+                <Grid RowDefinitions="Auto,*" RowSpacing="6" Margin="6">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+                        <Button Grid.Column="1" Grid.ColumnSpan="2"
+                                Content="{Binding LargeGapMatchButtonText}"
+                                Command="{Binding MatchLargeGapsCommand}"
+                                IsVisible="{Binding IsLargeGapPromptVisible}" MinWidth="220" />
+                        <Button Grid.Column="1" Content="{DynamicResource String.TsRepair.SelectAll}"
+                                Command="{Binding SelectAllLargeGapsCommand}"
+                                IsVisible="{Binding IsLargeGapMatchingCompleted}" MinWidth="80" />
+                        <Button Grid.Column="2" Content="{DynamicResource String.TsRepair.ClearAll}"
+                                Command="{Binding ClearAllLargeGapsCommand}"
+                                IsVisible="{Binding IsLargeGapMatchingCompleted}" MinWidth="80" />
+                    </Grid>
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding LargeGaps}" AutoGenerateColumns="False"
+                              GridLinesVisibility="All" CanUserResizeColumns="True">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.LargeGap.Column.Use}" Width="60">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:TsRepairLargeGapItem">
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}"
+                                              IsEnabled="{Binding CanSelect}" HorizontalAlignment="Center" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="{DynamicResource String.TsRepair.LargeGap.Column.Time}"
+                                            Binding="{Binding TimeText}" Width="190" IsReadOnly="True" />
+                        <DataGridTextColumn Header="{DynamicResource String.TsRepair.LargeGap.Column.Duration}"
+                                            Binding="{Binding DurationText}" Width="105" IsReadOnly="True" />
+                        <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.LargeGap.Column.Tracks}"
+                                                Width="*" IsReadOnly="True">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:TsRepairLargeGapItem">
+                                    <TextBlock Text="{Binding TracksText}" TextWrapping="Wrap" Margin="4,2" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.LargeGap.Column.Source}"
+                                                Width="180" IsReadOnly="True">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:TsRepairLargeGapItem">
+                                    <TextBlock Text="{Binding SourceText}" TextWrapping="Wrap" Margin="4,2" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="{DynamicResource String.TsRepair.LargeGap.Column.Result}" Width="150">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="models:TsRepairLargeGapItem">
+                                    <TextBlock Text="{Binding ResultText}" TextWrapping="Wrap" Margin="4,2"
+                                               Classes.repairFull="{Binding IsFull}"
+                                               Classes.repairPartial="{Binding IsWarning}"
+                                               Classes.repairNone="{Binding IsNone}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </TabItem>
+        </TabControl>
 
         <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
             <Button Grid.Column="1" Content="{DynamicResource String.TsRepair.Analyze}"

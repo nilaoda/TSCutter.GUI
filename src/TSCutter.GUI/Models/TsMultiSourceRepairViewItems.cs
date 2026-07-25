@@ -43,3 +43,44 @@ public sealed partial class TsRepairTrackItem : ObservableObject
 
     partial void OnIsSelectedChanged(bool value) => SelectionChanged?.Invoke();
 }
+
+public enum TsRepairLargeGapViewStatus
+{
+    Pending,
+    Full,
+    Partial,
+    None
+}
+
+public sealed partial class TsRepairLargeGapItem : ObservableObject
+{
+    public required TsRepairLargeGap Analysis { get; init; }
+    public required string TimeText { get; init; }
+    public required string DurationText { get; init; }
+    public required string TracksText { get; init; }
+
+    [ObservableProperty]
+    private string _sourceText = string.Empty;
+
+    [ObservableProperty]
+    private string _resultText = string.Empty;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsPending), nameof(IsFull), nameof(IsPartial), nameof(IsNone),
+        nameof(IsWarning), nameof(CanSelect))]
+    private TsRepairLargeGapViewStatus _status;
+
+    [ObservableProperty]
+    private bool _isSelected;
+
+    public bool IsPending => Status == TsRepairLargeGapViewStatus.Pending;
+    public bool IsFull => Status == TsRepairLargeGapViewStatus.Full;
+    public bool IsPartial => Status == TsRepairLargeGapViewStatus.Partial;
+    public bool IsNone => Status == TsRepairLargeGapViewStatus.None;
+    public bool IsWarning => IsPending || IsPartial;
+    public bool CanSelect => IsFull || IsPartial;
+
+    public event Action? SelectionChanged;
+
+    partial void OnIsSelectedChanged(bool value) => SelectionChanged?.Invoke();
+}

@@ -84,7 +84,7 @@ public sealed class TsStreamFilterService
         TsFilterPlan plan,
         IProgress<TsFilterProgress>? progress = null,
         CancellationToken cancellationToken = default) =>
-        FilterCoreAsync(sourcePath, outputPath, catalog, plan, null, null, null, null,
+        FilterCoreAsync(sourcePath, outputPath, catalog, plan, null, null, null, null, null,
             progress, cancellationToken);
 
     internal Task<TsFilterResult> FilterWithInsertionsAsync(
@@ -93,12 +93,13 @@ public sealed class TsStreamFilterService
         TsCheckResult catalog,
         TsFilterPlan plan,
         IReadOnlyDictionary<long, List<TsPacketInsertion>> insertions,
+        IReadOnlyDictionary<long, List<TsLargeGapInsertion>> largeGapInsertions,
         IReadOnlyList<TsPacketReplacement> replacements,
         IReadOnlySet<long> discardPacketOffsets,
         TsRepairOutputValidator outputValidator,
         IProgress<TsFilterProgress>? progress = null,
         CancellationToken cancellationToken = default) =>
-        FilterCoreAsync(sourcePath, outputPath, catalog, plan, insertions, replacements,
+        FilterCoreAsync(sourcePath, outputPath, catalog, plan, insertions, largeGapInsertions, replacements,
             discardPacketOffsets, outputValidator, progress, cancellationToken);
 
     private async Task<TsFilterResult> FilterCoreAsync(
@@ -107,6 +108,7 @@ public sealed class TsStreamFilterService
         TsCheckResult catalog,
         TsFilterPlan plan,
         IReadOnlyDictionary<long, List<TsPacketInsertion>>? insertions,
+        IReadOnlyDictionary<long, List<TsLargeGapInsertion>>? largeGapInsertions,
         IReadOnlyList<TsPacketReplacement>? replacements,
         IReadOnlySet<long>? discardPacketOffsets,
         TsRepairOutputValidator? outputValidator,
@@ -136,6 +138,7 @@ public sealed class TsStreamFilterService
         var hasContinuityOffset = new bool[8192];
         var activeReplacements = new Dictionary<int, ActiveReplacementWriter>();
         var activeElementaryReplacements = new Dictionary<int, ActiveElementaryReplacementWriter>();
+        var largeGapDiscardRanges = new Dictionary<int, (long StartOffset, long EndOffset)>();
 
         try
         {
@@ -265,6 +268,91 @@ public sealed class TsStreamFilterService
                 }
             }
 
+            async ValueTask WriteLargeGapInsertionsAsync(
+                IReadOnlyList<TsLargeGapInsertion> rangeInsertions)
+            {
+                foreach (var insertion in rangeInsertions)
+                {
+                    if (!donorStreams.TryGetValue(insertion.SourcePath, out var donor))
+                    {
+                        donor = new FileStream(
+                            insertion.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                            ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                        donorStreams[insertion.SourcePath] = donor;
+                    }
+
+                    var tracks = insertion.Tracks.ToDictionary(item => item.SourcePid);
+                    var continuityCounters = insertion.Tracks.ToDictionary(
+                        item => item.TargetPid, item => item.StartContinuityCounter);
+                    var packetCounts = insertion.Tracks.ToDictionary(item => item.TargetPid, _ => 0);
+                    var payloadPacketCounts = insertion.Tracks.ToDictionary(item => item.TargetPid, _ => 0);
+                    donor.Position = insertion.SourceStartOffset;
+                    while (donor.Position < insertion.SourceEndOffset)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var sourceOffset = donor.Position;
+                        await donor.ReadExactlyAsync(
+                                repairPacket.AsMemory(0, PacketSize), cancellationToken)
+                            .ConfigureAwait(false);
+                        if (repairPacket[0] != 0x47)
+                            throw new TsRepairException(TsRepairErrorCode.SourceChanged);
+                        var sourcePid = ((repairPacket[1] & 0x1F) << 8) | repairPacket[2];
+                        if (!tracks.TryGetValue(sourcePid, out var track) ||
+                            sourceOffset < track.SourceStartOffset ||
+                            sourceOffset >= track.SourceEndOffset)
+                        {
+                            continue;
+                        }
+                        if ((repairPacket[1] & 0x80) != 0)
+                            throw new TsRepairException(TsRepairErrorCode.SourceChanged);
+
+                        await EnsurePacketSpaceAsync().ConfigureAwait(false);
+                        var packet = outputBuffer.AsSpan(outputLength, PacketSize);
+                        repairPacket.CopyTo(packet);
+                        packet[1] = (byte)((packet[1] & 0x60) | ((track.TargetPid >> 8) & 0x1F));
+                        packet[2] = (byte)track.TargetPid;
+                        var continuityCounter = continuityCounters[track.TargetPid];
+                        packet[3] = (byte)((packet[3] & 0xF0) | continuityCounter);
+                        var hasPayload = (((packet[3] >> 4) & 0x03) & 0x01) != 0;
+                        if (hasPayload)
+                        {
+                            continuityCounters[track.TargetPid] = (continuityCounter + 1) & 0x0F;
+                            payloadPacketCounts[track.TargetPid]++;
+                        }
+                        if ((packet[1] & 0x40) != 0)
+                            RewritePesTimestamps(packet, track.TimestampOffset90k);
+                        RewritePcrTimestamp(packet, track.TimestampOffset90k);
+                        packetCounts[track.TargetPid]++;
+                        outputLength += PacketSize;
+                        packetsWritten++;
+                    }
+
+                    foreach (var track in insertion.Tracks)
+                    {
+                        if (packetCounts[track.TargetPid] != track.SourcePacketCount ||
+                            payloadPacketCounts[track.TargetPid] != track.SourcePayloadPacketCount)
+                        {
+                            throw new TsRepairException(TsRepairErrorCode.SourceChanged);
+                        }
+                        // 大段补入结束后沿用实际写出的下一个 CC；后续参考包只应用固定偏移，
+                        // 不会顺手重编号并掩盖参考源中原本存在的其他 continuity 异常。
+                        pendingContinuity[track.TargetPid] = continuityCounters[track.TargetPid];
+                        if (largeGapDiscardRanges.TryGetValue(track.TargetPid, out var existingRange))
+                        {
+                            largeGapDiscardRanges[track.TargetPid] = (
+                                Math.Min(existingRange.StartOffset, track.ReferenceDiscardStartOffset),
+                                Math.Max(existingRange.EndOffset, track.ReferenceDiscardEndOffset));
+                        }
+                        else
+                        {
+                            largeGapDiscardRanges[track.TargetPid] = (
+                                track.ReferenceDiscardStartOffset,
+                                track.ReferenceDiscardEndOffset);
+                        }
+                    }
+                }
+            }
+
             async ValueTask<byte[]> LoadReplacementPacketsAsync(TsPacketReplacement replacement)
             {
                 if (!donorStreams.TryGetValue(replacement.SourcePath, out var donor))
@@ -388,6 +476,11 @@ public sealed class TsStreamFilterService
                     }
                     // 区域结束点与下一处缺口可能位于同一个参考包。必须先写完前一区域，
                     // 再插入属于当前包之前的缺失内容，才能保持媒体字节的先后顺序。
+                    if (largeGapInsertions is not null &&
+                        largeGapInsertions.TryGetValue(absoluteOffset, out var rangeInsertions))
+                    {
+                        await WriteLargeGapInsertionsAsync(rangeInsertions).ConfigureAwait(false);
+                    }
                     if (insertions is not null &&
                         insertions.TryGetValue(absoluteOffset, out var packetInsertions))
                     {
@@ -398,6 +491,13 @@ public sealed class TsStreamFilterService
                     // 必须跳过这些已确认损坏的原包，否则输出仍会携带坏负载和 TEI 标志。
                     if (discardPacketOffsets?.Contains(absoluteOffset) == true)
                         continue;
+                    if (largeGapDiscardRanges.TryGetValue(pid, out var discardRange) &&
+                        absoluteOffset >= discardRange.StartOffset)
+                    {
+                        if (absoluteOffset < discardRange.EndOffset)
+                            continue;
+                        largeGapDiscardRanges.Remove(pid);
+                    }
 
                     // 先结束前一区域，再启动同一位置开始的新区域，避免相邻替换互相覆盖状态。
                     if (replacementByStart.TryGetValue(absoluteOffset, out var replacement))
