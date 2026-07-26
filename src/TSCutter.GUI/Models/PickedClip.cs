@@ -54,6 +54,9 @@ public partial class PickedClip : ObservableObject
     [ObservableProperty]
     private bool _isSelected;
 
+    [ObservableProperty]
+    private bool _isActive;
+
     public required FileInfo InFileInfo { get; init; }
 
     public string StartTimeStr => CommonUtil.FormatSeconds(StartTime);

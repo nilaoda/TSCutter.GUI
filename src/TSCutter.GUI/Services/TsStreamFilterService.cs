@@ -8,6 +8,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models;
+using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.Services;
 
@@ -249,7 +250,9 @@ public sealed class TsStreamFilterService
                                     elementaryPayload, segment, segmentPayloadOffset,
                                     packet.Slice(targetPayloadOffset, copyLength));
                                 if (payloadStart)
-                                    RewritePesTimestamps(packet, insertion.TimestampOffset90k);
+                                    TsTimestampFieldCodec.RewritePesTimestamps(
+                                        packet, insertion.TimestampOffset90k,
+                                        preserveFirstMarkerBit: false);
                                 segmentPayloadOffset += copyLength;
                                 synthesizedContinuityCounter =
                                     (synthesizedContinuityCounter + 1) & 0x0F;
@@ -283,15 +286,19 @@ public sealed class TsStreamFilterService
                         await EnsurePacketSpaceAsync().ConfigureAwait(false);
                         var packet = outputBuffer.AsSpan(outputLength, PacketSize);
                         repairPacket.CopyTo(packet);
-                        // 只改写 TS 头中的 PID 与 CC；负载、PUSI、adaptation field 和时间戳保持来源原值。
+                        // PID 与 CC 按目标流重写；负载、PUSI 和 adaptation field 保持来源原值，
+                        // PCR、PTS/DTS 仅应用匹配阶段已经确认的固定时间偏移。
                         packet[1] = (byte)((packet[1] & 0x60) | ((insertion.TargetPid >> 8) & 0x1F));
                         packet[2] = (byte)insertion.TargetPid;
                         packet[3] = (byte)((packet[3] & 0xF0) | continuityCounter);
                         if (((packet[3] >> 4) & 0x01) != 0)
                             continuityCounter = (continuityCounter + 1) & 0x0F;
                         if ((packet[1] & 0x40) != 0)
-                            RewritePesTimestamps(packet, insertion.TimestampOffset90k);
-                        RewritePcrTimestamp(packet, insertion.PcrTimestampOffset90k);
+                            TsTimestampFieldCodec.RewritePesTimestamps(
+                                packet, insertion.TimestampOffset90k,
+                                preserveFirstMarkerBit: false);
+                        TsTimestampFieldCodec.RewritePcr(
+                            packet, insertion.PcrTimestampOffset90k);
                         CompletePacket(referenceFileOffset, true, false);
                     }
                 }
@@ -368,8 +375,11 @@ public sealed class TsStreamFilterService
                             payloadPacketCounts[track.TargetPid]++;
                         }
                         if ((packet[1] & 0x40) != 0)
-                            RewritePesTimestamps(packet, track.TimestampOffset90k);
-                        RewritePcrTimestamp(packet, track.PcrTimestampOffset90k);
+                            TsTimestampFieldCodec.RewritePesTimestamps(
+                                packet, track.TimestampOffset90k,
+                                preserveFirstMarkerBit: false);
+                        TsTimestampFieldCodec.RewritePcr(
+                            packet, track.PcrTimestampOffset90k);
                         packetCounts[track.TargetPid]++;
                         CompletePacket(referenceFileOffset, true, false);
                     }
@@ -433,8 +443,11 @@ public sealed class TsStreamFilterService
                     packet[1] = (byte)((packet[1] & 0x60) | ((replacement.TargetPid >> 8) & 0x1F));
                     packet[2] = (byte)replacement.TargetPid;
                     if ((packet[1] & 0x40) != 0)
-                        RewritePesTimestamps(packet, replacement.TimestampOffset90k);
-                    RewritePcrTimestamp(packet, replacement.PcrTimestampOffset90k);
+                        TsTimestampFieldCodec.RewritePesTimestamps(
+                            packet, replacement.TimestampOffset90k,
+                            preserveFirstMarkerBit: false);
+                    TsTimestampFieldCodec.RewritePcr(
+                        packet, replacement.PcrTimestampOffset90k);
                     copiedPackets++;
                 }
                 if (copiedPackets != replacement.PacketCount)
@@ -902,68 +915,6 @@ public sealed class TsStreamFilterService
         var tolerance = ReadBufferSize * 4L;
         return index < boundaries.Length && boundaries[index] - fileOffset <= tolerance ||
                index > 0 && fileOffset - boundaries[index - 1] <= tolerance;
-    }
-
-    private static void RewritePesTimestamps(Span<byte> packet, long offset90k)
-    {
-        var adaptationControl = (packet[3] >> 4) & 0x03;
-        if ((adaptationControl & 0x01) == 0)
-            return;
-        var payloadOffset = 4;
-        if ((adaptationControl & 0x02) != 0)
-            payloadOffset += packet[4] + 1;
-        if (payloadOffset + 14 > PacketSize)
-            return;
-        var payload = packet[payloadOffset..];
-        if (payload[0] != 0 || payload[1] != 0 || payload[2] != 1 || payload.Length < 9)
-            return;
-        var flags = (payload[7] >> 6) & 0x03;
-        if ((flags & 0x02) != 0 && payload.Length >= 14)
-            WritePesTimestamp(payload[9..14], ReadPesTimestamp(payload[9..14]) + offset90k);
-        if (flags == 0x03 && payload.Length >= 19)
-            WritePesTimestamp(payload[14..19], ReadPesTimestamp(payload[14..19]) + offset90k);
-    }
-
-    private static void RewritePcrTimestamp(Span<byte> packet, long offset90k)
-    {
-        var adaptationControl = (packet[3] >> 4) & 0x03;
-        if ((adaptationControl & 0x02) == 0 || packet[4] < 7 || (packet[5] & 0x10) == 0)
-            return;
-        const long pcrBaseWrap = 1L << 33;
-        var pcr = packet[6..12];
-        var pcrBase = ((long)pcr[0] << 25) |
-                      ((long)pcr[1] << 17) |
-                      ((long)pcr[2] << 9) |
-                      ((long)pcr[3] << 1) |
-                      ((long)pcr[4] >> 7);
-        pcrBase = (pcrBase + offset90k) % pcrBaseWrap;
-        if (pcrBase < 0)
-            pcrBase += pcrBaseWrap;
-        pcr[0] = (byte)(pcrBase >> 25);
-        pcr[1] = (byte)(pcrBase >> 17);
-        pcr[2] = (byte)(pcrBase >> 9);
-        pcr[3] = (byte)(pcrBase >> 1);
-        pcr[4] = (byte)((pcr[4] & 0x7F) | (byte)((pcrBase & 1) << 7));
-    }
-
-    private static long ReadPesTimestamp(ReadOnlySpan<byte> value) =>
-        ((long)(value[0] & 0x0E) << 29) |
-        ((long)value[1] << 22) |
-        ((long)(value[2] & 0xFE) << 14) |
-        ((long)value[3] << 7) |
-        ((long)value[4] >> 1);
-
-    private static void WritePesTimestamp(Span<byte> value, long timestamp)
-    {
-        const long wrap = 1L << 33;
-        timestamp %= wrap;
-        if (timestamp < 0)
-            timestamp += wrap;
-        value[0] = (byte)((value[0] & 0xF0) | (byte)((timestamp >> 29) & 0x0E) | 1);
-        value[1] = (byte)(timestamp >> 22);
-        value[2] = (byte)(((timestamp >> 14) & 0xFE) | 1);
-        value[3] = (byte)(timestamp >> 7);
-        value[4] = (byte)(((timestamp << 1) & 0xFE) | 1);
     }
 
     internal static byte[] BuildPatSection(TsCheckResult catalog, HashSet<int> selectedPrograms)

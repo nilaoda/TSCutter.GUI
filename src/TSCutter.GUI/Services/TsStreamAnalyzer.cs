@@ -9,6 +9,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models;
+using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.Services;
 
@@ -18,7 +19,6 @@ public sealed class TsStreamAnalyzer
     private const int ReadBufferSize = PacketSize * 32_768;
     private const int MaxStoredEvents = 20_000;
     private const int MaxMpegAudioProbeBytes = 64 * 1024;
-    private const long TimestampWrap = 1L << 33;
     private const double PcrGapThresholdSeconds = 0.5;
     private const double TimestampJumpThresholdSeconds = 10;
     private const long TimelineRepairBoundary90k = 22_500;
@@ -460,12 +460,9 @@ public sealed class TsStreamAnalyzer
     private void ProcessPcr(int pid, ReadOnlySpan<byte> bytes, PidState state, long fileOffset, bool discontinuity)
     {
         // PCR base 与 PTS/DTS 同为 90 kHz，先展开 33 位回绕，再检查倒退、跳变和长间隔。
-        var raw = ((long)bytes[0] << 25) |
-                  ((long)bytes[1] << 17) |
-                  ((long)bytes[2] << 9) |
-                  ((long)bytes[3] << 1) |
-                  ((long)bytes[4] >> 7);
-        var pcr = Unwrap(raw, state.LastRawPcr, state.PcrWrapOffset);
+        var raw = TsTimestampFieldCodec.ReadPcrBase(bytes);
+        var pcr = TsTimestampFieldCodec.UnwrapTimestamp(
+            raw, state.LastRawPcr, state.PcrWrapOffset);
         state.LastRawPcr = raw;
         state.PcrWrapOffset = pcr - raw;
 
@@ -1068,13 +1065,14 @@ public sealed class TsStreamAnalyzer
         long? rawPts = null;
         long? rawDts = null;
         if ((flags & 0x02) != 0 && payload.Length >= 14)
-            rawPts = ReadTimestamp(payload[9..14]);
+            rawPts = TsTimestampFieldCodec.ReadPesTimestamp(payload[9..14]);
         if (flags == 0x03 && payload.Length >= 19)
-            rawDts = ReadTimestamp(payload[14..19]);
+            rawDts = TsTimestampFieldCodec.ReadPesTimestamp(payload[14..19]);
 
         if (rawPts is not null)
         {
-            var pts = Unwrap(rawPts.Value, state.LastRawPts, state.PtsWrapOffset);
+            var pts = TsTimestampFieldCodec.UnwrapTimestamp(
+                rawPts.Value, state.LastRawPts, state.PtsWrapOffset);
             state.LastRawPts = rawPts.Value;
             state.PtsWrapOffset = pts - rawPts.Value;
             if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation))
@@ -1090,7 +1088,8 @@ public sealed class TsStreamAnalyzer
 
         if (rawDts is not null)
         {
-            var dts = Unwrap(rawDts.Value, state.LastRawDts, state.DtsWrapOffset);
+            var dts = TsTimestampFieldCodec.UnwrapTimestamp(
+                rawDts.Value, state.LastRawDts, state.DtsWrapOffset);
             state.LastRawDts = rawDts.Value;
             state.DtsWrapOffset = dts - rawDts.Value;
             if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation) &&
@@ -1788,25 +1787,6 @@ public sealed class TsStreamAnalyzer
     {
         if (_timelineOrigin90k == long.MinValue)
             _timelineOrigin90k = value;
-    }
-
-    private static long ReadTimestamp(ReadOnlySpan<byte> value) =>
-        ((long)(value[0] & 0x0E) << 29) |
-        ((long)value[1] << 22) |
-        ((long)(value[2] & 0xFE) << 14) |
-        ((long)value[3] << 7) |
-        ((long)value[4] >> 1);
-
-    private static long Unwrap(long raw, long lastRaw, long wrapOffset)
-    {
-        // 跨越半个 33 位周期才视为回绕，避免把普通时间戳倒退错误吞掉。
-        if (lastRaw == long.MinValue)
-            return raw;
-        if (lastRaw - raw > TimestampWrap / 2)
-            wrapOffset += TimestampWrap;
-        else if (raw - lastRaw > TimestampWrap / 2)
-            wrapOffset -= TimestampWrap;
-        return raw + wrapOffset;
     }
 
     private static bool HasValidPsiCrc(ReadOnlySpan<byte> section)

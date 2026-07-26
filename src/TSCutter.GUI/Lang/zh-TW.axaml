@@ -130,6 +130,14 @@
     <x:String x:Key="String.CaptureFrame.Format">格式</x:String>
     <x:String x:Key="String.AddToQueue">加入佇列...</x:String>
     <x:String x:Key="String.AddToQueueTip">將目前片段加入匯出佇列</x:String>
+    <x:String x:Key="String.MergeClips.Menu">合併選取的剪輯...</x:String>
+    <x:String x:Key="String.MergeClips.Title">合併選取的剪輯</x:String>
+    <x:String x:Key="String.MergeClips.Completed">合併完成！&#10;&#10;輸出檔案：{0}</x:String>
+    <x:String x:Key="String.MergeClips.OutputMatchesSource">輸出檔案不能覆蓋來源檔案。</x:String>
+    <x:String x:Key="String.MergeClips.NoSync">沒有找到有效的 188 位元組 TS 封包結構。</x:String>
+    <x:String x:Key="String.MergeClips.InvalidRange">選取的剪輯範圍無效或沒有可輸出的資料。</x:String>
+    <x:String x:Key="String.MergeClips.SourceChanged">來源檔案在處理期間發生變更或無法繼續讀取。</x:String>
+    <x:String x:Key="String.Clips.SelectionSummary">{0} 個剪輯 / {1}</x:String>
     <x:String x:Key="String.BatchExportQueue">批次匯出</x:String>
     <x:String x:Key="String.BatchExportQueueTip">匯出佇列中的所有片段</x:String>
     <x:String x:Key="String.BatchExportConfirm">將匯出佇列中的 {0} 個片段匯出，確認繼續？</x:String>
