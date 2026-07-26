@@ -81,6 +81,8 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     private ObservableCollection<MenuItem> _themeMenuItems = new();
 
+    public TimelineViewportState TimelineViewport { get; } = new();
+
     [ObservableProperty]
     public partial ObservableCollection<PickedClip> Clips { get; set; } = new();
 
@@ -679,6 +681,8 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     public partial double CurrentTime { get; set; } = 0.0;
 
+    partial void OnCurrentTimeChanged(double value) => TimelineViewport.SetPlayhead(value);
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusInfoText))]
     public partial long DecodeCost { get; set; } = 0L;
@@ -835,6 +839,7 @@ public partial class MainWindowViewModel : ViewModelBase
         NotifyClipSelectionChanged();
         DurationMax = 0.0;
         CurrentTime = 0.0;
+        TimelineViewport.Reset(0, 0);
         DecodeCost = 0L;
     }
 
@@ -850,6 +855,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 await _videoInstance.InitVideoAsync();
                 VideoInfoText = _videoInstance.GetVideoInfoText();
                 DurationMax = _videoInstance.GetVideoDurationInSeconds();
+                TimelineViewport.Reset(
+                    DurationMax,
+                    _videoInstance.EstimatedKeyFrameIntervalSeconds);
         
                 CloseVideoClickCommand.NotifyCanExecuteChanged();
                 SaveFrameClickCommand.NotifyCanExecuteChanged();

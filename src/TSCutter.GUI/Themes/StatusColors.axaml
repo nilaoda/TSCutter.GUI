@@ -9,6 +9,8 @@
             <SolidColorBrush x:Key="AppStatusWarningBackgroundBrush" Color="#B88600" Opacity="0.14" />
             <SolidColorBrush x:Key="AppStatusErrorBackgroundBrush" Color="#D32F2F" Opacity="0.14" />
             <SolidColorBrush x:Key="AppRepairMapSelectionBrush" Color="#1A5F9E" />
+            <SolidColorBrush x:Key="AppTimelineTrackBrush" Color="#E3E3E3" />
+            <SolidColorBrush x:Key="AppTimelineEmptyTrackBrush" Color="#D4D4D4" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
             <SolidColorBrush x:Key="AppStatusSuccessForegroundBrush" Color="#72C985" />
@@ -17,6 +19,8 @@
             <SolidColorBrush x:Key="AppStatusWarningBackgroundBrush" Color="#E6B84A" Opacity="0.13" />
             <SolidColorBrush x:Key="AppStatusErrorBackgroundBrush" Color="#FF7070" Opacity="0.13" />
             <SolidColorBrush x:Key="AppRepairMapSelectionBrush" Color="#72AEE6" />
+            <SolidColorBrush x:Key="AppTimelineTrackBrush" Color="#181A1E" />
+            <SolidColorBrush x:Key="AppTimelineEmptyTrackBrush" Color="#181A1E" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>

@@ -138,6 +138,9 @@
     <x:String x:Key="String.MergeClips.InvalidRange">The selected clip ranges are invalid or contain no output data.</x:String>
     <x:String x:Key="String.MergeClips.SourceChanged">The source file changed during processing or could not be read.</x:String>
     <x:String x:Key="String.Clips.SelectionSummary">{0} clips / {1}</x:String>
+    <x:String x:Key="String.Timeline.FitTip">Fit the complete timeline</x:String>
+    <x:String x:Key="String.Timeline.ZoomTip">Continuously adjust the timeline zoom level; Ctrl/Command+wheel also zooms</x:String>
+    <x:String x:Key="String.Timeline.ScrollTip">Browse the visible timeline range; Shift+wheel also pans</x:String>
     <x:String x:Key="String.BatchExportQueue">Batch Export</x:String>
     <x:String x:Key="String.BatchExportQueueTip">Export all clips in the queue</x:String>
     <x:String x:Key="String.BatchExportConfirm">Export {0} clips from the queue?&#10;&#10;Continue?</x:String>
