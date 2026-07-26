@@ -24,6 +24,9 @@ public class VideoInstance(string filePath) : IDisposable
     private const int AV_PKT_FLAG_KEY_FRAME = 0x0001;
     public long PositionInFile { get; private set; } = 0;
     public long CurrentPts => currentKeyFramePts;
+    public double EstimatedKeyFrameIntervalSeconds => keyFrameGap > 0 && timeBase.Den != 0
+        ? keyFrameGap * timeBase.Num / (double)timeBase.Den
+        : 0;
     public bool Inited { get; private set; } = false;
     private bool AudioMode { get; set; } = false;
     

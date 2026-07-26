@@ -230,7 +230,7 @@
                                                       HorizontalAlignment="Right"
                                                       Command="{Binding ShowMediaInfoClickCommand}" />
                     </commonControls:ToolBar>
-                    <Grid Grid.Row="1" RowDefinitions="*, Auto, Auto, Auto">
+                    <Grid Grid.Row="1" RowDefinitions="*, Auto, Auto">
                         <Grid Grid.Row="0" ColumnDefinitions="*, Auto, 190">
                             <!-- 图片预览区域 -->
                             <ClassicBorderDecorator Grid.Column="0" BorderThickness="0, 2" BorderStyle="Etched">
@@ -474,36 +474,38 @@
                                 </DockPanel>
                             </ClassicBorderDecorator>
                         </Grid>
-                        <!-- 滑块 -->
-                        <controls:CustomSlider Grid.Row="1"
-                                               Name="CustomSlider"
-                                               Margin="0, 2"
-                                               HorizontalAlignment="Stretch"
-                                               VerticalAlignment="Center"
-                                               Minimum="0"
-                                               Maximum="{Binding DurationMax}"
-                                               Value="{Binding CurrentTime, Mode=TwoWay}"
-                                               RangeStart="{Binding SelectedClip.StartTime, FallbackValue=-1}"
-                                               RangeEnd="{Binding SelectedClip.EndTime, FallbackValue=-1}"
-                                               Ranges="{Binding SelectedClipRanges}"
-                                               ValueChangedAfterMouseUp="CustomSlider_OnValueChangedAfterMouseUp">
-                            <controls:CustomSlider.Styles>
-                                <Style Selector="Thumb:pointerover /template/ Ellipse#SliderInnerThumb">
-                                    <Setter Property="RenderTransform" Value="scaleX(0.86) scaleY(0.86)" />
-                                </Style>
-                            </controls:CustomSlider.Styles>
-                            <controls:CustomSlider.Resources>
-                                <ResourceDictionary>
-                                    <!-- Reference to shared resources -->
-                                    <ResourceDictionary.MergedDictionaries>
-                                        <MergeResourceInclude
-                                            Source="avares://TSCutterGUI/Controls/CustomSliderResources.axaml" />
-                                    </ResourceDictionary.MergedDictionaries>
-                                </ResourceDictionary>
-                            </controls:CustomSlider.Resources>
-                        </controls:CustomSlider>
+                        <!-- 时间刻度、剪辑范围、播放头、总览与缩放共用同一套坐标换算。 -->
+                        <controls:TimelineControl Grid.Row="1"
+                                                  Name="MainTimeline"
+                                                  Height="48"
+                                                  Margin="0,2"
+                                                  HorizontalAlignment="Stretch"
+                                                  Minimum="0"
+                                                  Maximum="{Binding DurationMax}"
+                                                  Value="{Binding CurrentTime}"
+                                                  ViewportStart="{Binding TimelineViewport.ViewStart}"
+                                                  ViewportEnd="{Binding TimelineViewport.ViewEnd}"
+                                                  ZoomLevel="{Binding TimelineViewport.ZoomLevel}"
+                                                  Ranges="{Binding SelectedClipRanges}"
+                                                  SeekRequested="Timeline_OnSeekRequested"
+                                                  PanRequested="Timeline_OnPanRequested"
+                                                  ZoomRequested="Timeline_OnZoomRequested"
+                                                  FitRequested="Timeline_OnFitRequested"
+                                                  BackgroundBrush="{DynamicResource {x:Static commonControls:SystemColors.ControlColorKey}}"
+                                                  TrackBrush="{DynamicResource AppTimelineTrackBrush}"
+                                                  EmptyTrackBrush="{DynamicResource AppTimelineEmptyTrackBrush}"
+                                                  BorderDarkBrush="{DynamicResource {x:Static commonControls:SystemColors.ControlDarkDarkColorKey}}"
+                                                  BorderLightBrush="{DynamicResource {x:Static commonControls:SystemColors.ControlLightLightColorKey}}"
+                                                  TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
+                                                  MutedTextBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
+                                                  ClipBrush="{DynamicResource AppStatusSuccessForegroundBrush}"
+                                                  AccentBrush="{DynamicResource AppRepairMapSelectionBrush}"
+                                                  ViewportBrush="{DynamicResource AppRepairMapSelectionBrush}"
+                                                  FitTip="{DynamicResource String.Timeline.FitTip}"
+                                                  ZoomTip="{DynamicResource String.Timeline.ZoomTip}"
+                                                  ScrollTip="{DynamicResource String.Timeline.ScrollTip}" />
                         <!-- 导航等控制键的一行 -->
-                        <Grid Grid.Row="3" ColumnDefinitions="*, Auto, *" Margin="0,2,0,0">
+                        <Grid Grid.Row="2" ColumnDefinitions="*, Auto, *" Margin="0,2,0,0">
                             <Grid.Styles>
                                 <Style Selector="Button.LeftBtn">
                                     <Setter Property="Width" Value="30" />
