@@ -10,13 +10,13 @@ using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models;
+using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.Services;
 
 public sealed class TsMultiSourceRepairService
 {
     private const int PacketSize = TsStreamAnalyzer.PacketSize;
-    private const long TimestampWrap = 1L << 33;
     private const int ReadBufferSize = PacketSize * 32_768;
     private const int ParallelReadBufferSize = PacketSize * 8_192;
     private const int AnchorLength = 4;
@@ -1733,7 +1733,7 @@ public sealed class TsMultiSourceRepairService
                     if (startsNewPes && TryReadPesStart(packet, info, out _, out var rawPts90k) &&
                         rawPts90k != long.MinValue)
                     {
-                        currentPesPts90k = UnwrapTimestamp(
+                        currentPesPts90k = TsTimestampFieldCodec.UnwrapTimestamp(
                             rawPts90k, ref lastRawPts90k, ref ptsWrapOffset90k);
                         currentPesPts90k = job.TimelineNormalizer?.Normalize(
                             currentPesPts90k, position + offset) ?? currentPesPts90k;
@@ -1925,28 +1925,8 @@ public sealed class TsMultiSourceRepairService
         // PTS 和 ES 指纹，才能在不解码的情况下建立同源视频区间映射。
         expectedTotalLength = declaredLength == 0 ? 0 : declaredLength + 6;
         if ((payload[7] & 0x80) != 0 && payload.Length >= 14)
-            pts90k = ReadPesTimestamp(payload[9..14]);
+            pts90k = TsTimestampFieldCodec.ReadPesTimestamp(payload[9..14]);
         return true;
-    }
-
-    private static long ReadPesTimestamp(ReadOnlySpan<byte> value) =>
-        ((long)(value[0] & 0x0E) << 29) |
-        ((long)value[1] << 22) |
-        ((long)(value[2] & 0xFE) << 14) |
-        ((long)value[3] << 7) |
-        ((long)value[4] >> 1);
-
-    private static long UnwrapTimestamp(long rawTimestamp, ref long lastRawTimestamp, ref long wrapOffset)
-    {
-        if (lastRawTimestamp != long.MinValue)
-        {
-            if (lastRawTimestamp - rawTimestamp > TimestampWrap / 2)
-                wrapOffset += TimestampWrap;
-            else if (rawTimestamp - lastRawTimestamp > TimestampWrap / 2)
-                wrapOffset -= TimestampWrap;
-        }
-        lastRawTimestamp = rawTimestamp;
-        return rawTimestamp + wrapOffset;
     }
 
     private static TsRepairPesSignature CreatePesSignature(ulong hash, int elementaryLength) =>
@@ -2150,35 +2130,20 @@ public sealed class TsMultiSourceRepairService
             if (adaptationLength < 7 || packet.Length < 12 || (packet[5] & 0x10) == 0)
                 return;
 
-            var raw = ((long)packet[6] << 25) |
-                      ((long)packet[7] << 17) |
-                      ((long)packet[8] << 9) |
-                      ((long)packet[9] << 1) |
-                      ((long)packet[10] >> 7);
+            var raw = TsTimestampFieldCodec.ReadPcrBase(packet[6..11]);
             if (!_states.TryGetValue(info.Pid, out var state))
             {
                 state = new PcrState();
                 _states[info.Pid] = state;
                 Samples[info.Pid] = [];
             }
-            var unwrapped = UnwrapPcr(raw, state.LastRaw, state.WrapOffset);
+            var unwrapped = TsTimestampFieldCodec.UnwrapTimestamp(
+                raw, state.LastRaw, state.WrapOffset);
             state.LastRaw = raw;
             state.WrapOffset = unwrapped - raw;
             var packetIndex = Math.Max(0, (fileOffset - syncOffset) / PacketSize);
             Samples[info.Pid].Add(new TsTimelineRepairService.PcrSample(
                 packetIndex, unwrapped, info.Discontinuity));
-        }
-
-        private static long UnwrapPcr(long raw, long lastRaw, long wrapOffset)
-        {
-            if (lastRaw != long.MinValue)
-            {
-                if (lastRaw - raw > TimestampWrap / 2)
-                    wrapOffset += TimestampWrap;
-                else if (raw - lastRaw > TimestampWrap / 2)
-                    wrapOffset -= TimestampWrap;
-            }
-            return raw + wrapOffset;
         }
 
         private sealed class PcrState
@@ -2514,7 +2479,8 @@ public sealed class TsMultiSourceRepairService
                 FinishPes(fileOffset);
                 if (!TryReadPesStart(packet, info, out var expectedLength, out var rawPts90k))
                     return;
-                var pts90k = UnwrapTimestamp(rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
+                var pts90k = TsTimestampFieldCodec.UnwrapTimestamp(
+                    rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
                 pts90k = _timelineNormalizer?.Normalize(pts90k, fileOffset) ?? pts90k;
                 _lastKnownPts90k = pts90k;
                 _lastKnownPtsFileOffset = fileOffset;
@@ -3074,7 +3040,8 @@ public sealed class TsMultiSourceRepairService
                 FinishPes(fileOffset, sourcePath);
                 if (!TryReadPesStart(packet, info, out var expectedLength, out var rawPts90k))
                     return;
-                var pts90k = UnwrapTimestamp(rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
+                var pts90k = TsTimestampFieldCodec.UnwrapTimestamp(
+                    rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
                 pts90k = _timelineNormalizer?.Normalize(pts90k, fileOffset) ?? pts90k;
                 if (pts90k != long.MinValue &&
                     (_lastIndexedPts90k == long.MinValue ||
@@ -3272,7 +3239,8 @@ public sealed class TsMultiSourceRepairService
                 FinishPes(fileOffset);
                 if (!TryReadPesStart(packet, info, out var expectedLength, out var rawPts90k))
                     return;
-                var pts90k = UnwrapTimestamp(rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
+                var pts90k = TsTimestampFieldCodec.UnwrapTimestamp(
+                    rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
                 pts90k = timelineNormalizer?.Normalize(pts90k, fileOffset) ?? pts90k;
                 _activePes = new DonorPesInfo(fileOffset, expectedLength, pts90k);
             }
@@ -3514,7 +3482,8 @@ public sealed class TsMultiSourceRepairService
             if (info.PayloadStart &&
                 TryReadPesStart(packet, info, out _, out var rawPts90k))
             {
-                var value = UnwrapTimestamp(rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
+                var value = TsTimestampFieldCodec.UnwrapTimestamp(
+                    rawPts90k, ref _lastRawPts90k, ref _ptsWrapOffset90k);
                 pts90k = timelineNormalizer?.Normalize(value, fileOffset) ?? value;
                 _activeInspectionPes = new InspectionPes(fileOffset, pts90k.Value);
             }

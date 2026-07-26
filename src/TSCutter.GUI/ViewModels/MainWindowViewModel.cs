@@ -58,6 +58,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(ZoomFactorStr));
         OnPropertyChanged(nameof(StatusInfoText));
+        OnPropertyChanged(nameof(SelectedClipsEstimatedSizeStr));
+        OnPropertyChanged(nameof(SelectedClipsDurationSummaryStr));
     }
 
     private long PositionInFile => _videoInstance!.PositionInFile;
@@ -82,6 +84,43 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     public partial ObservableCollection<PickedClip> Clips { get; set; } = new();
 
+    // SelectedClip 表示用于编辑起止点的活动项；IsSelected 表示参与多选合并的集合。
+    private PickedClip? _clipSelectionAnchor;
+    public int SelectedClipCount => Clips.Count(clip => clip.IsSelected);
+    public IReadOnlyList<ClipTimelineRange> SelectedClipRanges => Clips
+        .Where(clip => clip.IsSelected)
+        .Select(clip => new ClipTimelineRange(
+            clip.StartTime,
+            clip.EndTime < 0 ? DurationMax : clip.EndTime,
+            ReferenceEquals(clip, SelectedClip)))
+        .ToArray();
+
+    public string SelectedClipsEstimatedSizeStr
+    {
+        get
+        {
+            var aggregate = GetSelectedClipAggregate();
+            return aggregate.Count == 0
+                ? string.Empty
+                : LocalizationManager.Instance.String_SizePrefix +
+                  CommonUtil.FormatFileSize(aggregate.Bytes);
+        }
+    }
+
+    public string SelectedClipsDurationSummaryStr
+    {
+        get
+        {
+            var aggregate = GetSelectedClipAggregate();
+            return aggregate.Count == 0
+                ? string.Empty
+                : string.Format(
+                    LocalizationManager.Instance.String_Clips_SelectionSummary,
+                    aggregate.Count,
+                    CommonUtil.FormatSeconds(aggregate.DurationSeconds));
+        }
+    }
+
     private long _queueIdCounter;
     private string? _lastQueueOutputDirectory;
     public ObservableCollection<ExportQueueItem> ExportQueue { get; } = new();
@@ -100,12 +139,104 @@ public partial class MainWindowViewModel : ViewModelBase
     partial void OnSelectedClipChanged(PickedClip? value)
     {
         foreach (var clip in Clips)
-            clip.IsSelected = clip == value;
+            clip.IsActive = ReferenceEquals(clip, value);
     }
-    
-    public void SelectClip(PickedClip clip)
+
+    public void SelectClip(PickedClip clip, KeyModifiers modifiers = KeyModifiers.None)
     {
-        SelectedClip = clip;
+        var toggle = modifiers.HasFlag(KeyModifiers.Control) ||
+                     modifiers.HasFlag(KeyModifiers.Meta);
+        if (modifiers.HasFlag(KeyModifiers.Shift) && _clipSelectionAnchor is not null)
+        {
+            var anchorIndex = Clips.IndexOf(_clipSelectionAnchor);
+            var targetIndex = Clips.IndexOf(clip);
+            if (anchorIndex >= 0 && targetIndex >= 0)
+            {
+                foreach (var item in Clips)
+                    item.IsSelected = false;
+                var start = Math.Min(anchorIndex, targetIndex);
+                var end = Math.Max(anchorIndex, targetIndex);
+                for (var index = start; index <= end; index++)
+                    Clips[index].IsSelected = true;
+                SelectedClip = clip;
+            }
+        }
+        else if (toggle)
+        {
+            clip.IsSelected = !clip.IsSelected;
+            if (clip.IsSelected)
+            {
+                SelectedClip = clip;
+                _clipSelectionAnchor = clip;
+            }
+            else if (ReferenceEquals(SelectedClip, clip))
+            {
+                SelectedClip = Clips.LastOrDefault(item => item.IsSelected);
+            }
+        }
+        else
+        {
+            foreach (var item in Clips)
+                item.IsSelected = ReferenceEquals(item, clip);
+            SelectedClip = clip;
+            _clipSelectionAnchor = clip;
+        }
+
+        NotifyClipSelectionChanged();
+    }
+
+    private void NotifyClipSelectionChanged()
+    {
+        OnPropertyChanged(nameof(SelectedClipCount));
+        OnPropertyChanged(nameof(SelectedClipRanges));
+        OnPropertyChanged(nameof(SelectedClipsEstimatedSizeStr));
+        OnPropertyChanged(nameof(SelectedClipsDurationSummaryStr));
+        MergeSelectedClipsCommand.NotifyCanExecuteChanged();
+    }
+
+    private (int Count, long Bytes, double DurationSeconds) GetSelectedClipAggregate()
+    {
+        var ranges = Clips
+            .Where(clip => clip.IsSelected)
+            .Select(clip => new ClipAggregateRange(
+                Math.Max(0, clip.StartPosition),
+                clip.EndPosition > 0
+                    ? Math.Min(clip.EndPosition, clip.InFileInfo.Length)
+                    : clip.InFileInfo.Length,
+                Math.Max(0, clip.StartTime),
+                clip.EndTime < 0 ? DurationMax : clip.EndTime))
+            .Where(range => range.EndPosition > range.StartPosition &&
+                            range.EndTime > range.StartTime)
+            .OrderBy(range => range.StartPosition)
+            .ToArray();
+        if (ranges.Length == 0)
+            return default;
+
+        long totalBytes = 0;
+        double totalDuration = 0;
+        var current = ranges[0];
+        for (var index = 1; index < ranges.Length; index++)
+        {
+            var next = ranges[index];
+            if (next.StartPosition > current.EndPosition)
+            {
+                totalBytes += current.EndPosition - current.StartPosition;
+                totalDuration += current.EndTime - current.StartTime;
+                current = next;
+                continue;
+            }
+
+            // 与实际合并服务保持一致：重叠剪辑只输出一次，大小和时长按并集统计。
+            current = current with
+            {
+                EndPosition = Math.Max(current.EndPosition, next.EndPosition),
+                EndTime = Math.Max(current.EndTime, next.EndTime)
+            };
+        }
+
+        totalBytes += current.EndPosition - current.StartPosition;
+        totalDuration += current.EndTime - current.StartTime;
+        return (ranges.Length, totalBytes, totalDuration);
     }
     
     [RelayCommand]
@@ -201,7 +332,7 @@ public partial class MainWindowViewModel : ViewModelBase
             EndTime = DurationMax,
         };
         Clips.Add(newClip);
-        SelectedClip = newClip;
+        SelectClip(newClip);
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]
@@ -210,8 +341,12 @@ public partial class MainWindowViewModel : ViewModelBase
         var index = Clips.ToList().FindIndex(x => x.ClipID == SelectedClip?.ClipID);
         if (index <= -1) return;
         
-        Clips.RemoveAt(index);   
-        SelectedClip = null;
+        var removed = Clips[index];
+        Clips.RemoveAt(index);
+        if (ReferenceEquals(_clipSelectionAnchor, removed))
+            _clipSelectionAnchor = null;
+        SelectedClip = Clips.LastOrDefault(item => item.IsSelected);
+        NotifyClipSelectionChanged();
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]
@@ -220,10 +355,12 @@ public partial class MainWindowViewModel : ViewModelBase
         SelectedClip!.StartTime = CurrentTime;
         SelectedClip!.StartPts = CurrentPts;
         SelectedClip!.StartPosition = PositionInFile;
-        if (!(SelectedClip!.EndTime <= CurrentTime)) return;
-        
-        SelectedClip!.EndTime = DurationMax;
-        SelectedClip!.EndPosition = -1;
+        if (SelectedClip!.EndTime <= CurrentTime)
+        {
+            SelectedClip!.EndTime = DurationMax;
+            SelectedClip!.EndPosition = -1;
+        }
+        NotifyClipSelectionChanged();
     }
 
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]
@@ -232,10 +369,12 @@ public partial class MainWindowViewModel : ViewModelBase
         SelectedClip!.EndTime = CurrentTime;
         SelectedClip!.EndPts = CurrentPts;
         SelectedClip!.EndPosition = PositionInFile;
-        if (!(SelectedClip!.StartTime >= CurrentTime)) return;
-        
-        SelectedClip!.StartTime = 0;
-        SelectedClip!.StartPosition = 0;
+        if (SelectedClip!.StartTime >= CurrentTime)
+        {
+            SelectedClip!.StartTime = 0;
+            SelectedClip!.StartPosition = 0;
+        }
+        NotifyClipSelectionChanged();
     }
 
     [RelayCommand]
@@ -348,6 +487,100 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]
     private async Task SaveVideoClickAsync() => await SaveVideoAsync();
+
+    [RelayCommand(CanExecute = nameof(CanMergeSelectedClips))]
+    private async Task MergeSelectedClipsAsync()
+    {
+        var selected = Clips
+            .Where(clip => clip.IsSelected)
+            .OrderBy(clip => clip.StartPosition)
+            .ToArray();
+        if (selected.Length < 2)
+            return;
+
+        var sourcePath = selected[0].InFileInfo.FullName;
+        var settings = new SaveFileDialogSettings
+        {
+            Title = LocalizationManager.Instance.String_MergeClips_Title,
+            SuggestedStartLocation = new DesktopDialogStorageFolder(
+                Path.GetDirectoryName(sourcePath)!),
+            SuggestedFileName = Path.GetFileNameWithoutExtension(sourcePath) + "_merged.ts",
+            Filters =
+            [
+                new(LocalizationManager.Instance.String_TsFiles, ["ts"]),
+                new(LocalizationManager.Instance.String_AllFiles, "*")
+            ],
+            DefaultExtension = "ts"
+        };
+        var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+        if (result?.Path is null)
+            return;
+
+        var outputPath = result.Path.LocalPath;
+        if (PathsEqual(sourcePath, outputPath))
+        {
+            await ShowMessageAsync(
+                LocalizationManager.Instance.String_MergeClips_OutputMatchesSource,
+                LocalizationManager.Instance.String_Error,
+                MessageBoxIcon.Error);
+            return;
+        }
+
+        var request = new TsClipMergeRequest
+        {
+            SourcePath = sourcePath,
+            OutputPath = outputPath,
+            Ranges = selected.Select(clip => new TsClipMergeRange(
+                clip.StartPosition,
+                clip.EndPosition,
+                clip.StartTime,
+                clip.EndTime < 0 ? DurationMax : clip.EndTime)).ToArray()
+        };
+        var outputViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
+        outputViewModel.SetMergeTask(request);
+        await _dialogService.ShowDialogAsync(this, outputViewModel).ConfigureAwait(true);
+        if (outputViewModel.Exception is not null)
+        {
+            await ShowMessageAsync(
+                FormatMergeError(outputViewModel.Exception),
+                LocalizationManager.Instance.String_Error,
+                MessageBoxIcon.Error);
+            return;
+        }
+
+        if (outputViewModel.DialogResult == true)
+        {
+            await ShowMessageAsync(
+                string.Format(
+                    LocalizationManager.Instance.String_MergeClips_Completed,
+                    outputPath),
+                LocalizationManager.Instance.String_MergeClips_Title,
+                MessageBoxIcon.Information);
+        }
+    }
+
+    private bool CanMergeSelectedClips => SelectedClipCount >= 2 &&
+                                          Clips.Where(clip => clip.IsSelected).All(clip =>
+                                              clip.EndTime > clip.StartTime &&
+                                              clip.StartPosition >= 0 &&
+                                              (clip.EndPosition < 0 ||
+                                               clip.EndPosition > clip.StartPosition));
+
+    private static string FormatMergeError(Exception exception)
+    {
+        if (exception is not TsClipMergeException mergeException)
+            return exception.Message;
+        return mergeException.Code switch
+        {
+            TsClipMergeErrorCode.OutputMatchesSource =>
+                LocalizationManager.Instance.String_MergeClips_OutputMatchesSource,
+            TsClipMergeErrorCode.NoSync =>
+                LocalizationManager.Instance.String_MergeClips_NoSync,
+            TsClipMergeErrorCode.InvalidRange =>
+                LocalizationManager.Instance.String_MergeClips_InvalidRange,
+            _ => LocalizationManager.Instance.String_MergeClips_SourceChanged
+        };
+    }
 
     [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
     private void CloseVideoClick()
@@ -598,6 +831,8 @@ public partial class MainWindowViewModel : ViewModelBase
         DecodedBitmap = null;
         Clips.Clear();
         SelectedClip = null;
+        _clipSelectionAnchor = null;
+        NotifyClipSelectionChanged();
         DurationMax = 0.0;
         CurrentTime = 0.0;
         DecodeCost = 0L;
@@ -965,4 +1200,10 @@ public partial class MainWindowViewModel : ViewModelBase
             ThemeMenuItems.Add(menuItem);
         }
     }
+
+    private readonly record struct ClipAggregateRange(
+        long StartPosition,
+        long EndPosition,
+        double StartTime,
+        double EndTime);
 }

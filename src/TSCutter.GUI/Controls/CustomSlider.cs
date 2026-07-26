@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -8,6 +9,7 @@ using Avalonia.Interactivity;
 using Avalonia.Media;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
+using TSCutter.GUI.Models;
 using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.Controls;
@@ -15,7 +17,7 @@ namespace TSCutter.GUI.Controls;
 public class CustomSlider : Grid
 {
     private readonly Slider _innerSlider;
-    private readonly Border _highlightBorder;
+    private readonly Canvas _highlightCanvas;
     private readonly Border _highlightContainer;
     private Track? _track;
     private Thumb? _thumb;
@@ -36,6 +38,9 @@ public class CustomSlider : Grid
 
     public static readonly StyledProperty<double> RangeEndProperty =
         AvaloniaProperty.Register<CustomSlider, double>(nameof(RangeEnd), -1);
+
+    public static readonly StyledProperty<IReadOnlyList<ClipTimelineRange>?> RangesProperty =
+        AvaloniaProperty.Register<CustomSlider, IReadOnlyList<ClipTimelineRange>?>(nameof(Ranges));
 
     public double Minimum
     {
@@ -67,6 +72,12 @@ public class CustomSlider : Grid
         set => SetValue(RangeEndProperty, value);
     }
 
+    public IReadOnlyList<ClipTimelineRange>? Ranges
+    {
+        get => GetValue(RangesProperty);
+        set => SetValue(RangesProperty, value);
+    }
+
     static CustomSlider()
     {
         MinimumProperty.Changed.AddClassHandler<CustomSlider>((s, e) =>
@@ -90,6 +101,7 @@ public class CustomSlider : Grid
         });
         RangeStartProperty.Changed.AddClassHandler<CustomSlider>((s, _) => s.UpdateHighlightPosition());
         RangeEndProperty.Changed.AddClassHandler<CustomSlider>((s, _) => s.UpdateHighlightPosition());
+        RangesProperty.Changed.AddClassHandler<CustomSlider>((s, _) => s.UpdateHighlightPosition());
     }
 
     public CustomSlider()
@@ -114,9 +126,8 @@ public class CustomSlider : Grid
         _innerSlider.PropertyChanged += InnerSliderPropertyChanged;
         _innerSlider.TemplateApplied += InnerSlider_TemplateApplied;
 
-        _highlightBorder = new Border
+        _highlightCanvas = new Canvas
         {
-            Background = new SolidColorBrush(Colors.Green),
             IsHitTestVisible = false,
             HorizontalAlignment = Avalonia.Layout.HorizontalAlignment.Left,
             VerticalAlignment = Avalonia.Layout.VerticalAlignment.Stretch,
@@ -127,7 +138,7 @@ public class CustomSlider : Grid
         {
             IsHitTestVisible = false,
             Height = 5,
-            Child = _highlightBorder,
+            Child = _highlightCanvas,
         };
         Grid.SetRow(_highlightContainer, 1);
 
@@ -221,9 +232,9 @@ public class CustomSlider : Grid
 
     private void UpdateHighlightPosition()
     {
-        if (_track == null || _thumb == null || Maximum <= Minimum || RangeStart < 0 || RangeEnd < 0)
+        if (_track == null || _thumb == null || Maximum <= Minimum)
         {
-            _highlightBorder.Opacity = 0;
+            _highlightCanvas.Opacity = 0;
             return;
         }
 
@@ -234,22 +245,52 @@ public class CustomSlider : Grid
         var thumbWidth = _thumb.Bounds.Width;
         var trackWidth = _track.Bounds.Width;
         var effectiveWidth = trackWidth - thumbWidth;
-        if (effectiveWidth <= 0) return;
+        if (effectiveWidth <= 0)
+        {
+            _highlightCanvas.Opacity = 0;
+            return;
+        }
 
         // 用当前 Thumb 位置和当前 Value 反推 Thumb 在 Value=Min 时的基准中心位置
         var currentRatio = Math.Clamp((Value - Minimum) / (Maximum - Minimum), 0, 1);
         var baseCenterX = thumbCenterCurrent.Value.X - currentRatio * effectiveWidth;
 
-        var range = Maximum - Minimum;
-        var startRatio = Math.Clamp((RangeStart - Minimum) / range, 0, 1);
-        var endRatio = Math.Clamp((RangeEnd - Minimum) / range, 0, 1);
+        _highlightCanvas.Width = Bounds.Width;
+        _highlightCanvas.Children.Clear();
 
-        // 高亮条从 RangeStart 的 Thumb 中心到 RangeEnd 的 Thumb 中心
-        var left = baseCenterX + startRatio * effectiveWidth;
-        var width = Math.Max(0, (endRatio - startRatio) * effectiveWidth);
+        var ranges = Ranges is { Count: > 0 }
+            ? Ranges
+            : RangeStart >= 0 && RangeEnd >= 0
+                ? [new ClipTimelineRange(RangeStart, RangeEnd, true)]
+                : null;
+        if (ranges is null)
+        {
+            _highlightCanvas.Opacity = 0;
+            return;
+        }
 
-        _highlightBorder.Margin = new Thickness(left, 0, 0, 0);
-        _highlightBorder.Width = width;
-        _highlightBorder.Opacity = 1;
+        var valueRange = Maximum - Minimum;
+        // 非活动区间先绘制，活动区间最后绘制，重叠时仍能看出当前编辑对象。
+        foreach (var item in ranges.OrderBy(range => range.IsActive))
+        {
+            if (item.End <= item.Start)
+                continue;
+            var startRatio = Math.Clamp((item.Start - Minimum) / valueRange, 0, 1);
+            var endRatio = Math.Clamp((item.End - Minimum) / valueRange, 0, 1);
+            var left = baseCenterX + startRatio * effectiveWidth;
+            var width = Math.Max(1, (endRatio - startRatio) * effectiveWidth);
+            var highlight = new Border
+            {
+                Width = width,
+                Height = 5,
+                Background = new SolidColorBrush(Colors.Green),
+                Opacity = item.IsActive ? 1 : 0.55,
+                IsHitTestVisible = false
+            };
+            Canvas.SetLeft(highlight, left);
+            Canvas.SetTop(highlight, 0);
+            _highlightCanvas.Children.Add(highlight);
+        }
+        _highlightCanvas.Opacity = _highlightCanvas.Children.Count > 0 ? 1 : 0;
     }
 }

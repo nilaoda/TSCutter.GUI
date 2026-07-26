@@ -55,7 +55,7 @@ public partial class MainWindow : ClassicWindow
     {
         if (sender is Border { DataContext: PickedClip clip })
         {
-            ViewModel.SelectClip(clip);
+            ViewModel.SelectClip(clip, e.KeyModifiers);
         }
     }
 

@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models;
+using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.Services;
 
@@ -14,7 +15,6 @@ public sealed class TsTimelineRepairService
 {
     private const int PacketSize = TsStreamAnalyzer.PacketSize;
     private const int ReadPacketCount = 32_768;
-    private const long TimestampWrap = 1L << 33;
     private const long BoundaryThreshold90k = 22_500;
     private const long PairMinimumTolerance90k = 9_000;
     private const double MaximumPairedDurationSeconds = 120;
@@ -143,17 +143,20 @@ public sealed class TsTimelineRepairService
                         throw new TsTimelineRepairException(TsTimelineRepairErrorCode.SyncLost, packetIndex);
                     var pid = ((packet[1] & 0x1F) << 8) | packet[2];
                     var transportError = (packet[1] & 0x80) != 0;
-                    if (!transportError && TryGetPcr(packet, out var rawPcr90k, out var pcrOffset, out var discontinuity))
+                    if (!transportError && TsTimestampFieldCodec.TryReadPcr(
+                            packet, out var rawPcr90k, out var pcrOffset, out var discontinuity))
                     {
                         var state = GetOutputPcrState(pcrStates, pid);
-                        var unwrapped = Unwrap(rawPcr90k, state.LastRawPcr90k, state.WrapOffset90k);
+                        var unwrapped = TsTimestampFieldCodec.UnwrapTimestamp(
+                            rawPcr90k, state.LastRawPcr90k, state.WrapOffset90k);
                         state.LastRawPcr90k = rawPcr90k;
                         state.WrapOffset90k = unwrapped - rawPcr90k;
                         var correction = FindCorrection(analysis.Segments, pid, packetIndex, unwrapped);
                         var corrected = unwrapped + correction;
                         if (correction != 0)
                         {
-                            WritePcrBase(packet.Slice(pcrOffset, 5), corrected);
+                            TsTimestampFieldCodec.WritePcrBase(
+                                packet.Slice(pcrOffset, 5), corrected);
                             rewrittenPcrCount++;
                         }
                         ValidateOutputPcr(state, corrected, discontinuity,
@@ -282,10 +285,12 @@ public sealed class TsTimelineRepairService
             var packetIndex = Math.Max(
                 0, (referenceFileOffset - _analysis.SyncOffset) / PacketSize);
             var pid = ((packet[1] & 0x1F) << 8) | packet[2];
-            if (TryGetPcr(packet, out var rawPcr90k, out var pcrOffset, out var discontinuity))
+            if (TsTimestampFieldCodec.TryReadPcr(
+                    packet, out var rawPcr90k, out var pcrOffset, out var discontinuity))
             {
                 var state = GetOutputPcrState(_pcrStates, pid);
-                var unwrapped = Unwrap(rawPcr90k, state.LastRawPcr90k, state.WrapOffset90k);
+                var unwrapped = TsTimestampFieldCodec.UnwrapTimestamp(
+                    rawPcr90k, state.LastRawPcr90k, state.WrapOffset90k);
                 state.LastRawPcr90k = rawPcr90k;
                 state.WrapOffset90k = unwrapped - rawPcr90k;
                 var correction = applyPcrCorrection
@@ -294,7 +299,7 @@ public sealed class TsTimelineRepairService
                 var corrected = unwrapped + correction;
                 if (correction != 0)
                 {
-                    WritePcrBase(packet.Slice(pcrOffset, 5), corrected);
+                    TsTimestampFieldCodec.WritePcrBase(packet.Slice(pcrOffset, 5), corrected);
                     RewrittenPcrCount++;
                 }
                 var errors = RemainingPcrErrorCount;
@@ -344,7 +349,8 @@ public sealed class TsTimelineRepairService
                     if (packet[0] != 0x47)
                         throw new TsTimelineRepairException(TsTimelineRepairErrorCode.SyncLost, packetIndex);
                     if ((packet[1] & 0x80) != 0 ||
-                        !TryGetPcr(packet, out var rawPcr90k, out _, out var discontinuity))
+                        !TsTimestampFieldCodec.TryReadPcr(
+                            packet, out var rawPcr90k, out _, out var discontinuity))
                     {
                         continue;
                     }
@@ -355,7 +361,8 @@ public sealed class TsTimelineRepairService
                         states[pid] = state;
                         result[pid] = [];
                     }
-                    var unwrapped = Unwrap(rawPcr90k, state.LastRawPcr90k, state.WrapOffset90k);
+                    var unwrapped = TsTimestampFieldCodec.UnwrapTimestamp(
+                        rawPcr90k, state.LastRawPcr90k, state.WrapOffset90k);
                     state.LastRawPcr90k = rawPcr90k;
                     state.WrapOffset90k = unwrapped - rawPcr90k;
                     result[pid].Add(new PcrSample(packetIndex, unwrapped, discontinuity));
@@ -641,35 +648,17 @@ public sealed class TsTimelineRepairService
         long packetIndex,
         List<TsTimelineCorrectionSegment> segments)
     {
-        if ((packet[1] & 0x40) == 0)
+        // 先确认当前包确实携带 PTS/DTS，再计算异常区段修正量，避免普通负载包
+        // 在高码率文件中反复遍历时间轴方案。
+        if (!TsTimestampFieldCodec.TryLocatePesTimestamps(
+                packet, out var ptsOffset, out var dtsOffset))
+        {
             return 0;
-        var adaptationControl = (packet[3] >> 4) & 3;
-        if ((adaptationControl & 1) == 0)
-            return 0;
-        var payloadOffset = 4;
-        if ((adaptationControl & 2) != 0)
-            payloadOffset += packet[4] + 1;
-        if (payloadOffset + 14 > PacketSize)
-            return 0;
-        var payload = packet[payloadOffset..];
-        if (payload[0] != 0 || payload[1] != 0 || payload[2] != 1 || payload.Length < 9)
-            return 0;
+        }
+
         var correction = FindTimestampCorrection(segments, packetIndex);
-        if (correction == 0)
-            return 0;
-        var flags = (payload[7] >> 6) & 3;
-        var count = 0;
-        if ((flags & 2) != 0 && payload.Length >= 14)
-        {
-            WritePesTimestamp(payload[9..14], ReadPesTimestamp(payload[9..14]) + correction);
-            count++;
-        }
-        if (flags == 3 && payload.Length >= 19)
-        {
-            WritePesTimestamp(payload[14..19], ReadPesTimestamp(payload[14..19]) + correction);
-            count++;
-        }
-        return count;
+        return TsTimestampFieldCodec.RewritePesTimestamps(
+            packet, correction, ptsOffset, dtsOffset);
     }
 
     private static long FindTimestampCorrection(List<TsTimelineCorrectionSegment> segments, long packetIndex)
@@ -712,58 +701,6 @@ public sealed class TsTimelineRepairService
         return correction;
     }
 
-    private static bool TryGetPcr(
-        ReadOnlySpan<byte> packet,
-        out long rawPcr90k,
-        out int pcrOffset,
-        out bool discontinuity)
-    {
-        rawPcr90k = 0;
-        pcrOffset = 0;
-        discontinuity = false;
-        var adaptationControl = (packet[3] >> 4) & 3;
-        if ((adaptationControl & 2) == 0 || packet[4] < 1)
-            return false;
-        var flags = packet[5];
-        discontinuity = (flags & 0x80) != 0;
-        if ((flags & 0x10) == 0 || packet[4] < 7)
-            return false;
-        pcrOffset = 6;
-        rawPcr90k = ((long)packet[6] << 25) |
-                    ((long)packet[7] << 17) |
-                    ((long)packet[8] << 9) |
-                    ((long)packet[9] << 1) |
-                    ((long)packet[10] >> 7);
-        return true;
-    }
-
-    private static void WritePcrBase(Span<byte> value, long pcr90k)
-    {
-        var raw = ModuloTimestamp(pcr90k);
-        value[0] = (byte)(raw >> 25);
-        value[1] = (byte)(raw >> 17);
-        value[2] = (byte)(raw >> 9);
-        value[3] = (byte)(raw >> 1);
-        value[4] = (byte)((value[4] & 0x7F) | (byte)((raw & 1) << 7));
-    }
-
-    private static long ReadPesTimestamp(ReadOnlySpan<byte> value) =>
-        ((long)(value[0] & 0x0E) << 29) |
-        ((long)value[1] << 22) |
-        ((long)(value[2] & 0xFE) << 14) |
-        ((long)value[3] << 7) |
-        ((long)value[4] >> 1);
-
-    private static void WritePesTimestamp(Span<byte> value, long timestamp90k)
-    {
-        var raw = ModuloTimestamp(timestamp90k);
-        value[0] = (byte)((value[0] & 0xF1) | (byte)(((raw >> 30) & 7) << 1));
-        value[1] = (byte)(raw >> 22);
-        value[2] = (byte)((((raw >> 15) & 0x7F) << 1) | 1);
-        value[3] = (byte)(raw >> 7);
-        value[4] = (byte)(((raw & 0x7F) << 1) | 1);
-    }
-
     private static void ValidateOutputPcr(
         OutputPcrState state,
         long correctedPcr90k,
@@ -793,24 +730,6 @@ public sealed class TsTimelineRepairService
 
     private static double EstimateTime(List<PcrSample> samples, int index, double ticksPerPacket) =>
         (samples[index].PacketIndex - samples[0].PacketIndex) * ticksPerPacket / 90_000.0;
-
-    private static long Unwrap(long raw, long lastRaw, long wrapOffset)
-    {
-        if (lastRaw != long.MinValue)
-        {
-            if (lastRaw - raw > TimestampWrap / 2)
-                wrapOffset += TimestampWrap;
-            else if (raw - lastRaw > TimestampWrap / 2)
-                wrapOffset -= TimestampWrap;
-        }
-        return raw + wrapOffset;
-    }
-
-    private static long ModuloTimestamp(long value)
-    {
-        value %= TimestampWrap;
-        return value < 0 ? value + TimestampWrap : value;
-    }
 
     private static void TryDelete(string path)
     {

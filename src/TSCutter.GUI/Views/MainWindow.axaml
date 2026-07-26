@@ -108,6 +108,8 @@
                                   InputGesture="{OnPlatform Ctrl+S, macOS=⌘+S}" />
                         <MenuItem Header="{DynamicResource String.AddToQueue}"
                                   Command="{Binding AddToQueueCommand}" />
+                        <MenuItem Header="{DynamicResource String.MergeClips.Menu}"
+                                  Command="{Binding MergeSelectedClipsCommand}" />
                         <MenuItem Header="{DynamicResource String.Menu.ExportQueue}"
                                   Command="{Binding BatchExportQueueCommand}" />
                         <Separator />
@@ -288,12 +290,12 @@
                                                                         </Style>
                                                                     </Border.Styles>
                                                                     <Grid>
-                                                                        <!-- Unselected: Raised border -->
+                                                                        <!-- Inactive: Raised border -->
                                                                         <ClassicBorderDecorator BorderThickness="2" BorderStyle="Raised"
-                                                                                                IsVisible="{Binding IsSelected, Converter={x:Static local:App.InverseBoolConverter}}" />
-                                                                        <!-- Selected: Sunken border -->
+                                                                                                IsVisible="{Binding IsActive, Converter={x:Static local:App.InverseBoolConverter}}" />
+                                                                        <!-- Active editor: Sunken border -->
                                                                         <ClassicBorderDecorator BorderThickness="2" BorderStyle="Sunken"
-                                                                                                IsVisible="{Binding IsSelected}" />
+                                                                                                IsVisible="{Binding IsActive}" />
                                                                         <!-- Content -->
                                                                         <StackPanel Margin="4" Spacing="2">
                                                                             <!-- Header: ID + Status -->
@@ -483,6 +485,7 @@
                                                Value="{Binding CurrentTime, Mode=TwoWay}"
                                                RangeStart="{Binding SelectedClip.StartTime, FallbackValue=-1}"
                                                RangeEnd="{Binding SelectedClip.EndTime, FallbackValue=-1}"
+                                               Ranges="{Binding SelectedClipRanges}"
                                                ValueChangedAfterMouseUp="CustomSlider_OnValueChangedAfterMouseUp">
                             <controls:CustomSlider.Styles>
                                 <Style Selector="Thumb:pointerover /template/ Ellipse#SliderInnerThumb">
@@ -591,9 +594,27 @@
                                         <Setter Property="Opacity" Value="0.3" />
                                     </Style>
                                 </StackPanel.Styles>
-                                <!-- Estimated Size -->
-                                <TextBlock Text="{Binding SelectedClip.EstimatedSizeStr, Mode=OneWay}"
-                                           VerticalAlignment="Center" />
+                                <Grid Width="180"
+                                      Height="34"
+                                      RowDefinitions="16,18"
+                                      ClipToBounds="True"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Right">
+                                    <TextBlock Grid.Row="0"
+                                               Text="{Binding SelectedClipsDurationSummaryStr}"
+                                               HorizontalAlignment="Right"
+                                               VerticalAlignment="Center"
+                                               TextAlignment="Right"
+                                               TextTrimming="CharacterEllipsis"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <TextBlock Grid.Row="1"
+                                               Text="{Binding SelectedClipsEstimatedSizeStr, Mode=OneWay}"
+                                               HorizontalAlignment="Right"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               TextAlignment="Right" />
+                                </Grid>
                                 <!-- Save Video Button -->
                                 <Button Command="{Binding SaveVideoClickCommand}"
                                         Classes="accent"
