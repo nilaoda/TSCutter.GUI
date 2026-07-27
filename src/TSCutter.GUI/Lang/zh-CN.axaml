@@ -695,7 +695,8 @@
     <x:String x:Key="String.TsBinaryMerge.Status.DirectReady">将按当前列表顺序直接追加所有文件。</x:String>
     <x:String x:Key="String.TsBinaryMerge.Status.OverlapReady">请先分析相邻文件的重叠区域，再合并输出。</x:String>
     <x:String x:Key="String.TsBinaryMerge.Status.ReadingFiles">正在读取文件信息...</x:String>
-    <x:String x:Key="String.TsBinaryMerge.Status.FilesAdded">已添加 {0:N0} 个文件，跳过 {1:N0} 个无法读取的文件。</x:String>
+    <x:String x:Key="String.TsBinaryMerge.Status.FilesAdded">已添加 {0:N0} 个文件。</x:String>
+    <x:String x:Key="String.TsBinaryMerge.Status.FilesAddedWithSkipped">已添加 {0:N0} 个文件，跳过 {1:N0} 个无法读取的文件。</x:String>
     <x:String x:Key="String.TsBinaryMerge.Status.Sorting">正在按文件名自然顺序排序...</x:String>
     <x:String x:Key="String.TsBinaryMerge.Status.Sorted">自然排序完成。</x:String>
     <x:String x:Key="String.TsBinaryMerge.Status.Analyzing">正在分析相邻文件的二进制重叠区域...</x:String>

@@ -179,10 +179,15 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
                 if (wasEmpty && string.IsNullOrWhiteSpace(OutputPath))
                     OutputPath = BuildDefaultOutputPath(items[0].FilePath);
             }
-            StatusText = string.Format(
-                LocalizationManager.Instance.String_TsBinaryMerge_Status_FilesAdded,
-                items.Length,
-                candidates.Length - items.Length);
+            var skipped = candidates.Length - items.Length;
+            StatusText = skipped == 0
+                ? string.Format(
+                    LocalizationManager.Instance.String_TsBinaryMerge_Status_FilesAdded,
+                    items.Length)
+                : string.Format(
+                    LocalizationManager.Instance.String_TsBinaryMerge_Status_FilesAddedWithSkipped,
+                    items.Length,
+                    skipped);
         }
         finally
         {
