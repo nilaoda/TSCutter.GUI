@@ -1,0 +1,138 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        xmlns:models="clr-namespace:TSCutter.GUI.Models"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.TsBinaryMergeWindow"
+        x:DataType="viewModels:TsBinaryMergeWindowViewModel"
+        Title="{Binding WindowTitle}"
+        Width="900" Height="570" MinWidth="720" MinHeight="460"
+        WindowStartupLocation="CenterScreen"
+        DragDrop.AllowDrop="True">
+    <Grid Margin="12" RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="8">
+        <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
+            <Grid RowDefinitions="Auto,Auto" RowSpacing="7">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="18">
+                    <RadioButton Content="{DynamicResource String.TsBinaryMerge.Mode.Direct}"
+                                 IsChecked="{Binding IsDirectMode, Mode=TwoWay}"
+                                 IsEnabled="{Binding CanModifyFiles}" />
+                    <RadioButton Content="{DynamicResource String.TsBinaryMerge.Mode.Overlap}"
+                                 IsChecked="{Binding IsOverlapMode, Mode=TwoWay}"
+                                 IsEnabled="{Binding CanModifyFiles}" />
+                </StackPanel>
+                <Grid Grid.Row="1" ColumnDefinitions="Auto,110,Auto,*,Auto" ColumnSpacing="8"
+                      IsVisible="{Binding IsOverlapMode}">
+                    <TextBlock Grid.Column="0"
+                               Text="{DynamicResource String.TsBinaryMerge.MaximumSearch}"
+                               VerticalAlignment="Center" />
+                    <NumericUpDown Grid.Column="1" Minimum="64" Maximum="16384" Increment="64"
+                                   Value="{Binding MaximumSearchMiB, Mode=TwoWay}"
+                                   FormatString="0" IsEnabled="{Binding CanModifyFiles}" />
+                    <TextBlock Grid.Column="2" Text="MiB" VerticalAlignment="Center" />
+                    <CheckBox Grid.Column="3"
+                              Content="{DynamicResource String.TsBinaryMerge.AppendUnmatched}"
+                              ToolTip.Tip="{DynamicResource String.TsBinaryMerge.AppendUnmatchedHint}"
+                              IsChecked="{Binding AppendUnmatchedSources, Mode=TwoWay}"
+                              IsEnabled="{Binding CanModifyFiles}" />
+                    <Button Grid.Column="4" Content="{DynamicResource String.TsBinaryMerge.Analyze}"
+                            Command="{Binding AnalyzeCommand}" MinWidth="110" />
+                </Grid>
+            </Grid>
+        </ClassicBorderDecorator>
+
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*,Auto" ColumnSpacing="7">
+            <Button Grid.Column="0" Content="{DynamicResource String.TsBinaryMerge.AddFiles}"
+                    Command="{Binding AddFilesCommand}" MinWidth="90" />
+            <Button Grid.Column="1" Content="{DynamicResource String.TsBinaryMerge.Remove}"
+                    Command="{Binding RemoveFilesCommand}" MinWidth="75" />
+            <Button Grid.Column="2" Content="{DynamicResource String.TsBinaryMerge.MoveUp}"
+                    Command="{Binding MoveUpCommand}" MinWidth="65" />
+            <Button Grid.Column="3" Content="{DynamicResource String.TsBinaryMerge.MoveDown}"
+                    Command="{Binding MoveDownCommand}" MinWidth="65" />
+            <Button Grid.Column="4" Content="{DynamicResource String.TsBinaryMerge.NaturalSort}"
+                    Command="{Binding NaturalSortCommand}" MinWidth="90" />
+            <TextBlock Grid.Column="5" Text="{Binding FileSummaryText}"
+                       VerticalAlignment="Center" HorizontalAlignment="Right" />
+            <Button Grid.Column="6" Content="{DynamicResource String.TsBinaryMerge.Clear}"
+                    Command="{Binding ClearCommand}" MinWidth="65" />
+        </Grid>
+
+        <!-- DataGrid 自己承担滚动，固定行高可保持大量 HLS 分片下的行虚拟化。 -->
+        <Grid Grid.Row="2">
+            <DataGrid x:Name="FileGrid" ItemsSource="{Binding Files}"
+                      AutoGenerateColumns="False" IsReadOnly="True"
+                      SelectionMode="Extended" SelectionChanged="FileGrid_OnSelectionChanged"
+                      RowHeight="28" GridLinesVisibility="All"
+                      CanUserResizeColumns="True" CanUserSortColumns="False"
+                      HorizontalScrollBarVisibility="Auto"
+                      VerticalScrollBarVisibility="Visible">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="{DynamicResource String.TsBinaryMerge.Column.Order}"
+                                        Binding="{Binding Order, StringFormat={}{0:N0}}" Width="65" />
+                    <DataGridTemplateColumn Header="{DynamicResource String.TsBinaryMerge.Column.File}"
+                                            Width="*">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="models:TsBinaryMergeFileItem">
+                                <TextBlock Text="{Binding FileName}" ToolTip.Tip="{Binding FilePath}"
+                                           TextTrimming="CharacterEllipsis" Margin="4,0"
+                                           VerticalAlignment="Center" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="{DynamicResource String.TsBinaryMerge.Column.Size}"
+                                        Binding="{Binding FileSizeText}" Width="105" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsBinaryMerge.Column.Overlap}"
+                                        Binding="{Binding OverlapText}" Width="125" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsBinaryMerge.Column.WriteRange}"
+                                        Binding="{Binding WriteRangeText}" Width="190" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsBinaryMerge.Column.Status}"
+                                        Binding="{Binding StatusText}" Width="220" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <TextBlock Text="{DynamicResource String.TsBinaryMerge.DropHint}"
+                       IsVisible="{Binding IsEmpty}" IsHitTestVisible="False"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Opacity="0.7" TextAlignment="Center" />
+        </Grid>
+
+        <Grid Grid.Row="3" RowDefinitions="18,Auto,Auto" ColumnDefinitions="*,80"
+              RowSpacing="4" ColumnSpacing="8">
+            <ProgressBar Grid.Row="0" Grid.Column="0" Minimum="0" Maximum="100"
+                         Value="{Binding Percent}" Height="18" />
+            <TextBlock Grid.Row="0" Grid.Column="1"
+                       Text="{Binding Percent, StringFormat={}{0:0.00}%}"
+                       TextAlignment="Right" VerticalAlignment="Center" />
+            <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                        Orientation="Horizontal" Spacing="20">
+                <TextBlock>
+                    <Run Text="{DynamicResource String.TsBinaryMerge.Progress}" /><Run Text=" " />
+                    <Run Text="{Binding ProgressText}" FontWeight="Bold" />
+                </TextBlock>
+                <TextBlock>
+                    <Run Text="{DynamicResource String.TsBinaryMerge.Speed}" /><Run Text=" " />
+                    <Run Text="{Binding SpeedText}" FontWeight="Bold" />
+                </TextBlock>
+            </StackPanel>
+            <StackPanel Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="2" Spacing="2">
+                <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding AnalysisSummaryText}" TextWrapping="Wrap"
+                           IsVisible="{Binding HasAnalysis}" Opacity="0.8" />
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="{DynamicResource String.TsBinaryMerge.Output}"
+                       VerticalAlignment="Center" />
+            <TextBox Grid.Column="1" Text="{Binding OutputPath, Mode=TwoWay}"
+                     IsEnabled="{Binding CanModifyFiles}" />
+            <Button Grid.Column="2" Content="{DynamicResource String.TsBinaryMerge.Browse}"
+                    Command="{Binding BrowseOutputCommand}" MinWidth="80" />
+            <Button Grid.Column="3" Content="{DynamicResource String.Cancel}"
+                    Command="{Binding CancelCommand}" MinWidth="80" />
+            <Button Grid.Column="4" Content="{DynamicResource String.TsBinaryMerge.Merge}"
+                    Command="{Binding MergeCommand}" MinWidth="120" />
+        </Grid>
+    </Grid>
+</Window>
