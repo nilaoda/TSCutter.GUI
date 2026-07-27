@@ -137,7 +137,8 @@
     <x:String x:Key="String.MergeClips.NoSync">沒有找到有效的 188 位元組 TS 封包結構。</x:String>
     <x:String x:Key="String.MergeClips.InvalidRange">選取的剪輯範圍無效或沒有可輸出的資料。</x:String>
     <x:String x:Key="String.MergeClips.SourceChanged">來源檔案在處理期間發生變更或無法繼續讀取。</x:String>
-    <x:String x:Key="String.Clips.SelectionSummary">{0} 個剪輯 / {1}</x:String>
+    <x:String x:Key="String.Clips.SelectionSummary">{0} 個剪輯 / {1} / {2}</x:String>
+    <x:String x:Key="String.Clips.SelectionSummarySingle">{0} 個剪輯 / {1}</x:String>
     <x:String x:Key="String.Timeline.FitTip">顯示完整時間軸</x:String>
     <x:String x:Key="String.Timeline.ZoomTip">無級調整時間軸縮放比例；在時間軸上按住 Ctrl/Command 滾輪也可以縮放</x:String>
     <x:String x:Key="String.Timeline.ScrollTip">橫向瀏覽目前時間軸範圍；按住 Shift 滾輪也可以移動</x:String>

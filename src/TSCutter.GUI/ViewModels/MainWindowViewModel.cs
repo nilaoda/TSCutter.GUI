@@ -58,8 +58,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(ZoomFactorStr));
         OnPropertyChanged(nameof(StatusInfoText));
-        OnPropertyChanged(nameof(SelectedClipsEstimatedSizeStr));
-        OnPropertyChanged(nameof(SelectedClipsDurationSummaryStr));
+        OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
+        OnPropertyChanged(nameof(SelectedClipsSummaryStr));
     }
 
     private long PositionInFile => _videoInstance!.PositionInFile;
@@ -97,29 +97,26 @@ public partial class MainWindowViewModel : ViewModelBase
             ReferenceEquals(clip, SelectedClip)))
         .ToArray();
 
-    public string SelectedClipsEstimatedSizeStr
-    {
-        get
-        {
-            var aggregate = GetSelectedClipAggregate();
-            return aggregate.Count == 0
-                ? string.Empty
-                : LocalizationManager.Instance.String_SizePrefix +
-                  CommonUtil.FormatFileSize(aggregate.Bytes);
-        }
-    }
+    public string SelectedClipEstimatedSizeStr => SelectedClip?.EstimatedSizeStr ?? string.Empty;
 
-    public string SelectedClipsDurationSummaryStr
+    public string SelectedClipsSummaryStr
     {
         get
         {
             var aggregate = GetSelectedClipAggregate();
-            return aggregate.Count == 0
-                ? string.Empty
+            if (aggregate.Count == 0)
+                return string.Empty;
+            var duration = CommonUtil.FormatSeconds(aggregate.DurationSeconds);
+            return aggregate.Count == 1
+                ? string.Format(
+                    LocalizationManager.Instance.String_Clips_SelectionSummarySingle,
+                    aggregate.Count,
+                    duration)
                 : string.Format(
                     LocalizationManager.Instance.String_Clips_SelectionSummary,
                     aggregate.Count,
-                    CommonUtil.FormatSeconds(aggregate.DurationSeconds));
+                    duration,
+                    CommonUtil.FormatFileSize(aggregate.Bytes));
         }
     }
 
@@ -142,6 +139,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         foreach (var clip in Clips)
             clip.IsActive = ReferenceEquals(clip, value);
+        OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
     }
 
     public void SelectClip(PickedClip clip, KeyModifiers modifiers = KeyModifiers.None)
@@ -191,8 +189,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         OnPropertyChanged(nameof(SelectedClipCount));
         OnPropertyChanged(nameof(SelectedClipRanges));
-        OnPropertyChanged(nameof(SelectedClipsEstimatedSizeStr));
-        OnPropertyChanged(nameof(SelectedClipsDurationSummaryStr));
+        OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
+        OnPropertyChanged(nameof(SelectedClipsSummaryStr));
         MergeSelectedClipsCommand.NotifyCanExecuteChanged();
     }
 
