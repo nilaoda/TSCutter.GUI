@@ -487,6 +487,13 @@ public partial class MainWindowViewModel : ViewModelBase
         _dialogService.Show(null, dialogViewModel);
     }
 
+    [RelayCommand]
+    private void TsBinaryMergeClick()
+    {
+        var dialogViewModel = _dialogService.CreateViewModel<TsBinaryMergeWindowViewModel>();
+        _dialogService.Show(null, dialogViewModel);
+    }
+
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]
     private async Task SaveVideoClickAsync() => await SaveVideoAsync();
 

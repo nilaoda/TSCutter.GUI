@@ -133,6 +133,8 @@
                         </MenuItem>
                         <MenuItem Header="{DynamicResource String.Menu.TsMultiSourceRepair}"
                                   Command="{Binding TsMultiSourceRepairClickCommand}" />
+                        <MenuItem Header="{DynamicResource String.Menu.TsBinaryMerge}"
+                                  Command="{Binding TsBinaryMergeClickCommand}" />
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.Settings}"
                                   Command="{Binding SettingsClickCommand}" />
