@@ -26,7 +26,7 @@
     <x:String x:Key="String.Menu.CloseVideo">_Close Video</x:String>
     <x:String x:Key="String.Menu.Exit">_Exit</x:String>
     <x:String x:Key="String.Menu.Tools">_Tools</x:String>
-    <x:String x:Key="String.Menu.RawCutter">_Raw Cutter...</x:String>
+    <x:String x:Key="String.Menu.RawCutter">TS _Raw Stream Cutter...</x:String>
     <x:String x:Key="String.Menu.Settings">_Settings...</x:String>
     <x:String x:Key="String.Menu.View">_View</x:String>
     <x:String x:Key="String.Menu.ZoomIn">Zoom In</x:String>
@@ -107,7 +107,7 @@
     <x:String x:Key="String.UpdatesInfo.NewVersionTitle">New version found</x:String>
     <x:String x:Key="String.UpdatesInfo.NewVersionInfo">Current: {0}, New: {1}</x:String>
     <x:String x:Key="String.UpdatesInfo.NewVersionAlert">Do you want to open the download page?</x:String>
-    <x:String x:Key="String.RawCutter.Title">Raw Cutter</x:String>
+    <x:String x:Key="String.RawCutter.Title">TS Raw Stream Cutter</x:String>
     <x:String x:Key="String.RawCutter.FilePath">File Path:</x:String>
     <x:String x:Key="String.RawCutter.SyncOffset">Sync Offset: {0} bytes</x:String>
     <x:String x:Key="String.RawCutter.FileSize">File Size:</x:String>
