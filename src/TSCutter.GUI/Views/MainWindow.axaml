@@ -605,7 +605,7 @@
                                       VerticalAlignment="Center"
                                       HorizontalAlignment="Right">
                                     <TextBlock Grid.Row="0"
-                                               Text="{Binding SelectedClipsDurationSummaryStr}"
+                                               Text="{Binding SelectedClipsSummaryStr}"
                                                HorizontalAlignment="Right"
                                                VerticalAlignment="Center"
                                                TextAlignment="Right"
@@ -613,7 +613,7 @@
                                                FontSize="11"
                                                Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                                     <TextBlock Grid.Row="1"
-                                               Text="{Binding SelectedClipsEstimatedSizeStr, Mode=OneWay}"
+                                               Text="{Binding SelectedClipEstimatedSizeStr, Mode=OneWay}"
                                                HorizontalAlignment="Right"
                                                VerticalAlignment="Center"
                                                TextTrimming="CharacterEllipsis"
