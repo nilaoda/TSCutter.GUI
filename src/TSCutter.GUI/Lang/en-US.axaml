@@ -695,7 +695,8 @@
     <x:String x:Key="String.TsBinaryMerge.Status.DirectReady">All files will be appended directly in the current list order.</x:String>
     <x:String x:Key="String.TsBinaryMerge.Status.OverlapReady">Analyze adjacent file overlaps before merging.</x:String>
     <x:String x:Key="String.TsBinaryMerge.Status.ReadingFiles">Reading file information...</x:String>
-    <x:String x:Key="String.TsBinaryMerge.Status.FilesAdded">Added {0:N0} file(s); skipped {1:N0} inaccessible file(s).</x:String>
+    <x:String x:Key="String.TsBinaryMerge.Status.FilesAdded">Added {0:N0} file(s).</x:String>
+    <x:String x:Key="String.TsBinaryMerge.Status.FilesAddedWithSkipped">Added {0:N0} file(s); skipped {1:N0} inaccessible file(s).</x:String>
     <x:String x:Key="String.TsBinaryMerge.Status.Sorting">Sorting files by natural file-name order...</x:String>
     <x:String x:Key="String.TsBinaryMerge.Status.Sorted">Natural sorting completed.</x:String>
     <x:String x:Key="String.TsBinaryMerge.Status.Analyzing">Analyzing adjacent binary overlaps...</x:String>
