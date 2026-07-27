@@ -5,6 +5,7 @@ using Avalonia.Input;
 using Avalonia.Threading;
 using Classic.Avalonia.Theme;
 using CommunityToolkit.Mvvm.Messaging;
+using TSCutter.GUI.Controls;
 using TSCutter.GUI.Models;
 using TSCutter.GUI.ViewModels;
 
@@ -55,7 +56,7 @@ public partial class MainWindow : ClassicWindow
     {
         if (sender is Border { DataContext: PickedClip clip })
         {
-            ViewModel.SelectClip(clip);
+            ViewModel.SelectClip(clip, e.KeyModifiers);
         }
     }
 
@@ -67,15 +68,18 @@ public partial class MainWindow : ClassicWindow
         }
     }
 
-    private async void CustomSlider_OnValueChangedAfterMouseUp(object? sender, double e)
+    private async void Timeline_OnSeekRequested(object? sender, double time)
     {
-        if (!ViewModel.IsVideoInitialized) return;
+        if (!ViewModel.IsVideoInitialized)
+        {
+            MainTimeline.CompletePendingSeek();
+            return;
+        }
 
         try
         {
-            CustomSlider.IsEnabled = false;
-            Console.WriteLine($"Seek to {e}");
-            await ViewModel.SeekToTimeAsync(TimeSpan.FromSeconds(e));
+            MainTimeline.IsEnabled = false;
+            await ViewModel.SeekToTimeAsync(TimeSpan.FromSeconds(time));
             await ViewModel.DrawNextFrameAsync(1);
         }
         catch (Exception ex)
@@ -84,7 +88,17 @@ public partial class MainWindow : ClassicWindow
         }
         finally
         {
-            CustomSlider.IsEnabled = true;
+            MainTimeline.CompletePendingSeek();
+            MainTimeline.IsEnabled = true;
         }
     }
+
+    private void Timeline_OnPanRequested(object? sender, double start) =>
+        ViewModel.TimelineViewport.ViewStart = start;
+
+    private void Timeline_OnZoomRequested(object? sender, TimelineZoomRequestEventArgs e) =>
+        ViewModel.TimelineViewport.SetZoomLevel(e.ZoomLevel, e.AnchorTime);
+
+    private void Timeline_OnFitRequested(object? sender, EventArgs e) =>
+        ViewModel.TimelineViewport.Fit();
 }

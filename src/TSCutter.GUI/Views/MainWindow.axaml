@@ -108,6 +108,8 @@
                                   InputGesture="{OnPlatform Ctrl+S, macOS=⌘+S}" />
                         <MenuItem Header="{DynamicResource String.AddToQueue}"
                                   Command="{Binding AddToQueueCommand}" />
+                        <MenuItem Header="{DynamicResource String.MergeClips.Menu}"
+                                  Command="{Binding MergeSelectedClipsCommand}" />
                         <MenuItem Header="{DynamicResource String.Menu.ExportQueue}"
                                   Command="{Binding BatchExportQueueCommand}" />
                         <Separator />
@@ -131,6 +133,8 @@
                         </MenuItem>
                         <MenuItem Header="{DynamicResource String.Menu.TsMultiSourceRepair}"
                                   Command="{Binding TsMultiSourceRepairClickCommand}" />
+                        <MenuItem Header="{DynamicResource String.Menu.TsBinaryMerge}"
+                                  Command="{Binding TsBinaryMergeClickCommand}" />
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.Settings}"
                                   Command="{Binding SettingsClickCommand}" />
@@ -228,7 +232,7 @@
                                                       HorizontalAlignment="Right"
                                                       Command="{Binding ShowMediaInfoClickCommand}" />
                     </commonControls:ToolBar>
-                    <Grid Grid.Row="1" RowDefinitions="*, Auto, Auto, Auto">
+                    <Grid Grid.Row="1" RowDefinitions="*, Auto, Auto">
                         <Grid Grid.Row="0" ColumnDefinitions="*, Auto, 190">
                             <!-- 图片预览区域 -->
                             <ClassicBorderDecorator Grid.Column="0" BorderThickness="0, 2" BorderStyle="Etched">
@@ -288,12 +292,12 @@
                                                                         </Style>
                                                                     </Border.Styles>
                                                                     <Grid>
-                                                                        <!-- Unselected: Raised border -->
+                                                                        <!-- Inactive: Raised border -->
                                                                         <ClassicBorderDecorator BorderThickness="2" BorderStyle="Raised"
-                                                                                                IsVisible="{Binding IsSelected, Converter={x:Static local:App.InverseBoolConverter}}" />
-                                                                        <!-- Selected: Sunken border -->
+                                                                                                IsVisible="{Binding IsActive, Converter={x:Static local:App.InverseBoolConverter}}" />
+                                                                        <!-- Active editor: Sunken border -->
                                                                         <ClassicBorderDecorator BorderThickness="2" BorderStyle="Sunken"
-                                                                                                IsVisible="{Binding IsSelected}" />
+                                                                                                IsVisible="{Binding IsActive}" />
                                                                         <!-- Content -->
                                                                         <StackPanel Margin="4" Spacing="2">
                                                                             <!-- Header: ID + Status -->
@@ -472,35 +476,38 @@
                                 </DockPanel>
                             </ClassicBorderDecorator>
                         </Grid>
-                        <!-- 滑块 -->
-                        <controls:CustomSlider Grid.Row="1"
-                                               Name="CustomSlider"
-                                               Margin="0, 2"
-                                               HorizontalAlignment="Stretch"
-                                               VerticalAlignment="Center"
-                                               Minimum="0"
-                                               Maximum="{Binding DurationMax}"
-                                               Value="{Binding CurrentTime, Mode=TwoWay}"
-                                               RangeStart="{Binding SelectedClip.StartTime, FallbackValue=-1}"
-                                               RangeEnd="{Binding SelectedClip.EndTime, FallbackValue=-1}"
-                                               ValueChangedAfterMouseUp="CustomSlider_OnValueChangedAfterMouseUp">
-                            <controls:CustomSlider.Styles>
-                                <Style Selector="Thumb:pointerover /template/ Ellipse#SliderInnerThumb">
-                                    <Setter Property="RenderTransform" Value="scaleX(0.86) scaleY(0.86)" />
-                                </Style>
-                            </controls:CustomSlider.Styles>
-                            <controls:CustomSlider.Resources>
-                                <ResourceDictionary>
-                                    <!-- Reference to shared resources -->
-                                    <ResourceDictionary.MergedDictionaries>
-                                        <MergeResourceInclude
-                                            Source="avares://TSCutterGUI/Controls/CustomSliderResources.axaml" />
-                                    </ResourceDictionary.MergedDictionaries>
-                                </ResourceDictionary>
-                            </controls:CustomSlider.Resources>
-                        </controls:CustomSlider>
+                        <!-- 时间刻度、剪辑范围、播放头、总览与缩放共用同一套坐标换算。 -->
+                        <controls:TimelineControl Grid.Row="1"
+                                                  Name="MainTimeline"
+                                                  Height="48"
+                                                  Margin="0,2"
+                                                  HorizontalAlignment="Stretch"
+                                                  Minimum="0"
+                                                  Maximum="{Binding DurationMax}"
+                                                  Value="{Binding CurrentTime}"
+                                                  ViewportStart="{Binding TimelineViewport.ViewStart}"
+                                                  ViewportEnd="{Binding TimelineViewport.ViewEnd}"
+                                                  ZoomLevel="{Binding TimelineViewport.ZoomLevel}"
+                                                  Ranges="{Binding SelectedClipRanges}"
+                                                  SeekRequested="Timeline_OnSeekRequested"
+                                                  PanRequested="Timeline_OnPanRequested"
+                                                  ZoomRequested="Timeline_OnZoomRequested"
+                                                  FitRequested="Timeline_OnFitRequested"
+                                                  BackgroundBrush="{DynamicResource {x:Static commonControls:SystemColors.ControlColorKey}}"
+                                                  TrackBrush="{DynamicResource AppTimelineTrackBrush}"
+                                                  EmptyTrackBrush="{DynamicResource AppTimelineEmptyTrackBrush}"
+                                                  BorderDarkBrush="{DynamicResource {x:Static commonControls:SystemColors.ControlDarkDarkColorKey}}"
+                                                  BorderLightBrush="{DynamicResource {x:Static commonControls:SystemColors.ControlLightLightColorKey}}"
+                                                  TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
+                                                  MutedTextBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
+                                                  ClipBrush="{DynamicResource AppStatusSuccessForegroundBrush}"
+                                                  AccentBrush="{DynamicResource AppRepairMapSelectionBrush}"
+                                                  ViewportBrush="{DynamicResource AppRepairMapSelectionBrush}"
+                                                  FitTip="{DynamicResource String.Timeline.FitTip}"
+                                                  ZoomTip="{DynamicResource String.Timeline.ZoomTip}"
+                                                  ScrollTip="{DynamicResource String.Timeline.ScrollTip}" />
                         <!-- 导航等控制键的一行 -->
-                        <Grid Grid.Row="3" ColumnDefinitions="*, Auto, *" Margin="0,2,0,0">
+                        <Grid Grid.Row="2" ColumnDefinitions="*, Auto, *" Margin="0,2,0,0">
                             <Grid.Styles>
                                 <Style Selector="Button.LeftBtn">
                                     <Setter Property="Width" Value="30" />
@@ -591,9 +598,27 @@
                                         <Setter Property="Opacity" Value="0.3" />
                                     </Style>
                                 </StackPanel.Styles>
-                                <!-- Estimated Size -->
-                                <TextBlock Text="{Binding SelectedClip.EstimatedSizeStr, Mode=OneWay}"
-                                           VerticalAlignment="Center" />
+                                <Grid Width="180"
+                                      Height="34"
+                                      RowDefinitions="16,18"
+                                      ClipToBounds="True"
+                                      VerticalAlignment="Center"
+                                      HorizontalAlignment="Right">
+                                    <TextBlock Grid.Row="0"
+                                               Text="{Binding SelectedClipsDurationSummaryStr}"
+                                               HorizontalAlignment="Right"
+                                               VerticalAlignment="Center"
+                                               TextAlignment="Right"
+                                               TextTrimming="CharacterEllipsis"
+                                               FontSize="11"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                    <TextBlock Grid.Row="1"
+                                               Text="{Binding SelectedClipsEstimatedSizeStr, Mode=OneWay}"
+                                               HorizontalAlignment="Right"
+                                               VerticalAlignment="Center"
+                                               TextTrimming="CharacterEllipsis"
+                                               TextAlignment="Right" />
+                                </Grid>
                                 <!-- Save Video Button -->
                                 <Button Command="{Binding SaveVideoClickCommand}"
                                         Classes="accent"

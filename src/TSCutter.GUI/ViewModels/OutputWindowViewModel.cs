@@ -7,6 +7,8 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
+using TSCutter.GUI.Models;
+using TSCutter.GUI.Services;
 using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.ViewModels;
@@ -41,6 +43,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     public partial string CancelButtonText { get; set; } = "";
 
     public bool IsBatchMode => _tasks.Count > 0;
+    public bool IsMergeMode => _mergeRequest is not null;
     public int TotalTasks => _tasks.Count;
     public double QueueProgress => TotalTasks > 0 ? CurrentTaskIndex * 100.0 / TotalTasks : 0;
     public string QueueProgressStr => $"{CurrentTaskIndex} / {TotalTasks}";
@@ -56,6 +59,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     public Exception? Exception { get; private set; }
     
     private readonly List<BatchTask> _tasks = [];
+    private TsClipMergeRequest? _mergeRequest;
     public List<int> CompletedTaskIndices { get; } = [];
     private CancellationTokenSource _cts = new();
     private DateTime _lastUpdateTime;
@@ -77,6 +81,12 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         CancelButtonText = LocalizationManager.Instance.String_Output_CancelRemaining;
     }
 
+    internal void SetMergeTask(TsClipMergeRequest request)
+    {
+        _mergeRequest = request;
+        OnPropertyChanged(nameof(IsMergeMode));
+    }
+
     [RelayCommand]
     private async Task OutputAsync()
     {
@@ -84,9 +94,51 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         {
             await RunBatchAsync();
         }
+        else if (IsMergeMode)
+        {
+            await RunMergeAsync();
+        }
         else
         {
             await RunSingleAsync();
+        }
+    }
+
+    private async Task RunMergeAsync()
+    {
+        var request = _mergeRequest;
+        if (request is null)
+            return;
+
+        try
+        {
+            CurrentFileName = Path.GetFileName(request.OutputPath);
+            var progress = new Progress<TsClipMergeProgress>(value =>
+            {
+                Percent = value.Percent;
+                Speed = value.BytesPerSecond;
+                RemainingSeconds = value.BytesPerSecond > 0
+                    ? Math.Max(0, value.TotalBytes - value.BytesProcessed) / value.BytesPerSecond
+                    : 0;
+            });
+            await new TsClipMergeService().MergeAsync(
+                request, progress, _cts.Token).ConfigureAwait(true);
+            Percent = 100;
+            RemainingSeconds = 0;
+            DialogResult = true;
+            RequestClose?.Invoke();
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine("TS clip merge was canceled.");
+            DialogResult = false;
+            RequestClose?.Invoke();
+        }
+        catch (Exception exception)
+        {
+            Exception = exception;
+            DialogResult = false;
+            RequestClose?.Invoke();
         }
     }
 
@@ -208,6 +260,11 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _batchCancelled = true;
             _cts.Cancel();
         }
+        else if (IsMergeMode)
+        {
+            // 合并服务会在取消后删除半成品；等待清理完成再关闭窗口，避免主界面误报成功。
+            _cts.Cancel();
+        }
         else
         {
             _cts.Cancel();
@@ -218,6 +275,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     
     public void OnClosing(CancelEventArgs e)
     {
+        if (IsMergeMode && DialogResult is null)
+            e.Cancel = true;
         CancelOutput();
     }
 
