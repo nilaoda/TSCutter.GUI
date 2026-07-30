@@ -56,6 +56,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void OnLanguageChanged()
     {
+        // 集合项的计算属性不会随资源字典自动刷新，需要逐项通知界面重新取值。
+        foreach (var clip in Clips)
+            clip.RefreshLocalizedText();
+        foreach (var item in ExportQueue)
+            item.RefreshLocalizedText();
+
         OnPropertyChanged(nameof(ZoomFactorStr));
         OnPropertyChanged(nameof(StatusInfoText));
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
@@ -489,6 +495,23 @@ public partial class MainWindowViewModel : ViewModelBase
     private void TsBinaryMergeClick()
     {
         var dialogViewModel = _dialogService.CreateViewModel<TsBinaryMergeWindowViewModel>();
+        _dialogService.Show(null, dialogViewModel);
+    }
+
+    [RelayCommand]
+    private async Task TsPacketViewerClickAsync()
+    {
+        var settings = new OpenFileDialogSettings
+        {
+            Title = LocalizationManager.Instance.String_TsPacketViewer_OpenFile,
+            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
+        };
+        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+        if (!result.Any())
+            return;
+
+        var dialogViewModel = _dialogService.CreateViewModel<TsPacketViewerWindowViewModel>();
+        dialogViewModel.FilePath = result[0].LocalPath;
         _dialogService.Show(null, dialogViewModel);
     }
 

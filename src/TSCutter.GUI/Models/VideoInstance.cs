@@ -41,6 +41,8 @@ public class VideoInstance(string filePath) : IDisposable
     private long currentKeyFramePositionInFile;
     private long keyFrameGap;
     private long lastSeekPts;
+    private double timelineDurationSeconds;
+    private long timelineDurationPts;
     
     private string videoPath = filePath;
 
@@ -82,6 +84,7 @@ public class VideoInstance(string filePath) : IDisposable
         
         videoStreamIndex = inVideoStream.Index;
         timeBase = inVideoStream.TimeBase;
+        UpdateTimelineDuration();
 
         var firstDecoder = decoders.Last();
         videoDecoder = new(firstDecoder);
@@ -94,7 +97,7 @@ public class VideoInstance(string filePath) : IDisposable
             // calc KeyFrameGap from packet-level PTS (no frame decoding needed)
             var (firstPts, gap) = ReadKeyFramePacketPts();
             firstFrameTimestamp = firstPts;
-            maxPts = inVideoStream.Duration + firstFrameTimestamp;
+            maxPts = timelineDurationPts + firstFrameTimestamp;
             keyFrameGap = gap;
             Console.WriteLine($"keyFrameGap: {keyFrameGap}");
             Seek(firstFrameTimestamp);
@@ -125,6 +128,7 @@ public class VideoInstance(string filePath) : IDisposable
 
         videoStreamIndex = inVideoStream.Index;
         timeBase = inVideoStream.TimeBase;
+        UpdateTimelineDuration();
 
         var firstDecoder = decoders.First();
         videoDecoder = new(Codec.FindDecoderById(firstDecoder.Id));
@@ -251,16 +255,50 @@ public class VideoInstance(string filePath) : IDisposable
 
     public double GetVideoDurationInSeconds()
     {
-        return inVideoStream.GetDurationInSeconds();
+        return timelineDurationSeconds;
     }
 
     public string GetVideoInfoText()
     {
         var width = inVideoStream.Codecpar!.Width;
         var height = inVideoStream.Codecpar.Height;
-        var durationInSeconds = inVideoStream.GetDurationInSeconds();
         var fileSize = inFc.GetFileSize();
-        return $"{inVideoStream.Codecpar.CodecId}, {width}x{height}, {FormatSeconds(durationInSeconds)}, {FormatFileSize(fileSize)}";
+        return $"{inVideoStream.Codecpar.CodecId}, {width}x{height}, {FormatSeconds(timelineDurationSeconds)}, {FormatFileSize(fileSize)}";
+    }
+
+    private void UpdateTimelineDuration()
+    {
+        (timelineDurationSeconds, timelineDurationPts) = ResolveTimelineDuration(
+            inVideoStream.Duration,
+            timeBase.Num,
+            timeBase.Den,
+            inFc.Duration);
+    }
+
+    internal static (double Seconds, long StreamPts) ResolveTimelineDuration(
+        long streamDuration,
+        int timeBaseNumerator,
+        int timeBaseDenominator,
+        long containerDuration)
+    {
+        if (timeBaseNumerator <= 0 || timeBaseDenominator <= 0)
+            return default;
+
+        if (streamDuration > 0)
+        {
+            var seconds = streamDuration * timeBaseNumerator / (double)timeBaseDenominator;
+            return (seconds, streamDuration);
+        }
+
+        if (containerDuration <= 0)
+            return default;
+
+        // 部分异常 TS 缺少视频流时长，此时使用 FFmpeg 已估算出的容器时长作为回退。
+        var fallbackSeconds = containerDuration / (double)ffmpeg.AV_TIME_BASE;
+        var fallbackPts = (long)Math.Round(
+            fallbackSeconds * timeBaseDenominator / timeBaseNumerator,
+            MidpointRounding.AwayFromZero);
+        return (fallbackSeconds, fallbackPts);
     }
 
     /// <summary>
@@ -327,7 +365,7 @@ public class VideoInstance(string filePath) : IDisposable
                 if (firstFrameTimestamp == -1)
                 {
                     firstFrameTimestamp = frame.BestEffortTimestamp;
-                    maxPts = inVideoStream.Duration + firstFrameTimestamp;
+                    maxPts = timelineDurationPts + firstFrameTimestamp;
                 }
 
 #pragma warning disable CS0618 // Obsolete
