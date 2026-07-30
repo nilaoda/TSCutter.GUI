@@ -293,13 +293,12 @@ public sealed class TsStreamAnalyzer
 
     private void ProcessPacket(ReadOnlySpan<byte> packet, long fileOffset)
     {
-        var transportError = (packet[1] & 0x80) != 0;
-        var payloadStart = (packet[1] & 0x40) != 0;
-        var pid = ((packet[1] & 0x1F) << 8) | packet[2];
-        var adaptationControl = (packet[3] >> 4) & 0x03;
-        var continuityCounter = packet[3] & 0x0F;
-        var hasAdaptation = (adaptationControl & 0x02) != 0;
-        var hasPayload = (adaptationControl & 0x01) != 0;
+        var info = TsPacketParser.Parse(packet);
+        var transportError = info.TransportError;
+        var payloadStart = info.PayloadStart;
+        var pid = info.Pid;
+        var continuityCounter = info.ContinuityCounter;
+        var hasPayloadFlag = (info.AdaptationControl & 0x01) != 0;
 
         var state = GetPidState(pid);
         state.Summary.PacketCount++;
@@ -331,10 +330,10 @@ public sealed class TsStreamAnalyzer
             return;
         }
 
-        if (hasPayload)
+        if (hasPayloadFlag)
             state.Summary.PayloadPacketCount++;
 
-        if (adaptationControl == 0)
+        if (info.Error == TsPacketParseError.ReservedAdaptationControl)
         {
             state.DiscardPes();
             if (!_options.InventoryOnly)
@@ -343,30 +342,20 @@ public sealed class TsStreamAnalyzer
             return;
         }
 
-        var payloadOffset = 4;
-        var discontinuity = false;
-        ReadOnlySpan<byte> pcrBytes = default;
-        if (hasAdaptation)
+        if (info.Error == TsPacketParseError.InvalidAdaptationLength)
         {
-            var adaptationLength = packet[4];
-            if (adaptationLength > 183)
-            {
-                state.DiscardPes();
-                if (!_options.InventoryOnly)
-                    AddEvent(TsCheckSeverity.Error, TsCheckEventType.SyncLoss, pid, _packetIndex, fileOffset,
-                        TsCheckMessageCode.InvalidAdaptationLength, [adaptationLength], GetPacketEventTime(state), true);
-                return;
-            }
-
-            payloadOffset += adaptationLength + 1;
-            if (adaptationLength > 0)
-            {
-                var flags = packet[5];
-                discontinuity = (flags & 0x80) != 0;
-                if ((flags & 0x10) != 0 && adaptationLength >= 7)
-                    pcrBytes = packet.Slice(6, 6);
-            }
+            state.DiscardPes();
+            if (!_options.InventoryOnly)
+                AddEvent(TsCheckSeverity.Error, TsCheckEventType.SyncLoss, pid, _packetIndex, fileOffset,
+                    TsCheckMessageCode.InvalidAdaptationLength, [info.AdaptationLength], GetPacketEventTime(state), true);
+            return;
         }
+
+        var payloadOffset = info.PayloadOffset;
+        var discontinuity = info.Discontinuity;
+        ReadOnlySpan<byte> pcrBytes = default;
+        if (info.HasPcr)
+            pcrBytes = packet.Slice(6, 6);
 
         if (discontinuity)
         {
@@ -386,11 +375,11 @@ public sealed class TsStreamAnalyzer
 
         // Null packet 的 CC 没有连续性语义，不参与丢包判断。
         if (!_options.InventoryOnly && HasFeature(TsStreamAnalyzeFeatures.ContinuityValidation) &&
-            hasPayload && payloadOffset < PacketSize && pid != 0x1FFF &&
+            info.HasPayload && pid != 0x1FFF &&
             !ProcessContinuity(packet, pid, state, continuityCounter, fileOffset))
             return;
 
-        if (!hasPayload || payloadOffset >= PacketSize)
+        if (!info.HasPayload)
             return;
 
         var payload = packet[payloadOffset..];

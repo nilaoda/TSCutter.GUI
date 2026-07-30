@@ -135,6 +135,8 @@
                                   Command="{Binding TsMultiSourceRepairClickCommand}" />
                         <MenuItem Header="{DynamicResource String.Menu.TsBinaryMerge}"
                                   Command="{Binding TsBinaryMergeClickCommand}" />
+                        <MenuItem Header="{DynamicResource String.Menu.TsPacketViewer}"
+                                  Command="{Binding TsPacketViewerClickCommand}" />
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.Settings}"
                                   Command="{Binding SettingsClickCommand}" />

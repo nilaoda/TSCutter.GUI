@@ -1,0 +1,191 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        xmlns:models="clr-namespace:TSCutter.GUI.Models"
+        xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
+        xmlns:commonControls="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.TsPacketViewerWindow"
+        x:DataType="viewModels:TsPacketViewerWindowViewModel"
+        Title="{Binding WindowTitle}"
+        Width="1220" Height="700" MinWidth="860" MinHeight="540"
+        WindowStartupLocation="CenterScreen">
+    <Window.Styles>
+        <Style Selector="DataGridRow.errorRow DataGridCell">
+            <Setter Property="Background" Value="{DynamicResource AppStatusErrorBackgroundBrush}" />
+        </Style>
+        <Style Selector="DataGridRow.errorRow TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="DataGridRow.warningRow DataGridCell">
+            <Setter Property="Background" Value="{DynamicResource AppStatusWarningBackgroundBrush}" />
+        </Style>
+        <Style Selector="DataGridRow.warningRow TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <!-- 选中异常包时继续使用系统选择色，避免状态色与选择色叠加后看不清文字。 -->
+        <Style Selector="DataGridRow.errorRow:selected DataGridCell">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="DataGridRow.warningRow:selected DataGridCell">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="DataGridRow.errorRow:selected TextBlock">
+            <Setter Property="Foreground"
+                    Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
+        </Style>
+        <Style Selector="DataGridRow.warningRow:selected TextBlock">
+            <Setter Property="Foreground"
+                    Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
+        </Style>
+    </Window.Styles>
+    <Grid Margin="12" RowDefinitions="Auto,Auto,8*,5,12*,Auto" RowSpacing="7">
+        <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="7">
+            <Grid RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,*,Auto"
+                  ColumnSpacing="8" RowSpacing="5">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource String.TsPacketViewer.File}"
+                           VerticalAlignment="Center" />
+                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding FilePath}" IsReadOnly="True" />
+                <Button Grid.Row="0" Grid.Column="2" Content="{DynamicResource String.TsPacketViewer.Open}"
+                        Command="{Binding OpenFileCommand}" MinWidth="85" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
+                           Text="{Binding FileSummaryText}" />
+            </Grid>
+        </ClassicBorderDecorator>
+
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,120,Auto,18,Auto,140,Auto,*,Auto,Auto,Auto,Auto,Auto,Auto"
+              ColumnSpacing="6">
+                <TextBlock Grid.Column="0" Text="{DynamicResource String.TsPacketViewer.Packet}"
+                           VerticalAlignment="Center" />
+                <TextBox Grid.Column="1" Text="{Binding PacketInputText, Mode=TwoWay}"
+                         HorizontalContentAlignment="Right">
+                    <TextBox.KeyBindings>
+                        <KeyBinding Gesture="Enter" Command="{Binding JumpPacketCommand}" />
+                    </TextBox.KeyBindings>
+                </TextBox>
+                <Button Grid.Column="2" Content="{DynamicResource String.TsPacketViewer.Go}"
+                        Command="{Binding JumpPacketCommand}" MinWidth="60" />
+
+                <TextBlock Grid.Column="4" Text="{DynamicResource String.TsPacketViewer.Offset}"
+                           VerticalAlignment="Center" />
+                <TextBox Grid.Column="5" Text="{Binding OffsetInputText, Mode=TwoWay}"
+                         HorizontalContentAlignment="Right">
+                    <TextBox.KeyBindings>
+                        <KeyBinding Gesture="Enter" Command="{Binding JumpOffsetCommand}" />
+                    </TextBox.KeyBindings>
+                </TextBox>
+                <Button Grid.Column="6" Content="{DynamicResource String.TsPacketViewer.Go}"
+                        Command="{Binding JumpOffsetCommand}" MinWidth="60" />
+
+                <Button Grid.Column="8" Content="{DynamicResource String.TsPacketViewer.PreviousPacket}"
+                        Command="{Binding PreviousPacketCommand}"
+                        ToolTip.Tip="{DynamicResource String.TsPacketViewer.PreviousPacket}"
+                        MinWidth="72" />
+                <Button Grid.Column="9" Content="{DynamicResource String.TsPacketViewer.NextPacket}"
+                        Command="{Binding NextPacketCommand}"
+                        ToolTip.Tip="{DynamicResource String.TsPacketViewer.NextPacket}"
+                        MinWidth="72" />
+                <Button Grid.Column="10" Content="{DynamicResource String.TsPacketViewer.PreviousWindow}"
+                        Command="{Binding PreviousWindowCommand}" MinWidth="80" />
+                <Button Grid.Column="11" Content="{DynamicResource String.TsPacketViewer.NextWindow}"
+                        Command="{Binding NextWindowCommand}" MinWidth="80" />
+                <Button Grid.Column="12" Content="{DynamicResource String.TsPacketViewer.PreviousSamePid}"
+                        Command="{Binding PreviousSamePidCommand}" MinWidth="105" />
+                <Button Grid.Column="13" Content="{DynamicResource String.TsPacketViewer.NextSamePid}"
+                        Command="{Binding NextSamePidCommand}" MinWidth="105" />
+        </Grid>
+
+        <DataGrid x:Name="PacketGrid" Grid.Row="2" ItemsSource="{Binding Packets}"
+                  SelectedItem="{Binding SelectedPacket, Mode=TwoWay}"
+                  SelectionChanged="PacketGrid_OnSelectionChanged"
+                  LoadingRow="PacketGrid_OnLoadingRow"
+                  AutoGenerateColumns="False" IsReadOnly="True"
+                  RowHeight="27" GridLinesVisibility="All"
+                  CanUserSortColumns="False" CanUserResizeColumns="True"
+                  HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Visible">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="{DynamicResource String.TsPacketViewer.Column.Packet}"
+                                    Binding="{Binding PacketText}" Width="100" />
+                <DataGridTextColumn Header="{DynamicResource String.TsPacketViewer.Column.Offset}"
+                                    Binding="{Binding OffsetText}" Width="115" />
+                <DataGridTextColumn Header="PID" Binding="{Binding PidText}" Width="80" />
+                <DataGridTextColumn Header="{DynamicResource String.TsPacketViewer.Column.Stream}"
+                                    Binding="{Binding StreamText}" Width="*" />
+                <DataGridTextColumn Header="TEI" Binding="{Binding TeiText}" Width="50" />
+                <DataGridTextColumn Header="PUSI" Binding="{Binding PusiText}" Width="55" />
+                <DataGridTextColumn Header="CC" Binding="{Binding ContinuityText}" Width="48" />
+                <DataGridTextColumn Header="AFC" Binding="{Binding AdaptationText}" Width="125" />
+                <DataGridTextColumn Header="PCR / PTS / DTS" Binding="{Binding TimestampText}" Width="245" />
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <GridSplitter Grid.Row="3" HorizontalAlignment="Stretch" />
+
+        <Grid Grid.Row="4" ColumnDefinitions="520,5,*" MinHeight="270">
+            <ClassicBorderDecorator Grid.Column="0" BorderThickness="1" BorderStyle="Sunken">
+                <Grid RowDefinitions="Auto,*">
+                    <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="7,3">
+                        <TextBlock Grid.Column="0" Text="{DynamicResource String.TsPacketViewer.Fields}"
+                                   FontWeight="Bold" VerticalAlignment="Center" />
+                        <CheckBox Grid.Column="1"
+                                  Content="{DynamicResource String.TsPacketViewer.StandardFieldNames}"
+                                  IsChecked="{Binding UseStandardFieldNames, Mode=TwoWay}"
+                                  ToolTip.Tip="{DynamicResource String.TsPacketViewer.StandardFieldNamesHint}" />
+                    </Grid>
+                    <TreeView Grid.Row="1" ItemsSource="{Binding Fields}"
+                              SelectedItem="{Binding SelectedField, Mode=TwoWay}"
+                              Margin="3">
+                        <TreeView.Styles>
+                            <Style Selector="TreeViewItem">
+                                <Setter Property="IsExpanded" Value="True" />
+                            </Style>
+                        </TreeView.Styles>
+                        <TreeView.DataTemplates>
+                            <TreeDataTemplate DataType="models:TsPacketFieldItem"
+                                              ItemsSource="{Binding Children}">
+                                <Grid ColumnDefinitions="220,*,Auto" ColumnSpacing="7" Margin="2,1">
+                                    <TextBlock Grid.Column="0" Text="{Binding Name}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip.Tip="{Binding Name}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Value}"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip.Tip="{Binding Value}" />
+                                    <TextBlock Grid.Column="2" Text="{Binding RangeText}" />
+                                </Grid>
+                            </TreeDataTemplate>
+                        </TreeView.DataTemplates>
+                    </TreeView>
+                </Grid>
+            </ClassicBorderDecorator>
+
+            <GridSplitter Grid.Column="1" />
+
+            <ClassicBorderDecorator Grid.Column="2" BorderThickness="1" BorderStyle="Sunken">
+                <Grid RowDefinitions="Auto,*">
+                    <TextBlock Grid.Row="0" Text="{DynamicResource String.TsPacketViewer.Hex}"
+                               FontWeight="Bold" Margin="7,5" />
+                    <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Auto"
+                                  VerticalScrollBarVisibility="Auto">
+                        <controls:TsPacketHexView Packet="{Binding SelectedPacketData}"
+                                                  SelectedField="{Binding SelectedField}"
+                                                  BackgroundBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowColorKey}}"
+                                                  TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
+                                                  MutedTextBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
+                                                  SelectionBrush="{DynamicResource {x:Static commonControls:SystemColors.HighlightColorKey}}"
+                                                  SelectionTextBrush="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextColorKey}}" />
+                    </ScrollViewer>
+                </Grid>
+            </ClassicBorderDecorator>
+        </Grid>
+
+        <Grid Grid.Row="5" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+            <TextBlock Grid.Column="0" Text="{Binding SelectedPacketSummaryText}"
+                       TextTrimming="CharacterEllipsis" />
+            <TextBlock Grid.Column="1" Text="{Binding StatusText}" />
+        </Grid>
+    </Grid>
+</Window>
