@@ -1844,40 +1844,12 @@ public sealed class TsMultiSourceRepairService
             Phase: phase));
     }
 
-    private static bool TryParsePacket(ReadOnlySpan<byte> packet, out PacketInfo info)
-    {
-        info = default;
-        if (packet.Length != PacketSize || packet[0] != 0x47)
-            return false;
-        var adaptationControl = (packet[3] >> 4) & 0x03;
-        if (adaptationControl == 0)
-            return false;
-        var payloadOffset = 4;
-        var discontinuity = false;
-        if ((adaptationControl & 0x02) != 0)
-        {
-            var adaptationLength = packet[4];
-            if (adaptationLength > 183)
-                return false;
-            payloadOffset += adaptationLength + 1;
-            if (adaptationLength > 0)
-                discontinuity = (packet[5] & 0x80) != 0;
-        }
-        var hasPayload = (adaptationControl & 0x01) != 0 && payloadOffset < PacketSize;
-        info = new PacketInfo(
-            ((packet[1] & 0x1F) << 8) | packet[2],
-            packet[3] & 0x0F,
-            payloadOffset,
-            hasPayload,
-            (packet[1] & 0x40) != 0,
-            discontinuity,
-            (packet[1] & 0x80) != 0);
-        return true;
-    }
+    private static bool TryParsePacket(ReadOnlySpan<byte> packet, out TsPacketInfo info) =>
+        TsPacketParser.TryParse(packet, out info);
 
     private static ReadOnlySpan<byte> GetElementaryPayload(
         ReadOnlySpan<byte> packet,
-        PacketInfo info,
+        TsPacketInfo info,
         out bool startsNewPes)
     {
         return GetElementaryPayload(packet, info, out startsNewPes, out _);
@@ -1885,7 +1857,7 @@ public sealed class TsMultiSourceRepairService
 
     private static ReadOnlySpan<byte> GetElementaryPayload(
         ReadOnlySpan<byte> packet,
-        PacketInfo info,
+        TsPacketInfo info,
         out bool startsNewPes,
         out int pesHeaderLength)
     {
@@ -1911,7 +1883,7 @@ public sealed class TsMultiSourceRepairService
     }
 
     private static bool TryReadPesStart(
-        ReadOnlySpan<byte> packet, PacketInfo info, out int expectedTotalLength, out long pts90k)
+        ReadOnlySpan<byte> packet, TsPacketInfo info, out int expectedTotalLength, out long pts90k)
     {
         expectedTotalLength = 0;
         pts90k = long.MinValue;
@@ -2106,15 +2078,6 @@ public sealed class TsMultiSourceRepairService
         values.RemoveAt(last);
     }
 
-    private readonly record struct PacketInfo(
-        int Pid,
-        int ContinuityCounter,
-        int PayloadOffset,
-        bool HasPayload,
-        bool PayloadStart,
-        bool Discontinuity,
-        bool TransportError);
-
     private delegate void PacketHandler(ReadOnlySpan<byte> packet, long fileOffset);
 
     private sealed class ReferencePcrCollector(long syncOffset)
@@ -2122,7 +2085,7 @@ public sealed class TsMultiSourceRepairService
         private readonly Dictionary<int, PcrState> _states = [];
         public Dictionary<int, List<TsTimelineRepairService.PcrSample>> Samples { get; } = [];
 
-        public void Process(ReadOnlySpan<byte> packet, PacketInfo info, long fileOffset)
+        public void Process(ReadOnlySpan<byte> packet, TsPacketInfo info, long fileOffset)
         {
             if (info.TransportError || (packet[3] & 0x20) == 0)
                 return;
@@ -2169,7 +2132,7 @@ public sealed class TsMultiSourceRepairService
 
         public void ProcessPacket(
             ReadOnlySpan<byte> packet,
-            PacketInfo info,
+            TsPacketInfo info,
             long fileOffset,
             IEnumerable<ReferenceTrackState> states)
         {
@@ -2472,7 +2435,7 @@ public sealed class TsMultiSourceRepairService
         }
 
         public void ProcessPes(
-            ReadOnlySpan<byte> packet, PacketInfo info, long fileOffset, ReadOnlySpan<byte> elementaryPayload)
+            ReadOnlySpan<byte> packet, TsPacketInfo info, long fileOffset, ReadOnlySpan<byte> elementaryPayload)
         {
             if (info.PayloadStart)
             {
@@ -2725,7 +2688,7 @@ public sealed class TsMultiSourceRepairService
             });
         }
 
-        public void UpdatePesLength(ReadOnlySpan<byte> packet, PacketInfo info)
+        public void UpdatePesLength(ReadOnlySpan<byte> packet, TsPacketInfo info)
         {
             var payloadLength = PacketSize - info.PayloadOffset;
             if (info.PayloadStart)
@@ -3032,7 +2995,7 @@ public sealed class TsMultiSourceRepairService
         }
 
         public void ProcessPes(
-            ReadOnlySpan<byte> packet, PacketInfo info, long fileOffset,
+            ReadOnlySpan<byte> packet, TsPacketInfo info, long fileOffset,
             ReadOnlySpan<byte> elementaryPayload, string sourcePath)
         {
             if (info.PayloadStart)
@@ -3229,7 +3192,7 @@ public sealed class TsMultiSourceRepairService
 
         public void ProcessPes(
             ReadOnlySpan<byte> packet,
-            PacketInfo info,
+            TsPacketInfo info,
             long fileOffset,
             ReadOnlySpan<byte> elementaryPayload,
             string sourcePath)
@@ -3457,7 +3420,7 @@ public sealed class TsMultiSourceRepairService
         public long LastPts90k { get; private set; } = long.MinValue;
         public long MaximumPtsGap90k { get; private set; }
 
-        public void Process(ReadOnlySpan<byte> packet, PacketInfo info, long fileOffset)
+        public void Process(ReadOnlySpan<byte> packet, TsPacketInfo info, long fileOffset)
         {
             var contentWasStarted = _contentStarted;
             var continuityInvalid = false;
