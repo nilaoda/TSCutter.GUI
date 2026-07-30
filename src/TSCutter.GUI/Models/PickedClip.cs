@@ -77,4 +77,10 @@ public partial class PickedClip : ObservableObject
         ClipExportStatus.Cancelled => LocalizationManager.Instance.String_Clips_Cancelled,
         _ => "---"
     };
+
+    public void RefreshLocalizedText()
+    {
+        OnPropertyChanged(nameof(EstimatedSizeStr));
+        OnPropertyChanged(nameof(StatusText));
+    }
 }

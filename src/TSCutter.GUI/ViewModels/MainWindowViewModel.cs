@@ -56,6 +56,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void OnLanguageChanged()
     {
+        // 集合项的计算属性不会随资源字典自动刷新，需要逐项通知界面重新取值。
+        foreach (var clip in Clips)
+            clip.RefreshLocalizedText();
+        foreach (var item in ExportQueue)
+            item.RefreshLocalizedText();
+
         OnPropertyChanged(nameof(ZoomFactorStr));
         OnPropertyChanged(nameof(StatusInfoText));
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));

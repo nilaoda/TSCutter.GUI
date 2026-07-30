@@ -26,6 +26,7 @@ public partial class ExportQueueItem : ObservableObject
     public long EstimatedBytes { get; init; }
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusText))]
     private ClipExportStatus _status = ClipExportStatus.Pending;
 
     public string StatusText => Status switch
@@ -46,4 +47,10 @@ public partial class ExportQueueItem : ObservableObject
         + CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes));
 
     public string? OutputFilePathStr => OutputFilePath;
+
+    public void RefreshLocalizedText()
+    {
+        OnPropertyChanged(nameof(EstimatedSizeStr));
+        OnPropertyChanged(nameof(StatusText));
+    }
 }
