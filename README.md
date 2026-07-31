@@ -4,7 +4,7 @@
   <p><strong>English</strong> | <a href="README_CN.md">中文版</a></p>
 </div>
 
-TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It combines fast keyframe-based cutting with stream checking, filtering, repair, merging, and packet inspection tools, without transcoding the original audio or video.
+TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It combines fast keyframe-based cutting with stream inspection, extraction, filtering, structural editing, repair, merging, and packet analysis tools, without transcoding the original audio or video.
 
 > The software is still under development and has not been officially released, so it may contain **MANY BUGS**.  
 
@@ -23,11 +23,13 @@ TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It comb
 
 - **TS Raw Stream Cutter**: Extract a byte or packet range directly from a TS file.
 - **TS Quick Check**: Scan for synchronization loss, TEI/continuity/PES errors, PCR/PTS/DTS issues, A/V drift, bitrate changes, and export a text report.
-- **TS Timeline Repair**: Analyze and safely correct supported PCR and timestamp discontinuities without hiding transport or packet-loss errors.
+- **TS Packet Viewer**: Inspect individual 188-byte packets, navigate by packet number, offset, or PID, and link parsed fields to highlighted Hex bytes.
+- **TS Elementary Stream Extractor**: Select one or more tracks and export their raw video, audio, subtitle, or data payload after removing TS and PES encapsulation.
 - **TS Stream Filter**: Keep selected PIDs or split selected services while rebuilding the required program and service tables.
+- **TS Stream Editor**: Remove tracks or services, remap identifiers and PIDs, and edit service or language metadata while preserving the original encoded media.
+- **TS Timeline Repair**: Analyze and safely correct supported PCR and timestamp discontinuities without hiding transport or packet-loss errors.
 - **TS Multi-source Repair**: Compare compatible recordings of the same feed and time period, then use healthy packet, PES, or elementary-stream data to repair damaged regions and long gaps where safe.
 - **TS Binary Merge**: Directly append ordered TS segments, or detect and remove byte-identical overlap between adjacent files before merging.
-- **TS Packet Viewer**: Inspect individual 188-byte packets, navigate by packet number, offset, or PID, and link parsed fields to highlighted Hex bytes.
 
 ### General
 
