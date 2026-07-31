@@ -8,6 +8,20 @@ public static class TsUtil
     public const int TsPacketSize = 188;
     public const byte TsSyncByte = 0x47;
 
+    internal static int FindPacketSync(ReadOnlySpan<byte> data)
+    {
+        var limit = data.Length - TsPacketSize * 3;
+        for (var index = 0; index < limit; index++)
+        {
+            if (data[index] == TsSyncByte &&
+                data[index + TsPacketSize] == TsSyncByte &&
+                data[index + TsPacketSize * 2] == TsSyncByte &&
+                data[index + TsPacketSize * 3] == TsSyncByte)
+                return index;
+        }
+        return -1;
+    }
+
     /// <summary>
     /// Searches within maxSearchBytes range for a valid TS sync header offset.
     /// Returns -1 if not found.

@@ -485,6 +485,23 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private async Task TsEsExtractorClickAsync()
+    {
+        var settings = new OpenFileDialogSettings
+        {
+            Title = LocalizationManager.Instance.String_TsEsExtractor_OpenFile,
+            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
+        };
+        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+        if (!result.Any())
+            return;
+
+        var dialogViewModel = _dialogService.CreateViewModel<TsEsExtractorWindowViewModel>();
+        dialogViewModel.FilePath = result[0].LocalPath;
+        _dialogService.Show(null, dialogViewModel);
+    }
+
+    [RelayCommand]
     private void TsMultiSourceRepairClick()
     {
         var dialogViewModel = _dialogService.CreateViewModel<TsMultiSourceRepairWindowViewModel>();

@@ -234,7 +234,7 @@ public sealed class TsStreamAnalyzer
         var position = 0;
         if (_syncOffset < 0)
         {
-            var found = FindSync(data);
+            var found = TsUtil.FindPacketSync(data);
             if (found < 0)
                 return Math.Max(0, data.Length - PacketSize * 3);
 
@@ -254,7 +254,7 @@ public sealed class TsStreamAnalyzer
                 // TS 失步后无法确认各 PID 当前 PES 中间丢了多少数据，先放弃半成品，避免恢复后重复报长度错误。
                 DiscardPendingPes();
                 // 中途失步时在当前缓冲区内重新寻找连续同步点，恢复后继续保持单遍扫描。
-                var resync = FindSync(data[position..]);
+                var resync = TsUtil.FindPacketSync(data[position..]);
                 if (resync < 0)
                 {
                     // 最后 3 个包暂留给下一次读取拼接，其余损坏字节可立即丢弃，防止残余缓冲无限增长。
@@ -292,20 +292,6 @@ public sealed class TsStreamAnalyzer
         }
 
         return position;
-    }
-
-    private static int FindSync(ReadOnlySpan<byte> data)
-    {
-        var limit = data.Length - PacketSize * 3;
-        for (var index = 0; index < limit; index++)
-        {
-            if (data[index] == 0x47 &&
-                data[index + PacketSize] == 0x47 &&
-                data[index + PacketSize * 2] == 0x47 &&
-                data[index + PacketSize * 3] == 0x47)
-                return index;
-        }
-        return -1;
     }
 
     private void ProcessPacket(ReadOnlySpan<byte> packet, long fileOffset)
