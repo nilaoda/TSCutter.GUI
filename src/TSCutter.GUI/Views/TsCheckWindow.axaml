@@ -138,6 +138,7 @@
                 <DataGridTextColumn Header="PID" Binding="{Binding PidText}" Width="90" />
                 <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Stream}" Binding="{Binding Stream}" Width="*" />
                 <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Packets}" Binding="{Binding PacketCountText}" Width="140" />
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Bitrate}" Binding="{Binding BitrateText}" Width="105" />
                 <DataGridTemplateColumn Header="{DynamicResource String.TsCheck.Column.PacketPercentage}" Width="170">
                     <DataGridTemplateColumn.CellTemplate>
                         <DataTemplate>

@@ -70,6 +70,7 @@
                 <DataGridTextColumn Header="{DynamicResource String.TsFilter.Column.Stream}" Binding="{Binding StreamText}" Width="*" IsReadOnly="True" />
                 <DataGridTextColumn Header="{DynamicResource String.TsFilter.Column.Program}" Binding="{Binding ProgramText}" Width="90" IsReadOnly="True" />
                 <DataGridTextColumn Header="{DynamicResource String.TsFilter.Column.SamplePackets}" Binding="{Binding SamplePacketCountText}" Width="130" IsReadOnly="True" />
+                <DataGridTextColumn Header="{DynamicResource String.TsFilter.Column.Bitrate}" Binding="{Binding BitrateText}" Width="105" IsReadOnly="True" />
                 <DataGridTextColumn Header="{DynamicResource String.TsFilter.Column.Output}" Binding="{Binding OutputReason}" Width="170" IsReadOnly="True" />
             </DataGrid.Columns>
         </DataGrid>

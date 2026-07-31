@@ -1,6 +1,5 @@
 using System;
 using System.Buffers;
-using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -922,30 +921,12 @@ public sealed class TsStreamFilterService
         var programs = catalog.Programs.Values
             .Where(item => selectedPrograms.Contains(item.ProgramNumber))
             .OrderBy(item => item.ProgramNumber)
+            .Select(item => new TsPsiSectionBuilder.PatProgram(item.ProgramNumber, item.PmtPid))
             .ToArray();
-        var sectionLength = 9 + programs.Length * 4;
-        if (sectionLength > 1021)
-            throw new TsFilterException(TsFilterErrorCode.PatTooLarge);
-
-        var section = new byte[3 + sectionLength];
-        section[0] = 0x00;
-        section[1] = (byte)(0xB0 | (sectionLength >> 8));
-        section[2] = (byte)sectionLength;
-        section[3] = (byte)(catalog.TransportStreamId >> 8);
-        section[4] = (byte)catalog.TransportStreamId;
-        section[5] = (byte)(0xC1 | (((catalog.PatVersion + 1) & 0x1F) << 1));
-        section[6] = 0;
-        section[7] = 0;
-        var offset = 8;
-        foreach (var program in programs)
-        {
-            section[offset++] = (byte)(program.ProgramNumber >> 8);
-            section[offset++] = (byte)program.ProgramNumber;
-            section[offset++] = (byte)(0xE0 | (program.PmtPid >> 8));
-            section[offset++] = (byte)program.PmtPid;
-        }
-        WriteCrc(section);
-        return section;
+        return TsPsiSectionBuilder.BuildPat(
+            catalog.TransportStreamId,
+            (byte)((catalog.PatVersion + 1) & 0x1F),
+            programs);
     }
 
     private static bool TryWritePcrOnlyPacket(ReadOnlySpan<byte> source, byte[] outputBuffer, ref int outputLength)
@@ -978,60 +959,17 @@ public sealed class TsStreamFilterService
         var streams = program.StreamDefinitions
             .Where(item => selectedPids.Contains(item.Key))
             .OrderBy(item => item.Key)
+            .Select(item => new TsPsiSectionBuilder.PmtStream(item.Key, item.Value))
             .ToArray();
-        var sectionLength = 13 + program.ProgramDescriptors.Length +
-                            streams.Sum(item => 5 + item.Value.Descriptors.Length);
-        if (sectionLength > 1021)
-            throw new TsFilterException(TsFilterErrorCode.PmtTooLarge, program.ProgramNumber);
-
-        var section = new byte[3 + sectionLength];
-        section[0] = 0x02;
-        section[1] = (byte)(0xB0 | (sectionLength >> 8));
-        section[2] = (byte)sectionLength;
-        section[3] = (byte)(program.ProgramNumber >> 8);
-        section[4] = (byte)program.ProgramNumber;
-        section[5] = (byte)(0xC1 | (((program.PmtVersion + 1) & 0x1F) << 1));
-        section[6] = 0;
-        section[7] = 0;
-        var pcrPid = program.PcrPid >= 0 ? program.PcrPid : 0x1FFF;
-        section[8] = (byte)(0xE0 | (pcrPid >> 8));
-        section[9] = (byte)pcrPid;
-        section[10] = (byte)(0xF0 | (program.ProgramDescriptors.Length >> 8));
-        section[11] = (byte)program.ProgramDescriptors.Length;
-        var offset = 12;
-        program.ProgramDescriptors.CopyTo(section, offset);
-        offset += program.ProgramDescriptors.Length;
-        foreach (var stream in streams)
-        {
-            section[offset++] = stream.Value.StreamType;
-            section[offset++] = (byte)(0xE0 | (stream.Key >> 8));
-            section[offset++] = (byte)stream.Key;
-            section[offset++] = (byte)(0xF0 | (stream.Value.Descriptors.Length >> 8));
-            section[offset++] = (byte)stream.Value.Descriptors.Length;
-            stream.Value.Descriptors.CopyTo(section, offset);
-            offset += stream.Value.Descriptors.Length;
-        }
-        WriteCrc(section);
-        return section;
+        return TsPsiSectionBuilder.BuildPmt(
+            program.ProgramNumber,
+            (byte)((program.PmtVersion + 1) & 0x1F),
+            program.PcrPid >= 0 ? program.PcrPid : 0x1FFF,
+            program.ProgramDescriptors,
+            streams);
     }
 
-    internal static void WriteCrc(Span<byte> section)
-    {
-        var crc = ComputeCrc(section[..^4]);
-        BinaryPrimitives.WriteUInt32BigEndian(section[^4..], crc);
-    }
-
-    private static uint ComputeCrc(ReadOnlySpan<byte> data)
-    {
-        uint crc = uint.MaxValue;
-        foreach (var value in data)
-        {
-            crc ^= (uint)value << 24;
-            for (var bit = 0; bit < 8; bit++)
-                crc = (crc & 0x80000000) != 0 ? (crc << 1) ^ 0x04C11DB7 : crc << 1;
-        }
-        return crc;
-    }
+    internal static void WriteCrc(Span<byte> section) => TsPsiSectionBuilder.WriteCrc(section);
 
     private static void TryDelete(string path)
     {

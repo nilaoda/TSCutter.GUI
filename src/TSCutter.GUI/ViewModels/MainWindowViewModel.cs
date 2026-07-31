@@ -515,6 +515,23 @@ public partial class MainWindowViewModel : ViewModelBase
         _dialogService.Show(null, dialogViewModel);
     }
 
+    [RelayCommand]
+    private async Task TsRemuxClickAsync()
+    {
+        var settings = new OpenFileDialogSettings
+        {
+            Title = LocalizationManager.Instance.String_TsRemux_OpenFile,
+            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
+        };
+        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+        if (!result.Any())
+            return;
+
+        var dialogViewModel = _dialogService.CreateViewModel<TsRemuxWindowViewModel>();
+        dialogViewModel.FilePath = result[0].LocalPath;
+        _dialogService.Show(null, dialogViewModel);
+    }
+
     [RelayCommand(CanExecute = nameof(HasSelectedClip))]
     private async Task SaveVideoClickAsync() => await SaveVideoAsync();
 

@@ -5,7 +5,6 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models;
@@ -29,7 +28,8 @@ public sealed class TsStreamAnalyzer
     private const int AvSyncBaselineSampleCount = 5;
     private const int MaxTimelineBuckets = 4_096;
     private const double InitialTimelineBucketSeconds = 1;
-    private static readonly Encoding Gb18030Encoding = CreateGb18030Encoding();
+    private const long MaximumBitratePcrInterval90k = 90_000;
+    private const long MinimumBitrateClockSpan90k = 45_000;
 
     private readonly Dictionary<int, PidState> _pidStates = [];
     private readonly Dictionary<int, TsPsiSectionAssembler> _psiAssemblers = [];
@@ -70,12 +70,21 @@ public sealed class TsStreamAnalyzer
     private long _timelineIntervalPacketCount;
     private int _timelineSegment;
     private int _timelineCompactionThreshold = MaxTimelineBuckets;
+    private int _bitrateReferencePcrPid = -1;
+    private long _bitrateSegmentStart90k = long.MinValue;
+    private long _bitrateSegmentStartPacket;
+    private long _bitrateLastPcr90k = long.MinValue;
+    private long _bitrateLastPcrPacket;
+    private long _bitrateBestClockSpan90k;
+    private long _bitrateBestPacketSpan;
 
     private bool NeedsClockProcessing => HasFeature(
         TsStreamAnalyzeFeatures.TimestampValidation |
         TsStreamAnalyzeFeatures.AvSyncValidation |
         TsStreamAnalyzeFeatures.DetailedEvents |
         TsStreamAnalyzeFeatures.Timeline);
+
+    private bool NeedsPcrProcessing => NeedsClockProcessing || HasFeature(TsStreamAnalyzeFeatures.Bitrate);
 
     private bool NeedsPesTimestampProcessing => HasFeature(
         TsStreamAnalyzeFeatures.TimestampValidation |
@@ -206,6 +215,13 @@ public sealed class TsStreamAnalyzer
         _timelineIntervalPacketCount = 0;
         _timelineSegment = 0;
         _timelineCompactionThreshold = MaxTimelineBuckets;
+        _bitrateReferencePcrPid = -1;
+        _bitrateSegmentStart90k = long.MinValue;
+        _bitrateSegmentStartPacket = 0;
+        _bitrateLastPcr90k = long.MinValue;
+        _bitrateLastPcrPacket = 0;
+        _bitrateBestClockSpan90k = 0;
+        _bitrateBestPacketSpan = 0;
         _psiAssemblers[0] = new TsPsiSectionAssembler();
         if (_options.IncludeServiceMetadata)
             _psiAssemblers[0x0011] = new TsPsiSectionAssembler();
@@ -267,7 +283,8 @@ public sealed class TsStreamAnalyzer
             position += PacketSize;
             _packetIndex++;
             if (_options.InventoryOnly && HasCompleteCatalog() &&
-                _packetIndex - _lastCatalogChangePacket >= _options.StablePacketCount)
+                _packetIndex - _lastCatalogChangePacket >= _options.StablePacketCount &&
+                _packetIndex * PacketSize >= _options.MinimumBytes)
             {
                 _stopRequested = true;
                 break;
@@ -351,6 +368,9 @@ public sealed class TsStreamAnalyzer
             return;
         }
 
+        if (info.HasPayload && info.ScramblingControl >= 2)
+            state.Summary.ScrambledPayloadPacketCount++;
+
         var payloadOffset = info.PayloadOffset;
         var discontinuity = info.Discontinuity;
         ReadOnlySpan<byte> pcrBytes = default;
@@ -367,11 +387,8 @@ public sealed class TsStreamAnalyzer
                 clock.ResetSync();
         }
 
-        if (!pcrBytes.IsEmpty && NeedsClockProcessing)
-        {
-            if (!_options.InventoryOnly)
-                ProcessPcr(pid, pcrBytes, state, fileOffset, discontinuity);
-        }
+        if (!pcrBytes.IsEmpty && NeedsPcrProcessing)
+            ProcessPcr(pid, pcrBytes, state, fileOffset, discontinuity);
 
         // Null packet 的 CC 没有连续性语义，不参与丢包判断。
         if (!_options.InventoryOnly && HasFeature(TsStreamAnalyzeFeatures.ContinuityValidation) &&
@@ -455,6 +472,11 @@ public sealed class TsStreamAnalyzer
         state.LastRawPcr = raw;
         state.PcrWrapOffset = pcr - raw;
 
+        if (HasFeature(TsStreamAnalyzeFeatures.Bitrate))
+            ObserveBitrateClock(pid, pcr, discontinuity);
+        if (!NeedsClockProcessing)
+            return;
+
         if (HasFeature(TsStreamAnalyzeFeatures.Timeline) && !discontinuity &&
             state.LastPcr90k != long.MinValue && state.LastPcrPacketIndex >= 0)
         {
@@ -536,6 +558,60 @@ public sealed class TsStreamAnalyzer
         if (HasFeature(TsStreamAnalyzeFeatures.AvSyncValidation) &&
             _pcrPidPrograms.TryGetValue(pid, out var programNumber))
             CheckAvSyncAtPcr(programNumber, pcr, fileOffset);
+    }
+
+    private void ObserveBitrateClock(int pid, long pcr90k, bool discontinuity)
+    {
+        if (_bitrateReferencePcrPid < 0)
+        {
+            if (!_pcrPidPrograms.ContainsKey(pid))
+                return;
+            _bitrateReferencePcrPid = pid;
+            StartBitrateClockSegment(pcr90k);
+            return;
+        }
+        if (pid != _bitrateReferencePcrPid)
+            return;
+
+        var clockDelta = pcr90k - _bitrateLastPcr90k;
+        var packetDelta = _packetIndex - _bitrateLastPcrPacket;
+        if (discontinuity || clockDelta <= 0 || clockDelta > MaximumBitratePcrInterval90k || packetDelta <= 0)
+        {
+            StartBitrateClockSegment(pcr90k);
+            return;
+        }
+
+        _bitrateLastPcr90k = pcr90k;
+        _bitrateLastPcrPacket = _packetIndex;
+        var clockSpan = pcr90k - _bitrateSegmentStart90k;
+        if (clockSpan > _bitrateBestClockSpan90k)
+        {
+            _bitrateBestClockSpan90k = clockSpan;
+            _bitrateBestPacketSpan = _packetIndex - _bitrateSegmentStartPacket;
+        }
+    }
+
+    private void StartBitrateClockSegment(long pcr90k)
+    {
+        _bitrateSegmentStart90k = pcr90k;
+        _bitrateSegmentStartPacket = _packetIndex;
+        _bitrateLastPcr90k = pcr90k;
+        _bitrateLastPcrPacket = _packetIndex;
+    }
+
+    private void UpdatePidBitrates()
+    {
+        if (!HasFeature(TsStreamAnalyzeFeatures.Bitrate) ||
+            _bitrateBestClockSpan90k < MinimumBitrateClockSpan90k ||
+            _bitrateBestPacketSpan <= 0 || _packetIndex <= 0)
+            return;
+
+        // 以可靠 PCR 区间求出 TS 总码率，再按完整采样区间的 PID 包占比分摊；
+        // 逐包热路径只增加整数计数，不为码率统计保存每包或每 PID 的额外样本。
+        var transportBitrate = _bitrateBestPacketSpan * (PacketSize * 8.0) * 90_000 /
+                               _bitrateBestClockSpan90k;
+        foreach (var pid in _result.Pids.Values)
+            pid.Bitrate = transportBitrate * pid.PacketCount / _packetIndex;
     }
 
     private void ProcessPsi(int pid, ReadOnlySpan<byte> payload, bool payloadStart, long fileOffset)
@@ -751,89 +827,16 @@ public sealed class TsStreamAnalyzer
                 var providerLength = body[1];
                 if (2 + providerLength >= body.Length)
                     return;
-                providerName = DecodeDvbText(body.Slice(2, providerLength));
+                providerName = TsDvbTextCodec.Decode(body.Slice(2, providerLength));
                 var nameLengthOffset = 2 + providerLength;
                 var nameLength = body[nameLengthOffset];
                 if (nameLengthOffset + 1 + nameLength <= body.Length)
-                    serviceName = DecodeDvbText(body.Slice(nameLengthOffset + 1, nameLength));
+                    serviceName = TsDvbTextCodec.Decode(body.Slice(nameLengthOffset + 1, nameLength));
                 return;
             }
             offset += 2 + length;
         }
     }
-
-    private static string DecodeDvbText(ReadOnlySpan<byte> value)
-    {
-        if (value.IsEmpty)
-            return string.Empty;
-
-        // DVB 文本以首字节选择字符集；优先覆盖广播中常见的 UTF-8/UTF-16，
-        // 未声明字符集时按 ISO-8859-1 安全回退，无法识别的控制字符不会进入文件名或界面。
-        Encoding encoding = Encoding.Latin1;
-        var offset = 0;
-        if (value[0] == 0x15)
-        {
-            encoding = Encoding.UTF8;
-            offset = 1;
-        }
-        else if (value[0] == 0x11)
-        {
-            encoding = Encoding.BigEndianUnicode;
-            offset = 1;
-        }
-        else if (value[0] is >= 0x01 and <= 0x0B)
-        {
-            var isoPart = value[0] switch
-            {
-                0x01 => 5,
-                0x02 => 6,
-                0x03 => 7,
-                0x04 => 8,
-                0x05 => 9,
-                0x06 => 10,
-                0x07 => 11,
-                0x09 => 13,
-                0x0A => 14,
-                0x0B => 15,
-                _ => 0
-            };
-            if (isoPart > 0)
-                encoding = Encoding.GetEncoding($"ISO-8859-{isoPart}");
-            offset = 1;
-        }
-        else if (value[0] == 0x10 && value.Length >= 3)
-        {
-            if (value[1] == 0 && value[2] is >= 1 and <= 15 && value[2] != 12)
-                encoding = Encoding.GetEncoding($"ISO-8859-{value[2]}");
-            offset = 3;
-        }
-
-        var textBytes = value[offset..];
-        var text = encoding.GetString(textBytes).Trim();
-        var highByteCount = 0;
-        foreach (var item in textBytes)
-        {
-            if (item >= 0x80)
-                highByteCount++;
-        }
-        if (offset == 0 && highByteCount >= 2)
-        {
-            var gbText = Gb18030Encoding.GetString(textBytes).Trim();
-            // 国内 DVB 前端常把未带字符集标识的 GB2312/GBK 直接放入 SDT。
-            // 仅在解码结果明确包含多个中日韩字符时采用 GB18030，避免影响标准拉丁文本。
-            if (gbText.Count(IsCjkCharacter) >= 2)
-                text = gbText;
-        }
-        return string.Concat(text.Where(character => !char.IsControl(character)));
-    }
-
-    private static Encoding CreateGb18030Encoding()
-    {
-        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
-        return Encoding.GetEncoding("GB18030", EncoderFallback.ReplacementFallback, DecoderFallback.ReplacementFallback);
-    }
-
-    private static bool IsCjkCharacter(char value) => value is >= '\u3400' and <= '\u9FFF';
 
     private bool HasCompleteCatalog()
     {
@@ -1449,6 +1452,7 @@ public sealed class TsStreamAnalyzer
     private void CompleteResult(long bytesScanned, bool cancelled)
     {
         CompleteTimeline();
+        UpdatePidBitrates();
         _result.PacketCount = _packetIndex;
         _result.BytesScanned = Math.Min(_result.FileSize, bytesScanned);
         _result.Elapsed = _stopwatch.Elapsed;
