@@ -337,7 +337,7 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
                 pid.Pid, pid.PacketCount, pid.ErrorCount, pid.WarningCount,
                 pid.ProgramNumber, pid.StreamType, pid.MpegAudioLayer,
                 pid.SupplementaryStreamType, pid.Language,
-                pid.IsPcrPid, pid.IsPmtPid, false), _result.PacketCount);
+                pid.IsPcrPid, pid.IsPmtPid, false), _result.PacketCount, pid.Bitrate);
         }
     }
 
@@ -439,7 +439,8 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
             : string.Empty;
     }
 
-    private void UpdatePidSummary(TsCheckPidProgress progress, long totalPacketCount)
+    private void UpdatePidSummary(
+        TsCheckPidProgress progress, long totalPacketCount, double? bitrate = null)
     {
         if (!_pidSummaryRows.TryGetValue(progress.Pid, out var row))
         {
@@ -447,7 +448,7 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
             _pidSummaryRows[progress.Pid] = row;
             PidSummaries.Add(row);
         }
-        row.Update(progress, totalPacketCount, _text);
+        row.Update(progress, totalPacketCount, _text, bitrate);
     }
 
     [RelayCommand(CanExecute = nameof(CanCancel))]

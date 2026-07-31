@@ -137,6 +137,8 @@
                                   Command="{Binding TsBinaryMergeClickCommand}" />
                         <MenuItem Header="{DynamicResource String.Menu.TsPacketViewer}"
                                   Command="{Binding TsPacketViewerClickCommand}" />
+                        <MenuItem Header="{DynamicResource String.Menu.TsRemux}"
+                                  Command="{Binding TsRemuxClickCommand}" />
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.Settings}"
                                   Command="{Binding SettingsClickCommand}" />

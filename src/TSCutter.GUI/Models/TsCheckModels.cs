@@ -124,7 +124,9 @@ public sealed class TsCheckPidSummary
 {
     public required int Pid { get; init; }
     public long PacketCount { get; set; }
+    public double Bitrate { get; set; }
     public long PayloadPacketCount { get; set; }
+    public long ScrambledPayloadPacketCount { get; set; }
     public long ContinuityErrors { get; set; }
     public long TransportErrors { get; set; }
     public long PesSizeErrors { get; set; }
@@ -258,8 +260,11 @@ public sealed class TsCheckTimelineBucket
 
 public sealed class TsStreamAnalyzeOptions
 {
+    public const long StandardProbeBytes = 20L * 1024 * 1024;
+
     public bool InventoryOnly { get; init; }
     public bool IncludeServiceMetadata { get; init; }
+    public long MinimumBytes { get; init; }
     public long MaxBytes { get; init; } = long.MaxValue;
     public int StablePacketCount { get; init; } = 8_192;
     public TsStreamAnalyzeFeatures Features { get; init; } = TsStreamAnalyzeFeatures.Default;
@@ -276,8 +281,9 @@ public enum TsStreamAnalyzeFeatures
     Timeline = 1 << 4,
     PesSizeValidation = 1 << 5,
     BroadcastClock = 1 << 6,
+    Bitrate = 1 << 7,
     Default = ContinuityValidation | TimestampValidation | AvSyncValidation | DetailedEvents | Timeline |
-              PesSizeValidation | BroadcastClock
+              PesSizeValidation | BroadcastClock | Bitrate
 }
 
 public readonly record struct TsCheckPidProgress(
