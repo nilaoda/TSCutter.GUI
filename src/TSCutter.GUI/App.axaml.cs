@@ -42,6 +42,7 @@ public partial class App : Application
         SplatRegistrations.Register<TsBinaryMergeWindowViewModel>();
         SplatRegistrations.Register<TsPacketViewerWindowViewModel>();
         SplatRegistrations.Register<TsRemuxWindowViewModel>();
+        SplatRegistrations.Register<TsEsExtractorWindowViewModel>();
         SplatRegistrations.Register<AboutWindowViewModel>();
         SplatRegistrations.Register<JumpTimeViewModel>();
         SplatRegistrations.Register<MediainfoWindowViewModel>();
@@ -119,6 +120,7 @@ public partial class App : Application
     public static TsBinaryMergeWindowViewModel TsBinaryMergeDialog => Locator.Current.GetService<TsBinaryMergeWindowViewModel>()!;
     public static TsPacketViewerWindowViewModel TsPacketViewerDialog => Locator.Current.GetService<TsPacketViewerWindowViewModel>()!;
     public static TsRemuxWindowViewModel TsRemuxDialog => Locator.Current.GetService<TsRemuxWindowViewModel>()!;
+    public static TsEsExtractorWindowViewModel TsEsExtractorDialog => Locator.Current.GetService<TsEsExtractorWindowViewModel>()!;
     public static JumpTimeViewModel JumpTimeDialog => Locator.Current.GetService<JumpTimeViewModel>()!;
     public static AboutWindowViewModel AboutDialog => Locator.Current.GetService<AboutWindowViewModel>()!;
     public static MediainfoWindowViewModel MediainfoDialog => Locator.Current.GetService<MediainfoWindowViewModel>()!;

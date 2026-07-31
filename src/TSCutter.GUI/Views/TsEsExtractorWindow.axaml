@@ -1,0 +1,80 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.TsEsExtractorWindow"
+        x:DataType="viewModels:TsEsExtractorWindowViewModel"
+        Title="{Binding WindowTitle}"
+        Width="900" Height="560" MinWidth="760" MinHeight="440"
+        WindowStartupLocation="CenterScreen">
+    <Grid Margin="12" RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="8">
+        <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="4">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource String.TsEsExtractor.File}" VerticalAlignment="Center" />
+                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding FilePath}" IsReadOnly="True" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="{DynamicResource String.TsEsExtractor.FileSize}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding FileSizeText}" FontWeight="Bold" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource String.TsEsExtractor.Status}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding StatusText}" TextWrapping="Wrap" />
+            </Grid>
+        </ClassicBorderDecorator>
+
+        <Grid Grid.Row="1" ColumnDefinitions="*,100" ColumnSpacing="8" Height="18">
+            <ProgressBar Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding Percent}"
+                         IsVisible="{Binding ShowOutputProgress}" Height="18" />
+            <TextBlock Grid.Column="1" Text="{Binding Percent, StringFormat={}{0:0.00}%}"
+                       IsVisible="{Binding ShowOutputProgress}" TextAlignment="Right" VerticalAlignment="Center" />
+        </Grid>
+
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="{Binding ProbeSummaryText}" TextWrapping="Wrap" Opacity="0.75" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" IsVisible="{Binding ShowOutputProgress}" VerticalAlignment="Center">
+                <Run Text="{Binding ProgressText}" FontWeight="Bold" /><Run Text="  " /><Run Text="{Binding SpeedText}" />
+            </TextBlock>
+            <TextBlock Grid.Column="2" VerticalAlignment="Center">
+                <Run Text="{DynamicResource String.TsEsExtractor.Selected}" /><Run Text=" " />
+                <Run Text="{Binding SelectedCount}" FontWeight="Bold" />
+            </TextBlock>
+            <Button Grid.Column="3" Content="{DynamicResource String.TsEsExtractor.SelectAll}"
+                    Command="{Binding SelectAllCommand}" MinWidth="90" />
+            <Button Grid.Column="4" Content="{DynamicResource String.TsEsExtractor.ClearAll}"
+                    Command="{Binding ClearAllCommand}" MinWidth="90" />
+        </Grid>
+
+        <DataGrid Grid.Row="3" ItemsSource="{Binding Tracks}" AutoGenerateColumns="False"
+                  IsEnabled="{Binding CanSelect}" GridLinesVisibility="All" CanUserResizeColumns="True"
+                  CanUserSortColumns="False" HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Auto">
+            <DataGrid.Columns>
+                <DataGridTemplateColumn Header="{DynamicResource String.TsEsExtractor.Column.Extract}" Width="65">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" HorizontalAlignment="Center" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTextColumn Header="PID" Binding="{Binding PidText}" Width="85" IsReadOnly="True" />
+                <DataGridTextColumn Header="{DynamicResource String.TsEsExtractor.Column.Program}" Binding="{Binding ProgramText}" Width="150" IsReadOnly="True" />
+                <DataGridTextColumn Header="{DynamicResource String.TsEsExtractor.Column.Stream}" Binding="{Binding StreamText}" Width="160" IsReadOnly="True" />
+                <DataGridTextColumn Header="{DynamicResource String.TsEsExtractor.Column.Language}" Binding="{Binding LanguageText}" Width="85" IsReadOnly="True" />
+                <DataGridTextColumn Header="{DynamicResource String.TsEsExtractor.Column.Bitrate}" Binding="{Binding BitrateText}" Width="105" IsReadOnly="True" />
+                <DataGridTemplateColumn Header="{DynamicResource String.TsEsExtractor.Column.FileName}" Width="260">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <TextBox Text="{Binding OutputFileName, Mode=TwoWay}" Margin="2" />
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="{DynamicResource String.TsEsExtractor.OutputFolder}" VerticalAlignment="Center" />
+            <TextBox Grid.Column="1" Text="{Binding OutputFolder, Mode=TwoWay}" />
+            <Button Grid.Column="2" Content="{DynamicResource String.TsEsExtractor.Browse}" Command="{Binding BrowseCommand}" MinWidth="90" />
+            <Button Grid.Column="3" Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}" Width="90" />
+            <Button Grid.Column="4" Content="{DynamicResource String.TsEsExtractor.Output}" Command="{Binding OutputCommand}" Width="110" />
+        </Grid>
+    </Grid>
+</Window>
