@@ -197,8 +197,22 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedClipRanges));
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
         OnPropertyChanged(nameof(SelectedClipsSummaryStr));
+        SelectAllClipsCommand.NotifyCanExecuteChanged();
         MergeSelectedClipsCommand.NotifyCanExecuteChanged();
     }
+
+    [RelayCommand(CanExecute = nameof(CanSelectAllClips))]
+    private void SelectAllClips()
+    {
+        foreach (var clip in Clips)
+            clip.IsSelected = true;
+
+        SelectedClip ??= Clips.FirstOrDefault();
+        _clipSelectionAnchor = SelectedClip;
+        NotifyClipSelectionChanged();
+    }
+
+    private bool CanSelectAllClips => Clips.Any(clip => !clip.IsSelected);
 
     private (int Count, long Bytes, double DurationSeconds) GetSelectedClipAggregate()
     {

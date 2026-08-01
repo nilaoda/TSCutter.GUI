@@ -63,9 +63,11 @@
     <x:String x:Key="String.Navigate.Next20">後 20</x:String>
     <x:String x:Key="String.SaveClipTip">儲存目前片段</x:String>
     <x:String x:Key="String.SaveClip">儲存片段</x:String>
-    <x:String x:Key="String.ExportAll">全部匯出</x:String>
-    <x:String x:Key="String.ExportAllTip">將所有片段匯出到來源檔案所在目錄</x:String>
-    <x:String x:Key="String.ExportAllConfirm">將 {0} 個片段匯出到來源檔案所在目錄？&#10;&#10;輸出目錄：{1}</x:String>
+    <x:String x:Key="String.ExportAll">分別匯出</x:String>
+    <x:String x:Key="String.ExportAllTip">將全部剪輯分別匯出為獨立檔案，並儲存到來源檔案所在目錄</x:String>
+    <x:String x:Key="String.ExportAllConfirm">將 {0} 個剪輯分別匯出為獨立檔案？&#10;&#10;輸出目錄：{1}</x:String>
+    <x:String x:Key="String.Clips.SelectAll">全選</x:String>
+    <x:String x:Key="String.Clips.SelectAllTip">選取全部剪輯</x:String>
     <x:String x:Key="String.Clips.Done">完成</x:String>
     <x:String x:Key="String.Clips.Failed">失敗</x:String>
     <x:String x:Key="String.Clips.Cancelled">已取消</x:String>

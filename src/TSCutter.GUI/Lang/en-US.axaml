@@ -63,9 +63,11 @@
     <x:String x:Key="String.Navigate.Next20">Next 20</x:String>
     <x:String x:Key="String.SaveClipTip">Save Current Clip</x:String>
     <x:String x:Key="String.SaveClip">Save Clip</x:String>
-    <x:String x:Key="String.ExportAll">Export All</x:String>
-    <x:String x:Key="String.ExportAllTip">Export all clips to the source directory</x:String>
-    <x:String x:Key="String.ExportAllConfirm">Export {0} clips to the source directory?&#10;&#10;Output: {1}</x:String>
+    <x:String x:Key="String.ExportAll">Export Separately</x:String>
+    <x:String x:Key="String.ExportAllTip">Export every clip as a separate file to the source directory</x:String>
+    <x:String x:Key="String.ExportAllConfirm">Export {0} clips as separate files to the source directory?&#10;&#10;Output: {1}</x:String>
+    <x:String x:Key="String.Clips.SelectAll">Select All</x:String>
+    <x:String x:Key="String.Clips.SelectAllTip">Select all clips</x:String>
     <x:String x:Key="String.Clips.Done">Done</x:String>
     <x:String x:Key="String.Clips.Failed">Failed</x:String>
     <x:String x:Key="String.Clips.Cancelled">Cancelled</x:String>
