@@ -214,6 +214,11 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
     /// </summary>
     public void Initialize(string filePath)
     {
+        Initialize(filePath, null);
+    }
+
+    internal void Initialize(string filePath, TsPacketRange? initialRange)
+    {
         FilePath = filePath;
         var fileInfo = new FileInfo(filePath);
         FileSize = fileInfo.Length;
@@ -221,9 +226,18 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
         SyncOffset = TsUtil.FindSyncOffset(filePath);
         TotalPackets = TsUtil.CountPackets(filePath, SyncOffset);
 
-        EndPacket = Math.Max(0, TotalPackets - 1);
-        StartOffset = TsUtil.PacketToOffset(StartPacket, SyncOffset);
-        EndOffset = PacketEndOffset(EndPacket);
+        var lastPacket = Math.Max(0, TotalPackets - 1);
+        var startPacket = Math.Clamp(initialRange?.StartPacket ?? 0, 0, lastPacket);
+        var endPacket = Math.Clamp(initialRange?.EndPacket ?? lastPacket, startPacket, lastPacket);
+
+        // 联动入口直接设置包范围，避免逐个属性的回调在初始化期间互相覆盖预选值。
+        _syncingSlider = true;
+        IsPacketMode = true;
+        StartPacket = startPacket;
+        EndPacket = endPacket;
+        StartOffset = TsUtil.PacketToOffset(startPacket, SyncOffset);
+        EndOffset = PacketEndOffset(endPacket);
+        _syncingSlider = false;
     }
 
     partial void OnStartPacketChanged(long value)

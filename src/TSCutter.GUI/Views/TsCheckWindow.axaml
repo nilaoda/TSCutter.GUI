@@ -173,25 +173,38 @@
             </DataGrid.Columns>
         </DataGrid>
 
-        <DataGrid Grid.Row="4" ItemsSource="{Binding Events}" IsReadOnly="True" AutoGenerateColumns="False"
-                  x:Name="DetailsGrid"
-                  IsVisible="{Binding IsDetailsView}"
-                  SelectedItem="{Binding SelectedEventRow, Mode=TwoWay}"
-                  GridLinesVisibility="All" CanUserResizeColumns="True"
-                  HorizontalScrollBarVisibility="Visible" VerticalScrollBarVisibility="Auto"
-                  ScrollViewer.HorizontalScrollBarVisibility="Visible"
-                  ScrollViewer.VerticalScrollBarVisibility="Auto">
-            <DataGrid.Columns>
-                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Severity}" Binding="{Binding Severity}" Width="90" />
-                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.SourceTime}" Binding="{Binding SourceTime}" Width="120" />
-                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.ZeroBasedTime}" Binding="{Binding ZeroBasedTime}" Width="120" />
-                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Type}" Binding="{Binding Type}" Width="175" />
-                <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="80" />
-                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Stream}" Binding="{Binding Stream}" Width="220" />
-                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Packet}" Binding="{Binding Packet}" Width="135" />
-                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Description}" Binding="{Binding Message}" Width="420" />
-            </DataGrid.Columns>
-        </DataGrid>
+        <Grid Grid.Row="4" IsVisible="{Binding IsDetailsView}" RowDefinitions="*,Auto">
+            <DataGrid Grid.Row="0" ItemsSource="{Binding Events}" IsReadOnly="True" AutoGenerateColumns="False"
+                      x:Name="DetailsGrid"
+                      SelectedItem="{Binding SelectedEventRow, Mode=TwoWay}"
+                      DoubleTapped="DetailsGrid_OnDoubleTapped"
+                      GridLinesVisibility="All" CanUserResizeColumns="True"
+                      HorizontalScrollBarVisibility="Visible" VerticalScrollBarVisibility="Auto"
+                      ScrollViewer.HorizontalScrollBarVisibility="Visible"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Severity}" Binding="{Binding Severity}" Width="90" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.SourceTime}" Binding="{Binding SourceTime}" Width="120" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.ZeroBasedTime}" Binding="{Binding ZeroBasedTime}" Width="120" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Type}" Binding="{Binding Type}" Width="175" />
+                    <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="80" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Stream}" Binding="{Binding Stream}" Width="220" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Packet}" Binding="{Binding Packet}" Width="135" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Description}" Binding="{Binding Message}" Width="420" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <ClassicBorderDecorator Grid.Row="1" Margin="0,6,0,0" BorderThickness="1"
+                                    BorderStyle="Etched" Padding="6,4">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="{DynamicResource String.TsCheck.Location.OpenPacketViewer}"
+                            Command="{Binding OpenSelectedInPacketViewerCommand}" MinWidth="145" />
+                    <Button Content="{DynamicResource String.TsCheck.Location.OpenRawCutter}"
+                            Command="{Binding OpenSelectedInRawCutterCommand}" MinWidth="135" />
+                    <Button Content="{DynamicResource String.TsCheck.Location.Copy}"
+                            Command="{Binding CopySelectedLocationCommand}" MinWidth="115" />
+                </StackPanel>
+            </ClassicBorderDecorator>
+        </Grid>
 
         <Grid Grid.Row="4" IsVisible="{Binding IsTimelineView}" RowDefinitions="Auto,*" RowSpacing="6">
             <Grid Grid.Row="0" ColumnDefinitions="Auto,360,*" ColumnSpacing="8">

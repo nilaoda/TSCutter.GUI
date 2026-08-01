@@ -418,6 +418,11 @@
     <x:String x:Key="String.TsCheck.Warnings">Warnings:</x:String>
     <x:String x:Key="String.TsCheck.Start">Scan Again</x:String>
     <x:String x:Key="String.TsCheck.Export">Export Report</x:String>
+    <x:String x:Key="String.TsCheck.Location.OpenPacketViewer">Open in Packet Viewer</x:String>
+    <x:String x:Key="String.TsCheck.Location.OpenRawCutter">Extract Nearby Sample...</x:String>
+    <x:String x:Key="String.TsCheck.Location.Copy">Copy Location</x:String>
+    <x:String x:Key="String.TsCheck.Location.Copied">Anomaly location copied to the clipboard.</x:String>
+    <x:String x:Key="String.TsCheck.Location.CopyFailed">Unable to access the clipboard.</x:String>
     <x:String x:Key="String.TsCheck.Column.Severity">Severity</x:String>
     <x:String x:Key="String.TsCheck.Column.SourceTime">Source time</x:String>
     <x:String x:Key="String.TsCheck.Column.ZeroBasedTime">0-based time</x:String>
