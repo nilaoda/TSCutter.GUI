@@ -97,6 +97,10 @@
     <x:String x:Key="String.Settings.CurrentLightTheme">Light theme</x:String>
     <x:String x:Key="String.Settings.CurrentDarkTheme">Dark theme</x:String>
     <x:String x:Key="String.Settings.AutoCheckForUpdates">Auto check for updates after app started</x:String>
+    <x:String x:Key="String.Settings.PreferHardwareDecoding">Prefer hardware decoding</x:String>
+    <x:String x:Key="String.Settings.PreferHardwareDecodingTip">Available on Windows and macOS. Unsupported codecs automatically use software decoding.</x:String>
+    <x:String x:Key="String.Status.HardwareDecoding">HW</x:String>
+    <x:String x:Key="String.Status.SoftwareDecoding">SW</x:String>
     <x:String x:Key="String.Settings.Theme.ThemeVariantMode">Theme mode</x:String>
     <x:String x:Key="String.Settings.Theme.AutoDetect">Auto detect</x:String>
     <x:String x:Key="String.Settings.Theme.Light">Light</x:String>

@@ -22,6 +22,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     [ObservableProperty]
     private bool _autoCheckForUpdates;
     [ObservableProperty]
+    private bool _preferHardwareDecoding;
+    [ObservableProperty]
     private ThemeModel _selectedTheme;
     [ObservableProperty]
     private ThemeModel _selectedDarkTheme;
@@ -31,6 +33,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     private ThemeVariantMode _selectedThemeVariantMode;
 
     public bool IsLanguageEnable => !AutoDetectLanguage;
+    public bool IsHardwareDecodingAvailable => AppConfig.IsHardwareDecodingSupported;
     public List<ThemeModel> Themes => ThemeModel.AllThemes;
     public List<ThemeModel> DarkThemes => ThemeModel.AllDarkThemes;
     public List<SupportedLang> Languages => _locService.SupportedLanguages;
@@ -41,6 +44,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _locService = localizationService;
         AutoDetectLanguage = _configService.CurrentConfig.AutoDetectLanguage;
         AutoCheckForUpdates = _configService.CurrentConfig.AutoCheckForUpdates;
+        PreferHardwareDecoding = _configService.CurrentConfig.PreferHardwareDecoding;
         SelectedTheme = _configService.CurrentConfig.ThemeModel;
         SelectedDarkTheme = _configService.CurrentConfig.DarkThemeModel;
         SelectedThemeVariantMode = _configService.CurrentConfig.ThemeVariantMode;
@@ -76,6 +80,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         // 更新配置
         _configService.CurrentConfig.AutoDetectLanguage = AutoDetectLanguage;
         _configService.CurrentConfig.AutoCheckForUpdates = AutoCheckForUpdates;
+        _configService.CurrentConfig.PreferHardwareDecoding = PreferHardwareDecoding;
         _configService.CurrentConfig.ThemeVariantMode = SelectedThemeVariantMode;
 
         // 应用主题
