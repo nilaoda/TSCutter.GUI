@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Threading;
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using TSCutter.GUI.Utils;
 
@@ -15,7 +16,7 @@ public enum ClipExportStatus
     Cancelled
 }
 
-public partial class PickedClip : ObservableObject
+public partial class PickedClip : ObservableObject, IDisposable
 {
     private static long _idCounter = 0;
     public long ClipID { get; } = Interlocked.Increment(ref _idCounter);
@@ -24,11 +25,11 @@ public partial class PickedClip : ObservableObject
     public long EndPts {get; set;}
     
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StartTimeStr))]
+    [NotifyPropertyChangedFor(nameof(StartBoundaryTimeStr))]
     private double _startTime = 0;
     
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(EndTimeStr))]
+    [NotifyPropertyChangedFor(nameof(EndBoundaryTimeStr))]
     private double _endTime = -1.0;
     
     [ObservableProperty]
@@ -57,12 +58,20 @@ public partial class PickedClip : ObservableObject
     [ObservableProperty]
     private bool _isActive;
 
+    private Bitmap? _startThumbnail;
+    private Bitmap? _endThumbnail;
+
+    public Bitmap? StartThumbnail => _startThumbnail;
+    public Bitmap? EndThumbnail => _endThumbnail;
+    public bool HasStartThumbnail => _startThumbnail is not null;
+    public bool HasEndThumbnail => _endThumbnail is not null;
+
     public required FileInfo InFileInfo { get; init; }
 
-    public string StartTimeStr => CommonUtil.FormatSeconds(StartTime);
+    public string StartBoundaryTimeStr => $"[ {CommonUtil.FormatSeconds(StartTime)}";
     public string? OutputFileSizeStr => OutputFileInfo == null ? null : CommonUtil.FormatFileSize(OutputFileInfo.Length);
     public string? OutputFilePathStr => OutputFileInfo?.FullName;
-    public string EndTimeStr => EndTime < 0 ? "Inf." : CommonUtil.FormatSeconds(EndTime);
+    public string EndBoundaryTimeStr => $"{(EndTime < 0 ? "Inf." : CommonUtil.FormatSeconds(EndTime))} ]";
     public string? EstimatedSizeStr => LocalizationManager.Instance.String_SizePrefix
         + CommonUtil.FormatFileSize(
             Math.Max(0, (EndPosition > 0 ? EndPosition : InFileInfo.Length) - StartPosition)
@@ -82,5 +91,33 @@ public partial class PickedClip : ObservableObject
     {
         OnPropertyChanged(nameof(EstimatedSizeStr));
         OnPropertyChanged(nameof(StatusText));
+    }
+
+    internal void ReplaceStartThumbnail(Bitmap? thumbnail)
+    {
+        if (ReferenceEquals(_startThumbnail, thumbnail))
+            return;
+
+        _startThumbnail?.Dispose();
+        _startThumbnail = thumbnail;
+        OnPropertyChanged(nameof(StartThumbnail));
+        OnPropertyChanged(nameof(HasStartThumbnail));
+    }
+
+    internal void ReplaceEndThumbnail(Bitmap? thumbnail)
+    {
+        if (ReferenceEquals(_endThumbnail, thumbnail))
+            return;
+
+        _endThumbnail?.Dispose();
+        _endThumbnail = thumbnail;
+        OnPropertyChanged(nameof(EndThumbnail));
+        OnPropertyChanged(nameof(HasEndThumbnail));
+    }
+
+    public void Dispose()
+    {
+        ReplaceStartThumbnail(null);
+        ReplaceEndThumbnail(null);
     }
 }

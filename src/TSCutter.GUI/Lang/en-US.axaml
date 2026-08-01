@@ -47,8 +47,6 @@
     <x:String x:Key="String.ToolBar.SaveFrame">Capture</x:String>
     <x:String x:Key="String.ToolBar.MediaInfoTip">Show Media Info</x:String>
     <x:String x:Key="String.ToolBar.MediaInfo">Info</x:String>
-    <x:String x:Key="String.Table.StartTime">Start Time</x:String>
-    <x:String x:Key="String.Table.EndTime">End Time</x:String>
     <x:String x:Key="String.Table.OutputSize">Output Size</x:String>
     <x:String x:Key="String.Table.OutputPath">Output Path</x:String>
     <x:String x:Key="String.Table.Status">Status</x:String>
