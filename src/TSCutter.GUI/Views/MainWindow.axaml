@@ -274,13 +274,22 @@
                                                 </TextBlock>
                                             </TabItem.Header>
                                             <DockPanel>
-                                                <Button DockPanel.Dock="Bottom"
-                                                        Command="{Binding ExportAllCommand}"
-                                                        HorizontalAlignment="Stretch"
-                                                        ToolTip.Tip="{DynamicResource String.ExportAllTip}"
-                                                        Margin="0,2,0,0">
-                                                    <TextBlock Text="{DynamicResource String.ExportAll}" />
-                                                </Button>
+                                                <Grid DockPanel.Dock="Bottom"
+                                                      ColumnDefinitions="*,*"
+                                                      ColumnSpacing="4"
+                                                      Margin="0,2,0,0">
+                                                    <Button Grid.Column="0"
+                                                            Command="{Binding SelectAllClipsCommand}"
+                                                            ToolTip.Tip="{DynamicResource String.Clips.SelectAllTip}">
+                                                        <TextBlock Text="{DynamicResource String.Clips.SelectAll}" />
+                                                    </Button>
+                                                    <Button Grid.Column="1"
+                                                            Command="{Binding ExportAllCommand}"
+                                                            HorizontalAlignment="Stretch"
+                                                            ToolTip.Tip="{DynamicResource String.ExportAllTip}">
+                                                        <TextBlock Text="{DynamicResource String.ExportAll}" />
+                                                    </Button>
+                                                </Grid>
                                                 <Grid>
                                                     <!-- Empty state -->
                                                     <TextBlock Text="{DynamicResource String.Clips.Empty}"
