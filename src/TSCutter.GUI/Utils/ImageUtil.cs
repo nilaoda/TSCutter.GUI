@@ -64,6 +64,53 @@ public static class ImageUtil
         return writableBitmap;
     }
 
+    public static Bitmap CreateThumbnail(Bitmap source, int width = 160, int height = 90)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
+        ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
+
+        var thumbnail = new RenderTargetBitmap(new PixelSize(width, height), new Vector(96, 96));
+        try
+        {
+            using var context = thumbnail.CreateDrawingContext(true);
+            context.FillRectangle(Brushes.Black, new Rect(0, 0, width, height));
+
+            var sourceSize = source.Size;
+            if (sourceSize.Width <= 0 || sourceSize.Height <= 0)
+                return thumbnail;
+
+            var targetRect = CalculateAspectFitRect(sourceSize, new Size(width, height));
+            context.DrawImage(source, new Rect(sourceSize), targetRect);
+            return thumbnail;
+        }
+        catch
+        {
+            thumbnail.Dispose();
+            throw;
+        }
+    }
+
+    internal static Rect CalculateAspectFitRect(Size sourceSize, Size targetSize)
+    {
+        if (sourceSize.Width <= 0 || sourceSize.Height <= 0 ||
+            targetSize.Width <= 0 || targetSize.Height <= 0)
+        {
+            return default;
+        }
+
+        // 缩略图按原始比例居中，非 16:9 画面保留黑边而不裁剪内容。
+        var scale = Math.Min(
+            targetSize.Width / sourceSize.Width,
+            targetSize.Height / sourceSize.Height);
+        var width = sourceSize.Width * scale;
+        var height = sourceSize.Height * scale;
+        return new Rect(
+            (targetSize.Width - width) / 2,
+            (targetSize.Height - height) / 2,
+            width,
+            height);
+    }
+
     private static Bitmap CreateAudioBitmap(int width = 1920, int height = 1080)
     {
         var bitmap = new RenderTargetBitmap(new PixelSize(width, height), new Vector(96, 96));

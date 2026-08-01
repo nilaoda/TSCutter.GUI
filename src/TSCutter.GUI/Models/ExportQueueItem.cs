@@ -39,9 +39,9 @@ public partial class ExportQueueItem : ObservableObject
 
     public string OutputFileName => Path.GetFileName(OutputFilePath);
 
-    public string StartTimeStr => CommonUtil.FormatSeconds(StartTimeSeconds);
+    public string StartBoundaryTimeStr => $"[ {CommonUtil.FormatSeconds(StartTimeSeconds)}";
 
-    public string EndTimeStr => CommonUtil.FormatSeconds(EndTimeSeconds);
+    public string EndBoundaryTimeStr => $"{CommonUtil.FormatSeconds(EndTimeSeconds)} ]";
 
     public string EstimatedSizeStr => LocalizationManager.Instance.String_SizePrefix
         + CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes));

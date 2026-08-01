@@ -78,11 +78,15 @@
                         <SolidColorBrush x:Key="MaskBackgroundBrush">White</SolidColorBrush>
                         <SolidColorBrush x:Key="ClipSelectionBackgroundBrush"
                                          Color="{DynamicResource SystemAccentColorLight1}" />
+                        <SolidColorBrush x:Key="ClipThumbnailBackgroundBrush" Color="#303236" />
+                        <SolidColorBrush x:Key="ClipThumbnailPlaceholderBrush" Color="#D8DADD" />
                     </ResourceDictionary>
                     <ResourceDictionary x:Key="Dark">
                         <SolidColorBrush x:Key="MaskBackgroundBrush" Color="#111316" />
                         <!-- 选中卡片只做轻微蓝色染色，避免与标题栏、进度条争夺视觉焦点。 -->
                         <SolidColorBrush x:Key="ClipSelectionBackgroundBrush" Color="#2B3B4B" />
+                        <SolidColorBrush x:Key="ClipThumbnailBackgroundBrush" Color="#111316" />
+                        <SolidColorBrush x:Key="ClipThumbnailPlaceholderBrush" Color="#969DA5" />
                     </ResourceDictionary>
                 </ResourceDictionary.ThemeDictionaries>
             </ResourceDictionary>
@@ -245,7 +249,7 @@
                                                       Command="{Binding ShowMediaInfoClickCommand}" />
                     </commonControls:ToolBar>
                     <Grid Grid.Row="1" RowDefinitions="*, Auto, Auto">
-                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto, 190">
+                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto, 240">
                             <!-- 图片预览区域 -->
                             <ClassicBorderDecorator Grid.Column="0" BorderThickness="0, 2" BorderStyle="Etched">
                                 <controls:ImageViewer Name="ImageViewer"
@@ -311,39 +315,72 @@
                                                                         <ClassicBorderDecorator BorderThickness="2" BorderStyle="Sunken"
                                                                                                 IsVisible="{Binding IsActive}" />
                                                                         <!-- Content -->
-                                                                        <StackPanel Margin="4" Spacing="2">
+                                                                        <Grid Margin="4"
+                                                                              RowDefinitions="Auto,64,Auto,Auto"
+                                                                              ColumnDefinitions="*,8,*">
                                                                             <!-- Header: ID + Status -->
-                                                                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                                                            <Grid Grid.Row="0" Grid.ColumnSpan="3"
+                                                                                  ColumnDefinitions="Auto,*,Auto">
                                                                                 <TextBlock Text="{Binding ClipID, StringFormat='#{0}'}"
                                                                                            FontWeight="Bold"
                                                                                            FontSize="12" />
                                                                                 <TextBlock Grid.Column="2"
                                                                                            Text="{Binding StatusText}" />
                                                                             </Grid>
-                                                                            <!-- Start time -->
-                                                                            <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
-                                                                                <TextBlock Text="{DynamicResource String.Table.StartTime}"
-                                                                                           Margin="0,0,4,0"
-                                                                                           VerticalAlignment="Center" />
-                                                                                <Button Grid.Column="1"
-                                                                                        Content="{Binding StartTimeStr}"
-                                                                                        Classes="hyperlink"
-                                                                                        Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToStartTimeCommand}"
-                                                                                        CommandParameter="{Binding}" />
-                                                                            </Grid>
-                                                                            <!-- End time -->
-                                                                            <Grid ColumnDefinitions="Auto,*">
-                                                                                <TextBlock Text="{DynamicResource String.Table.EndTime}"
-                                                                                           Margin="0,0,4,0"
-                                                                                           VerticalAlignment="Center" />
-                                                                                <Button Grid.Column="1"
-                                                                                        Content="{Binding EndTimeStr}"
-                                                                                        Classes="hyperlink"
-                                                                                        Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToEndTimeCommand}"
-                                                                                        CommandParameter="{Binding}" />
-                                                                            </Grid>
+                                                                            <Button Grid.Row="1" Grid.Column="0" Padding="2"
+                                                                                    MinWidth="0"
+                                                                                    HorizontalContentAlignment="Stretch"
+                                                                                    VerticalContentAlignment="Stretch"
+                                                                                    IsEnabled="{Binding HasStartThumbnail}"
+                                                                                    Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToStartTimeCommand}"
+                                                                                    CommandParameter="{Binding}">
+                                                                                <Grid Background="{DynamicResource ClipThumbnailBackgroundBrush}"
+                                                                                      ClipToBounds="True">
+                                                                                    <Image Source="{Binding StartThumbnail}"
+                                                                                           Stretch="Uniform" />
+                                                                                    <TextBlock Text="—"
+                                                                                               IsVisible="{Binding HasStartThumbnail, Converter={x:Static local:App.InverseBoolConverter}}"
+                                                                                               Foreground="{DynamicResource ClipThumbnailPlaceholderBrush}"
+                                                                                               HorizontalAlignment="Center"
+                                                                                               VerticalAlignment="Center" />
+                                                                                </Grid>
+                                                                            </Button>
+                                                                            <Button Grid.Row="1" Grid.Column="2" Padding="2"
+                                                                                    MinWidth="0"
+                                                                                    HorizontalContentAlignment="Stretch"
+                                                                                    VerticalContentAlignment="Stretch"
+                                                                                    IsEnabled="{Binding HasEndThumbnail}"
+                                                                                    Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToEndTimeCommand}"
+                                                                                    CommandParameter="{Binding}">
+                                                                                <Grid Background="{DynamicResource ClipThumbnailBackgroundBrush}"
+                                                                                      ClipToBounds="True">
+                                                                                    <Image Source="{Binding EndThumbnail}"
+                                                                                           Stretch="Uniform" />
+                                                                                    <TextBlock Text="—"
+                                                                                               IsVisible="{Binding HasEndThumbnail, Converter={x:Static local:App.InverseBoolConverter}}"
+                                                                                               Foreground="{DynamicResource ClipThumbnailPlaceholderBrush}"
+                                                                                               HorizontalAlignment="Center"
+                                                                                               VerticalAlignment="Center" />
+                                                                                </Grid>
+                                                                            </Button>
+
+                                                                            <Button Grid.Row="2" Grid.Column="0"
+                                                                                    Content="{Binding StartBoundaryTimeStr}"
+                                                                                    Classes="hyperlink"
+                                                                                    HorizontalAlignment="Center"
+                                                                                    IsEnabled="{Binding HasStartThumbnail}"
+                                                                                    Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToStartTimeCommand}"
+                                                                                    CommandParameter="{Binding}" />
+                                                                            <Button Grid.Row="2" Grid.Column="2"
+                                                                                    Content="{Binding EndBoundaryTimeStr}"
+                                                                                    Classes="hyperlink"
+                                                                                    HorizontalAlignment="Center"
+                                                                                    IsEnabled="{Binding HasEndThumbnail}"
+                                                                                    Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToEndTimeCommand}"
+                                                                                    CommandParameter="{Binding}" />
                                                                             <!-- Size + Output Path -->
-                                                                            <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
+                                                                            <Grid Grid.Row="3" Grid.ColumnSpan="3"
+                                                                                  ColumnDefinitions="Auto,*" Margin="0,2,0,0">
                                                                                 <TextBlock Text="{Binding EstimatedSizeStr}"
                                                                                            VerticalAlignment="Center"
                                                                                            Margin="0,0,8,0" />
@@ -355,7 +392,7 @@
                                                                                         Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).FindFileCommand}"
                                                                                         CommandParameter="{Binding OutputFileInfo}" />
                                                                             </Grid>
-                                                                        </StackPanel>
+                                                                        </Grid>
                                                                     </Grid>
                                                                 </Border>
                                                             </DataTemplate>
@@ -439,21 +476,11 @@
                                                                                        TextTrimming="CharacterEllipsis"
                                                                                        FontWeight="Bold"
                                                                                        FontSize="12" />
-                                                                            <!-- Start time -->
-                                                                            <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
-                                                                                <TextBlock Text="{DynamicResource String.Table.StartTime}"
-                                                                                           Margin="0,0,4,0"
-                                                                                           VerticalAlignment="Center" />
-                                                                                <TextBlock Grid.Column="1"
-                                                                                           Text="{Binding StartTimeStr}" />
-                                                                            </Grid>
-                                                                            <!-- End time -->
-                                                                            <Grid ColumnDefinitions="Auto,*">
-                                                                                <TextBlock Text="{DynamicResource String.Table.EndTime}"
-                                                                                           Margin="0,0,4,0"
-                                                                                           VerticalAlignment="Center" />
-                                                                                <TextBlock Grid.Column="1"
-                                                                                           Text="{Binding EndTimeStr}" />
+                                                                            <!-- Boundary times -->
+                                                                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2,0,0">
+                                                                                <TextBlock Text="{Binding StartBoundaryTimeStr}" />
+                                                                                <TextBlock Grid.Column="2"
+                                                                                           Text="{Binding EndBoundaryTimeStr}" />
                                                                             </Grid>
                                                                             <!-- Size + Output path -->
                                                                             <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">

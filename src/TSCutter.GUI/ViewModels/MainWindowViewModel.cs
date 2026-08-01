@@ -250,6 +250,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (time is PickedClip { StartTime: > -1 } pickedClip)
         {
+            SelectClip(pickedClip);
             await JumpToTimeAsync(pickedClip.StartPts);
         }
     }
@@ -257,8 +258,9 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task JumpToEndTimeAsync(object? time)
     {
-        if (time is PickedClip { EndTime: > -1 } pickedClip)
+        if (time is PickedClip { EndTime: > -1, EndPosition: >= 0 } pickedClip)
         {
+            SelectClip(pickedClip);
             await JumpToTimeAsync(pickedClip.EndPts);
         }
     }
@@ -337,6 +339,7 @@ public partial class MainWindowViewModel : ViewModelBase
             StartPts = CurrentPts,
             EndTime = DurationMax,
         };
+        newClip.ReplaceStartThumbnail(CreateCurrentFrameThumbnail());
         Clips.Add(newClip);
         SelectClip(newClip);
     }
@@ -349,6 +352,7 @@ public partial class MainWindowViewModel : ViewModelBase
         
         var removed = Clips[index];
         Clips.RemoveAt(index);
+        removed.Dispose();
         if (ReferenceEquals(_clipSelectionAnchor, removed))
             _clipSelectionAnchor = null;
         SelectedClip = Clips.LastOrDefault(item => item.IsSelected);
@@ -361,10 +365,12 @@ public partial class MainWindowViewModel : ViewModelBase
         SelectedClip!.StartTime = CurrentTime;
         SelectedClip!.StartPts = CurrentPts;
         SelectedClip!.StartPosition = PositionInFile;
+        SelectedClip!.ReplaceStartThumbnail(CreateCurrentFrameThumbnail());
         if (SelectedClip!.EndTime <= CurrentTime)
         {
             SelectedClip!.EndTime = DurationMax;
             SelectedClip!.EndPosition = -1;
+            SelectedClip!.ReplaceEndThumbnail(null);
         }
         NotifyClipSelectionChanged();
     }
@@ -375,13 +381,19 @@ public partial class MainWindowViewModel : ViewModelBase
         SelectedClip!.EndTime = CurrentTime;
         SelectedClip!.EndPts = CurrentPts;
         SelectedClip!.EndPosition = PositionInFile;
+        SelectedClip!.ReplaceEndThumbnail(CreateCurrentFrameThumbnail());
         if (SelectedClip!.StartTime >= CurrentTime)
         {
             SelectedClip!.StartTime = 0;
             SelectedClip!.StartPosition = 0;
+            SelectedClip!.ReplaceStartThumbnail(null);
         }
         NotifyClipSelectionChanged();
     }
+
+    private Bitmap? CreateCurrentFrameThumbnail() => DecodedBitmap is { } bitmap
+        ? ImageUtil.CreateThumbnail(bitmap)
+        : null;
 
     [RelayCommand]
     private async Task RawCutterClickAsync()
@@ -895,6 +907,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         VideoInfoText = PleaseLoadTip;
         DecodedBitmap = null;
+        DisposeClipThumbnails();
         Clips.Clear();
         SelectedClip = null;
         _clipSelectionAnchor = null;
@@ -1016,10 +1029,17 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public void Close()
     {
+        DisposeClipThumbnails();
         _videoInstance?.Close();
         _videoInstance?.Dispose();
         _videoInstance = null;
         VideoPath = string.Empty;
+    }
+
+    private void DisposeClipThumbnails()
+    {
+        foreach (var clip in Clips)
+            clip.Dispose();
     }
 
     private bool HasSelectedClip => SelectedClip is not null;

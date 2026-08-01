@@ -47,8 +47,6 @@
     <x:String x:Key="String.ToolBar.SaveFrame">截圖</x:String>
     <x:String x:Key="String.ToolBar.MediaInfoTip">顯示媒體資訊</x:String>
     <x:String x:Key="String.ToolBar.MediaInfo">資訊</x:String>
-    <x:String x:Key="String.Table.StartTime">開始時間</x:String>
-    <x:String x:Key="String.Table.EndTime">結束時間</x:String>
     <x:String x:Key="String.Table.OutputSize">輸出大小</x:String>
     <x:String x:Key="String.Table.OutputPath">輸出路徑</x:String>
     <x:String x:Key="String.Table.Status">狀態</x:String>
