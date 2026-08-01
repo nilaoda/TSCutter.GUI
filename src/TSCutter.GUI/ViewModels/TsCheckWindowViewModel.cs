@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia;
+using Avalonia.Controls.ApplicationLifetimes;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
@@ -106,20 +109,30 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
     private TsCheckEvent? _selectedTimelineEvent;
 
     [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(CanLocateSelectedEvent))]
+    [NotifyPropertyChangedFor(nameof(CanCopySelectedLocation))]
+    [NotifyCanExecuteChangedFor(nameof(OpenSelectedInPacketViewerCommand),
+        nameof(OpenSelectedInRawCutterCommand), nameof(CopySelectedLocationCommand))]
     private TsCheckEventView? _selectedEventRow;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanStart))]
     [NotifyPropertyChangedFor(nameof(CanCancel))]
     [NotifyPropertyChangedFor(nameof(CanRepairTimeline))]
+    [NotifyPropertyChangedFor(nameof(CanLocateSelectedEvent))]
+    [NotifyPropertyChangedFor(nameof(CanCopySelectedLocation))]
     [NotifyCanExecuteChangedFor(nameof(StartCommand), nameof(CancelCommand), nameof(ExportCommand),
-        nameof(RepairTimelineCommand))]
+        nameof(RepairTimelineCommand), nameof(OpenSelectedInPacketViewerCommand),
+        nameof(OpenSelectedInRawCutterCommand), nameof(CopySelectedLocationCommand))]
     private bool _isScanning;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanExport))]
     [NotifyPropertyChangedFor(nameof(CanRepairTimeline))]
-    [NotifyCanExecuteChangedFor(nameof(ExportCommand))]
+    [NotifyPropertyChangedFor(nameof(CanLocateSelectedEvent))]
+    [NotifyPropertyChangedFor(nameof(CanCopySelectedLocation))]
+    [NotifyCanExecuteChangedFor(nameof(ExportCommand), nameof(OpenSelectedInPacketViewerCommand),
+        nameof(OpenSelectedInRawCutterCommand), nameof(CopySelectedLocationCommand))]
     [NotifyCanExecuteChangedFor(nameof(RepairTimelineCommand))]
     private bool _hasResult;
 
@@ -181,6 +194,10 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
     public bool CanStart => !IsScanning;
     public bool CanCancel => IsScanning;
     public bool CanExport => HasResult && !IsScanning;
+    public bool CanLocateSelectedEvent => HasResult && !IsScanning &&
+                                           SelectedEventRow is not null && File.Exists(FilePath) &&
+                                           _result is { SyncOffset: >= 0, PacketCount: > 0 };
+    public bool CanCopySelectedLocation => HasResult && !IsScanning && SelectedEventRow is not null;
     // 只有快速扫描确认存在可进一步分析的 PCR 间隔偏差时，才显示修复入口；
     // 单纯因 TEI/丢包导致的估算时间轴只提供说明，避免把传输错误误导成可修复的时钟问题。
     // 显式 discontinuity 也可能让图表采用估算横轴，但它本身不是错误。
@@ -453,6 +470,67 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
 
     [RelayCommand(CanExecute = nameof(CanCancel))]
     private void Cancel() => _cancellationTokenSource?.Cancel();
+
+    [RelayCommand(CanExecute = nameof(CanLocateSelectedEvent))]
+    private void OpenSelectedInPacketViewer()
+    {
+        var item = SelectedEventRow?.Item;
+        if (item is null)
+            return;
+
+        var viewModel = _dialogService.CreateViewModel<TsPacketViewerWindowViewModel>();
+        viewModel.Initialize(FilePath, item.StartPacket);
+        _dialogService.Show(null, viewModel);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanLocateSelectedEvent))]
+    private void OpenSelectedInRawCutter()
+    {
+        var result = _result;
+        var item = SelectedEventRow?.Item;
+        if (result is null || item is null)
+            return;
+
+        var range = TsAnomalyNavigationUtil.CalculateSampleRange(result, item);
+        var viewModel = _dialogService.CreateViewModel<RawCutterWindowViewModel>();
+        viewModel.Initialize(FilePath, range);
+        _dialogService.Show(null, viewModel);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanCopySelectedLocation))]
+    private async Task CopySelectedLocationAsync()
+    {
+        var row = SelectedEventRow;
+        if (row is null)
+            return;
+
+        try
+        {
+            if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop ||
+                desktop.MainWindow?.Clipboard is not { } clipboard)
+            {
+                StatusText = _text.Strings.String_TsCheck_Location_CopyFailed;
+                return;
+            }
+
+            var strings = _text.Strings;
+            var builder = new StringBuilder(256);
+            builder.Append(strings.String_TsCheck_Report_File).Append(": ").AppendLine(FilePath);
+            builder.Append(row.Severity).Append(" · ").AppendLine(row.Type);
+            builder.AppendLine(string.Format(
+                strings.String_TsCheck_Report_EventTimes, row.SourceTime, row.ZeroBasedTime));
+            builder.AppendLine(string.Format(
+                strings.String_TsCheck_Report_EventLocation,
+                row.Pid, row.Stream, row.Packet, row.Item.FileOffset));
+            builder.Append(row.Message);
+            await clipboard.SetTextAsync(builder.ToString());
+            StatusText = strings.String_TsCheck_Location_Copied;
+        }
+        catch
+        {
+            StatusText = _text.Strings.String_TsCheck_Location_CopyFailed;
+        }
+    }
 
     [RelayCommand(CanExecute = nameof(CanExport))]
     private async Task ExportAsync()

@@ -1,4 +1,5 @@
 using System;
+using Avalonia.Input;
 using Avalonia.Threading;
 using Classic.Avalonia.Theme;
 using TSCutter.GUI.Controls;
@@ -40,5 +41,14 @@ public partial class TsCheckWindow : ClassicWindow
             if (DataContext is TsCheckWindowViewModel { SelectedEventRow: { } row })
                 DetailsGrid.ScrollIntoView(row, null);
         }, DispatcherPriority.Loaded);
+    }
+
+    private void DetailsGrid_OnDoubleTapped(object? sender, TappedEventArgs eventArgs)
+    {
+        if (DataContext is TsCheckWindowViewModel viewModel &&
+            viewModel.OpenSelectedInPacketViewerCommand.CanExecute(null))
+        {
+            viewModel.OpenSelectedInPacketViewerCommand.Execute(null);
+        }
     }
 }

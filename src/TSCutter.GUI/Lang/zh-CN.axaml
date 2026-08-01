@@ -418,6 +418,11 @@
     <x:String x:Key="String.TsCheck.Warnings">警告：</x:String>
     <x:String x:Key="String.TsCheck.Start">重新扫描</x:String>
     <x:String x:Key="String.TsCheck.Export">导出报告</x:String>
+    <x:String x:Key="String.TsCheck.Location.OpenPacketViewer">在包查看器中打开</x:String>
+    <x:String x:Key="String.TsCheck.Location.OpenRawCutter">截取异常附近...</x:String>
+    <x:String x:Key="String.TsCheck.Location.Copy">复制定位信息</x:String>
+    <x:String x:Key="String.TsCheck.Location.Copied">异常定位信息已复制到剪贴板。</x:String>
+    <x:String x:Key="String.TsCheck.Location.CopyFailed">无法访问剪贴板。</x:String>
     <x:String x:Key="String.TsCheck.Column.Severity">级别</x:String>
     <x:String x:Key="String.TsCheck.Column.SourceTime">源时间点</x:String>
     <x:String x:Key="String.TsCheck.Column.ZeroBasedTime">0-based 时间</x:String>
