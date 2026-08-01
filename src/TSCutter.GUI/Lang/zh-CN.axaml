@@ -97,6 +97,10 @@
     <x:String x:Key="String.Settings.CurrentLightTheme">当前浅色主题</x:String>
     <x:String x:Key="String.Settings.CurrentDarkTheme">当前深色主题</x:String>
     <x:String x:Key="String.Settings.AutoCheckForUpdates">程序启动后自动检查更新</x:String>
+    <x:String x:Key="String.Settings.PreferHardwareDecoding">优先使用硬件解码</x:String>
+    <x:String x:Key="String.Settings.PreferHardwareDecodingTip">仅支持 Windows 和 macOS；不支持的编码会自动使用软件解码。</x:String>
+    <x:String x:Key="String.Status.HardwareDecoding">HW</x:String>
+    <x:String x:Key="String.Status.SoftwareDecoding">SW</x:String>
     <x:String x:Key="String.Settings.Theme.ThemeVariantMode">主题模式</x:String>
     <x:String x:Key="String.Settings.Theme.AutoDetect">自动检测</x:String>
     <x:String x:Key="String.Settings.Theme.Light">浅色</x:String>

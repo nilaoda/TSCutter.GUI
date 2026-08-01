@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Text.Json.Serialization;
 
@@ -5,6 +6,8 @@ namespace TSCutter.GUI.Models;
 
 public class AppConfig
 {
+    private bool _preferHardwareDecoding = IsHardwareDecodingSupported;
+
     // 系统当前是否处于深色模式
     [JsonIgnore]
     public static bool IsSystemDarkMode { get; set; }
@@ -19,5 +22,17 @@ public class AppConfig
     public ThemeVariantMode ThemeVariantMode { get; set; } = ThemeVariantMode.Automatic;
     public bool AutoDetectLanguage { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;
+    public bool PreferHardwareDecoding
+    {
+        get => IsHardwareDecodingSupported && _preferHardwareDecoding;
+        set => _preferHardwareDecoding = NormalizeHardwareDecodingPreference(
+            value,
+            IsHardwareDecodingSupported);
+    }
     public string? FFmpegRootPath { get; set; }
+
+    [JsonIgnore]
+    public static bool IsHardwareDecodingSupported => OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
+
+    internal static bool NormalizeHardwareDecodingPreference(bool requested, bool supported) => requested && supported;
 }

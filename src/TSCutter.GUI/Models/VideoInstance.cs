@@ -13,7 +13,7 @@ using static TSCutter.GUI.Utils.CommonUtil;
 
 namespace TSCutter.GUI.Models;
 
-public class VideoInstance(string filePath) : IDisposable
+public class VideoInstance(string filePath, bool enableHardwareDecoding = false) : IDisposable
 {
     private static readonly HashSet<string> HardwareTags = new() 
     { 
@@ -22,13 +22,23 @@ public class VideoInstance(string filePath) : IDisposable
 
     private const int MAX_FAILURE_COUT = 100;
     private const int AV_PKT_FLAG_KEY_FRAME = 0x0001;
+    private static readonly AVHWDeviceType[] MacHardwareDevices = [AVHWDeviceType.Videotoolbox];
+    private static readonly AVHWDeviceType[] WindowsHardwareDevices =
+        [AVHWDeviceType.D3d11va, AVHWDeviceType.Dxva2];
+    private static readonly AVHWDeviceType[] NoHardwareDevices = [];
+
     public long PositionInFile { get; private set; } = 0;
     public long CurrentPts => currentKeyFramePts;
     public double EstimatedKeyFrameIntervalSeconds => keyFrameGap > 0 && timeBase.Den != 0
         ? keyFrameGap * timeBase.Num / (double)timeBase.Den
         : 0;
     public bool Inited { get; private set; } = false;
+    public bool IsHardwareDecoding { get; private set; }
+    private string hardwareDecoderName = string.Empty;
     private bool AudioMode { get; set; } = false;
+    private bool hardwareDecoderOpened;
+    private readonly bool preferHardwareDecoding = enableHardwareDecoding && AppConfig.IsHardwareDecodingSupported;
+    private List<Codec> softwareDecoders = [];
     
     private FormatContext inFc;
     private CodecContext videoDecoder;
@@ -44,7 +54,7 @@ public class VideoInstance(string filePath) : IDisposable
     private double timelineDurationSeconds;
     private long timelineDurationPts;
     
-    private string videoPath = filePath;
+    private readonly string videoPath = filePath;
 
     public async Task InitVideoAsync()
     {
@@ -64,7 +74,7 @@ public class VideoInstance(string filePath) : IDisposable
             throw new Exception("Read Failed!");
         }
 
-        var decoders = Codec.FindDecoders(inVideoStream.Codecpar!.CodecId)
+        softwareDecoders = Codec.FindDecoders(inVideoStream.Codecpar!.CodecId)
             .Where(x =>
             {
                 var name = x.Name;
@@ -72,12 +82,12 @@ public class VideoInstance(string filePath) : IDisposable
                 return HardwareTags.All(tag => !name.Contains(tag, StringComparison.OrdinalIgnoreCase));
             })
             .ToList();
-        if (decoders.Count == 0)
+        if (softwareDecoders.Count == 0)
         {
             throw new Exception("Cant find decoder!");
         }
 
-        foreach (var decoder in decoders)
+        foreach (var decoder in softwareDecoders)
         {
             Console.WriteLine($"Found decoder: {decoder.Name}");
         }
@@ -86,11 +96,12 @@ public class VideoInstance(string filePath) : IDisposable
         timeBase = inVideoStream.TimeBase;
         UpdateTimelineDuration();
 
-        var firstDecoder = decoders.Last();
-        videoDecoder = new(firstDecoder);
-        videoDecoder.SkipFrame = AVDiscard.Nonkey;
-        videoDecoder.FillParameters(inVideoStream.Codecpar!);
-        videoDecoder.Open();
+        var decoderOpened = preferHardwareDecoding && TryOpenHardwareDecoder();
+        if (!decoderOpened)
+            decoderOpened = TryOpenSoftwareDecoder();
+
+        if (!decoderOpened)
+            throw new Exception("Cant open decoder!");
 
         try
         {
@@ -112,6 +123,106 @@ public class VideoInstance(string filePath) : IDisposable
         Inited = true;
     }
 
+    private bool TryOpenHardwareDecoder()
+    {
+        foreach (var deviceType in GetHardwareDeviceCandidates())
+        {
+            foreach (var decoder in softwareDecoders.AsEnumerable().Reverse())
+            {
+                if (!decoder.SupportsHardwareDevice(deviceType))
+                    continue;
+
+                CodecContext? candidate = null;
+                try
+                {
+                    candidate = new CodecContext(decoder);
+                    candidate.FillParameters(inVideoStream.Codecpar!);
+                    candidate.SkipFrame = AVDiscard.Nonkey;
+                    candidate.AttachHardwareDevice(deviceType);
+                    candidate.Open();
+                    ReplaceVideoDecoder(candidate);
+                    candidate = null;
+
+                    hardwareDecoderOpened = true;
+                    IsHardwareDecoding = true;
+                    hardwareDecoderName = GetHardwareDeviceDisplayName(deviceType);
+                    Console.WriteLine($"Hardware decoder opened: {decoder.Name} ({hardwareDecoderName})");
+                    return true;
+                }
+                catch (Exception exception)
+                {
+                    Console.WriteLine($"Failed to open {decoder.Name} with {deviceType}: {exception.Message}");
+                }
+                finally
+                {
+                    candidate?.Close();
+                    candidate?.Dispose();
+                }
+            }
+        }
+
+        Console.WriteLine("No supported hardware decoder was available; falling back to software decoding.");
+        return false;
+    }
+
+    private bool TryOpenSoftwareDecoder()
+    {
+        foreach (var decoder in softwareDecoders.AsEnumerable().Reverse())
+        {
+            CodecContext? candidate = null;
+            try
+            {
+                candidate = new CodecContext(decoder);
+                candidate.FillParameters(inVideoStream.Codecpar!);
+                candidate.SkipFrame = AVDiscard.Nonkey;
+                candidate.Open();
+                ReplaceVideoDecoder(candidate);
+                candidate = null;
+
+                hardwareDecoderOpened = false;
+                IsHardwareDecoding = false;
+                hardwareDecoderName = string.Empty;
+                Console.WriteLine($"Software decoder opened: {decoder.Name}");
+                return true;
+            }
+            catch (Exception exception)
+            {
+                Console.WriteLine($"Failed to open software decoder {decoder.Name}: {exception.Message}");
+            }
+            finally
+            {
+                candidate?.Close();
+                candidate?.Dispose();
+            }
+        }
+
+        return false;
+    }
+
+    private void ReplaceVideoDecoder(CodecContext decoder)
+    {
+        videoDecoder?.Close();
+        videoDecoder?.Dispose();
+        videoDecoder = decoder;
+    }
+
+    private static IReadOnlyList<AVHWDeviceType> GetHardwareDeviceCandidates()
+    {
+        if (OperatingSystem.IsMacOS())
+            return MacHardwareDevices;
+        if (OperatingSystem.IsWindows())
+            return WindowsHardwareDevices;
+        return NoHardwareDevices;
+    }
+
+    private static string GetHardwareDeviceDisplayName(AVHWDeviceType deviceType) => deviceType switch
+    {
+        AVHWDeviceType.Videotoolbox => "VideoToolbox",
+        AVHWDeviceType.D3d11va => "D3D11VA",
+        AVHWDeviceType.Dxva2 => "DXVA2",
+        _ => deviceType.ToString()
+    };
+
     private void InitAudio(FormatContext inFc)
     {
         inVideoStream = inFc.GetAudioStream();
@@ -131,12 +242,16 @@ public class VideoInstance(string filePath) : IDisposable
         UpdateTimelineDuration();
 
         var firstDecoder = decoders.First();
-        videoDecoder = new(Codec.FindDecoderById(firstDecoder.Id));
-        videoDecoder.FillParameters(inVideoStream.Codecpar!);
-        videoDecoder.Open();
+        var audioDecoder = new CodecContext(Codec.FindDecoderById(firstDecoder.Id));
+        audioDecoder.FillParameters(inVideoStream.Codecpar!);
+        audioDecoder.Open();
+        ReplaceVideoDecoder(audioDecoder);
 
         keyFrameGap = 90000;
         AudioMode = true;
+        hardwareDecoderOpened = false;
+        IsHardwareDecoding = false;
+        hardwareDecoderName = string.Empty;
     }
     
     public async Task SeekToTimeAsync(TimeSpan timeSpan)
@@ -185,16 +300,45 @@ public class VideoInstance(string filePath) : IDisposable
 
     private DecodeResult DecodeNextFrame(int count = 1)
     {
-        return DecodeNextFrame(count, currentKeyFramePts, true, 0);
+        var anchorPts = currentKeyFramePts;
+        try
+        {
+            return DecodeNextFrame(count, anchorPts, true, 0);
+        }
+        catch (HardwareDecodeException exception)
+        {
+            Console.WriteLine($"Hardware decoding failed, switching to software: {exception.InnerException?.Message ?? exception.Message}");
+            if (!TryOpenSoftwareDecoder())
+                throw;
+
+            // 普通“下一帧”不会更新 lastSeekPts，回退时必须结合失败帧和当前锚点计算恢复位置。
+            var fallbackSeekPts = ResolveHardwareFallbackSeekPts(
+                count,
+                anchorPts,
+                lastSeekPts,
+                exception.RetryPts);
+            Seek(fallbackSeekPts, count < 0 ? AVSEEK_FLAG.Backward : 0);
+            return DecodeNextFrame(
+                count,
+                anchorPts,
+                applyInitialSeek: false,
+                retryCount: 0,
+                requireForwardAfterAnchor: count >= 0);
+        }
     }
 
-    private DecodeResult DecodeNextFrame(int count, long anchorPts, bool applyInitialSeek, int retryCount)
+    private DecodeResult DecodeNextFrame(
+        int count,
+        long anchorPts,
+        bool applyInitialSeek,
+        int retryCount,
+        bool requireForwardAfterAnchor = false)
     {
         var failureCount = 0;
         var backward = count < 0;
 
         if (retryCount > MAX_FAILURE_COUT)
-            throw new TooManyDecodeFailuresException("Too many failed packets!");
+            ThrowDecodeFailure();
         
         if (applyInitialSeek && count < 0)
         {
@@ -229,17 +373,24 @@ public class VideoInstance(string filePath) : IDisposable
             var result = DecodePacket(packet, packet.Position);
             if (result != null)
             {
-                if (!backward || currentKeyFramePts < anchorPts)
+                if (IsDecodedFrameAtRequestedSide(
+                        backward,
+                        requireForwardAfterAnchor,
+                        currentKeyFramePts,
+                        anchorPts))
                 {
                     return result;
                 }
 
                 Console.WriteLine($"Skip[SameOrLaterFrame] keyFrame: {currentKeyFramePts}, anchorPts: {anchorPts}");
-                break;
+                result.Bitmap.Dispose();
+                if (backward)
+                    break;
+                continue;
             }
             if (failureCount++ > MAX_FAILURE_COUT)
             {
-                throw new TooManyDecodeFailuresException("Too many failed packets!");
+                ThrowDecodeFailure();
             }
             Console.WriteLine("result is null");
         }
@@ -250,7 +401,44 @@ public class VideoInstance(string filePath) : IDisposable
 
         var retryStep = backward ? keyFrameGap : keyFrameGap / 2;
         Seek(lastSeekPts - retryStep, backward ? AVSEEK_FLAG.Backward : 0);
-        return DecodeNextFrame(backward ? -1 : 1, anchorPts, false, retryCount + 1);
+        return DecodeNextFrame(
+            backward ? -1 : 1,
+            anchorPts,
+            applyInitialSeek: false,
+            retryCount: retryCount + 1,
+            requireForwardAfterAnchor: requireForwardAfterAnchor);
+    }
+
+    internal static long ResolveHardwareFallbackSeekPts(
+        int count,
+        long anchorPts,
+        long lastSeekPts,
+        long? failurePts)
+    {
+        if (count < 0)
+            return failurePts ?? lastSeekPts;
+
+        var firstPtsAfterAnchor = anchorPts == long.MaxValue ? long.MaxValue : anchorPts + 1;
+        return Math.Max(firstPtsAfterAnchor, failurePts ?? lastSeekPts);
+    }
+
+    internal static bool IsDecodedFrameAtRequestedSide(
+        bool backward,
+        bool requireForwardAfterAnchor,
+        long currentPts,
+        long anchorPts)
+    {
+        return backward
+            ? currentPts < anchorPts
+            : !requireForwardAfterAnchor || currentPts > anchorPts;
+    }
+
+    private void ThrowDecodeFailure()
+    {
+        var exception = new TooManyDecodeFailuresException("Too many failed packets!");
+        if (hardwareDecoderOpened)
+            throw new HardwareDecodeException(exception);
+        throw exception;
     }
 
     public double GetVideoDurationInSeconds()
@@ -387,24 +575,61 @@ public class VideoInstance(string filePath) : IDisposable
                     continue;
 #pragma warning restore CS0618 // Obsolete
 
-                // 音频模式无法解码 返回固定图片
-                var bitmap = AudioMode ? ImageUtil.BlankImage : ImageUtil.CreateBitmapFromFrame(frame);
-                return new DecodeResult()
+                // 硬件帧位于 GPU 内存，先回读到系统内存，再复用原有的位图转换逻辑。
+                Frame? softwareFrame = null;
+                try
                 {
-                    Bitmap = bitmap,
-                    FrameTimestamp = PtsToTimeSpan(pts),
-                };
+                    if (!AudioMode && frame.HwFramesContext != null)
+                        softwareFrame = frame.TransferToSoftwareFrame();
+                }
+                catch (Exception exception)
+                {
+                    // 硬件帧无法回读通常表示设备链路失效，此时才立即切换软件解码器。
+                    throw new HardwareDecodeException(exception, pts);
+                }
+                using (softwareFrame)
+                {
+                    IsHardwareDecoding = softwareFrame != null;
+                    Avalonia.Media.Imaging.Bitmap bitmap;
+                    try
+                    {
+                        bitmap = AudioMode
+                            ? ImageUtil.BlankImage
+                            : ImageUtil.CreateBitmapFromFrame(softwareFrame ?? frame);
+                    }
+                    catch (Exception exception)
+                    {
+                        // 位图绘制属于界面链路，失败时不能据此判定硬件解码器不可用。
+                        Console.WriteLine(exception);
+                        return null;
+                    }
+                    return new DecodeResult()
+                    {
+                        Bitmap = bitmap,
+                        FrameTimestamp = PtsToTimeSpan(pts),
+                    };
+                }
             }
+        }
+        catch (HardwareDecodeException)
+        {
+            throw;
         }
         catch (Exception e)
         {
             Console.WriteLine(e);
-            // Return null to indicate failure and continue with the next packet
+            // 局部码流错误在硬解和软解下都可能出现，继续尝试后续关键帧。
             return null;
         }
         
         // If no frames were successfully processed
         Console.WriteLine("no frames were successfully processed");
         return null;
+    }
+
+    private sealed class HardwareDecodeException(Exception innerException, long? retryPts = null)
+        : Exception("Hardware decoding failed.", innerException)
+    {
+        public long? RetryPts { get; } = retryPts;
     }
 }

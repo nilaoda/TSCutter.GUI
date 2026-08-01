@@ -760,12 +760,22 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusInfoText))]
     public partial long DecodeCost { get; set; } = 0L;
-    
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusInfoText))]
+    public partial bool IsHardwareDecoding { get; set; }
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsDecoding))]
     public partial int DecodingOpCount { get; set; } = 0;
 
-    public string StatusInfoText => IsVideoInitialized ? $"{VideoInfoText} | {DecodeCost,3}ms" : PleaseLoadTip;
+    private string DecodeModeText => IsHardwareDecoding
+        ? LocalizationManager.Instance.String_Status_HardwareDecoding
+        : LocalizationManager.Instance.String_Status_SoftwareDecoding;
+
+    public string StatusInfoText => IsVideoInitialized
+        ? $"{VideoInfoText} | {DecodeModeText} | {DecodeCost,3}ms"
+        : PleaseLoadTip;
     public bool IsDecoding => DecodingOpCount > 0;
 
     public string ZoomFactorStr => string.Format(LocalizationManager.Instance.String_ZoomFactor, $"{ZoomFactor * 100.0:0}");
@@ -901,6 +911,11 @@ public partial class MainWindowViewModel : ViewModelBase
             Console.WriteLine(e);
             await ShowMessageAsync(e.Message, LocalizationManager.Instance.String_FailedToDecode, MessageBoxIcon.Error);
         }
+        finally
+        {
+            // 即使软件回退后的重试仍失败，状态栏也必须反映解码器的实际模式。
+            UpdateDecodeMode();
+        }
     }
 
     private void ClearVars()
@@ -916,6 +931,7 @@ public partial class MainWindowViewModel : ViewModelBase
         CurrentTime = 0.0;
         TimelineViewport.Reset(0, 0);
         DecodeCost = 0L;
+        IsHardwareDecoding = false;
     }
 
     private async Task LoadVideoAsync()
@@ -926,8 +942,11 @@ public partial class MainWindowViewModel : ViewModelBase
             _videoInstance?.Close();
             await RunDecodeOperationAsync(async () =>
             {
-                _videoInstance = new VideoInstance(VideoPath);
+                _videoInstance = new VideoInstance(
+                    VideoPath,
+                    _configService.CurrentConfig.PreferHardwareDecoding);
                 await _videoInstance.InitVideoAsync();
+                UpdateDecodeMode();
                 VideoInfoText = _videoInstance.GetVideoInfoText();
                 DurationMax = _videoInstance.GetVideoDurationInSeconds();
                 TimelineViewport.Reset(
@@ -1034,6 +1053,14 @@ public partial class MainWindowViewModel : ViewModelBase
         _videoInstance?.Dispose();
         _videoInstance = null;
         VideoPath = string.Empty;
+    }
+
+    private void UpdateDecodeMode()
+    {
+        if (_videoInstance is null)
+            return;
+
+        IsHardwareDecoding = _videoInstance.IsHardwareDecoding;
     }
 
     private void DisposeClipThumbnails()
