@@ -48,6 +48,10 @@ public sealed class TsMultiSourceRepairService
     private const int MaxPesRegionPackets = 4_096;
     private const int MaxVideoPesRegionPackets = 131_072;
     private const int MaxPesRegionsPerTrack = 4_096;
+    private const int DenseDamageAnchorCount = 4;
+    private const int DenseDamageMinimumSignals = 3;
+    private const long DenseDamageMaximumSpanBytes = PacketSize * 65_536L;
+    private const long DenseDamageMaximumSpan90k = 5L * 90_000;
     private const int MaxIndexedVideoPes = 500_000;
     private const int MaxVideoRegionCandidatesPerSource = 32;
     private const long CorrelatedVideoPadding90k = 45_000;
@@ -197,9 +201,16 @@ public sealed class TsMultiSourceRepairService
             track.RepairablePesRegionCount = track.PesRegions.Count(region => region.Candidates.Count > 0);
         }
         ValidateCorrelatedVideoCandidates(result.Tracks);
-        var timedTracks = result.Tracks
+        var allTimedTracks = result.Tracks
             .Where(track => track.FirstPts90k != long.MaxValue && track.LastPts90k != long.MinValue)
             .ToArray();
+        // DVB 字幕等稀疏私有流可能长期写入 0x1FFFFFFFF 之类的占位 PTS，不能用它
+        // 拉伸整个修复地图。全局 0-based 时间轴优先由可识别音视频轨道确定。
+        var timedTracks = allTimedTracks
+            .Where(track => GetElementaryKind(track) != TsRepairElementaryKind.None)
+            .ToArray();
+        if (timedTracks.Length == 0)
+            timedTracks = allTimedTracks;
         if (timedTracks.Length > 0)
         {
             result.TimelineStartPts90k = timedTracks.Min(track => track.FirstPts90k);
@@ -543,6 +554,11 @@ public sealed class TsMultiSourceRepairService
             if (!selectedPids.Contains(track.ReferencePid))
                 continue;
             var selectedInsertionOffsets = new List<long>();
+            var denseDamageCoveredRanges = track.PesRegions
+                .Where(item => item.Reason == TsRepairPesRegionReason.DenseTransportDamage &&
+                               item.Candidates.Count > 0)
+                .Select(item => (item.ReferenceStartOffset, item.ReferenceEndOffset))
+                .ToArray();
             foreach (var gap in track.Gaps)
             {
                 if (largeGapCoveredBoundaries.Contains((
@@ -554,6 +570,12 @@ public sealed class TsMultiSourceRepairService
                         range.Pid == track.ReferencePid &&
                         gap.ReferenceInsertOffset >= range.StartOffset &&
                         gap.ReferenceInsertOffset < range.EndOffset))
+                {
+                    continue;
+                }
+                if (denseDamageCoveredRanges.Any(range =>
+                        gap.ReferenceInsertOffset >= range.ReferenceStartOffset &&
+                        gap.ReferenceInsertOffset < range.ReferenceEndOffset))
                 {
                     continue;
                 }
@@ -637,7 +659,8 @@ public sealed class TsMultiSourceRepairService
                 var referenceEndOffset = candidate.ReferenceEndOffset ?? region.ReferenceEndOffset;
                 // 连续性缺口会同时让所在 PES 呈现长度不符。若该缺口已能按包或 ES 精确补齐，
                 // 不再整段替换同一范围，避免补包与区域替换重复写入同一份媒体内容。
-                if (selectedInsertionOffsets.Any(offset =>
+                if (region.Reason != TsRepairPesRegionReason.DenseTransportDamage &&
+                    selectedInsertionOffsets.Any(offset =>
                         offset >= referenceStartOffset && offset < referenceEndOffset))
                 {
                     continue;
@@ -665,6 +688,10 @@ public sealed class TsMultiSourceRepairService
                         candidate.SourcePath, candidate.SourcePid, candidate.SourceStartOffset,
                         analysis.ReferenceSource.FilePath, track.ReferencePid, referenceStartOffset,
                         repairTimelineOnOutput: false),
+                    // 同一次密集事故中的音视频轨必须按辅助源原始包序联合写出；若仍按
+                    // 各 PID 的参考包位独立摊开，会改变跨 PID 交织并触发音视频漂移。
+                    PreserveSourceInterleaving = region.Reason ==
+                        TsRepairPesRegionReason.DenseTransportDamage,
                     ElementaryPayloadOnly = region.Reason ==
                         TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch &&
                         candidate.ElementaryLength == GetReferenceElementaryLength(region, candidate),
@@ -745,12 +772,7 @@ public sealed class TsMultiSourceRepairService
             .Where(pid => pid != 0x1FFF)
             .ToHashSet();
         var outputValidator = new TsRepairOutputValidator(validationPids);
-        var replacedTimelineRanges = plan.LargeGapInsertions
-            .SelectMany(pair => pair.Value.SelectMany(item => item.Tracks.Select(track => (
-                Pid: track.TargetPid,
-                StartOffset: pair.Key,
-                EndOffset: track.ReferenceDiscardEndOffset))))
-            .ToArray();
+        var replacedTimelineRanges = BuildReplacedTimelineRanges(plan);
         var timelineRewriter = plan.RepairTimelineOnOutput &&
                                plan.Analysis.ReferenceSource.TimelineAnalysis is
                                    { RepairableIssueCount: > 0 } timelineAnalysis
@@ -828,6 +850,25 @@ public sealed class TsMultiSourceRepairService
             }
             throw;
         }
+    }
+
+    internal static (int Pid, long StartOffset, long EndOffset)[]
+        BuildReplacedTimelineRanges(TsRepairOutputPlan plan)
+    {
+        return plan.LargeGapInsertions
+            .SelectMany(pair => pair.Value.SelectMany(item => item.Tracks.Select(track => (
+                Pid: track.TargetPid,
+                StartOffset: pair.Key,
+                EndOffset: track.ReferenceDiscardEndOffset))))
+            // ES 级替换保留参考包的 PCR，不能把该区间声明为已由辅助源覆盖；
+            // 否则时间轴修复会错误跳过仍然存在的 PCR 异常锚点。
+            .Concat(plan.Replacements
+                .Where(item => !item.ElementaryPayloadOnly)
+                .Select(item => (
+                    Pid: item.TargetPid,
+                    StartOffset: item.ReferenceStartOffset,
+                    EndOffset: item.ReferenceEndOffset)))
+            .ToArray();
     }
 
     private static Dictionary<int, ReferenceTrackState> BuildReferenceTracks(
@@ -1302,6 +1343,25 @@ public sealed class TsMultiSourceRepairService
         }
 
         foreach (var track in values)
+        {
+            foreach (var region in track.PesRegions.Where(region =>
+                         region.Reason == TsRepairPesRegionReason.DenseTransportDamage))
+            {
+                region.Candidates.RemoveAll(candidate =>
+                {
+                    var expectedOffset = track.Matches.FirstOrDefault(item =>
+                        item.SourcePid == candidate.SourcePid &&
+                        string.Equals(item.SourcePath, candidate.SourcePath, StringComparison.Ordinal))
+                        ?.TimestampOffset90k;
+                    // 短样本的音轨可能不足以形成全局时间偏移；此时区域候选自身仍已
+                    // 通过四组前后 PES 指纹和首尾 PTS 校验，不能仅因全局偏移为空而删除。
+                    return expectedOffset is { } expected &&
+                           Math.Abs(candidate.TimestampOffset90k - expected) > 180_000;
+                });
+            }
+        }
+
+        foreach (var track in values)
             track.RepairablePesRegionCount = track.PesRegions.Count(region => region.Candidates.Count > 0);
     }
 
@@ -1322,8 +1382,20 @@ public sealed class TsMultiSourceRepairService
             TsMultiSourceProgressPhase.ReferenceScan,
             (packet, fileOffset) =>
             {
+                // 即使 adaptation_control 已损坏，TS 头中的 PID 仍可用于把该物理包
+                // 计入密集事故范围；整段替换时必须连同这种坏包一起丢弃。
+                var rawPid = ((packet[1] & 0x1F) << 8) | packet[2];
+                states.TryGetValue(rawPid, out var observedState);
+                observedState?.ObservePacket();
                 if (!TryParsePacket(packet, out var info))
+                {
+                    if (observedState is not null)
+                    {
+                        observedState.RecordDenseDamage(packet, fileOffset, null);
+                        observedState.DiscardPes();
+                    }
                     return;
+                }
                 if (info.Pid is 0x0010 or 0x0011 or 0x0012 or 0x0013 or 0x0014 or 0x1FFB &&
                     info.HasPayload)
                 {
@@ -1352,6 +1424,7 @@ public sealed class TsMultiSourceRepairService
                 {
                     source.TransportErrors++;
                     state.Track.TransportErrorCount++;
+                    state.RecordDenseDamage(packet, fileOffset, info);
                     state.AddTransportError(fileOffset, info.ContinuityCounter, info.HasPayload);
                     state.DiscardPes();
                     return;
@@ -1361,6 +1434,7 @@ public sealed class TsMultiSourceRepairService
                     state.ResetContinuity();
                     state.DiscardPes();
                     state.ResetAnchors();
+                    state.HandleDiscontinuity(fileOffset);
                 }
                 if (!info.HasPayload)
                 {
@@ -1381,6 +1455,7 @@ public sealed class TsMultiSourceRepairService
                     {
                         source.ContinuityErrors++;
                         state.Track.ContinuityErrorCount++;
+                        state.RecordDenseDamage(packet, fileOffset, info);
                         if (state.RecentHashes.Count == AnchorLength &&
                             state.Track.Gaps.Count + state.PendingGaps.Count < MaxReferenceGaps)
                         {
@@ -1498,6 +1573,7 @@ public sealed class TsMultiSourceRepairService
             {
                 if (!TryParsePacket(packet, out var info) || !states.TryGetValue(info.Pid, out var state))
                     return;
+                state.ObservePacket(fileOffset);
                 if (info.TransportError)
                 {
                     source.TransportErrors++;
@@ -1586,6 +1662,121 @@ public sealed class TsMultiSourceRepairService
             else if (state.Mapping.MetadataIsAmbiguous)
                 state.Mapping.ReferenceState.Track.Matches.Remove(state.Mapping.Match);
         }
+
+        var confirmedTrackStates = validTrackStates
+            .Where(state => state.Mapping.ReferenceState.Track.Matches.Contains(state.Mapping.Match))
+            .ToArray();
+        CreateCorrelatedSparseDenseCandidates(source.FilePath, states, confirmedTrackStates);
+    }
+
+    private static void CreateCorrelatedSparseDenseCandidates(
+        string sourcePath,
+        IReadOnlyDictionary<int, DonorPidState> pidStates,
+        IReadOnlyCollection<DonorTrackState> validTrackStates)
+    {
+        // 歧义映射在指纹校验后可能已经被淘汰，字幕关联只能使用仍然有效的映射，
+        // 否则无效轨道会借用同文件其他 PID 的密集区域重新生成候选。
+        var trackStates = validTrackStates.ToArray();
+        foreach (var sparseState in trackStates.Where(item => item.NeedsSparseDenseCorrelation))
+        {
+            if (!pidStates.TryGetValue(sparseState.Mapping.SourcePid, out var sparsePidState) ||
+                sparsePidState.ObservedPacketOffsets.Count == 0)
+            {
+                continue;
+            }
+
+            var sparseTrack = sparseState.Mapping.ReferenceState.Track;
+            foreach (var sparseRegion in sparseTrack.PesRegions.Where(item =>
+                         item.Reason == TsRepairPesRegionReason.DenseTransportDamage &&
+                         item.ReferenceLastPts90k <= item.ReferenceFirstPts90k))
+            {
+                var trustedCandidates = trackStates
+                    .Where(item => item != sparseState &&
+                                   item.Mapping.ReferenceState.Track.ProgramNumber ==
+                                   sparseTrack.ProgramNumber)
+                    .SelectMany(item => item.Mapping.ReferenceState.Track.PesRegions
+                        .Where(region => region.Reason == TsRepairPesRegionReason.DenseTransportDamage &&
+                                         region.ReferenceLastPts90k > region.ReferenceFirstPts90k &&
+                                         region.ReferenceStartOffset < sparseRegion.ReferenceEndOffset &&
+                                         region.ReferenceEndOffset > sparseRegion.ReferenceStartOffset)
+                        .Select(region => SelectDenseCandidate(
+                            region, item.Mapping.Match, sourcePath)))
+                    .Where(item => item is not null)
+                    .Cast<TsRepairPesRegionCandidate>()
+                    .ToArray();
+                if (trustedCandidates.Length == 0)
+                    continue;
+
+                // 字幕 PES 可能数秒才出现一次，且部分源会写入无效或恒定 PTS；此时仅靠
+                // 字幕自身的重复指纹无法确定时刻。使用同一事故中已由音视频前后锚点确认的
+                // 辅助区间，保留该时间段内此字幕 PID 的全部包，避免命中别处相同字幕页。
+                var sourceStartOffset = trustedCandidates.Min(item => item.SourceStartOffset);
+                var sourceEndOffset = trustedCandidates.Max(item => item.SourceEndOffset);
+                var packetCount = CountOffsetsInRange(
+                    sparsePidState.ObservedPacketOffsets, sourceStartOffset, sourceEndOffset);
+                if (packetCount == 0)
+                    continue;
+
+                var timestampOffsets = trustedCandidates
+                    .Select(item => item.TimestampOffset90k)
+                    .OrderBy(item => item)
+                    .ToArray();
+                sparseRegion.Candidates.Add(new TsRepairPesRegionCandidate
+                {
+                    SourcePath = sourcePath,
+                    SourcePid = sparseState.Mapping.SourcePid,
+                    SourceStartOffset = sourceStartOffset,
+                    SourceEndOffset = sourceEndOffset,
+                    PacketCount = packetCount,
+                    TimestampOffset90k = sparseState.Mapping.Match.TimestampOffset90k ??
+                                         timestampOffsets[timestampOffsets.Length / 2],
+                    ElementaryLength = 0,
+                    FingerprintMatches = sparseRegion.BeforeAnchor.Length +
+                                         sparseRegion.AfterAnchor.Length + 1
+                });
+            }
+        }
+    }
+
+    internal static TsRepairPesRegionCandidate? SelectDenseCandidate(
+        TsRepairPesRegion region,
+        TsRepairTrackMatch match,
+        string sourcePath)
+    {
+        return region.Candidates
+            .Where(item => item.SourcePid == match.SourcePid &&
+                           string.Equals(
+                               item.SourcePath, sourcePath, StringComparison.Ordinal))
+            .OrderBy(item => match.TimestampOffset90k is { } expectedOffset
+                ? Math.Abs(item.TimestampOffset90k - expectedOffset)
+                : 0)
+            .ThenByDescending(item => item.FingerprintMatches)
+            .FirstOrDefault();
+    }
+
+    private static int CountOffsetsInRange(
+        IReadOnlyList<long> offsets,
+        long startOffset,
+        long endOffset)
+    {
+        var first = LowerBound(offsets, startOffset);
+        var last = LowerBound(offsets, endOffset);
+        return Math.Max(0, last - first);
+    }
+
+    private static int LowerBound(IReadOnlyList<long> values, long target)
+    {
+        var left = 0;
+        var right = values.Count;
+        while (left < right)
+        {
+            var middle = left + ((right - left) >> 1);
+            if (values[middle] < target)
+                left = middle + 1;
+            else
+                right = middle;
+        }
+        return left;
     }
 
     private static async Task ScanTimedElementaryGapsAsync(
@@ -1925,7 +2116,8 @@ public sealed class TsMultiSourceRepairService
     }
 
     private static int GetMaxRegionPackets(TsRepairPesRegion region) =>
-        region.Reason == TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch
+        region.Reason is TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch or
+            TsRepairPesRegionReason.DenseTransportDamage
             ? MaxVideoPesRegionPackets
             : MaxPesRegionPackets;
 
@@ -2299,7 +2491,11 @@ public sealed class TsMultiSourceRepairService
         private readonly Queue<ReferencePesInfo> _recentLargeGapPes = new(LargeGapAnchorCount);
         private readonly Queue<ReferencePesInfo> _recentIncidentPes = [];
         private readonly Queue<long> _recentPtsDeltas = new(LargeGapRecentDeltaCount);
+        private readonly Queue<ReferencePesInfo> _recentDenseDamagePes =
+            new(DenseDamageAnchorCount);
         private ReferencePesInfo? _previousCompletedPes;
+        private DenseDamageRegionBuilder? _denseDamageRegion;
+        private long _observedPacketCount;
         private readonly List<long> _pendingTransportErrorOffsets = [];
         private int _pendingTransportErrorExpectedCounter;
         private long _pendingTransportErrorPts90k = long.MinValue;
@@ -2322,6 +2518,91 @@ public sealed class TsMultiSourceRepairService
             if (CurrentPesPts90k == long.MinValue || !SamplePts90k.TryAdd(hash, CurrentPesPts90k))
                 return;
             SamplePtsFileOffsets[hash] = fileOffset;
+        }
+
+        public void ObservePacket() => _observedPacketCount++;
+
+        public void RecordDenseDamage(
+            ReadOnlySpan<byte> packet,
+            long fileOffset,
+            TsPacketInfo? parsedInfo)
+        {
+            var damagePts90k = CurrentPesPts90k;
+            if (_denseDamageRegion is not null)
+            {
+                if (!_denseDamageRegion.CanExtend(fileOffset, damagePts90k))
+                {
+                    ResetDenseDamageAnchors(_denseDamageRegion.AfterAnchor);
+                    _denseDamageRegion = null;
+                }
+                else
+                {
+                    _denseDamageRegion.AddSignal(fileOffset, damagePts90k);
+                    return;
+                }
+            }
+
+            if (_recentDenseDamagePes.Count != DenseDamageAnchorCount)
+                return;
+
+            var activePes = _activePes;
+            long startOffset;
+            long startPacketOrdinal;
+            int startContinuityCounter;
+            long firstPts90k;
+            if (activePes is not null)
+            {
+                startOffset = activePes.StartOffset;
+                startPacketOrdinal = activePes.StartPacketOrdinal;
+                startContinuityCounter = activePes.StartContinuityCounter;
+                firstPts90k = activePes.Pts90k;
+            }
+            else if (parsedInfo is { PayloadStart: true } info &&
+                     TryReadPesStart(packet, info, out _, out var rawPts90k) &&
+                     rawPts90k != long.MinValue)
+            {
+                startOffset = fileOffset;
+                startPacketOrdinal = Math.Max(0, _observedPacketCount - 1);
+                startContinuityCounter = info.ContinuityCounter;
+                firstPts90k = TsTimestampFieldCodec.UnwrapTimestamp(
+                    rawPts90k, _lastRawPts90k, _ptsWrapOffset90k);
+                firstPts90k = _timelineNormalizer?.Normalize(firstPts90k, fileOffset) ?? firstPts90k;
+            }
+            else
+            {
+                return;
+            }
+
+            if (firstPts90k == long.MinValue)
+                return;
+            _denseDamageRegion = new DenseDamageRegionBuilder(
+                startOffset,
+                startPacketOrdinal,
+                startContinuityCounter,
+                firstPts90k,
+                fileOffset,
+                _recentDenseDamagePes.ToArray());
+        }
+
+        public void HandleDiscontinuity(long fileOffset)
+        {
+            if (_denseDamageRegion is null)
+            {
+                _recentDenseDamagePes.Clear();
+                return;
+            }
+
+            if (!_denseDamageRegion.CanExtend(fileOffset, CurrentPesPts90k))
+            {
+                ResetDenseDamageAnchors(_denseDamageRegion.AfterAnchor);
+                _denseDamageRegion = null;
+                return;
+            }
+
+            // 显式 discontinuity 常被录制设备用于结束一次 I/O 故障后的 CC 异常。
+            // 它会重置连续性状态，但不能丢掉此前已确认的密集损坏区域；保留前锚点，
+            // 并把替换边界推进到该包，等待后续健康 PES 形成安全的后锚点。
+            _denseDamageRegion.AdvanceBoundary(fileOffset, CurrentPesPts90k);
         }
 
         public void ApplyTimelineNormalization(TsTimelineRepairAnalysis analysis, long syncOffset)
@@ -2458,7 +2739,8 @@ public sealed class TsMultiSourceRepairService
                     _lastPtsFileOffset = fileOffset;
                 }
                 _activePes = new ReferencePesInfo(
-                    fileOffset, info.ContinuityCounter, expectedLength, pts90k);
+                    fileOffset, info.ContinuityCounter, expectedLength, pts90k,
+                    Math.Max(0, _observedPacketCount - 1));
             }
             if (_activePes is null)
                 return;
@@ -2478,6 +2760,7 @@ public sealed class TsMultiSourceRepairService
             // 文件尾没有完整的后锚点，不生成替换窗口，避免把自然截断当成可修复区域。
             _activePesRegion = null;
             _pendingRegionAfter.Clear();
+            _denseDamageRegion = null;
         }
 
         private void FinishPes(long endOffset)
@@ -2489,6 +2772,7 @@ public sealed class TsMultiSourceRepairService
             pes.EndOffset = endOffset;
             pes.Signature = CreatePesSignature(pes.Hash, pes.ElementaryLength);
             pes.IsMismatch = pes.ExpectedLength > 0 && pes.ActualLength != pes.ExpectedLength;
+            ProcessDenseDamagePes(pes);
             DetectLargeGap(pes);
 
             // H.264/H.265 广播流通常把 PES_packet_length 写成 0，无法靠 PES 长度判断损坏。
@@ -2531,6 +2815,135 @@ public sealed class TsMultiSourceRepairService
             if (_recentGoodPes.Count == PesRegionAnchorCount)
                 _recentGoodPes.Dequeue();
             _recentGoodPes.Enqueue(pes);
+        }
+
+        private void ProcessDenseDamagePes(ReferencePesInfo pes)
+        {
+            var region = _denseDamageRegion;
+            if (region is null)
+            {
+                if (!pes.IsMismatch)
+                    EnqueueDenseDamageAnchor(pes);
+                return;
+            }
+
+            if (pes.IsMismatch || pes.StartOffset <= region.LastDamageOffset)
+                return;
+
+            region.AfterAnchor.Add(pes);
+            if (region.AfterAnchor.Count < DenseDamageAnchorCount)
+                return;
+
+            // 只有错误密度、时间范围和两端完整 PES 锚点都满足时才升级为整段替换。
+            // 不足三个信号的普通小缺口仍交给原有逐包/ES 修复路径。
+            TryBuildDenseDamageRegion(region);
+            ResetDenseDamageAnchors(region.AfterAnchor);
+            _denseDamageRegion = null;
+        }
+
+        private void TryBuildDenseDamageRegion(DenseDamageRegionBuilder builder)
+        {
+            if (builder.SignalCount < DenseDamageMinimumSignals ||
+                builder.BeforeAnchor.Length != DenseDamageAnchorCount ||
+                builder.AfterAnchor.Count != DenseDamageAnchorCount ||
+                Track.PesRegions.Count >= MaxPesRegionsPerTrack)
+            {
+                return;
+            }
+
+            var firstAfter = builder.AfterAnchor[0];
+            var packetCount64 = firstAfter.StartPacketOrdinal - builder.StartPacketOrdinal;
+            if (packetCount64 <= 0 || packetCount64 > MaxVideoPesRegionPackets ||
+                firstAfter.StartOffset <= builder.StartOffset ||
+                firstAfter.Pts90k == long.MinValue)
+            {
+                return;
+            }
+
+            var nominalDelta90k = EstimateDenseDamagePesDelta(
+                builder.BeforeAnchor, builder.AfterAnchor);
+            // DVB 字幕等稀疏流的 PES 间隔可能超过一秒。优先用前后健康 PES 的
+            // 中位间隔推算替换区间末端；无法估算时退回最后一个损坏包所在的 PTS。
+            var lastPts90k = nominalDelta90k > 0
+                ? firstAfter.Pts90k - nominalDelta90k
+                : builder.LastDamagePts90k;
+            if (lastPts90k < builder.FirstPts90k ||
+                lastPts90k - builder.FirstPts90k > DenseDamageMaximumSpan90k)
+            {
+                return;
+            }
+
+            if (Track.PesRegions.Any(item =>
+                    item.ReferenceStartOffset < firstAfter.StartOffset &&
+                    item.ReferenceEndOffset > builder.StartOffset))
+            {
+                return;
+            }
+
+            Track.PesRegions.Add(new TsRepairPesRegion
+            {
+                ReferencePid = Track.ReferencePid,
+                ReferenceStartOffset = builder.StartOffset,
+                ReferenceEndOffset = firstAfter.StartOffset,
+                ReferenceStartContinuityCounter = builder.StartContinuityCounter,
+                ReferencePacketCount = (int)packetCount64,
+                ReferenceFirstPts90k = builder.FirstPts90k,
+                ReferenceLastPts90k = lastPts90k,
+                ReferencePts90k = [builder.FirstPts90k, lastPts90k],
+                ReferencePtsFileOffsets = [builder.StartOffset, firstAfter.StartOffset],
+                MismatchCount = builder.SignalCount,
+                Reason = TsRepairPesRegionReason.DenseTransportDamage,
+                BeforeAnchor = builder.BeforeAnchor.Select(item => item.Signature).ToArray(),
+                ReferenceSignatures = [],
+                AfterAnchor = builder.AfterAnchor.Select(item => item.Signature).ToArray()
+            });
+
+            // 该范围已由一个更强的前后 PES 锚点区域覆盖，移除内部零散缺口，防止
+            // 输出计划先插包再跳过整段替换，也让摘要按一次真实事故而非几十次跳号计数。
+            Track.Gaps.RemoveAll(item =>
+                item.ReferenceInsertOffset >= builder.StartOffset &&
+                item.ReferenceInsertOffset < firstAfter.StartOffset);
+        }
+
+        private static long EstimateDenseDamagePesDelta(
+            IReadOnlyList<ReferencePesInfo> before,
+            IReadOnlyList<ReferencePesInfo> after)
+        {
+            var deltas = new List<long>(before.Count + after.Count);
+            AddPositivePesDeltas(before, deltas);
+            AddPositivePesDeltas(after, deltas);
+            if (deltas.Count == 0)
+                return 0;
+            deltas.Sort();
+            return deltas[deltas.Count / 2];
+        }
+
+        private static void AddPositivePesDeltas(
+            IReadOnlyList<ReferencePesInfo> values,
+            ICollection<long> output)
+        {
+            for (var index = 1; index < values.Count; index++)
+            {
+                var delta = values[index].Pts90k - values[index - 1].Pts90k;
+                if (delta > 0 && delta <= DenseDamageMaximumSpan90k)
+                    output.Add(delta);
+            }
+        }
+
+        private void EnqueueDenseDamageAnchor(ReferencePesInfo pes)
+        {
+            if (pes.Pts90k == long.MinValue)
+                return;
+            if (_recentDenseDamagePes.Count == DenseDamageAnchorCount)
+                _recentDenseDamagePes.Dequeue();
+            _recentDenseDamagePes.Enqueue(pes);
+        }
+
+        private void ResetDenseDamageAnchors(IEnumerable<ReferencePesInfo> values)
+        {
+            _recentDenseDamagePes.Clear();
+            foreach (var value in values.TakeLast(DenseDamageAnchorCount))
+                EnqueueDenseDamageAnchor(value);
         }
 
         private void DetectLargeGap(ReferencePesInfo pes)
@@ -2788,6 +3201,56 @@ public sealed class TsMultiSourceRepairService
         }
     }
 
+    private sealed class DenseDamageRegionBuilder(
+        long startOffset,
+        long startPacketOrdinal,
+        int startContinuityCounter,
+        long firstPts90k,
+        long firstDamageOffset,
+        ReferencePesInfo[] beforeAnchor)
+    {
+        public long StartOffset { get; } = startOffset;
+        public long StartPacketOrdinal { get; } = startPacketOrdinal;
+        public int StartContinuityCounter { get; } = startContinuityCounter;
+        public long FirstPts90k { get; } = firstPts90k;
+        public long LastDamageOffset { get; private set; } = firstDamageOffset;
+        public long LastDamagePts90k { get; private set; } = firstPts90k;
+        public int SignalCount { get; private set; } = 1;
+        public ReferencePesInfo[] BeforeAnchor { get; } = beforeAnchor;
+        public List<ReferencePesInfo> AfterAnchor { get; } = [];
+
+        public bool CanExtend(long fileOffset, long pts90k)
+        {
+            if (fileOffset < LastDamageOffset ||
+                fileOffset - StartOffset > DenseDamageMaximumSpanBytes)
+            {
+                return false;
+            }
+            return pts90k == long.MinValue ||
+                   Math.Abs(pts90k - FirstPts90k) <= DenseDamageMaximumSpan90k;
+        }
+
+        public void AddSignal(long fileOffset, long pts90k)
+        {
+            LastDamageOffset = Math.Max(LastDamageOffset, fileOffset);
+            if (pts90k != long.MinValue)
+                LastDamagePts90k = pts90k;
+            SignalCount++;
+            AfterAnchor.Clear();
+        }
+
+        public void AdvanceBoundary(long fileOffset, long pts90k)
+        {
+            if (CanExtend(fileOffset, pts90k))
+            {
+                LastDamageOffset = Math.Max(LastDamageOffset, fileOffset);
+                if (pts90k != long.MinValue)
+                    LastDamagePts90k = pts90k;
+            }
+            AfterAnchor.Clear();
+        }
+    }
+
     private sealed class DetectedTrackLargeGap
     {
         public required long ReferenceBeforePts90k { get; set; }
@@ -2802,9 +3265,14 @@ public sealed class TsMultiSourceRepairService
     }
 
     private sealed class ReferencePesInfo(
-        long startOffset, int startContinuityCounter, int expectedLength, long pts90k)
+        long startOffset,
+        int startContinuityCounter,
+        int expectedLength,
+        long pts90k,
+        long startPacketOrdinal)
     {
         public long StartOffset { get; } = startOffset;
+        public long StartPacketOrdinal { get; } = startPacketOrdinal;
         public long EndOffset { get; set; }
         public int StartContinuityCounter { get; } = startContinuityCounter;
         public int ExpectedLength { get; } = expectedLength;
@@ -2952,6 +3420,8 @@ public sealed class TsMultiSourceRepairService
         {
             _timelineNormalizer = timelineNormalizer;
             TrackStates = mappings.Select(item => new DonorTrackState(item)).ToArray();
+            _recordObservedPacketOffsets = TrackStates.Any(item =>
+                item.NeedsSparseDenseCorrelation);
             foreach (var state in TrackStates)
             {
                 foreach (var hash in state.Mapping.ReferenceState.ElementarySampleHashes)
@@ -2967,6 +3437,7 @@ public sealed class TsMultiSourceRepairService
         }
 
         public DonorTrackState[] TrackStates { get; }
+        public List<long> ObservedPacketOffsets { get; } = [];
         public int PesSizeErrorCount { get; private set; }
         public bool HasContinuity;
         public int LastContinuityCounter;
@@ -2981,6 +3452,13 @@ public sealed class TsMultiSourceRepairService
         private long _lastRawPts90k = long.MinValue;
         private long _ptsWrapOffset90k;
         private long _lastIndexedPts90k = long.MinValue;
+        private readonly bool _recordObservedPacketOffsets;
+
+        public void ObservePacket(long fileOffset)
+        {
+            if (_recordObservedPacketOffsets)
+                ObservedPacketOffsets.Add(fileOffset);
+        }
 
         public void ResetContinuity() => HasContinuity = false;
         public long CurrentPesPts90k => _activePes?.Pts90k ?? long.MinValue;
@@ -3737,6 +4215,12 @@ public sealed class TsMultiSourceRepairService
         }
 
         public TrackMapping Mapping { get; }
+        public bool NeedsSparseDenseCorrelation =>
+            Mapping.ReferenceState.Track.SupplementaryStreamType ==
+                TsSupplementaryStreamType.DvbSubtitle &&
+            Mapping.ReferenceState.Track.PesRegions.Any(region =>
+                region.Reason == TsRepairPesRegionReason.DenseTransportDamage &&
+                region.ReferenceLastPts90k <= region.ReferenceFirstPts90k);
         public HashSet<ulong> MatchedSamples { get; } = [];
         public HashSet<ulong> MatchedElementarySamples { get; } = [];
         public bool NeedsElementaryIdentitySamples =>
@@ -3799,8 +4283,9 @@ public sealed class TsMultiSourceRepairService
                 return;
             foreach (var region in matchingRegions)
             {
-                var isVideoRegion = region.Reason ==
-                                    TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch;
+                var allowsMultipleCandidates = region.Reason is
+                    TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch or
+                    TsRepairPesRegionReason.DenseTransportDamage;
                 var existingCandidateCount = 0;
                 for (var candidateIndex = 0; candidateIndex < region.Candidates.Count; candidateIndex++)
                 {
@@ -3812,7 +4297,7 @@ public sealed class TsMultiSourceRepairService
                     }
                 }
                 if (_completedPesRegions.Contains(region) || _activePesRegionSet.Contains(region) ||
-                    (!isVideoRegion && existingCandidateCount > 0) ||
+                    (!allowsMultipleCandidates && existingCandidateCount > 0) ||
                     existingCandidateCount >= MaxVideoRegionCandidatesPerSource)
                 {
                     continue;
@@ -4911,8 +5396,9 @@ public sealed class TsMultiSourceRepairService
                 PacketCount = replacementIsland.Sum(item => item.PacketCount),
                 TimestampOffset90k = timestampOffset,
                 ElementaryLength = replacementIsland.Sum(item => item.ElementaryLength),
-                FingerprintMatches = Region.Reason ==
-                    TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch
+                FingerprintMatches = Region.Reason is
+                    TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch or
+                    TsRepairPesRegionReason.DenseTransportDamage
                         ? Region.BeforeAnchor.Length + Region.AfterAnchor.Length
                         : 0,
                 ReferenceStartOffset = referenceStartOffset,
@@ -4924,8 +5410,10 @@ public sealed class TsMultiSourceRepairService
                         : null,
             });
             // 视频内容可能出现重复镜头，单靠 ES 锚点会命中多个时刻。保留有界的多个候选，
-            // 扫描结束后再用视频自身大量分散包指纹形成的多数时间偏移筛选。
-            Completed = Region.Reason != TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch;
+            // 密集损坏区域也可能包含重复静音/画面；扫描结束后统一用轨道时间偏移筛选。
+            Completed = Region.Reason is not (
+                TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch or
+                TsRepairPesRegionReason.DenseTransportDamage);
             return true;
         }
 

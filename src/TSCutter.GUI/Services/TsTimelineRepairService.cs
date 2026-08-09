@@ -247,18 +247,21 @@ public sealed class TsTimelineRepairService
             _analysis = analysis;
             _segments = analysis.Segments.Where(segment =>
             {
+                var startAnchorOffset = analysis.SyncOffset + segment.StartAnchorPacket * PacketSize;
                 var startBoundaryOffset = analysis.SyncOffset + segment.StartPacket * PacketSize;
                 var endBoundaryOffset = segment.EndPacketExclusive == long.MaxValue
                     ? long.MaxValue
                     : analysis.SyncOffset + segment.EndPacketExclusive * PacketSize;
                 return replacedRanges is null || !replacedRanges.Any(range =>
                     range.Pid == segment.PcrPid &&
-                    (IsInsideReplacedRange(startBoundaryOffset, range) ||
+                    (IsInsideReplacedRange(startAnchorOffset, range) ||
+                     IsInsideReplacedRange(startBoundaryOffset, range) ||
                      IsInsideReplacedRange(endBoundaryOffset, range)));
             }).ToList();
             // 若大段内容缺失本身造成 PCR 跨越，补回完整内容已经消除了该断点。
-            // 永久阶跃的断点在段首，渐进漂移的闭合断点则在段尾；两端都要判断，且
-            // 补段边界采用闭区间，避免再次施加同一校正而在接缝处制造反向跳变。
+            // PCR 异常由前后两个采样点共同确定；整段替换只覆盖前置锚点时，原校正也
+            // 已经失效。段首、前置锚点和渐进漂移闭合端都要判断，避免重复校正在接缝
+            // 处制造反向跳变。补段边界采用闭区间，与输出替换计划的边界语义一致。
             _streamSegments = BuildStreamSegmentMap(analysis, _segments);
         }
 

@@ -208,7 +208,10 @@
     <x:String x:Key="String.TsRepair.OpenFiles">Add TS source files</x:String>
     <x:String x:Key="String.TsRepair.AddFiles">Add Files...</x:String>
     <x:String x:Key="String.TsRepair.RemoveFile">Remove</x:String>
-    <x:String x:Key="String.TsRepair.Reference">Reference:</x:String>
+    <x:String x:Key="String.TsRepair.Reference">Reference to repair:</x:String>
+    <x:String x:Key="String.TsRepair.RoleExplanation">The reference is the basis of the output. All other files are donors used only to replace verified errors in the reference.</x:String>
+    <x:String x:Key="String.TsRepair.ReferenceHint">Select the file to repair. Its program structure and unaffected content form the output.</x:String>
+    <x:String x:Key="String.TsRepair.SourcesHint">All non-reference files are donors. They are not modified and only supply verified replacement data for errors in the reference.</x:String>
     <x:String x:Key="String.TsRepair.Column.File">File</x:String>
     <x:String x:Key="String.TsRepair.Column.Size">Size</x:String>
     <x:String x:Key="String.TsRepair.Column.Status">Status</x:String>
@@ -236,8 +239,8 @@
     <x:String x:Key="String.TsRepair.Match.Fingerprint">Payload fingerprint match</x:String>
     <x:String x:Key="String.TsRepair.Match.ElementaryFingerprint">Elementary-stream fingerprint match</x:String>
     <x:String x:Key="String.TsRepair.Match.Item">{0}: PID {1} · {2}</x:String>
-    <x:String x:Key="String.TsRepair.Status.Ready">Add at least two TS recordings of the same broadcast feed and time period.</x:String>
-    <x:String x:Key="String.TsRepair.Status.ReadyNote">Different recorders, PIDs, packetization, and track selections are supported; recordings from different airings or re-encoded content are not compatible.</x:String>
+    <x:String x:Key="String.TsRepair.Status.Ready">Add at least two TS recordings of the same broadcast feed and time period, then select the file to repair as the reference.</x:String>
+    <x:String x:Key="String.TsRepair.Status.ReadyNote">The output is based on the reference; other files are only donors for repair data. Different recorders, PIDs, packetization, and track selections are supported; recordings from different airings or re-encoded content are not compatible.</x:String>
     <x:String x:Key="String.TsRepair.AutoNormalizeTimeline">Normalize timeline during matching</x:String>
     <x:String x:Key="String.TsRepair.AutoNormalizeTimelineHint">When enabled, donor PCR/PTS timelines are analyzed separately to improve matching across clock offsets. When disabled, each source has only one main scan.</x:String>
     <x:String x:Key="String.TsRepair.RepairTimelineOnOutput">Also repair timeline during output</x:String>
@@ -342,6 +345,7 @@
     <x:String x:Key="String.TsRepair.Map.Detail.Packets">Packets:</x:String>
     <x:String x:Key="String.TsRepair.Map.IssuePacketGap">Continuity gap / TEI-damaged packet</x:String>
     <x:String x:Key="String.TsRepair.Map.IssuePesMismatch">PES length issue region</x:String>
+    <x:String x:Key="String.TsRepair.Map.IssueDenseTransportDamage">Dense transport damage region</x:String>
     <x:String x:Key="String.TsRepair.Map.IssueElementaryMismatch">Correlated video ES issue region</x:String>
     <x:String x:Key="String.TsRepair.Map.IssueLongGap">Long missing section</x:String>
     <x:String x:Key="String.TsRepair.Map.StatusRepairable">Expected repairable</x:String>
