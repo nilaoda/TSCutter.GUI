@@ -93,7 +93,8 @@ public readonly record struct TsRepairPesSignature(ulong Hash, int ElementaryLen
 public enum TsRepairPesRegionReason
 {
     PesSizeMismatch,
-    CorrelatedVideoElementaryMismatch
+    CorrelatedVideoElementaryMismatch,
+    DenseTransportDamage
 }
 
 public sealed class TsRepairPesRegion
@@ -352,6 +353,7 @@ public sealed class TsPacketReplacement
     public required int PacketCount { get; init; }
     public required long TimestampOffset90k { get; init; }
     public required long PcrTimestampOffset90k { get; init; }
+    public bool PreserveSourceInterleaving { get; init; }
     public bool ElementaryPayloadOnly { get; init; }
     public int ElementaryLength { get; init; }
 }

@@ -208,7 +208,10 @@
     <x:String x:Key="String.TsRepair.OpenFiles">添加 TS 来源文件</x:String>
     <x:String x:Key="String.TsRepair.AddFiles">添加文件...</x:String>
     <x:String x:Key="String.TsRepair.RemoveFile">移除</x:String>
-    <x:String x:Key="String.TsRepair.Reference">参考源：</x:String>
+    <x:String x:Key="String.TsRepair.Reference">待修复的参考源：</x:String>
+    <x:String x:Key="String.TsRepair.RoleExplanation">输出以参考源为主体；其余文件均为辅助源，只用于替换参考源中经过验证的错误数据。</x:String>
+    <x:String x:Key="String.TsRepair.ReferenceHint">选择需要修复的文件。输出将保留该文件的节目结构和未被替换的内容。</x:String>
+    <x:String x:Key="String.TsRepair.SourcesHint">除参考源外的文件均为辅助源。辅助源不会被修改，只为参考源中的错误区域提供经过验证的替换数据。</x:String>
     <x:String x:Key="String.TsRepair.Column.File">文件</x:String>
     <x:String x:Key="String.TsRepair.Column.Size">大小</x:String>
     <x:String x:Key="String.TsRepair.Column.Status">状态</x:String>
@@ -236,8 +239,8 @@
     <x:String x:Key="String.TsRepair.Match.Fingerprint">负载指纹匹配</x:String>
     <x:String x:Key="String.TsRepair.Match.ElementaryFingerprint">基本流指纹匹配</x:String>
     <x:String x:Key="String.TsRepair.Match.Item">{0}：PID {1} · {2}</x:String>
-    <x:String x:Key="String.TsRepair.Status.Ready">请添加至少两份同源、同时段的 TS 录制文件。</x:String>
-    <x:String x:Key="String.TsRepair.Status.ReadyNote">可以使用不同录制工具，PID、封包方式和轨道组合也可以不同；不同播出时段或重新编码的内容不适用。</x:String>
+    <x:String x:Key="String.TsRepair.Status.Ready">请添加至少两份同源、同时段的 TS 录制文件，并选择需要修复的文件作为参考源。</x:String>
+    <x:String x:Key="String.TsRepair.Status.ReadyNote">输出以参考源为主体，其他文件只作为辅助源提供修复数据。可以使用不同录制工具，PID、封包方式和轨道组合也可以不同；不同播出时段或重新编码的内容不适用。</x:String>
     <x:String x:Key="String.TsRepair.AutoNormalizeTimeline">匹配时自动校正时间轴</x:String>
     <x:String x:Key="String.TsRepair.AutoNormalizeTimelineHint">开启后会额外分析辅助源的 PCR/PTS 时间轴，以提高存在时钟偏移时的匹配率；关闭后每个源只进行一次主扫描。</x:String>
     <x:String x:Key="String.TsRepair.RepairTimelineOnOutput">输出时同时修复时间轴</x:String>
@@ -342,6 +345,7 @@
     <x:String x:Key="String.TsRepair.Map.Detail.Packets">包数量：</x:String>
     <x:String x:Key="String.TsRepair.Map.IssuePacketGap">连续计数缺口 / TEI 损坏包</x:String>
     <x:String x:Key="String.TsRepair.Map.IssuePesMismatch">PES 长度异常区域</x:String>
+    <x:String x:Key="String.TsRepair.Map.IssueDenseTransportDamage">密集传输损坏区域</x:String>
     <x:String x:Key="String.TsRepair.Map.IssueElementaryMismatch">关联视频 ES 异常区域</x:String>
     <x:String x:Key="String.TsRepair.Map.IssueLongGap">大段内容缺失</x:String>
     <x:String x:Key="String.TsRepair.Map.StatusRepairable">预计可修复</x:String>

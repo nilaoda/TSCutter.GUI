@@ -37,14 +37,17 @@
 
     <Grid Margin="12" RowDefinitions="210,Auto,*,Auto" RowSpacing="8">
         <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
-            <Grid RowDefinitions="Auto,Auto,*" RowSpacing="6">
+            <Grid RowDefinitions="Auto,Auto,Auto,*" RowSpacing="6">
                 <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,260,Auto,Auto" ColumnSpacing="8">
                     <TextBlock Grid.Column="0" Text="{DynamicResource String.TsRepair.Sources}"
-                               FontWeight="Bold" VerticalAlignment="Center" />
+                               FontWeight="Bold" VerticalAlignment="Center"
+                               ToolTip.Tip="{DynamicResource String.TsRepair.SourcesHint}" />
                     <TextBlock Grid.Column="2" Text="{DynamicResource String.TsRepair.Reference}"
-                               VerticalAlignment="Center" />
+                               VerticalAlignment="Center"
+                               ToolTip.Tip="{DynamicResource String.TsRepair.ReferenceHint}" />
                     <ComboBox Grid.Column="3" ItemsSource="{Binding Sources}"
-                              SelectedItem="{Binding SelectedReference, Mode=TwoWay}">
+                              SelectedItem="{Binding SelectedReference, Mode=TwoWay}"
+                              ToolTip.Tip="{DynamicResource String.TsRepair.ReferenceHint}">
                         <ComboBox.ItemTemplate>
                             <DataTemplate x:DataType="models:TsRepairSourceItem">
                                 <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" />
@@ -56,7 +59,10 @@
                     <Button Grid.Column="5" Content="{DynamicResource String.TsRepair.RemoveFile}"
                             Command="{Binding RemoveSourceCommand}" MinWidth="80" />
                 </Grid>
-                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="20">
+                <TextBlock Grid.Row="1" Text="{DynamicResource String.TsRepair.RoleExplanation}"
+                           TextWrapping="Wrap"
+                           ToolTip.Tip="{DynamicResource String.TsRepair.SourcesHint}" />
+                <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="20">
                     <CheckBox Content="{DynamicResource String.TsRepair.AutoNormalizeTimeline}"
                               IsChecked="{Binding AutoNormalizeTimeline, Mode=TwoWay}"
                               IsEnabled="{Binding CanConfigureTimeline}"
@@ -66,7 +72,7 @@
                               IsEnabled="{Binding CanConfigureTimeline}"
                               ToolTip.Tip="{DynamicResource String.TsRepair.RepairTimelineOnOutputHint}" />
                 </StackPanel>
-                <DataGrid Grid.Row="2" ItemsSource="{Binding Sources}"
+                <DataGrid Grid.Row="3" ItemsSource="{Binding Sources}"
                           SelectedItem="{Binding SelectedSource, Mode=TwoWay}"
                           AutoGenerateColumns="False" IsReadOnly="True"
                           GridLinesVisibility="All" CanUserResizeColumns="True">

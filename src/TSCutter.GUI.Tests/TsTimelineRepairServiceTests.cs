@@ -228,6 +228,127 @@ public sealed class TsTimelineRepairServiceTests
     }
 
     [Fact]
+    public async Task OutputPacketRewriterSkipsTimelineBoundaryWhenPreviousPcrAnchorWasReplaced()
+    {
+        var fixture = await CreateFixtureAsync(static sample => sample >= 50 ? 450_000 : 0);
+        try
+        {
+            var analysis = await AnalyzeAsync(fixture);
+            var issue = Assert.Single(analysis.Issues);
+            var segment = Assert.Single(analysis.Segments);
+            var anchorOffset = segment.StartAnchorPacket * TsStreamAnalyzer.PacketSize;
+            var rewriter = new TsTimelineRepairService.OutputPacketRewriter(
+                analysis,
+                [(issue.PcrPid, anchorOffset, anchorOffset + TsStreamAnalyzer.PacketSize)]);
+            var source = await File.ReadAllBytesAsync(fixture.Path);
+
+            for (var offset = 0; offset < source.Length; offset += TsStreamAnalyzer.PacketSize)
+            {
+                rewriter.ProcessPacket(
+                    source.AsSpan(offset, TsStreamAnalyzer.PacketSize), offset,
+                    applyPcrCorrection: true, applyTimestampCorrection: true);
+            }
+
+            Assert.Equal(0, rewriter.RepairedIssueCount);
+            Assert.Equal(0, rewriter.RewrittenPcrCount);
+        }
+        finally
+        {
+            DeleteFixture(fixture);
+        }
+    }
+
+    [Fact]
+    public async Task ElementaryPayloadReplacementDoesNotSuppressTimelineRepair()
+    {
+        var fixture = await CreateFixtureAsync(static sample => sample >= 50 ? 450_000 : 0);
+        try
+        {
+            var timelineAnalysis = await AnalyzeAsync(fixture);
+            var segment = Assert.Single(timelineAnalysis.Segments);
+            var anchorOffset = segment.StartAnchorPacket * TsStreamAnalyzer.PacketSize;
+            var catalog = new TsCheckResult
+            {
+                FilePath = fixture.Path,
+                FileSize = fixture.Length,
+                SyncOffset = 0
+            };
+            var reference = new TsRepairSourceAnalysis
+            {
+                FilePath = fixture.Path,
+                Catalog = catalog,
+                IsReference = true,
+                TimelineAnalysis = timelineAnalysis
+            };
+            var multiSourceAnalysis = new TsMultiSourceAnalysisResult
+            {
+                ReferenceSource = reference
+            };
+            multiSourceAnalysis.Sources.Add(reference);
+            var plan = new TsRepairOutputPlan
+            {
+                Analysis = multiSourceAnalysis,
+                RepairTimelineOnOutput = true
+            };
+            plan.Replacements.Add(new TsPacketReplacement
+            {
+                SourcePath = fixture.Path,
+                SourcePid = 0x0100,
+                TargetPid = 0x0100,
+                ReferenceStartOffset = anchorOffset,
+                ReferenceEndOffset = anchorOffset + TsStreamAnalyzer.PacketSize,
+                StartContinuityCounter = 0,
+                ReferencePacketCount = 1,
+                SourceStartOffset = anchorOffset,
+                SourceEndOffset = anchorOffset + TsStreamAnalyzer.PacketSize,
+                PacketCount = 1,
+                TimestampOffset90k = 0,
+                PcrTimestampOffset90k = 0,
+                ElementaryPayloadOnly = true,
+                ElementaryLength = 1
+            });
+            plan.Replacements.Add(new TsPacketReplacement
+            {
+                SourcePath = fixture.Path,
+                SourcePid = 0x0101,
+                TargetPid = 0x0101,
+                ReferenceStartOffset = 0,
+                ReferenceEndOffset = TsStreamAnalyzer.PacketSize,
+                StartContinuityCounter = 0,
+                ReferencePacketCount = 1,
+                SourceStartOffset = 0,
+                SourceEndOffset = TsStreamAnalyzer.PacketSize,
+                PacketCount = 1,
+                TimestampOffset90k = 0,
+                PcrTimestampOffset90k = 0
+            });
+
+            var replacedRanges = TsMultiSourceRepairService.BuildReplacedTimelineRanges(plan);
+            var replacedRange = Assert.Single(replacedRanges);
+            Assert.Equal(0x0101, replacedRange.Pid);
+            Assert.Equal(0, replacedRange.StartOffset);
+            Assert.Equal(TsStreamAnalyzer.PacketSize, replacedRange.EndOffset);
+            var rewriter = new TsTimelineRepairService.OutputPacketRewriter(
+                timelineAnalysis, replacedRanges);
+            var source = await File.ReadAllBytesAsync(fixture.Path);
+            for (var offset = 0; offset < source.Length; offset += TsStreamAnalyzer.PacketSize)
+            {
+                rewriter.ProcessPacket(
+                    source.AsSpan(offset, TsStreamAnalyzer.PacketSize), offset,
+                    applyPcrCorrection: true, applyTimestampCorrection: true);
+            }
+
+            Assert.Equal(1, rewriter.RepairedIssueCount);
+            Assert.True(rewriter.RewrittenPcrCount > 0);
+            Assert.Equal(0, rewriter.RemainingPcrErrorCount);
+        }
+        finally
+        {
+            DeleteFixture(fixture);
+        }
+    }
+
+    [Fact]
     public async Task OutputPacketRewriterDoesNotSuppressTimelineForDifferentReplacedPid()
     {
         var fixture = await CreateFixtureAsync(static sample => sample >= 50 ? 450_000 : 0);

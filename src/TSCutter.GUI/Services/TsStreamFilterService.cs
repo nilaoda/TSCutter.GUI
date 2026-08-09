@@ -133,7 +133,26 @@ public sealed class TsStreamFilterService
         Array.Fill(psiContinuity, -1);
         var donorStreams = new Dictionary<string, FileStream>(StringComparer.Ordinal);
         var repairPacket = new byte[PacketSize];
-        var replacementByStart = replacements?.ToDictionary(item => item.ReferenceStartOffset) ?? [];
+        var interleavedReplacementGroups = BuildInterleavedReplacementGroups(catalog, replacements);
+        var interleavedReplacements = interleavedReplacementGroups
+            .SelectMany(item => item.Replacements)
+            .ToHashSet();
+        var replacementByStart = replacements?
+            .Where(item => !interleavedReplacements.Contains(item))
+            .ToDictionary(item => item.ReferenceStartOffset) ?? [];
+        var interleavedGroupsByStart = interleavedReplacementGroups
+            .GroupBy(item => item.ReferenceInsertOffset)
+            .ToDictionary(item => item.Key, item => item.ToArray());
+        var interleavedDiscardRanges = interleavedReplacementGroups
+            .SelectMany(item => item.Replacements)
+            .GroupBy(item => item.TargetPid)
+            .ToDictionary(
+                item => item.Key,
+                item => item.Select(replacement => (
+                        replacement.ReferenceStartOffset,
+                        replacement.ReferenceEndOffset))
+                    .OrderBy(range => range.ReferenceStartOffset)
+                    .ToArray());
         var pendingContinuity = new int[8192];
         Array.Fill(pendingContinuity, -1);
         var continuityOffsets = new int[8192];
@@ -491,6 +510,100 @@ public sealed class TsStreamFilterService
                 return elementary;
             }
 
+            async ValueTask WriteInterleavedReplacementGroupsAsync(
+                IReadOnlyList<InterleavedReplacementGroup> groups,
+                long referenceFileOffset)
+            {
+                // 联合替换从各轨都已进入损坏区的位置开始。先读取尚在输出缓冲中的实际
+                // CC，再按辅助源物理包顺序写出，不能让每个 PID 独立决定自己的输出节奏。
+                TrackWrittenContinuity(
+                    outputBuffer.AsSpan(continuityTrackedLength, outputLength - continuityTrackedLength),
+                    nextWrittenContinuity, hasWrittenContinuity);
+                continuityTrackedLength = outputLength;
+
+                foreach (var group in groups)
+                {
+                    if (!donorStreams.TryGetValue(group.SourcePath, out var donor))
+                    {
+                        donor = new FileStream(
+                            group.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                            ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                        donorStreams[group.SourcePath] = donor;
+                    }
+
+                    var replacementsBySourcePid = group.Replacements.ToDictionary(
+                        item => item.SourcePid);
+                    var continuityCounters = group.Replacements.ToDictionary(
+                        item => item.TargetPid,
+                        item => hasWrittenContinuity[item.TargetPid]
+                            ? nextWrittenContinuity[item.TargetPid]
+                            : item.StartContinuityCounter);
+                    var packetCounts = group.Replacements.ToDictionary(
+                        item => item.TargetPid, _ => 0);
+
+                    donor.Position = group.SourceStartOffset;
+                    while (donor.Position < group.SourceEndOffset)
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        var sourceOffset = donor.Position;
+                        await donor.ReadExactlyAsync(
+                                repairPacket.AsMemory(0, PacketSize), cancellationToken)
+                            .ConfigureAwait(false);
+                        if (repairPacket[0] != 0x47)
+                            throw new TsRepairException(TsRepairErrorCode.SourceChanged);
+
+                        var sourcePid = ((repairPacket[1] & 0x1F) << 8) | repairPacket[2];
+                        if (!replacementsBySourcePid.TryGetValue(sourcePid, out var replacement) ||
+                            sourceOffset < replacement.SourceStartOffset ||
+                            sourceOffset >= replacement.SourceEndOffset)
+                        {
+                            continue;
+                        }
+                        if ((repairPacket[1] & 0x80) != 0)
+                            throw new TsRepairException(TsRepairErrorCode.SourceChanged);
+
+                        await EnsurePacketSpaceAsync().ConfigureAwait(false);
+                        var packet = outputBuffer.AsSpan(outputLength, PacketSize);
+                        repairPacket.CopyTo(packet);
+                        packet[1] = (byte)((packet[1] & 0x60) |
+                                          ((replacement.TargetPid >> 8) & 0x1F));
+                        packet[2] = (byte)replacement.TargetPid;
+                        var continuityCounter = continuityCounters[replacement.TargetPid];
+                        packet[3] = (byte)((packet[3] & 0xF0) | continuityCounter);
+                        if ((((packet[3] >> 4) & 0x03) & 0x01) != 0)
+                        {
+                            continuityCounters[replacement.TargetPid] =
+                                (continuityCounter + 1) & 0x0F;
+                        }
+                        if ((packet[1] & 0x40) != 0)
+                        {
+                            TsTimestampFieldCodec.RewritePesTimestamps(
+                                packet, replacement.TimestampOffset90k,
+                                preserveFirstMarkerBit: false);
+                        }
+                        TsTimestampFieldCodec.RewritePcr(
+                            packet, replacement.PcrTimestampOffset90k);
+                        packetCounts[replacement.TargetPid]++;
+                        CompletePacket(referenceFileOffset, true, false);
+                    }
+
+                    foreach (var replacement in group.Replacements)
+                    {
+                        if (packetCounts[replacement.TargetPid] != replacement.PacketCount)
+                            throw new TsRepairException(TsRepairErrorCode.SourceChanged);
+                        pendingContinuity[replacement.TargetPid] =
+                            continuityCounters[replacement.TargetPid];
+                    }
+
+                    // 后续联合组可能复用同一 PID，必须让它看到本组刚写出的实际 CC。
+                    TrackWrittenContinuity(
+                        outputBuffer.AsSpan(
+                            continuityTrackedLength, outputLength - continuityTrackedLength),
+                        nextWrittenContinuity, hasWrittenContinuity);
+                    continuityTrackedLength = outputLength;
+                }
+            }
+
             async ValueTask WriteReplacementPacketAsync(
                 ActiveReplacementWriter writer,
                 long referenceFileOffset)
@@ -549,6 +662,13 @@ public sealed class TsStreamFilterService
                         await WriteInsertionsAsync(packetInsertions, absoluteOffset)
                             .ConfigureAwait(false);
                     }
+                    if (interleavedGroupsByStart.TryGetValue(
+                            absoluteOffset, out var replacementGroups))
+                    {
+                        await WriteInterleavedReplacementGroupsAsync(
+                                replacementGroups, absoluteOffset)
+                            .ConfigureAwait(false);
+                    }
 
                     // TEI 包仍占据参考文件的物理包位。候选补包已在同一位置写入后，
                     // 必须跳过这些已确认损坏的原包，否则输出仍会携带坏负载和 TEI 标志。
@@ -560,6 +680,11 @@ public sealed class TsStreamFilterService
                         if (absoluteOffset < discardRange.EndOffset)
                             continue;
                         largeGapDiscardRanges.Remove(pid);
+                    }
+                    if (IsInsideInterleavedReplacementRange(
+                            interleavedDiscardRanges, pid, absoluteOffset))
+                    {
+                        continue;
                     }
 
                     // 先结束前一区域，再启动同一位置开始的新区域，避免相邻替换互相覆盖状态。
@@ -731,6 +856,140 @@ public sealed class TsStreamFilterService
             Math.Max(0, result.BytesProcessed - catalog.SyncOffset) / Math.Max(0.001, result.Elapsed.TotalSeconds),
             result.Elapsed));
         return result;
+    }
+
+    private static List<InterleavedReplacementGroup> BuildInterleavedReplacementGroups(
+        TsCheckResult catalog,
+        IReadOnlyList<TsPacketReplacement>? replacements)
+    {
+        if (replacements is null || replacements.Count < 2)
+            return [];
+
+        var candidates = replacements
+            .Where(item => item.PreserveSourceInterleaving && !item.ElementaryPayloadOnly)
+            .Select(item =>
+            {
+                if (!catalog.Pids.TryGetValue(item.TargetPid, out var summary) ||
+                    summary.StreamType is not { } streamType ||
+                    summary.ProgramNumber is not { } programNumber)
+                {
+                    return null;
+                }
+                var isVideo = TsStreamTypes.IsVideo(streamType);
+                var isAudio = TsStreamTypes.IsAudio(
+                    streamType, summary.SupplementaryStreamType);
+                return isVideo || isAudio
+                    ? new InterleavedReplacementCandidate(item, programNumber, isVideo)
+                    : null;
+            })
+            .Where(item => item is not null)
+            .Cast<InterleavedReplacementCandidate>()
+            .ToArray();
+
+        var result = new List<InterleavedReplacementGroup>();
+        foreach (var sourceProgram in candidates.GroupBy(item => (
+                     item.Replacement.SourcePath, item.ProgramNumber)))
+        {
+            var remaining = sourceProgram
+                .OrderBy(item => item.Replacement.ReferenceStartOffset)
+                .ToList();
+            while (remaining.Count > 0)
+            {
+                var seed = remaining[0];
+                remaining.RemoveAt(0);
+                var cluster = new List<InterleavedReplacementCandidate> { seed };
+                var referenceIntersectionStart = seed.Replacement.ReferenceStartOffset;
+                var referenceIntersectionEnd = seed.Replacement.ReferenceEndOffset;
+                var sourceIntersectionStart = seed.Replacement.SourceStartOffset;
+                var sourceIntersectionEnd = seed.Replacement.SourceEndOffset;
+
+                for (var index = 0; index < remaining.Count;)
+                {
+                    var candidate = remaining[index];
+                    var replacement = candidate.Replacement;
+                    var nextReferenceStart = Math.Max(
+                        referenceIntersectionStart, replacement.ReferenceStartOffset);
+                    var nextReferenceEnd = Math.Min(
+                        referenceIntersectionEnd, replacement.ReferenceEndOffset);
+                    var nextSourceStart = Math.Max(
+                        sourceIntersectionStart, replacement.SourceStartOffset);
+                    var nextSourceEnd = Math.Min(
+                        sourceIntersectionEnd, replacement.SourceEndOffset);
+                    if (nextReferenceStart >= nextReferenceEnd ||
+                        nextSourceStart >= nextSourceEnd)
+                    {
+                        index++;
+                        continue;
+                    }
+
+                    cluster.Add(candidate);
+                    referenceIntersectionStart = nextReferenceStart;
+                    referenceIntersectionEnd = nextReferenceEnd;
+                    sourceIntersectionStart = nextSourceStart;
+                    sourceIntersectionEnd = nextSourceEnd;
+                    remaining.RemoveAt(index);
+                }
+
+                // 只有同时包含视频与音频时，跨 PID 的来源交织才有明确意义。单轨或
+                // 纯音频替换继续沿用原路径，避免无收益地改变既有输出行为。
+                // 歧义轨道可能让同一辅助 PID 暂时映射到多个目标 PID；联合写出无法用
+                // 一个来源包同时表达多条目标轨，遇到这种情况回退到原有独立替换路径。
+                var replacementsInCluster = cluster
+                    .Select(item => item.Replacement)
+                    .ToArray();
+                var hasUniqueSourcePids = replacementsInCluster
+                    .Select(item => item.SourcePid)
+                    .Distinct()
+                    .Count() == replacementsInCluster.Length;
+                var hasUniqueTargetPids = replacementsInCluster
+                    .Select(item => item.TargetPid)
+                    .Distinct()
+                    .Count() == replacementsInCluster.Length;
+                if (cluster.Exists(item => item.IsVideo) &&
+                    cluster.Exists(item => !item.IsVideo) &&
+                    hasUniqueSourcePids && hasUniqueTargetPids)
+                {
+                    result.Add(new InterleavedReplacementGroup(replacementsInCluster));
+                }
+            }
+        }
+        return result;
+    }
+
+    private static bool IsInsideInterleavedReplacementRange(
+        IReadOnlyDictionary<int, (long ReferenceStartOffset, long ReferenceEndOffset)[]> rangesByPid,
+        int pid,
+        long fileOffset)
+    {
+        if (!rangesByPid.TryGetValue(pid, out var ranges))
+            return false;
+        foreach (var range in ranges)
+        {
+            if (fileOffset < range.ReferenceStartOffset)
+                return false;
+            if (fileOffset < range.ReferenceEndOffset)
+                return true;
+        }
+        return false;
+    }
+
+    private sealed record InterleavedReplacementCandidate(
+        TsPacketReplacement Replacement,
+        int ProgramNumber,
+        bool IsVideo);
+
+    private sealed class InterleavedReplacementGroup(TsPacketReplacement[] replacements)
+    {
+        public TsPacketReplacement[] Replacements { get; } = replacements;
+        public string SourcePath { get; } = replacements[0].SourcePath;
+        // 选择各参考区间的交集起点：此前仍健康的轨道包先正常写出，已经进入损坏
+        // 区域的轨道包暂时丢弃；到所有轨道都可安全替换时再一次写入来源复用片段。
+        public long ReferenceInsertOffset { get; } = replacements.Max(
+            item => item.ReferenceStartOffset);
+        public long SourceStartOffset { get; } = replacements.Min(
+            item => item.SourceStartOffset);
+        public long SourceEndOffset { get; } = replacements.Max(
+            item => item.SourceEndOffset);
     }
 
     private sealed class ActiveReplacementWriter(
