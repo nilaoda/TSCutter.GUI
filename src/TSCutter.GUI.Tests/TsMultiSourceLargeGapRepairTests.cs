@@ -175,6 +175,46 @@ public sealed class TsMultiSourceLargeGapRepairTests
     }
 
     [Fact]
+    public void PesRegionCandidateStopsAtPacketLimitWhenPtsIsMissing()
+    {
+        var region = new TsRepairPesRegion
+        {
+            ReferencePid = VideoPid,
+            ReferenceStartOffset = 0,
+            ReferenceEndOffset = TsStreamAnalyzer.PacketSize,
+            ReferenceStartContinuityCounter = 0,
+            ReferencePacketCount = 1,
+            ReferenceFirstPts90k = 0,
+            ReferenceLastPts90k = 3_600,
+            ReferencePts90k = [0, 3_600],
+            MismatchCount = 1,
+            Reason = TsRepairPesRegionReason.PesSizeMismatch,
+            BeforeAnchor = [],
+            ReferenceSignatures = [],
+            AfterAnchor = [new TsRepairPesSignature(1, 1)]
+        };
+        var candidate = new TsMultiSourceRepairService.ActivePesRegionCandidate(region);
+        var stoppedAt = -1;
+        for (var index = 1; index <= 5_000; index++)
+        {
+            var pes = new TsMultiSourceRepairService.DonorPesInfo(
+                index * TsStreamAnalyzer.PacketSize, 0, long.MinValue)
+            {
+                EndOffset = (index + 1L) * TsStreamAnalyzer.PacketSize,
+                PacketCount = 1,
+                IsValid = true,
+                Signature = new TsRepairPesSignature((ulong)index, 1)
+            };
+            if (!candidate.TryAppend(pes, "donor.ts", VideoPid))
+                continue;
+            stoppedAt = index;
+            break;
+        }
+
+        Assert.Equal(4_097, stoppedAt);
+    }
+
+    [Fact]
     public async Task DirectPacketInsertionRewritesPesTimestampAtPayloadStart()
     {
         var directory = Path.Combine(

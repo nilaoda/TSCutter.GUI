@@ -54,6 +54,7 @@ public sealed class TsMultiSourceRepairService
     private const long DenseDamageMaximumSpan90k = 5L * 90_000;
     private const int MaxIndexedVideoPes = 500_000;
     private const int MaxVideoRegionCandidatesPerSource = 32;
+    private const int MaxActivePesRegionCandidates = 32;
     private const long CorrelatedVideoPadding90k = 45_000;
     private const int LargeGapAnchorCount = 4;
     private const int LargeGapRecentDeltaCount = 31;
@@ -3642,7 +3643,7 @@ public sealed class TsMultiSourceRepairService
         }
     }
 
-    private sealed class DonorPesInfo(long startOffset, int expectedLength, long pts90k)
+    internal sealed class DonorPesInfo(long startOffset, int expectedLength, long pts90k)
     {
         public long StartOffset { get; } = startOffset;
         public long EndOffset { get; set; }
@@ -4296,7 +4297,8 @@ public sealed class TsMultiSourceRepairService
                         existingCandidateCount++;
                     }
                 }
-                if (_completedPesRegions.Contains(region) || _activePesRegionSet.Contains(region) ||
+                if (_activePesRegions.Count >= MaxActivePesRegionCandidates ||
+                    _completedPesRegions.Contains(region) || _activePesRegionSet.Contains(region) ||
                     (!allowsMultipleCandidates && existingCandidateCount > 0) ||
                     existingCandidateCount >= MaxVideoRegionCandidatesPerSource)
                 {
@@ -5287,7 +5289,7 @@ public sealed class TsMultiSourceRepairService
         }
     }
 
-    private sealed class ActivePesRegionCandidate(TsRepairPesRegion region)
+    internal sealed class ActivePesRegionCandidate(TsRepairPesRegion region)
     {
         private readonly List<DonorPesInfo> _values = [];
         private int _packetCount;
@@ -5300,6 +5302,10 @@ public sealed class TsMultiSourceRepairService
                 return true;
             _values.Add(pes);
             _packetCount += pes.PacketCount;
+            // PTS 缺失、倒退或长期不前进时，后面的时长条件可能永远无法满足。
+            // 必须先执行硬上限，避免异常辅助源让候选缓存一直增长到扫描结束。
+            if (_packetCount > GetMaxRegionPackets(Region))
+                return true;
             var afterAnchorCount = Region.AfterAnchor.Length;
             if (_values.Count <= afterAnchorCount || _values[0].Pts90k == long.MinValue)
                 return false;
@@ -5315,7 +5321,7 @@ public sealed class TsMultiSourceRepairService
             }
 
             if (!EndsWithPesAnchors(_values, Region.AfterAnchor))
-                return _packetCount > GetMaxRegionPackets(Region);
+                return false;
 
             var replacementPesCount = _values.Count - afterAnchorCount;
             if (replacementPesCount <= 0)
