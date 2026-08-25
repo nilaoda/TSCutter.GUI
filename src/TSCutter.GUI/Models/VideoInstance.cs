@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using Sdcb.FFmpeg.Codecs;
 using Sdcb.FFmpeg.Formats;
@@ -264,6 +265,21 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         await Task.Run(() => SeekFile(pts));
     }
 
+    public Task<DecodeResult> DecodeAtTimeAsync(
+        TimeSpan timeSpan,
+        int maxWidth = 0,
+        int maxHeight = 0,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.Run(() =>
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            SeekToTime(timeSpan);
+            cancellationToken.ThrowIfCancellationRequested();
+            return DecodeNextFrame(1, cancellationToken, maxWidth, maxHeight);
+        }, cancellationToken);
+    }
+
     public void SeekToTime(TimeSpan timeSpan)
     {
         var targetTimestamp = TimeSpanToPts(timeSpan);
@@ -295,18 +311,31 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
 
     public async Task<DecodeResult> DecodeNextFrameAsync(int count = 1)
     {
-        return await Task.Run(() => DecodeNextFrame(count));
+        return await Task.Run(() => DecodeNextFrame(count, CancellationToken.None, 0, 0));
     }
 
-    private DecodeResult DecodeNextFrame(int count = 1)
+    private DecodeResult DecodeNextFrame(
+        int count,
+        CancellationToken cancellationToken,
+        int maxWidth,
+        int maxHeight)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var anchorPts = currentKeyFramePts;
         try
         {
-            return DecodeNextFrame(count, anchorPts, true, 0);
+            return DecodeNextFrame(
+                count,
+                anchorPts,
+                true,
+                0,
+                cancellationToken,
+                maxWidth,
+                maxHeight);
         }
         catch (HardwareDecodeException exception)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             Console.WriteLine($"Hardware decoding failed, switching to software: {exception.InnerException?.Message ?? exception.Message}");
             if (!TryOpenSoftwareDecoder())
                 throw;
@@ -323,6 +352,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                 anchorPts,
                 applyInitialSeek: false,
                 retryCount: 0,
+                cancellationToken: cancellationToken,
+                maxWidth: maxWidth,
+                maxHeight: maxHeight,
                 requireForwardAfterAnchor: count >= 0);
         }
     }
@@ -332,8 +364,12 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         long anchorPts,
         bool applyInitialSeek,
         int retryCount,
+        CancellationToken cancellationToken,
+        int maxWidth,
+        int maxHeight,
         bool requireForwardAfterAnchor = false)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var failureCount = 0;
         var backward = count < 0;
 
@@ -356,6 +392,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
 
         foreach (var packet in inFc.ReadPackets(videoStreamIndex))
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
             {
                 continue;
@@ -370,7 +407,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             // PositionInFile = packet.Position;
             // Console.WriteLine($"Current packet positon: {packet.Position}");
 
-            var result = DecodePacket(packet, packet.Position);
+            var result = DecodePacket(packet, packet.Position, cancellationToken, maxWidth, maxHeight);
             if (result != null)
             {
                 if (IsDecodedFrameAtRequestedSide(
@@ -406,6 +443,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             anchorPts,
             applyInitialSeek: false,
             retryCount: retryCount + 1,
+            cancellationToken: cancellationToken,
+            maxWidth: maxWidth,
+            maxHeight: maxHeight,
             requireForwardAfterAnchor: requireForwardAfterAnchor);
     }
 
@@ -542,14 +582,21 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         return TimeSpan.FromSeconds((pts - firstFrameTimestamp) / t);
     }
     
-    private DecodeResult? DecodePacket(Packet packet, long packetPosition)
+    private DecodeResult? DecodePacket(
+        Packet packet,
+        long packetPosition,
+        CancellationToken cancellationToken,
+        int maxWidth,
+        int maxHeight)
     {
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             using Frame destRef = new Frame();
             // 1 packet -> 0..N frame
             foreach (var frame in videoDecoder.DecodePacket(packet, destRef))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (firstFrameTimestamp == -1)
                 {
                     firstFrameTimestamp = frame.BestEffortTimestamp;
@@ -579,11 +626,14 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                 Frame? softwareFrame = null;
                 try
                 {
+                    cancellationToken.ThrowIfCancellationRequested();
                     if (!AudioMode && frame.HwFramesContext != null)
                         softwareFrame = frame.TransferToSoftwareFrame();
                 }
                 catch (Exception exception)
                 {
+                    if (exception is OperationCanceledException)
+                        throw;
                     // 硬件帧无法回读通常表示设备链路失效，此时才立即切换软件解码器。
                     throw new HardwareDecodeException(exception, pts);
                 }
@@ -593,12 +643,20 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                     Avalonia.Media.Imaging.Bitmap bitmap;
                     try
                     {
+                        cancellationToken.ThrowIfCancellationRequested();
                         bitmap = AudioMode
                             ? ImageUtil.BlankImage
-                            : ImageUtil.CreateBitmapFromFrame(softwareFrame ?? frame);
+                            : maxWidth > 0 && maxHeight > 0
+                                ? ImageUtil.CreateScaledBitmapFromFrame(
+                                    softwareFrame ?? frame,
+                                    maxWidth,
+                                    maxHeight)
+                                : ImageUtil.CreateBitmapFromFrame(softwareFrame ?? frame);
                     }
                     catch (Exception exception)
                     {
+                        if (exception is OperationCanceledException)
+                            throw;
                         // 位图绘制属于界面链路，失败时不能据此判定硬件解码器不可用。
                         Console.WriteLine(exception);
                         return null;
@@ -606,12 +664,19 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                     return new DecodeResult()
                     {
                         Bitmap = bitmap,
+                        SourcePixelSize = AudioMode
+                            ? bitmap.PixelSize
+                            : new Avalonia.PixelSize(frame.Width, frame.Height),
                         FrameTimestamp = PtsToTimeSpan(pts),
                     };
                 }
             }
         }
         catch (HardwareDecodeException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException)
         {
             throw;
         }

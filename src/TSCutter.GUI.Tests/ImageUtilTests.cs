@@ -37,4 +37,24 @@ public sealed class ImageUtilTests
 
         Assert.Equal(default, result);
     }
+
+    [Theory]
+    [InlineData(7680, 4320, 1280, 720, 1280, 720)]
+    [InlineData(3840, 1600, 1280, 720, 1280, 533)]
+    [InlineData(1080, 1920, 1280, 720, 405, 720)]
+    [InlineData(640, 360, 1280, 720, 640, 360)]
+    public void CalculateDecodeSizeCapsPreviewWithoutChangingAspectRatio(
+        int sourceWidth,
+        int sourceHeight,
+        int maxWidth,
+        int maxHeight,
+        int expectedWidth,
+        int expectedHeight)
+    {
+        var result = ImageUtil.CalculateDecodeSize(
+            new PixelSize(sourceWidth, sourceHeight),
+            new PixelSize(maxWidth, maxHeight));
+
+        Assert.Equal(new PixelSize(expectedWidth, expectedHeight), result);
+    }
 }

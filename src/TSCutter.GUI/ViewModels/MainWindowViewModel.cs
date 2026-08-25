@@ -26,6 +26,8 @@ namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase
 {
+    private const int DefaultScrubPreviewWidth = 1280;
+    private const int DefaultScrubPreviewHeight = 720;
     private string TitleInfo => $"TSCutter.GUI - Alpha.{App.CurrentTag.Split('_').Last()}";
 
     private static string PleaseLoadTip => LocalizationManager.Instance.String_PleaseLoadVideo;
@@ -41,6 +43,13 @@ public partial class MainWindowViewModel : ViewModelBase
     private VideoInstance? _videoInstance;
     private readonly IDialogService _dialogService;
     private readonly IConfigurationService _configService;
+    private readonly object _scrubPreviewSync = new();
+    private ScrubPreviewRequest? _pendingScrubPreview;
+    private CancellationTokenSource? _activeScrubPreviewCancellation;
+    private Task _scrubPreviewWorker = Task.CompletedTask;
+    private long _scrubPreviewGeneration;
+    private bool _acceptScrubPreviews;
+    private bool _scrubPreviewWorkerRunning;
     
     public MainWindowViewModel(IDialogService dialogService, IConfigurationService configService)
     {
@@ -769,6 +778,9 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     public partial double CurrentTime { get; set; } = 0.0;
 
+    [ObservableProperty]
+    public partial PixelSize DecodedFrameSourceSize { get; set; }
+
     partial void OnCurrentTimeChanged(double value) => TimelineViewport.SetPlayhead(value);
 
     [ObservableProperty]
@@ -884,6 +896,197 @@ public partial class MainWindowViewModel : ViewModelBase
         if (!IsVideoInitialized || IsDecoding) return;
         await RunDecodeOperationAsync(() => _videoInstance!.SeekToTimeAsync(timeSpan));
     }
+
+    public void BeginScrubPreview()
+    {
+        lock (_scrubPreviewSync)
+        {
+            _scrubPreviewGeneration++;
+            _acceptScrubPreviews = true;
+            _pendingScrubPreview = null;
+            _activeScrubPreviewCancellation?.Cancel();
+        }
+    }
+
+    public void RequestScrubPreview(double timeSeconds, PixelSize targetSize = default)
+    {
+        var startWorker = false;
+        lock (_scrubPreviewSync)
+        {
+            if (!_acceptScrubPreviews || !IsVideoInitialized)
+                return;
+
+            _pendingScrubPreview = new ScrubPreviewRequest(
+                _scrubPreviewGeneration,
+                TimeSpan.FromSeconds(Math.Clamp(timeSeconds, 0, DurationMax)),
+                NormalizeScrubPreviewTarget(targetSize));
+            if (!_scrubPreviewWorkerRunning)
+            {
+                _scrubPreviewWorkerRunning = true;
+                startWorker = true;
+            }
+        }
+
+        if (!startWorker)
+            return;
+
+        var worker = ProcessScrubPreviewQueueAsync();
+        lock (_scrubPreviewSync)
+            _scrubPreviewWorker = worker;
+    }
+
+    public void CancelScrubPreview() => StopAcceptingScrubPreviews();
+
+    public async Task CompleteScrubPreviewAsync()
+    {
+        Task worker;
+        lock (_scrubPreviewSync)
+        {
+            StopAcceptingScrubPreviewsCore();
+            worker = _scrubPreviewWorker;
+        }
+        await worker;
+    }
+
+    public async Task SeekToTimeAndDrawFrameAsync(TimeSpan timeSpan)
+    {
+        if (!IsVideoInitialized || IsDecoding)
+            return;
+
+        try
+        {
+            await RunDecodeOperationAsync(async () =>
+            {
+                var stopwatch = Stopwatch.StartNew();
+                var decodeResult = await _videoInstance!.DecodeAtTimeAsync(timeSpan);
+                stopwatch.Stop();
+                DecodeCost = stopwatch.ElapsedMilliseconds;
+                ApplyDecodeResult(decodeResult);
+            });
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine(exception);
+            await ShowMessageAsync(
+                exception.Message,
+                LocalizationManager.Instance.String_FailedToDecode,
+                MessageBoxIcon.Error);
+        }
+        finally
+        {
+            UpdateDecodeMode();
+        }
+    }
+
+    private async Task ProcessScrubPreviewQueueAsync()
+    {
+        while (true)
+        {
+            ScrubPreviewRequest request;
+            CancellationTokenSource cancellation;
+            VideoInstance? videoInstance;
+            lock (_scrubPreviewSync)
+            {
+                if (_pendingScrubPreview is not { } pending)
+                {
+                    _scrubPreviewWorkerRunning = false;
+                    return;
+                }
+
+                request = pending;
+                _pendingScrubPreview = null;
+                cancellation = new CancellationTokenSource();
+                _activeScrubPreviewCancellation = cancellation;
+                videoInstance = _videoInstance;
+            }
+
+            if (videoInstance is null)
+            {
+                lock (_scrubPreviewSync)
+                {
+                    if (ReferenceEquals(_activeScrubPreviewCancellation, cancellation))
+                        _activeScrubPreviewCancellation = null;
+                }
+                cancellation.Dispose();
+                continue;
+            }
+
+            DecodingOpCount++;
+            try
+            {
+                var stopwatch = Stopwatch.StartNew();
+                var decodeResult = await videoInstance.DecodeAtTimeAsync(
+                    request.Time,
+                    request.TargetSize.Width,
+                    request.TargetSize.Height,
+                    cancellation.Token);
+                stopwatch.Stop();
+
+                bool shouldPublish;
+                lock (_scrubPreviewSync)
+                {
+                    shouldPublish = _acceptScrubPreviews &&
+                                    request.Generation == _scrubPreviewGeneration;
+                }
+
+                if (shouldPublish)
+                {
+                    DecodeCost = stopwatch.ElapsedMilliseconds;
+                    ApplyDecodeResult(decodeResult);
+                    UpdateDecodeMode();
+                }
+                else
+                {
+                    decodeResult.Bitmap.Dispose();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // 新拖动会话或最终 seek 已取代当前预览。
+            }
+            catch (Exception exception)
+            {
+                // 拖动预览失败时保留上一帧，最终 seek 仍会报告真正的解码错误。
+                Console.WriteLine($"Scrub preview failed: {exception}");
+            }
+            finally
+            {
+                DecodingOpCount = Math.Max(0, DecodingOpCount - 1);
+                lock (_scrubPreviewSync)
+                {
+                    if (ReferenceEquals(_activeScrubPreviewCancellation, cancellation))
+                        _activeScrubPreviewCancellation = null;
+                }
+                cancellation.Dispose();
+            }
+        }
+    }
+
+    private void StopAcceptingScrubPreviews()
+    {
+        lock (_scrubPreviewSync)
+            StopAcceptingScrubPreviewsCore();
+    }
+
+    private void StopAcceptingScrubPreviewsCore()
+    {
+        _scrubPreviewGeneration++;
+        _acceptScrubPreviews = false;
+        _pendingScrubPreview = null;
+        _activeScrubPreviewCancellation?.Cancel();
+    }
+
+    private void ApplyDecodeResult(DecodeResult decodeResult)
+    {
+        DecodedFrameSourceSize = decodeResult.SourcePixelSize;
+        DecodedBitmap = decodeResult.Bitmap;
+        CurrentTime = decodeResult.FrameTimestamp.TotalSeconds;
+    }
+
+    private static PixelSize NormalizeScrubPreviewTarget(PixelSize targetSize) =>
+        targetSize.Width > 0 && targetSize.Height > 0
+            ? targetSize
+            : new PixelSize(DefaultScrubPreviewWidth, DefaultScrubPreviewHeight);
     
     public async Task SeekFileAsync(long pts)
     {
@@ -917,8 +1120,7 @@ public partial class MainWindowViewModel : ViewModelBase
             DecodeCost = stopwatch.ElapsedMilliseconds;
             Console.WriteLine($"PositionInFile: {_videoInstance.PositionInFile}");
             stopwatch.Stop();
-            DecodedBitmap = decodeResult.Bitmap;
-            CurrentTime = decodeResult.FrameTimestamp.TotalSeconds;
+            ApplyDecodeResult(decodeResult);
         }
         catch (Exception e)
         {
@@ -934,8 +1136,10 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ClearVars()
     {
+        StopAcceptingScrubPreviews();
         VideoInfoText = PleaseLoadTip;
         DecodedBitmap = null;
+        DecodedFrameSourceSize = default;
         DisposeClipThumbnails();
         Clips.Clear();
         SelectedClip = null;
@@ -952,6 +1156,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
+            await CompleteScrubPreviewAsync();
             ClearVars();
             _videoInstance?.Close();
             await RunDecodeOperationAsync(async () =>
@@ -1062,11 +1267,32 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public void Close()
     {
+        Task scrubWorker;
+        VideoInstance? videoInstance;
+        lock (_scrubPreviewSync)
+        {
+            StopAcceptingScrubPreviewsCore();
+            scrubWorker = _scrubPreviewWorker;
+            videoInstance = _videoInstance;
+            _videoInstance = null;
+        }
+
         DisposeClipThumbnails();
-        _videoInstance?.Close();
-        _videoInstance?.Dispose();
-        _videoInstance = null;
+        if (videoInstance is not null)
+            _ = DisposeVideoAfterScrubStopsAsync(scrubWorker, videoInstance);
         VideoPath = string.Empty;
+    }
+
+    private static async Task DisposeVideoAfterScrubStopsAsync(Task scrubWorker, VideoInstance videoInstance)
+    {
+        try
+        {
+            await scrubWorker.ConfigureAwait(false);
+        }
+        finally
+        {
+            videoInstance.Dispose();
+        }
     }
 
     private void UpdateDecodeMode()
@@ -1337,4 +1563,9 @@ public partial class MainWindowViewModel : ViewModelBase
         long EndPosition,
         double StartTime,
         double EndTime);
+
+    private readonly record struct ScrubPreviewRequest(
+        long Generation,
+        TimeSpan Time,
+        PixelSize TargetSize);
 }

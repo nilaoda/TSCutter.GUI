@@ -79,8 +79,8 @@ public partial class MainWindow : ClassicWindow
         try
         {
             MainTimeline.IsEnabled = false;
-            await ViewModel.SeekToTimeAsync(TimeSpan.FromSeconds(time));
-            await ViewModel.DrawNextFrameAsync(1);
+            await ViewModel.CompleteScrubPreviewAsync();
+            await ViewModel.SeekToTimeAndDrawFrameAsync(TimeSpan.FromSeconds(time));
         }
         catch (Exception ex)
         {
@@ -92,6 +92,15 @@ public partial class MainWindow : ClassicWindow
             MainTimeline.IsEnabled = true;
         }
     }
+
+    private void Timeline_OnScrubStarted(object? sender, EventArgs e) =>
+        ViewModel.BeginScrubPreview();
+
+    private void Timeline_OnScrubPreviewRequested(object? sender, double time) =>
+        ViewModel.RequestScrubPreview(time, ImageViewer.GetDecodeTargetSize());
+
+    private void Timeline_OnScrubCanceled(object? sender, EventArgs e) =>
+        ViewModel.CancelScrubPreview();
 
     private void Timeline_OnPanRequested(object? sender, double start) =>
         ViewModel.TimelineViewport.ViewStart = start;
