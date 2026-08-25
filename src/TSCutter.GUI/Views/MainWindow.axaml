@@ -258,6 +258,7 @@
                                                       OffsetX="{Binding OffsetX, Mode=TwoWay}"
                                                       OffsetY="{Binding OffsetY, Mode=TwoWay}"
                                                       Image="{Binding DecodedBitmap}"
+                                                      SourcePixelSize="{Binding DecodedFrameSourceSize}"
                                                       Zoom="{Binding ZoomFactor, Mode=TwoWay}">
                                 </controls:ImageViewer>
                             </ClassicBorderDecorator>
@@ -537,6 +538,9 @@
                                                   ViewportEnd="{Binding TimelineViewport.ViewEnd}"
                                                   ZoomLevel="{Binding TimelineViewport.ZoomLevel}"
                                                   Ranges="{Binding SelectedClipRanges}"
+                                                  ScrubStarted="Timeline_OnScrubStarted"
+                                                  ScrubPreviewRequested="Timeline_OnScrubPreviewRequested"
+                                                  ScrubCanceled="Timeline_OnScrubCanceled"
                                                   SeekRequested="Timeline_OnSeekRequested"
                                                   PanRequested="Timeline_OnPanRequested"
                                                   ZoomRequested="Timeline_OnZoomRequested"

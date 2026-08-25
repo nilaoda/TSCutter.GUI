@@ -21,21 +21,36 @@ public static class ImageUtil
 
     // 缓存 VideoFrameConverter，避免每帧重新初始化 swscale 上下文
     private static VideoFrameConverter? _cachedSws;
-    private static int _cachedWidth;
-    private static int _cachedHeight;
+    private static PixelSize _cachedSourceSize;
+    private static PixelSize _cachedDestinationSize;
 
     public static unsafe Bitmap CreateBitmapFromFrame(Frame frame, int dpi = 96)
+        => CreateBitmapFromFrame(frame, new PixelSize(frame.Width, frame.Height), dpi);
+
+    public static unsafe Bitmap CreateScaledBitmapFromFrame(
+        Frame frame,
+        int maxWidth,
+        int maxHeight,
+        int dpi = 96)
     {
-        var width = frame.Width;
-        var height = frame.Height;
+        var sourceSize = new PixelSize(frame.Width, frame.Height);
+        var destinationSize = CalculateDecodeSize(sourceSize, new PixelSize(maxWidth, maxHeight));
+        return CreateBitmapFromFrame(frame, destinationSize, dpi);
+    }
+
+    private static unsafe Bitmap CreateBitmapFromFrame(Frame frame, PixelSize destinationSize, int dpi)
+    {
+        var sourceSize = new PixelSize(frame.Width, frame.Height);
+        var width = destinationSize.Width;
+        var height = destinationSize.Height;
 
         // swscale 直接输出 BGRA 格式，消除逐像素 BGR→BGRA 转换
-        if (_cachedSws == null || _cachedWidth != width || _cachedHeight != height)
+        if (_cachedSws == null || _cachedSourceSize != sourceSize || _cachedDestinationSize != destinationSize)
         {
             _cachedSws?.Dispose();
             _cachedSws = new VideoFrameConverter();
-            _cachedWidth = width;
-            _cachedHeight = height;
+            _cachedSourceSize = sourceSize;
+            _cachedDestinationSize = destinationSize;
         }
 
         using Frame dest = Frame.CreateVideo(width, height, AVPixelFormat.Bgra);
@@ -62,6 +77,22 @@ public static class ImageUtil
         }
 
         return writableBitmap;
+    }
+
+    internal static PixelSize CalculateDecodeSize(PixelSize sourceSize, PixelSize maximumSize)
+    {
+        if (sourceSize.Width <= 0 || sourceSize.Height <= 0 ||
+            maximumSize.Width <= 0 || maximumSize.Height <= 0)
+        {
+            return sourceSize;
+        }
+
+        var scale = Math.Min(1d, Math.Min(
+            maximumSize.Width / (double)sourceSize.Width,
+            maximumSize.Height / (double)sourceSize.Height));
+        return new PixelSize(
+            Math.Min(maximumSize.Width, Math.Max(1, (int)Math.Round(sourceSize.Width * scale))),
+            Math.Min(maximumSize.Height, Math.Max(1, (int)Math.Round(sourceSize.Height * scale))));
     }
 
     public static Bitmap CreateThumbnail(Bitmap source, int width = 160, int height = 90)

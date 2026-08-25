@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using Avalonia;
@@ -33,6 +34,7 @@ public sealed class TimelineControl : Control
     private const double ZoomTrackWidth = 96;
     private const double ZoomButtonWidth = 16;
     private const double ZoomStep = 0.08;
+    private static readonly TimeSpan ScrubPreviewInterval = TimeSpan.FromMilliseconds(100);
 
     public static readonly StyledProperty<double> MinimumProperty =
         AvaloniaProperty.Register<TimelineControl, double>(nameof(Minimum));
@@ -124,6 +126,7 @@ public sealed class TimelineControl : Control
     private bool _hasDragValue;
     private double _pendingSeekValue;
     private bool _hasPendingSeekValue;
+    private long _lastScrubPreviewTimestamp;
 
     static TimelineControl()
     {
@@ -170,6 +173,9 @@ public sealed class TimelineControl : Control
     public string ScrollTip { get => GetValue(ScrollTipProperty); set => SetValue(ScrollTipProperty, value); }
 
     public event EventHandler<double>? SeekRequested;
+    public event EventHandler? ScrubStarted;
+    public event EventHandler<double>? ScrubPreviewRequested;
+    public event EventHandler? ScrubCanceled;
     public event EventHandler<double>? PanRequested;
     public event EventHandler<TimelineZoomRequestEventArgs>? ZoomRequested;
     public event EventHandler? FitRequested;
@@ -384,6 +390,8 @@ public sealed class TimelineControl : Control
                 _dragMode = DragMode.Seek;
                 _dragValue = MainXToTime(point.X);
                 _hasDragValue = true;
+                _lastScrubPreviewTimestamp = Stopwatch.GetTimestamp();
+                ScrubStarted?.Invoke(this, EventArgs.Empty);
                 break;
             case HitPart.Viewport:
                 _dragMode = DragMode.Pan;
@@ -426,6 +434,12 @@ public sealed class TimelineControl : Control
         {
             _dragValue = MainXToTime(point.X);
             _hasDragValue = true;
+            var now = Stopwatch.GetTimestamp();
+            if (Stopwatch.GetElapsedTime(_lastScrubPreviewTimestamp, now) >= ScrubPreviewInterval)
+            {
+                _lastScrubPreviewTimestamp = now;
+                ScrubPreviewRequested?.Invoke(this, _dragValue);
+            }
             InvalidateVisual();
         }
         else if (_dragMode == DragMode.Pan)
@@ -458,14 +472,17 @@ public sealed class TimelineControl : Control
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
+        double? seekValue = null;
         if (_dragMode == DragMode.Seek && _hasDragValue)
         {
             // 解码完成前保留用户点击的位置，避免播放头短暂返回旧位置。
             _pendingSeekValue = _dragValue;
             _hasPendingSeekValue = true;
-            SeekRequested?.Invoke(this, _dragValue);
+            seekValue = _dragValue;
         }
-        ResetDrag(e.Pointer);
+        ResetDrag(e.Pointer, cancelScrub: false);
+        if (seekValue is { } value)
+            SeekRequested?.Invoke(this, value);
         e.Handled = true;
     }
 
@@ -502,12 +519,15 @@ public sealed class TimelineControl : Control
     }
 
     private void OnPointerCaptureLost(object? sender, PointerCaptureLostEventArgs e) =>
-        ResetDrag(null);
+        ResetDrag(null, cancelScrub: true);
 
-    private void ResetDrag(IPointer? pointer)
+    private void ResetDrag(IPointer? pointer, bool cancelScrub)
     {
-        pointer?.Capture(null);
+        var wasSeeking = _dragMode == DragMode.Seek;
         _dragMode = DragMode.None;
+        if (cancelScrub && wasSeeking)
+            ScrubCanceled?.Invoke(this, EventArgs.Empty);
+        pointer?.Capture(null);
         _pressedPart = HitPart.None;
         _hasDragValue = false;
         InvalidateVisual();
