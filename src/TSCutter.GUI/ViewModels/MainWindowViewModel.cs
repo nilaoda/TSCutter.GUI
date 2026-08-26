@@ -19,6 +19,7 @@ using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.FileSystem;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models;
+using TSCutter.GUI.Rendering;
 using TSCutter.GUI.Services;
 using TSCutter.GUI.Utils;
 
@@ -740,20 +741,29 @@ public partial class MainWindowViewModel : ViewModelBase
     [NotifyPropertyChangedFor(nameof(WindowTitle))]
     public partial string VideoPath { get; set; }
 
+    private Bitmap? decodedBitmap;
+    private IBitmapFrameLease? decodedBitmapLease;
+
     public Bitmap? DecodedBitmap
     {
-        get => field;
-        set
-        {
-            if (!EqualityComparer<Bitmap?>.Default.Equals(field, value))
-            {
-                field?.Dispose();
-                field = value;
-                OnPropertyChanged();
-                SaveFrameClickCommand.NotifyCanExecuteChanged();
-                ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
-            }
-        }
+        get => decodedBitmap;
+        set => SetDecodedBitmap(value);
+    }
+
+    private void SetDecodedBitmap(Bitmap? value, IBitmapFrameLease? bitmapLease = null)
+    {
+        var previousBitmap = decodedBitmap;
+        var previousLease = decodedBitmapLease;
+
+        decodedBitmap = value;
+        decodedBitmapLease = bitmapLease;
+        OnPropertyChanged(nameof(DecodedBitmap));
+        SaveFrameClickCommand.NotifyCanExecuteChanged();
+        ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
+
+        previousLease?.Dispose();
+        if (previousLease is null && !ReferenceEquals(previousBitmap, value))
+            previousBitmap?.Dispose();
     }
 
     [ObservableProperty]
@@ -897,6 +907,9 @@ public partial class MainWindowViewModel : ViewModelBase
         await RunDecodeOperationAsync(() => _videoInstance!.SeekToTimeAsync(timeSpan));
     }
 
+    [ObservableProperty]
+    public partial IGpuFrameLease? DecodedGpuFrame { get; set; }
+
     public void BeginScrubPreview()
     {
         lock (_scrubPreviewSync)
@@ -1037,7 +1050,10 @@ public partial class MainWindowViewModel : ViewModelBase
                 }
                 else
                 {
-                    decodeResult.Bitmap.Dispose();
+                    decodeResult.BitmapLease?.Dispose();
+                    if (decodeResult.BitmapLease is null)
+                        decodeResult.Bitmap?.Dispose();
+                    decodeResult.GpuFrame?.Dispose();
                 }
             }
             catch (OperationCanceledException)
@@ -1079,7 +1095,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private void ApplyDecodeResult(DecodeResult decodeResult)
     {
         DecodedFrameSourceSize = decodeResult.SourcePixelSize;
-        DecodedBitmap = decodeResult.Bitmap;
+        DecodedGpuFrame?.Dispose();
+        DecodedGpuFrame = decodeResult.GpuFrame;
+        SetDecodedBitmap(decodeResult.Bitmap, decodeResult.BitmapLease);
         CurrentTime = decodeResult.FrameTimestamp.TotalSeconds;
     }
 
@@ -1138,7 +1156,9 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         StopAcceptingScrubPreviews();
         VideoInfoText = PleaseLoadTip;
-        DecodedBitmap = null;
+        DecodedGpuFrame?.Dispose();
+        DecodedGpuFrame = null;
+        SetDecodedBitmap(null);
         DecodedFrameSourceSize = default;
         DisposeClipThumbnails();
         Clips.Clear();

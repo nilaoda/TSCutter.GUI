@@ -8,6 +8,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
+using TSCutter.GUI.Rendering;
 
 namespace TSCutter.GUI.Controls;
 
@@ -23,6 +24,7 @@ public class ImageViewer : Control
     {
         AffectsRender<ImageViewer>(
             ImageProperty,
+            GpuFrameProperty,
             SourcePixelSizeProperty,
             ZoomProperty,
             OffsetXProperty,
@@ -30,6 +32,9 @@ public class ImageViewer : Control
     }
 
     public static readonly StyledProperty<Bitmap?> ImageProperty = AvaloniaProperty.Register<ImageViewer, Bitmap?>(nameof(Image));
+
+    public static readonly StyledProperty<IGpuFrameLease?> GpuFrameProperty =
+        AvaloniaProperty.Register<ImageViewer, IGpuFrameLease?>(nameof(GpuFrame));
 
     public static readonly StyledProperty<PixelSize> SourcePixelSizeProperty =
         AvaloniaProperty.Register<ImageViewer, PixelSize>(nameof(SourcePixelSize));
@@ -54,6 +59,12 @@ public class ImageViewer : Control
     {
         get => GetValue(ImageProperty);
         set => SetValue(ImageProperty, value);
+    }
+
+    public IGpuFrameLease? GpuFrame
+    {
+        get => GetValue(GpuFrameProperty);
+        set => SetValue(GpuFrameProperty, value);
     }
 
     public PixelSize SourcePixelSize
@@ -121,10 +132,12 @@ public class ImageViewer : Control
     
     private void FitToView()
     {
-        if (Image is null) return;
+        if (Image is null && GpuFrame is null) return;
 
         var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
-        var contentSize = GetContentPixelSize(Image.PixelSize, SourcePixelSize);
+        var contentSize = GetContentPixelSize(
+            Image?.PixelSize ?? GpuFrame?.PixelSize ?? default,
+            SourcePixelSize);
         Zoom = Math.Min(Bounds.Width / contentSize.Width, Bounds.Height / contentSize.Height) * scalingFactor;
 
         OffsetX = (Bounds.Width - contentSize.Width * Zoom / scalingFactor) / 2;
@@ -143,14 +156,16 @@ public class ImageViewer : Control
     {
         var result = base.ArrangeOverride(finalSize);
 
-        if (AutoFit && Image is not null && finalSize != _previousBounds && finalSize.Width > 0 && finalSize.Height > 0)
+        if (AutoFit && (Image is not null || GpuFrame is not null) && finalSize != _previousBounds && finalSize.Width > 0 && finalSize.Height > 0)
         {
             _previousBounds = finalSize;
             // Use Dispatcher to defer the fit call, ensuring Bounds is updated
             Dispatcher.UIThread.Post(() =>
             {
                 var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
-                var contentSize = GetContentPixelSize(Image.PixelSize, SourcePixelSize);
+                var contentSize = GetContentPixelSize(
+                    Image?.PixelSize ?? GpuFrame?.PixelSize ?? default,
+                    SourcePixelSize);
                 Zoom = Math.Min(Bounds.Width / contentSize.Width, Bounds.Height / contentSize.Height) * scalingFactor;
                 OffsetX = (Bounds.Width - contentSize.Width * Zoom / scalingFactor) / 2;
                 OffsetY = (Bounds.Height - contentSize.Height * Zoom / scalingFactor) / 2;
@@ -179,7 +194,7 @@ public class ImageViewer : Control
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (Image is null) return;
+        if (Image is null && GpuFrame is null) return;
         
         _lastDragPoint = e.GetPosition(this);
         _isDragging = true;
@@ -188,7 +203,7 @@ public class ImageViewer : Control
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (Image is null) return;
+        if (Image is null && GpuFrame is null) return;
 
         _isDragging = false;
         e.Handled = true;
@@ -196,7 +211,7 @@ public class ImageViewer : Control
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
     {
-        if (Image is null || !_isDragging) return;
+        if ((Image is null && GpuFrame is null) || !_isDragging) return;
         
         var currentPoint = e.GetPosition(this);
         OffsetX += currentPoint.X - _lastDragPoint.X;
@@ -209,7 +224,7 @@ public class ImageViewer : Control
 
     private void OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
-        if (Image is null || (DateTime.Now - _lastZoomTime).TotalMilliseconds < ZoomIntervalMs) return;
+        if ((Image is null && GpuFrame is null) || (DateTime.Now - _lastZoomTime).TotalMilliseconds < ZoomIntervalMs) return;
         
         var zoomDelta = e.Delta.Y > 0 ? 1.1 : 0.9;
         var zoomCenter = e.GetPosition(this);
@@ -241,11 +256,13 @@ public class ImageViewer : Control
         var customColorBrush = new SolidColorBrush(Colors.Black);
         dc.FillRectangle(customColorBrush, backgroundRect);
         
-        if (Image is null) return;
+        if (Image is null && GpuFrame is null) return;
 
         // Need calc with current System Scaling
         var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
-        var contentSize = GetContentPixelSize(Image.PixelSize, SourcePixelSize);
+        var contentSize = GetContentPixelSize(
+            Image?.PixelSize ?? GpuFrame?.PixelSize ?? default,
+            SourcePixelSize);
         var imgWidth = contentSize.Width * Zoom / scalingFactor;
         var imgHeight = contentSize.Height * Zoom / scalingFactor;
 
@@ -261,6 +278,19 @@ public class ImageViewer : Control
 
         if (visibleRect is not { Width: > 0, Height: > 0 }) return;
         
+        if (GpuFrame is not null)
+        {
+            // The native visual owns the GPU image; only its viewport changes
+            // while the user zooms, pans, or resizes the control.
+            if (!GpuFrame.TryAttach(this))
+                return;
+            GpuFrame.UpdateViewport(destRect);
+            return;
+        }
+
+        if (Image is null)
+            return;
+
         // Define the source rectangle based on the visible area
         var srcRect = MapVisibleRectToBitmap(visibleRect, destRect, Image.PixelSize);
 

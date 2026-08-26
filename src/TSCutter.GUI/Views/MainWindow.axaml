@@ -258,6 +258,7 @@
                                                       OffsetX="{Binding OffsetX, Mode=TwoWay}"
                                                       OffsetY="{Binding OffsetY, Mode=TwoWay}"
                                                       Image="{Binding DecodedBitmap}"
+                                                      GpuFrame="{Binding DecodedGpuFrame}"
                                                       SourcePixelSize="{Binding DecodedFrameSourceSize}"
                                                       Zoom="{Binding ZoomFactor, Mode=TwoWay}">
                                 </controls:ImageViewer>
