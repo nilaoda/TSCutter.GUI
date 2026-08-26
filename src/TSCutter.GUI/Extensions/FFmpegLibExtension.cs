@@ -91,12 +91,7 @@ public static unsafe class FFmpegLibExtension
         var softwareFrame = new Frame();
         try
         {
-            AVFrame* source = hardwareFrame;
-            AVFrame* destination = softwareFrame;
-            av_hwframe_transfer_data(destination, source, 0)
-                .ThrowIfError("Failed to transfer hardware frame to system memory.");
-            av_frame_copy_props(destination, source)
-                .ThrowIfError("Failed to copy hardware frame properties.");
+            hardwareFrame.TransferToSoftwareFrame(softwareFrame);
             return softwareFrame;
         }
         catch
@@ -104,6 +99,20 @@ public static unsafe class FFmpegLibExtension
             softwareFrame.Dispose();
             throw;
         }
+    }
+
+    /// <summary>
+    /// Transfers only the pixel data into a reusable software frame. Frame
+    /// properties are deliberately not copied: av_frame_copy_props appends
+    /// side data to an already populated destination and would grow memory on
+    /// streams carrying per-frame HDR or similar metadata.
+    /// </summary>
+    public static void TransferToSoftwareFrame(this Frame hardwareFrame, Frame softwareFrame)
+    {
+        AVFrame* source = hardwareFrame;
+        AVFrame* destination = softwareFrame;
+        av_hwframe_transfer_data(destination, source, 0)
+            .ThrowIfError("Failed to transfer hardware frame to system memory.");
     }
 
 }

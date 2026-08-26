@@ -32,7 +32,8 @@ public class AppConfig
     public string? FFmpegRootPath { get; set; }
 
     [JsonIgnore]
-    public static bool IsHardwareDecodingSupported => OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
+    public static bool IsHardwareDecodingSupported =>
+        OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
 
     internal static bool NormalizeHardwareDecodingPreference(bool requested, bool supported) => requested && supported;
 }

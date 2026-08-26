@@ -3,12 +3,14 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Media.Imaging;
 using Sdcb.FFmpeg.Codecs;
 using Sdcb.FFmpeg.Formats;
 using Sdcb.FFmpeg.Raw;
 using Sdcb.FFmpeg.Toolboxs.Extensions;
 using Sdcb.FFmpeg.Utils;
 using TSCutter.GUI.Extensions;
+using TSCutter.GUI.Rendering;
 using TSCutter.GUI.Utils;
 using static TSCutter.GUI.Utils.CommonUtil;
 
@@ -35,10 +37,15 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         : 0;
     public bool Inited { get; private set; } = false;
     public bool IsHardwareDecoding { get; private set; }
+    public bool IsGpuPresentation { get; private set; }
+    public VideoPresentationMode PresentationMode { get; private set; } = VideoPresentationMode.SoftwareBitmap;
     private string hardwareDecoderName = string.Empty;
     private bool AudioMode { get; set; } = false;
     private bool hardwareDecoderOpened;
     private readonly bool preferHardwareDecoding = enableHardwareDecoding && AppConfig.IsHardwareDecodingSupported;
+    private readonly IGpuFramePresenter gpuFramePresenter = GpuFramePresenterFactory.CreateDefault();
+    private readonly HostFramePresenter hostFramePresenter = new();
+    private Frame? reusableSoftwareFrame;
     private List<Codec> softwareDecoders = [];
     
     private FormatContext inFc;
@@ -104,6 +111,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         if (!decoderOpened)
             throw new Exception("Cant open decoder!");
 
+        Console.WriteLine($"GPU presentation: {(gpuFramePresenter.Capabilities.IsAvailable ? "available" : "fallback to bitmap")} - "
+            + gpuFramePresenter.Capabilities.UnavailableReason);
+
         try
         {
             // calc KeyFrameGap from packet-level PTS (no frame decoding needed)
@@ -146,6 +156,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
 
                     hardwareDecoderOpened = true;
                     IsHardwareDecoding = true;
+                    IsGpuPresentation = false;
+                    PresentationMode = VideoPresentationMode.HardwareCpuTransfer;
                     hardwareDecoderName = GetHardwareDeviceDisplayName(deviceType);
                     Console.WriteLine($"Hardware decoder opened: {decoder.Name} ({hardwareDecoderName})");
                     return true;
@@ -182,6 +194,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
 
                 hardwareDecoderOpened = false;
                 IsHardwareDecoding = false;
+                IsGpuPresentation = false;
+                PresentationMode = VideoPresentationMode.SoftwareBitmap;
                 hardwareDecoderName = string.Empty;
                 Console.WriteLine($"Software decoder opened: {decoder.Name}");
                 return true;
@@ -420,7 +434,10 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                 }
 
                 Console.WriteLine($"Skip[SameOrLaterFrame] keyFrame: {currentKeyFramePts}, anchorPts: {anchorPts}");
-                result.Bitmap.Dispose();
+                result.BitmapLease?.Dispose();
+                if (result.BitmapLease is null)
+                    result.Bitmap?.Dispose();
+                result.GpuFrame?.Dispose();
                 if (backward)
                     break;
                 continue;
@@ -563,11 +580,15 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         inFc?.Dispose();
         videoDecoder?.Close();
         videoDecoder?.Dispose();
+        reusableSoftwareFrame?.Dispose();
+        reusableSoftwareFrame = null;
+        hostFramePresenter.Dispose();
     }
 
     public void Dispose()
     {
         Close();
+        gpuFramePresenter.Dispose();
     }
 
     private long TimeSpanToPts(TimeSpan timeSpan)
@@ -622,13 +643,49 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                     continue;
 #pragma warning restore CS0618 // Obsolete
 
-                // 硬件帧位于 GPU 内存，先回读到系统内存，再复用原有的位图转换逻辑。
+                // Give a platform presenter the first chance to consume the
+                // native surface. Only an explicit presenter miss reaches the
+                // CPU transfer fallback below.
+                if (!AudioMode && frame.HwFramesContext != null)
+                {
+                    try
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        if (gpuFramePresenter.TryPresent(frame, out var gpuFrame) && gpuFrame != null)
+                        {
+                            IsHardwareDecoding = true;
+                            IsGpuPresentation = true;
+                            PresentationMode = VideoPresentationMode.HardwareGpu;
+                            return new DecodeResult
+                            {
+                                Bitmap = null,
+                                GpuFrame = gpuFrame,
+                                SourcePixelSize = new Avalonia.PixelSize(frame.Width, frame.Height),
+                                FrameTimestamp = PtsToTimeSpan(pts),
+                                PresentationMode = PresentationMode,
+                            };
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        if (exception is OperationCanceledException)
+                            throw;
+                        Console.WriteLine($"GPU frame presentation unavailable; using CPU fallback: {exception.Message}");
+                    }
+                }
+
+                // Hardware frame fallback: copy to system memory only when
+                // the native presenter rejected the frame or is unavailable.
                 Frame? softwareFrame = null;
                 try
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     if (!AudioMode && frame.HwFramesContext != null)
-                        softwareFrame = frame.TransferToSoftwareFrame();
+                    {
+                        reusableSoftwareFrame ??= new Frame();
+                        frame.TransferToSoftwareFrame(reusableSoftwareFrame);
+                        softwareFrame = reusableSoftwareFrame;
+                    }
                 }
                 catch (Exception exception)
                 {
@@ -637,24 +694,54 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                     // 硬件帧无法回读通常表示设备链路失效，此时才立即切换软件解码器。
                     throw new HardwareDecodeException(exception, pts);
                 }
-                using (softwareFrame)
                 {
-                    IsHardwareDecoding = softwareFrame != null;
+                    IBitmapFrameLease? bitmapLease = null;
+                    IsHardwareDecoding = hardwareDecoderOpened;
+                    IsGpuPresentation = false;
+                    PresentationMode = hardwareDecoderOpened
+                        ? VideoPresentationMode.HardwareCpuTransfer
+                        : VideoPresentationMode.SoftwareBitmap;
                     Avalonia.Media.Imaging.Bitmap bitmap;
                     try
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        bitmap = AudioMode
-                            ? ImageUtil.BlankImage
-                            : maxWidth > 0 && maxHeight > 0
-                                ? ImageUtil.CreateScaledBitmapFromFrame(
+                        if (AudioMode)
+                        {
+                            bitmap = ImageUtil.BlankImage;
+                        }
+                        else
+                        {
+                            try
+                            {
+                                hostFramePresenter.TryConvert(
                                     softwareFrame ?? frame,
                                     maxWidth,
-                                    maxHeight)
-                                : ImageUtil.CreateBitmapFromFrame(softwareFrame ?? frame);
+                                    maxHeight,
+                                    out bitmapLease);
+                            }
+                            catch (Exception hostException)
+                            {
+                                Console.WriteLine($"Host bitmap reuse unavailable; using allocation fallback: {hostException.Message}");
+                            }
+
+                            if (bitmapLease is not null)
+                            {
+                                bitmap = bitmapLease.Bitmap;
+                            }
+                            else
+                            {
+                                bitmap = maxWidth > 0 && maxHeight > 0
+                                    ? ImageUtil.CreateScaledBitmapFromFrame(
+                                        softwareFrame ?? frame,
+                                        maxWidth,
+                                        maxHeight)
+                                    : ImageUtil.CreateBitmapFromFrame(softwareFrame ?? frame);
+                            }
+                        }
                     }
                     catch (Exception exception)
                     {
+                        bitmapLease?.Dispose();
                         if (exception is OperationCanceledException)
                             throw;
                         // 位图绘制属于界面链路，失败时不能据此判定硬件解码器不可用。
@@ -664,10 +751,12 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                     return new DecodeResult()
                     {
                         Bitmap = bitmap,
+                        BitmapLease = bitmapLease,
                         SourcePixelSize = AudioMode
                             ? bitmap.PixelSize
                             : new Avalonia.PixelSize(frame.Width, frame.Height),
                         FrameTimestamp = PtsToTimeSpan(pts),
+                        PresentationMode = PresentationMode,
                     };
                 }
             }
