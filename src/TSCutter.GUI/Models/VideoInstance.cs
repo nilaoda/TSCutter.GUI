@@ -406,47 +406,52 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
 
         foreach (var packet in inFc.ReadPackets(videoStreamIndex))
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
+            try
             {
-                continue;
-            }
-            if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
-            {
-                // Console.WriteLine($"Skip[NonKey] packet: {packet.Pts}");
-                continue;
-            }
-
-            Console.WriteLine($"Current packet: {packet.Pts}");
-            // PositionInFile = packet.Position;
-            // Console.WriteLine($"Current packet positon: {packet.Position}");
-
-            var result = DecodePacket(packet, packet.Position, cancellationToken, maxWidth, maxHeight);
-            if (result != null)
-            {
-                if (IsDecodedFrameAtRequestedSide(
-                        backward,
-                        requireForwardAfterAnchor,
-                        currentKeyFramePts,
-                        anchorPts))
+                cancellationToken.ThrowIfCancellationRequested();
+                if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
+                    continue;
+                if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
                 {
-                    return result;
+                    // Console.WriteLine($"Skip[NonKey] packet: {packet.Pts}");
+                    continue;
                 }
 
-                Console.WriteLine($"Skip[SameOrLaterFrame] keyFrame: {currentKeyFramePts}, anchorPts: {anchorPts}");
-                result.BitmapLease?.Dispose();
-                if (result.BitmapLease is null)
-                    result.Bitmap?.Dispose();
-                result.GpuFrame?.Dispose();
-                if (backward)
-                    break;
-                continue;
+                Console.WriteLine($"Current packet: {packet.Pts}");
+                // PositionInFile = packet.Position;
+                // Console.WriteLine($"Current packet positon: {packet.Position}");
+
+                var result = DecodePacket(packet, packet.Position, cancellationToken, maxWidth, maxHeight);
+                if (result != null)
+                {
+                    if (IsDecodedFrameAtRequestedSide(
+                            backward,
+                            requireForwardAfterAnchor,
+                            currentKeyFramePts,
+                            anchorPts))
+                    {
+                        return result;
+                    }
+
+                    Console.WriteLine($"Skip[SameOrLaterFrame] keyFrame: {currentKeyFramePts}, anchorPts: {anchorPts}");
+                    result.BitmapLease?.Dispose();
+                    if (result.BitmapLease is null)
+                        result.Bitmap?.Dispose();
+                    result.GpuFrame?.Dispose();
+                    if (backward)
+                        break;
+                    continue;
+                }
+                if (failureCount++ > MAX_FAILURE_COUT)
+                    ThrowDecodeFailure();
+                Console.WriteLine("result is null");
             }
-            if (failureCount++ > MAX_FAILURE_COUT)
+            finally
             {
-                ThrowDecodeFailure();
+                // ReadPackets 会复用同一个原生 AVPacket。所有路径都必须
+                // 在读取下一个包前释放当前负载，避免 native 内存持续增长。
+                packet.Unref();
             }
-            Console.WriteLine("result is null");
         }
 
         // No suitable keyframe found, retry by seeking slightly earlier
@@ -555,14 +560,21 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         var keyFramePtsList = new List<long>();
         foreach (var packet in inFc.ReadPackets(videoStreamIndex))
         {
-            if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
-                continue;
-            if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
-                continue;
+            try
+            {
+                if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
+                    continue;
+                if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
+                    continue;
 
-            keyFramePtsList.Add(packet.Pts);
-            if (keyFramePtsList.Count >= requiredKeyFrames)
-                break;
+                keyFramePtsList.Add(packet.Pts);
+                if (keyFramePtsList.Count >= requiredKeyFrames)
+                    break;
+            }
+            finally
+            {
+                packet.Unref();
+            }
         }
 
         if (keyFramePtsList.Count < 2)
@@ -615,7 +627,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             cancellationToken.ThrowIfCancellationRequested();
             using Frame destRef = new Frame();
             // 1 packet -> 0..N frame
-            foreach (var frame in videoDecoder.DecodePacket(packet, destRef))
+            foreach (var frame in videoDecoder.DecodePacket(packet, destRef, unref: false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (firstFrameTimestamp == -1)
