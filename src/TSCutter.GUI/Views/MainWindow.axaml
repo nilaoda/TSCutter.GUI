@@ -15,6 +15,7 @@
         x:DataType="vm:MainWindowViewModel"
         x:Name="CutterMainWindow"
         Closing="Window_OnClosing"
+        Loaded="Window_OnLoaded"
         Icon="/Assets/logo.ico"
         DataContext="{x:Static local:App.MainWindow}"
         WindowStartupLocation="CenterScreen"
@@ -24,12 +25,6 @@
         <converters:SecondsToStringConverter x:Key="SecondsConverter" />
     </Window.Resources>
     
-    <Interaction.Behaviors>
-        <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
-            <InvokeCommandAction Command="{Binding ProcessCommandLineCommand}" />
-        </RoutedEventTriggerBehavior>
-    </Interaction.Behaviors>
-
     <Window.Styles>
         <Style Selector="ToolTip">
             <Setter Property="FontWeight" Value="Normal" />
@@ -70,7 +65,7 @@
         </NativeMenu>
     </NativeMenu.Menu>
 
-    <Grid DragDrop.AllowDrop="True" RowDefinitions="Auto, *">
+    <Grid DragDrop.AllowDrop="True" DragDrop.DragEnter="Root_OnDragEnter" DragDrop.DragLeave="Root_OnDragLeave" RowDefinitions="Auto, *">
         <Grid.Resources>
             <ResourceDictionary>
                 <ResourceDictionary.ThemeDictionaries>
@@ -91,14 +86,6 @@
                 </ResourceDictionary.ThemeDictionaries>
             </ResourceDictionary>
         </Grid.Resources>    
-        <Interaction.Behaviors>
-            <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DragEnterEvent}">
-                <ChangePropertyAction TargetObject="{Binding ElementName=DropMask}" PropertyName="IsVisible" Value="True" />
-            </RoutedEventTriggerBehavior>
-            <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DragLeaveEvent}">
-                <ChangePropertyAction TargetObject="{Binding ElementName=DropMask}" PropertyName="IsVisible" Value="False" />
-            </RoutedEventTriggerBehavior>
-        </Interaction.Behaviors>
         <ClassicBorderDecorator Grid.Row="0" DockPanel.Dock="Top" BorderThickness="2" BorderStyle="Etched">
             <DockPanel Margin="0, 2">
                 <commonControls:RebarHandle />
@@ -177,16 +164,9 @@
         <Grid Grid.Row="1" ZIndex="2"
               IsVisible="False"
               DragDrop.AllowDrop="True"
+              DragDrop.Drop="DropMask_OnDrop"
+              DragDrop.DragOver="DropMask_OnDragOver"
               x:Name="DropMask">
-              <Interaction.Behaviors>
-                  <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DropEvent}">
-                      <InvokeCommandAction Command="{Binding DropCommand}" PassEventArgsToCommand="True" />
-                      <ChangePropertyAction PropertyName="IsVisible" Value="False" />
-                  </RoutedEventTriggerBehavior>
-                  <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DragOverEvent}">
-                      <InvokeCommandAction Command="{Binding DragOverCommand}" PassEventArgsToCommand="True" />
-                  </RoutedEventTriggerBehavior>
-              </Interaction.Behaviors>
             <Border Background="{DynamicResource MaskBackgroundBrush}" Opacity="0.9" />
             <TextBlock Text="{DynamicResource String.DropToolTip}" VerticalAlignment="Center" HorizontalAlignment="Center" />
             <Rectangle Stroke="Gray" StrokeThickness="2" StrokeDashArray="3, 4" Width="200" Height="100" RadiusX="10" RadiusY="10"/>

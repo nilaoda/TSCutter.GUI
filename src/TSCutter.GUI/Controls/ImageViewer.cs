@@ -118,7 +118,7 @@ public class ImageViewer : Control
     /// </summary>
     public PixelSize GetDecodeTargetSize()
     {
-        var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
+        var scalingFactor = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
         return CalculateDecodeTargetSize(Bounds.Size, scalingFactor);
     }
 
@@ -134,7 +134,7 @@ public class ImageViewer : Control
     {
         if (Image is null && GpuFrame is null) return;
 
-        var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
+        var scalingFactor = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
         var contentSize = GetContentPixelSize(
             Image?.PixelSize ?? GpuFrame?.PixelSize ?? default,
             SourcePixelSize);
@@ -162,7 +162,7 @@ public class ImageViewer : Control
             // Use Dispatcher to defer the fit call, ensuring Bounds is updated
             Dispatcher.UIThread.Post(() =>
             {
-                var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
+                var scalingFactor = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
                 var contentSize = GetContentPixelSize(
                     Image?.PixelSize ?? GpuFrame?.PixelSize ?? default,
                     SourcePixelSize);
@@ -259,7 +259,7 @@ public class ImageViewer : Control
         if (Image is null && GpuFrame is null) return;
 
         // Need calc with current System Scaling
-        var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
+            var scalingFactor = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
         var contentSize = GetContentPixelSize(
             Image?.PixelSize ?? GpuFrame?.PixelSize ?? default,
             SourcePixelSize);

@@ -10,6 +10,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
+using Avalonia.Input.Platform;
 using Avalonia.Media.Imaging;
 using Classic.CommonControls.Dialogs;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -1272,9 +1273,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private string? CheckDropDataIsTsFile(DragEventArgs? e)
     {
         if (e is null) return null;
-        if (!e.Data.Contains(DataFormats.Files)) return null;
-        
-        var fileNames = e.Data.GetFiles()?.ToArray();
+        if (!e.DataTransfer.Contains(DataFormat.File)) return null;
+
+        var fileNames = e.DataTransfer.TryGetFiles()?.ToArray();
         if (fileNames is not { Length: > 0 }) return null;
         var filePath = fileNames[0].Path.LocalPath;
         var ext = Path.GetExtension(filePath);

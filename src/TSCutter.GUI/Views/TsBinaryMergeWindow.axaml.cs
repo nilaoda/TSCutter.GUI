@@ -77,13 +77,11 @@ public partial class TsBinaryMergeWindow : ClassicWindow
 
     private static string[] GetDroppedPaths(DragEventArgs eventArgs)
     {
-#pragma warning disable CS0618
-        if (!eventArgs.Data.Contains(DataFormats.Files))
+        if (!eventArgs.DataTransfer.Contains(DataFormat.File))
             return [];
-        return eventArgs.Data.GetFiles()?
+        return eventArgs.DataTransfer.TryGetFiles()?
             .Select(item => item.Path.LocalPath)
             .ToArray() ?? [];
-#pragma warning restore CS0618
     }
 
     private static bool IsSupportedDroppedPath(string path) =>
