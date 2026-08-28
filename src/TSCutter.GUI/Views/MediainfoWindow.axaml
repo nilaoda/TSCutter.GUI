@@ -14,14 +14,9 @@
         MinWidth="480"
         MinHeight="320"
         WindowStartupLocation="CenterOwner"
+        Loaded="Window_OnLoaded"
         CanMinimize="False"
         CanResize="True">
-
-    <Interaction.Behaviors>
-        <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
-            <InvokeCommandAction Command="{Binding BuildInfoCommand}" />
-        </RoutedEventTriggerBehavior>
-    </Interaction.Behaviors>
 
     <DockPanel Margin="8" LastChildFill="True">
 

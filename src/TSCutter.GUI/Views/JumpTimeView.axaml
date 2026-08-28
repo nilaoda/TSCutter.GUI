@@ -2,7 +2,6 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:ia="using:Avalonia.Xaml.Interactivity"
         xmlns:local="clr-namespace:TSCutter.GUI"
         xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
         mc:Ignorable="d"
@@ -26,12 +25,8 @@
                  VerticalAlignment="Center"
                  HorizontalAlignment="Stretch"
                  Watermark="00:00:00"
-                 Focusable="True">
-            <ia:Interaction.Behaviors>
-                <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
-                    <InvokeCommandAction Command="{Binding DelayFocusCommand}" PassEventArgsToCommand="True" />
-                </RoutedEventTriggerBehavior>
-            </ia:Interaction.Behaviors>
+                 Focusable="True"
+                 Loaded="InputTextBox_OnLoaded">
         </TextBox>
 
         <!-- 按钮区 -->
