@@ -127,4 +127,10 @@ public partial class MainWindow : ClassicWindow
 
     private void Timeline_OnFitRequested(object? sender, EventArgs e) =>
         ViewModel.TimelineViewport.Fit();
+
+    public void RestoreFocusAfterOverview()
+    {
+        Activate();
+        MainTimeline.Focus();
+    }
 }

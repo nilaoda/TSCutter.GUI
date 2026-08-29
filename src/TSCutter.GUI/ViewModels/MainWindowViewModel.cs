@@ -43,6 +43,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
     private VideoInstance? _videoInstance;
+    private KeyFrameOverviewWindowViewModel? keyFrameOverviewWindow;
     private readonly IDialogService _dialogService;
     private readonly IConfigurationService _configService;
     private readonly object _scrubPreviewSync = new();
@@ -567,6 +568,43 @@ public partial class MainWindowViewModel : ViewModelBase
         var dialogViewModel = _dialogService.CreateViewModel<TsPacketViewerWindowViewModel>();
         dialogViewModel.FilePath = result[0].LocalPath;
         _dialogService.Show(null, dialogViewModel);
+    }
+
+    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    private async Task KeyFrameOverviewClickAsync()
+    {
+        keyFrameOverviewWindow?.CloseWindow();
+        var dialogViewModel = _dialogService.CreateViewModel<KeyFrameOverviewWindowViewModel>();
+        dialogViewModel.FilePath = VideoPath;
+        keyFrameOverviewWindow = dialogViewModel;
+        try
+        {
+            // 等待窗口完全关闭后再执行 seek，确保主窗口不会与总览共用输入状态。
+            await _dialogService.ShowDialogAsync(this, dialogViewModel);
+            await dialogViewModel.ClosedTask;
+            if (dialogViewModel.SelectedTime is { } time)
+                await OnOverviewTimeSelected(time);
+        }
+        finally
+        {
+            if (ReferenceEquals(keyFrameOverviewWindow, dialogViewModel))
+                keyFrameOverviewWindow = null;
+        }
+    }
+
+    private async Task OnOverviewTimeSelected(TimeSpan time)
+    {
+        if (!IsVideoInitialized)
+            return;
+        try
+        {
+            await CompleteScrubPreviewAsync();
+            await SeekToTimeAndDrawFrameAsync(time);
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"Overview seek failed: {exception.Message}");
+        }
     }
 
     [RelayCommand]
@@ -1155,6 +1193,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ClearVars()
     {
+        keyFrameOverviewWindow?.CloseWindow();
+        keyFrameOverviewWindow = null;
         StopAcceptingScrubPreviews();
         VideoInfoText = PleaseLoadTip;
         DecodedGpuFrame?.Dispose();
@@ -1171,6 +1211,7 @@ public partial class MainWindowViewModel : ViewModelBase
         TimelineViewport.Reset(0, 0);
         DecodeCost = 0L;
         IsHardwareDecoding = false;
+        KeyFrameOverviewClickCommand.NotifyCanExecuteChanged();
     }
 
     private async Task LoadVideoAsync()
@@ -1196,6 +1237,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 CloseVideoClickCommand.NotifyCanExecuteChanged();
                 SaveFrameClickCommand.NotifyCanExecuteChanged();
                 ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
+                KeyFrameOverviewClickCommand.NotifyCanExecuteChanged();
 
                 // decode
                 await DrawNextFrameCoreAsync(1);
@@ -1288,6 +1330,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public void Close()
     {
+        keyFrameOverviewWindow?.CloseWindow();
+        keyFrameOverviewWindow = null;
         Task scrubWorker;
         VideoInstance? videoInstance;
         lock (_scrubPreviewSync)

@@ -24,6 +24,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     };
 
     private const int MAX_FAILURE_COUT = 100;
+    private const int HardwareNoFrameFailureThreshold = 3;
+    private const int MaximumEstimatedKeyFrames = 100_000;
     private const int AV_PKT_FLAG_KEY_FRAME = 0x0001;
     private static readonly AVHWDeviceType[] MacHardwareDevices = [AVHWDeviceType.Videotoolbox];
     private static readonly AVHWDeviceType[] WindowsHardwareDevices =
@@ -442,7 +444,11 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                         break;
                     continue;
                 }
-                if (failureCount++ > MAX_FAILURE_COUT)
+                failureCount++;
+                // 硬解设备在首帧初始化失败时通常只返回空结果，不会抛出异常。
+                // 连续几个关键包都没有帧即可判定硬解链路不可用，及时切换软件解码。
+                if (failureCount > MAX_FAILURE_COUT
+                    || (hardwareDecoderOpened && failureCount >= HardwareNoFrameFailureThreshold))
                     ThrowDecodeFailure();
                 Console.WriteLine("result is null");
             }
@@ -506,6 +512,44 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     public double GetVideoDurationInSeconds()
     {
         return timelineDurationSeconds;
+    }
+
+    /// <summary>
+    /// 创建轻量的、基于时间的总览索引。不扫描整个输入文件，只有 tile
+    /// 进入可视范围时，才将对应时间点解析为实际关键帧。
+    /// </summary>
+    internal IReadOnlyList<KeyFrameIndexEntry> CreateEstimatedKeyFrameIndex()
+    {
+        if (AudioMode || timelineDurationSeconds <= 0)
+            return [];
+
+        var interval = EstimatedKeyFrameIntervalSeconds;
+        if (!double.IsFinite(interval) || interval <= 0)
+            interval = 1;
+
+        var estimatedCount = Math.Ceiling(timelineDurationSeconds / interval);
+        var count = estimatedCount >= MaximumEstimatedKeyFrames
+            ? MaximumEstimatedKeyFrames
+            : Math.Max(1, (int)estimatedCount);
+        if (estimatedCount >= MaximumEstimatedKeyFrames)
+        {
+            count = MaximumEstimatedKeyFrames;
+            interval = timelineDurationSeconds / count;
+        }
+
+        var entries = new List<KeyFrameIndexEntry>(count);
+        for (var index = 0; index < count; index++)
+        {
+            var timestamp = Math.Min(timelineDurationSeconds, index * interval);
+            var time = TimeSpan.FromSeconds(timestamp);
+            entries.Add(new KeyFrameIndexEntry(
+                index,
+                TimeSpanToPts(time),
+                time,
+                FilePosition: -1));
+        }
+
+        return entries;
     }
 
     public string GetVideoInfoText()
@@ -643,8 +687,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                 if (!AudioMode && pts < 0)
                     pts = frame.BestEffortTimestamp;
                 
-                Console.WriteLine($"Current keyFrame: {pts}");
                 currentKeyFramePts = pts;
+                Console.WriteLine($"Current keyFrame: {pts}");
                 var pktPosition = frame.PktPosition;
                 if (!AudioMode && pktPosition == -1)
                     pktPosition = packetPosition;
@@ -653,11 +697,15 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                 Console.WriteLine($"Current keyFrame PktPosition: {pktPosition}");
                 if (AudioMode && pktPosition == -1)
                     continue;
+
+                // 成功打开硬件解码器并不代表当前编码器一定输出了硬件帧。
+                // VideoToolbox/D3D11 的部分失败只会在首帧初始化时才报告，
+                // 此时解码器其实已经完成打开。
+                var isHardwareFrame = !AudioMode && frame.HwFramesContext != null;
 #pragma warning restore CS0618 // Obsolete
 
-                // Give a platform presenter the first chance to consume the
-                // native surface. Only an explicit presenter miss reaches the
-                // CPU transfer fallback below.
+                // 优先让平台 presenter 直接使用原生 surface。只有 presenter
+                // 明确无法处理时，才进入下面的 CPU 回读兜底路径。
                 if (!AudioMode && frame.HwFramesContext != null)
                 {
                     try
@@ -686,8 +734,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                     }
                 }
 
-                // Hardware frame fallback: copy to system memory only when
-                // the native presenter rejected the frame or is unavailable.
+                // 硬件帧兜底：仅当原生 presenter 拒绝处理或不可用时，
+                // 才将帧复制到系统内存。
                 Frame? softwareFrame = null;
                 try
                 {
@@ -708,9 +756,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                 }
                 {
                     IBitmapFrameLease? bitmapLease = null;
-                    IsHardwareDecoding = hardwareDecoderOpened;
+                    IsHardwareDecoding = isHardwareFrame;
                     IsGpuPresentation = false;
-                    PresentationMode = hardwareDecoderOpened
+                    PresentationMode = isHardwareFrame
                         ? VideoPresentationMode.HardwareCpuTransfer
                         : VideoPresentationMode.SoftwareBitmap;
                     Avalonia.Media.Imaging.Bitmap bitmap;
@@ -784,6 +832,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         catch (Exception e)
         {
             Console.WriteLine(e);
+            if (hardwareDecoderOpened)
+                throw new HardwareDecodeException(e, currentKeyFramePts);
             // 局部码流错误在硬解和软解下都可能出现，继续尝试后续关键帧。
             return null;
         }
