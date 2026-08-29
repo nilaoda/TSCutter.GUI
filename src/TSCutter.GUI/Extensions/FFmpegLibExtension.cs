@@ -102,13 +102,16 @@ public static unsafe class FFmpegLibExtension
     }
 
     /// <summary>
-    /// Transfers only the pixel data into a reusable software frame. Frame
-    /// properties are deliberately not copied: av_frame_copy_props appends
-    /// side data to an already populated destination and would grow memory on
-    /// streams carrying per-frame HDR or similar metadata.
+    /// 只将像素数据传输到可复用的软件帧。这里故意不复制帧属性：
+    /// av_frame_copy_props 会向已有目标追加 side data，带有逐帧 HDR
+    /// 或类似元数据的流会因此持续增长内存。
     /// </summary>
     public static void TransferToSoftwareFrame(this Frame hardwareFrame, Frame softwareFrame)
     {
+        // av_hwframe_transfer_data 可能分配新的目标缓冲区。目标帧会在拖动预览
+        // 和总览路径中复用，因此先释放旧缓冲区，避免每次硬件到 CPU 的传输
+        // 都保留一张完整分辨率的帧。
+        softwareFrame.Unref();
         AVFrame* source = hardwareFrame;
         AVFrame* destination = softwareFrame;
         av_hwframe_transfer_data(destination, source, 0)

@@ -43,6 +43,8 @@
     <x:String x:Key="String.ToolBar.ZoomOut">Zoom Out</x:String>
     <x:String x:Key="String.ToolBar.OriginalSize">1:1</x:String>
     <x:String x:Key="String.ToolBar.Fit">Fit</x:String>
+    <x:String x:Key="String.ToolBar.KeyFrameOverviewTip">Show Key Frame Overview</x:String>
+    <x:String x:Key="String.ToolBar.KeyFrameOverview">Overview</x:String>
     <x:String x:Key="String.ToolBar.SaveFrameTip">Save Frame</x:String>
     <x:String x:Key="String.ToolBar.SaveFrame">Capture</x:String>
     <x:String x:Key="String.ToolBar.MediaInfoTip">Show Media Info</x:String>
@@ -203,6 +205,7 @@
     <x:String x:Key="String.Menu.TsMultiSourceRepair">TS _Multi-source Repair...</x:String>
     <x:String x:Key="String.Menu.TsBinaryMerge">TS _Binary Merge...</x:String>
     <x:String x:Key="String.Menu.TsPacketViewer">TS Packet _Viewer...</x:String>
+    <x:String x:Key="String.Menu.KeyFrameOverview">Key Frame _Overview...</x:String>
     <x:String x:Key="String.TsRepair.Title">TS Multi-source Repair</x:String>
     <x:String x:Key="String.TsRepair.Sources">Source files</x:String>
     <x:String x:Key="String.TsRepair.OpenFiles">Add TS source files</x:String>
@@ -773,6 +776,19 @@
     <x:String x:Key="String.TsPacketViewer.Status.InvalidPacket">Enter a packet number within the file range.</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.InvalidOffset">Enter a decimal or 0x-prefixed hexadecimal offset within the TS data.</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.Failed">Unable to read the file: {0}</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Title">Key Frame Overview</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Sampling">Sampling:</x:String>
+    <x:String x:Key="String.KeyFrameOverview.TileSize">Tile size:</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Hint">Scroll to browse the video, then double-click a thumbnail to jump to that point.</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Sampling.Automatic">Automatic (up to 500)</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Sampling.All">Every key frame</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Sampling.Every2">Every 2 key frames</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Sampling.Every5">Every 5 key frames</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Sampling.Every10">Every 10 key frames</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Status.Scanning">Preparing overview...</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Status.Ready">About {0} key frames estimated; showing {1} frames.</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Status.Cancelled">Overview cancelled.</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Status.Failed">Unable to build overview: {0}</x:String>
     <x:String x:Key="String.TsPacketViewer.Column.Packet">Packet</x:String>
     <x:String x:Key="String.TsPacketViewer.Column.Offset">Offset</x:String>
     <x:String x:Key="String.TsPacketViewer.Column.Stream">Stream</x:String>

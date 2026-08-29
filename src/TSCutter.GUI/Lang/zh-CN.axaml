@@ -43,6 +43,8 @@
     <x:String x:Key="String.ToolBar.ZoomOut">缩小</x:String>
     <x:String x:Key="String.ToolBar.OriginalSize">1:1</x:String>
     <x:String x:Key="String.ToolBar.Fit">适应</x:String>
+    <x:String x:Key="String.ToolBar.KeyFrameOverviewTip">显示关键帧总览</x:String>
+    <x:String x:Key="String.ToolBar.KeyFrameOverview">总览</x:String>
     <x:String x:Key="String.ToolBar.SaveFrameTip">保存当前帧</x:String>
     <x:String x:Key="String.ToolBar.SaveFrame">截图</x:String>
     <x:String x:Key="String.ToolBar.MediaInfoTip">显示媒体信息</x:String>
@@ -203,6 +205,7 @@
     <x:String x:Key="String.Menu.TsMultiSourceRepair">TS 多源修复(_M)...</x:String>
     <x:String x:Key="String.Menu.TsBinaryMerge">TS 二进制合并(_B)...</x:String>
     <x:String x:Key="String.Menu.TsPacketViewer">TS 包查看器(_V)...</x:String>
+    <x:String x:Key="String.Menu.KeyFrameOverview">关键帧总览...</x:String>
     <x:String x:Key="String.TsRepair.Title">TS 多源修复</x:String>
     <x:String x:Key="String.TsRepair.Sources">来源文件</x:String>
     <x:String x:Key="String.TsRepair.OpenFiles">添加 TS 来源文件</x:String>
@@ -773,6 +776,19 @@
     <x:String x:Key="String.TsPacketViewer.Status.InvalidPacket">请输入文件范围内的包编号。</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.InvalidOffset">请输入 TS 数据范围内的十进制偏移或以 0x 开头的十六进制偏移。</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.Failed">无法读取文件：{0}</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Title">关键帧总览</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Sampling">采样：</x:String>
+    <x:String x:Key="String.KeyFrameOverview.TileSize">缩略图大小：</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Hint">滚动浏览视频画面，双击缩略图跳转到对应位置。</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Sampling.Automatic">自动（最多 500 张）</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Sampling.All">每个关键帧</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Sampling.Every2">每 2 个关键帧</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Sampling.Every5">每 5 个关键帧</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Sampling.Every10">每 10 个关键帧</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Status.Scanning">正在准备总览...</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Status.Ready">预计约有 {0} 个关键帧，当前显示 {1} 个画面。</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Status.Cancelled">总览已取消。</x:String>
+    <x:String x:Key="String.KeyFrameOverview.Status.Failed">构建总览失败：{0}</x:String>
     <x:String x:Key="String.TsPacketViewer.Column.Packet">包编号</x:String>
     <x:String x:Key="String.TsPacketViewer.Column.Offset">偏移</x:String>
     <x:String x:Key="String.TsPacketViewer.Column.Stream">流</x:String>

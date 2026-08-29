@@ -41,6 +41,7 @@ public partial class App : Application
         SplatRegistrations.Register<TsMultiSourceRepairWindowViewModel>();
         SplatRegistrations.Register<TsBinaryMergeWindowViewModel>();
         SplatRegistrations.Register<TsPacketViewerWindowViewModel>();
+        SplatRegistrations.Register<KeyFrameOverviewWindowViewModel>();
         SplatRegistrations.Register<TsRemuxWindowViewModel>();
         SplatRegistrations.Register<TsEsExtractorWindowViewModel>();
         SplatRegistrations.Register<AboutWindowViewModel>();

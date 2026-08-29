@@ -97,6 +97,8 @@
                         <MenuItem Header="{DynamicResource String.Menu.SaveClip}"
                                   Command="{Binding SaveVideoClickCommand}"
                                   InputGesture="{OnPlatform Ctrl+S, macOS=⌘+S}" />
+                        <MenuItem Header="{DynamicResource String.Menu.KeyFrameOverview}"
+                                  Command="{Binding KeyFrameOverviewClickCommand}" />
                         <MenuItem Header="{DynamicResource String.AddToQueue}"
                                   Command="{Binding AddToQueueCommand}" />
                         <MenuItem Header="{DynamicResource String.MergeClips.Menu}"
@@ -215,6 +217,10 @@
                                                       LargeIcon="/Assets/fit.png"
                                                       Text="{DynamicResource String.ToolBar.Fit}"
                                                       Command="{Binding FitCommand, ElementName=ImageViewer}" />
+                        <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.KeyFrameOverviewTip}"
+                                                      LargeIcon="/Assets/keyframe_overview.png"
+                                                      Text="{DynamicResource String.ToolBar.KeyFrameOverview}"
+                                                      Command="{Binding KeyFrameOverviewClickCommand}" />
                         <Separator />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.SaveFrameTip}"
                                                       LargeIcon="/Assets/kodak_imaging-0.png"

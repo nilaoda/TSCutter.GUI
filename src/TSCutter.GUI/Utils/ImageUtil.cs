@@ -100,6 +100,29 @@ public static class ImageUtil
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(width);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(height);
 
+        // 对常见的 16:9 画面，总览解码器已经直接输出目标尺寸。
+        // 这里在 CPU 上复制，避免创建 RenderTargetBitmap；其后端资源缓存
+        // 可能在长列表滚动时保留大量已经 Dispose 的纹理。
+        if (source.PixelSize == new PixelSize(width, height))
+        {
+            var copy = new WriteableBitmap(
+                new PixelSize(width, height),
+                new Vector(96, 96),
+                PixelFormat.Bgra8888,
+                AlphaFormat.Opaque);
+            try
+            {
+                using var framebuffer = copy.Lock();
+                source.CopyPixels(framebuffer);
+                return copy;
+            }
+            catch
+            {
+                copy.Dispose();
+                throw;
+            }
+        }
+
         var thumbnail = new RenderTargetBitmap(new PixelSize(width, height), new Vector(96, 96));
         try
         {
