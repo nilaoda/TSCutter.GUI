@@ -52,8 +52,8 @@
     <x:String x:Key="String.Table.OutputSize">Output Size</x:String>
     <x:String x:Key="String.Table.OutputPath">Output Path</x:String>
     <x:String x:Key="String.Table.Status">Status</x:String>
-    <x:String x:Key="String.Navigate.MarkStart">Mark Start</x:String>
-    <x:String x:Key="String.Navigate.MarkEnd">Mark End</x:String>
+    <x:String x:Key="String.Navigate.MarkStart">Mark Start (I)</x:String>
+    <x:String x:Key="String.Navigate.MarkEnd">Mark End (O)</x:String>
     <x:String x:Key="String.Navigate.AddClip">Add Clip</x:String>
     <x:String x:Key="String.Navigate.RemoveClip">Remove Clip</x:String>
     <x:String x:Key="String.Navigate.Previous20">Previous 20</x:String>

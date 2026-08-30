@@ -411,10 +411,31 @@ public partial class MainWindowViewModel : ViewModelBase
         if (SelectedClip!.StartTime >= CurrentTime)
         {
             SelectedClip!.StartTime = 0;
+            SelectedClip!.StartPts = 0;
             SelectedClip!.StartPosition = 0;
             SelectedClip!.ReplaceStartThumbnail(null);
         }
         NotifyClipSelectionChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    private void MarkClipStartShortcut()
+    {
+        EnsureSelectedClip();
+        MarkClipStart();
+    }
+
+    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    private void MarkClipEndShortcut()
+    {
+        EnsureSelectedClip();
+        MarkClipEnd();
+    }
+
+    private void EnsureSelectedClip()
+    {
+        if (SelectedClip is null)
+            AddClip();
     }
 
     private Bitmap? CreateCurrentFrameThumbnail() => DecodedBitmap is { } bitmap
@@ -1212,6 +1233,8 @@ public partial class MainWindowViewModel : ViewModelBase
         DecodeCost = 0L;
         IsHardwareDecoding = false;
         KeyFrameOverviewClickCommand.NotifyCanExecuteChanged();
+        MarkClipStartShortcutCommand.NotifyCanExecuteChanged();
+        MarkClipEndShortcutCommand.NotifyCanExecuteChanged();
     }
 
     private async Task LoadVideoAsync()
@@ -1238,6 +1261,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 SaveFrameClickCommand.NotifyCanExecuteChanged();
                 ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
                 KeyFrameOverviewClickCommand.NotifyCanExecuteChanged();
+                MarkClipStartShortcutCommand.NotifyCanExecuteChanged();
+                MarkClipEndShortcutCommand.NotifyCanExecuteChanged();
 
                 // decode
                 await DrawNextFrameCoreAsync(1);
