@@ -52,8 +52,8 @@
     <x:String x:Key="String.Table.OutputSize">輸出大小</x:String>
     <x:String x:Key="String.Table.OutputPath">輸出路徑</x:String>
     <x:String x:Key="String.Table.Status">狀態</x:String>
-    <x:String x:Key="String.Navigate.MarkStart">標記起點</x:String>
-    <x:String x:Key="String.Navigate.MarkEnd">標記終點</x:String>
+    <x:String x:Key="String.Navigate.MarkStart">標記起點（I）</x:String>
+    <x:String x:Key="String.Navigate.MarkEnd">標記終點（O）</x:String>
     <x:String x:Key="String.Navigate.AddClip">新增片段</x:String>
     <x:String x:Key="String.Navigate.RemoveClip">移除片段</x:String>
     <x:String x:Key="String.Navigate.Previous20">前 20</x:String>

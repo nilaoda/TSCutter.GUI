@@ -58,6 +58,8 @@
         <KeyBinding Gesture="Shift+Left" Command="{Binding Prev10GopClickCommand}"/>
         <KeyBinding Gesture="Right" Command="{Binding NextGopClickCommand}"/>
         <KeyBinding Gesture="Shift+Right" Command="{Binding Next10GopClickCommand}"/>
+        <KeyBinding Gesture="I" Command="{Binding MarkClipStartShortcutCommand}"/>
+        <KeyBinding Gesture="O" Command="{Binding MarkClipEndShortcutCommand}"/>
     </Window.KeyBindings>
 
     <NativeMenu.Menu>
