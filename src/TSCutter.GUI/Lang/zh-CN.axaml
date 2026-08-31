@@ -20,6 +20,9 @@
     <x:String x:Key="String.FailedToLoadVideo">无法加载视频</x:String>
     <x:String x:Key="String.SaveYourClip">保存片段</x:String>
     <x:String x:Key="String.Menu.File">文件(_F)</x:String>
+    <x:String x:Key="String.Menu.Edit">编辑(_E)</x:String>
+    <x:String x:Key="String.Menu.Undo">撤销</x:String>
+    <x:String x:Key="String.Menu.Redo">重做</x:String>
     <x:String x:Key="String.Menu.OpenVideo">打开视频(_O)...</x:String>
     <x:String x:Key="String.Menu.SaveClip">保存片段(_S)...</x:String>
     <x:String x:Key="String.Menu.ExportQueue">导出队列</x:String>
