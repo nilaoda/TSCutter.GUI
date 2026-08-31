@@ -19,7 +19,18 @@ public enum ClipExportStatus
 public partial class PickedClip : ObservableObject, IDisposable
 {
     private static long _idCounter = 0;
-    public long ClipID { get; } = Interlocked.Increment(ref _idCounter);
+    public long ClipID { get; }
+
+    public PickedClip()
+    {
+        ClipID = Interlocked.Increment(ref _idCounter);
+    }
+
+    // 撤销/重做恢复片段时保留原 ID，避免选中状态和时间轴映射发生变化。
+    internal PickedClip(long clipId)
+    {
+        ClipID = clipId;
+    }
     
     public long StartPts {get; set;}
     public long EndPts {get; set;}

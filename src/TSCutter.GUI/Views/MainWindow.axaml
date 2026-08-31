@@ -54,6 +54,8 @@
     <Window.KeyBindings>
         <KeyBinding Gesture="{OnPlatform Ctrl+O, macOS=⌘+O}" Command="{Binding LoadVideoClickCommand}"/>
         <KeyBinding Gesture="{OnPlatform Ctrl+S, macOS=⌘+S}" Command="{Binding SaveVideoClickCommand}"/>
+        <KeyBinding Gesture="{OnPlatform Ctrl+Z, macOS=⌘+Z}" Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="{OnPlatform Ctrl+Y, macOS=⌘+Shift+Z}" Command="{Binding RedoCommand}"/>
         <KeyBinding Gesture="Left" Command="{Binding PrevGopClickCommand}"/>
         <KeyBinding Gesture="Shift+Left" Command="{Binding Prev10GopClickCommand}"/>
         <KeyBinding Gesture="Right" Command="{Binding NextGopClickCommand}"/>
@@ -112,6 +114,14 @@
                                   Command="{Binding CloseVideoClickCommand}"/>
                         <MenuItem Header="{DynamicResource String.Menu.Exit}"
                                   Command="{Binding ExitApplicationCommand}"/>
+                    </MenuItem>
+                    <MenuItem Header="{DynamicResource String.Menu.Edit}">
+                        <MenuItem Header="{DynamicResource String.Menu.Undo}"
+                                  Command="{Binding UndoCommand}"
+                                  InputGesture="{OnPlatform Ctrl+Z, macOS=⌘+Z}" />
+                        <MenuItem Header="{DynamicResource String.Menu.Redo}"
+                                  Command="{Binding RedoCommand}"
+                                  InputGesture="{OnPlatform Ctrl+Y, macOS=⌘+Shift+Z}" />
                     </MenuItem>
                     <MenuItem Header="{DynamicResource String.Menu.Tools}">
                         <MenuItem Header="{DynamicResource String.Menu.ToolGroupAnalyze}">

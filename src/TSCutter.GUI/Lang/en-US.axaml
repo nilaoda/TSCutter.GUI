@@ -20,6 +20,9 @@
     <x:String x:Key="String.FailedToLoadVideo">Failed to load video</x:String>
     <x:String x:Key="String.SaveYourClip">Save Your Clip</x:String>
     <x:String x:Key="String.Menu.File">_File</x:String>
+    <x:String x:Key="String.Menu.Edit">_Edit</x:String>
+    <x:String x:Key="String.Menu.Undo">_Undo</x:String>
+    <x:String x:Key="String.Menu.Redo">_Redo</x:String>
     <x:String x:Key="String.Menu.OpenVideo">_Open Video...</x:String>
     <x:String x:Key="String.Menu.SaveClip">_Save Clip...</x:String>
     <x:String x:Key="String.Menu.ExportQueue">Export Queue</x:String>
