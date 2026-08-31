@@ -31,6 +31,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private const int DefaultScrubPreviewWidth = 1280;
     private const int DefaultScrubPreviewHeight = 720;
     private const int MaximumHistoryEntries = 100;
+    private const int MaximumHistoryThumbnailEntries = 4;
     private string TitleInfo => $"TSCutter.GUI - Alpha.{App.CurrentTag.Split('_').Last()}";
 
     private static string PleaseLoadTip => LocalizationManager.Instance.String_PleaseLoadVideo;
@@ -50,6 +51,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private readonly object _scrubPreviewSync = new();
     private readonly Stack<EditorStateSnapshot> _undoHistory = new();
     private readonly Stack<EditorStateSnapshot> _redoHistory = new();
+    private readonly Dictionary<HistoryThumbnailKey, Bitmap> _historyThumbnails = new();
+    private readonly LinkedList<HistoryThumbnailKey> _historyThumbnailOrder = new();
     private ScrubPreviewRequest? _pendingScrubPreview;
     private CancellationTokenSource? _activeScrubPreviewCancellation;
     private Task _scrubPreviewWorker = Task.CompletedTask;
@@ -512,6 +515,10 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _undoHistory.Clear();
         _redoHistory.Clear();
+        foreach (var thumbnail in _historyThumbnails.Values)
+            thumbnail.Dispose();
+        _historyThumbnails.Clear();
+        _historyThumbnailOrder.Clear();
         NotifyHistoryChanged();
     }
 
@@ -521,10 +528,90 @@ public partial class MainWindowViewModel : ViewModelBase
         RedoCommand.NotifyCanExecuteChanged();
     }
 
-    private EditorStateSnapshot CaptureEditorState() => new(
-        Clips.Select(ClipStateSnapshot.Create).ToArray(),
-        SelectedClip?.ClipID,
-        _clipSelectionAnchor?.ClipID);
+    private EditorStateSnapshot CaptureEditorState()
+    {
+        var snapshot = new EditorStateSnapshot(
+            Clips.Select(ClipStateSnapshot.Create).ToArray(),
+            SelectedClip?.ClipID,
+            _clipSelectionAnchor?.ClipID);
+        CacheSelectedClipThumbnails(snapshot);
+        return snapshot;
+    }
+
+    private void CacheSelectedClipThumbnails(EditorStateSnapshot snapshot)
+    {
+        if (snapshot.SelectedClipId is not { } selectedId)
+            return;
+
+        var state = snapshot.Clips.FirstOrDefault(clip => clip.ClipId == selectedId);
+        var clip = Clips.FirstOrDefault(item => item.ClipID == selectedId);
+        if (state is null || clip is null)
+            return;
+
+        if (state.HasStartThumbnail && clip.StartThumbnail is not null)
+            CacheHistoryThumbnail(CreateThumbnailKey(state, isStart: true), clip.StartThumbnail);
+        if (state.HasEndThumbnail && clip.EndThumbnail is not null)
+            CacheHistoryThumbnail(CreateThumbnailKey(state, isStart: false), clip.EndThumbnail);
+    }
+
+    private void CacheHistoryThumbnail(HistoryThumbnailKey key, Bitmap source)
+    {
+        if (_historyThumbnails.ContainsKey(key))
+        {
+            TouchHistoryThumbnail(key);
+            return;
+        }
+
+        Bitmap copy;
+        try
+        {
+            copy = ImageUtil.CreateThumbnail(source, source.PixelSize.Width, source.PixelSize.Height);
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"Unable to cache history thumbnail: {exception.Message}");
+            return;
+        }
+
+        _historyThumbnails.Add(key, copy);
+        _historyThumbnailOrder.AddFirst(key);
+        while (_historyThumbnailOrder.Count > MaximumHistoryThumbnailEntries)
+        {
+            var evictedKey = _historyThumbnailOrder.Last!.Value;
+            _historyThumbnailOrder.RemoveLast();
+            if (_historyThumbnails.Remove(evictedKey, out var evictedThumbnail))
+                evictedThumbnail.Dispose();
+        }
+    }
+
+    private void TouchHistoryThumbnail(HistoryThumbnailKey key)
+    {
+        _historyThumbnailOrder.Remove(key);
+        _historyThumbnailOrder.AddFirst(key);
+    }
+
+    private static HistoryThumbnailKey CreateThumbnailKey(ClipStateSnapshot state, bool isStart) =>
+        isStart
+            ? new HistoryThumbnailKey(state.ClipId, true, state.StartTime, state.StartPts, state.StartPosition)
+            : new HistoryThumbnailKey(state.ClipId, false, state.EndTime, state.EndPts, state.EndPosition);
+
+    private Bitmap? GetHistoryThumbnail(ClipStateSnapshot state, bool isStart)
+    {
+        var key = CreateThumbnailKey(state, isStart);
+        if (!_historyThumbnails.TryGetValue(key, out var cached))
+            return null;
+
+        TouchHistoryThumbnail(key);
+        try
+        {
+            return ImageUtil.CreateThumbnail(cached, cached.PixelSize.Width, cached.PixelSize.Height);
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"Unable to restore history thumbnail: {exception.Message}");
+            return null;
+        }
+    }
 
     private void RestoreEditorState(EditorStateSnapshot snapshot)
     {
@@ -571,7 +658,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private static void ApplyClipState(PickedClip clip, ClipStateSnapshot state)
+    private void ApplyClipState(PickedClip clip, ClipStateSnapshot state)
     {
         var startChanged = clip.StartTime != state.StartTime
                            || clip.StartPts != state.StartPts
@@ -591,11 +678,18 @@ public partial class MainWindowViewModel : ViewModelBase
         clip.ExportStatus = state.ExportStatus;
         clip.ExportPercent = state.ExportPercent;
 
-        // 历史只保存元数据，边界变化后旧缩略图不再可信，避免复制位图占用内存。
-        if (startChanged)
+        if (startChanged || clip.HasStartThumbnail != state.HasStartThumbnail)
+        {
             clip.ReplaceStartThumbnail(null);
-        if (endChanged)
+            if (state.HasStartThumbnail)
+                clip.ReplaceStartThumbnail(GetHistoryThumbnail(state, isStart: true));
+        }
+        if (endChanged || clip.HasEndThumbnail != state.HasEndThumbnail)
+        {
             clip.ReplaceEndThumbnail(null);
+            if (state.HasEndThumbnail)
+                clip.ReplaceEndThumbnail(GetHistoryThumbnail(state, isStart: false));
+        }
     }
 
     private Bitmap? CreateCurrentFrameThumbnail() => DecodedBitmap is { } bitmap
@@ -1824,6 +1918,8 @@ public partial class MainWindowViewModel : ViewModelBase
         long EndPts,
         long EndPosition,
         bool IsSelected,
+        bool HasStartThumbnail,
+        bool HasEndThumbnail,
         string? OutputFilePath,
         ClipExportStatus ExportStatus,
         double ExportPercent)
@@ -1838,10 +1934,19 @@ public partial class MainWindowViewModel : ViewModelBase
             clip.EndPts,
             clip.EndPosition,
             clip.IsSelected,
+            clip.HasStartThumbnail,
+            clip.HasEndThumbnail,
             clip.OutputFileInfo?.FullName,
             clip.ExportStatus,
             clip.ExportPercent);
     }
+
+    private readonly record struct HistoryThumbnailKey(
+        long ClipId,
+        bool IsStart,
+        double Time,
+        long Pts,
+        long Position);
 
     private readonly record struct ClipAggregateRange(
         long StartPosition,
