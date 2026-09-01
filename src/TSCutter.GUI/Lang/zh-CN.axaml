@@ -13,11 +13,15 @@
     <x:String x:Key="String.AllFiles">所有文件</x:String>
     <x:String x:Key="String.Error">错误</x:String>
     <x:String x:Key="String.OpenTsFile">打开 TS 文件</x:String>
+    <x:String x:Key="String.OpenVideoFile">打开视频文件</x:String>
+    <x:String x:Key="String.VideoFiles">视频文件</x:String>
+    <x:String x:Key="String.PreviewOnly">仅预览</x:String>
     <x:String x:Key="String.ZoomFactor">缩放: {0}%</x:String>
     <x:String x:Key="String.FindFile">查找文件</x:String>
     <x:String x:Key="String.Settings">设置</x:String>
     <x:String x:Key="String.FailedToDecode">解码失败</x:String>
     <x:String x:Key="String.FailedToLoadVideo">无法加载视频</x:String>
+    <x:String x:Key="String.NoVideoStream">所选文件不包含视频轨道。</x:String>
     <x:String x:Key="String.SaveYourClip">保存片段</x:String>
     <x:String x:Key="String.Menu.File">文件(_F)</x:String>
     <x:String x:Key="String.Menu.Edit">编辑(_E)</x:String>

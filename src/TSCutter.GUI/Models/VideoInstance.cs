@@ -78,6 +78,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         inFc = FormatContext.OpenInputUrl(videoPath, options: options);
         inFc.LoadStreamInfo();
 
+        if (!inFc.Streams.Any(stream => stream.Codecpar?.CodecType == AVMediaType.Video))
+            throw new NoVideoStreamException();
+
         inVideoStream = inFc.GetVideoStream();
         if (inVideoStream.Codecpar?.CodecId is null)
         {

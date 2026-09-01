@@ -13,11 +13,15 @@
     <x:String x:Key="String.AllFiles">All Files</x:String>
     <x:String x:Key="String.Error">Error</x:String>
     <x:String x:Key="String.OpenTsFile">Open TS file</x:String>
+    <x:String x:Key="String.OpenVideoFile">Open video file</x:String>
+    <x:String x:Key="String.VideoFiles">Video files</x:String>
+    <x:String x:Key="String.PreviewOnly">Preview only</x:String>
     <x:String x:Key="String.ZoomFactor">Scale: {0}%</x:String>
     <x:String x:Key="String.FindFile">Find File</x:String>
     <x:String x:Key="String.Settings">Settings</x:String>
     <x:String x:Key="String.FailedToDecode">Failed to decode</x:String>
     <x:String x:Key="String.FailedToLoadVideo">Failed to load video</x:String>
+    <x:String x:Key="String.NoVideoStream">The selected file does not contain a video track.</x:String>
     <x:String x:Key="String.SaveYourClip">Save Your Clip</x:String>
     <x:String x:Key="String.Menu.File">_File</x:String>
     <x:String x:Key="String.Menu.Edit">_Edit</x:String>
