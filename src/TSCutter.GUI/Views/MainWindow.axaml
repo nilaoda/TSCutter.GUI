@@ -3,6 +3,7 @@
         xmlns:vm="using:TSCutter.GUI.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ia="using:Avalonia.Xaml.Interactivity"
         xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
         xmlns:converters="clr-namespace:TSCutter.GUI.Converters"
         xmlns:local="clr-namespace:TSCutter.GUI"
@@ -14,8 +15,8 @@
         x:Class="TSCutter.GUI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         x:Name="CutterMainWindow"
+        Focusable="True"
         Closing="Window_OnClosing"
-        Loaded="Window_OnLoaded"
         Icon="/Assets/logo.ico"
         DataContext="{x:Static local:App.MainWindow}"
         WindowStartupLocation="CenterScreen"
@@ -24,6 +25,12 @@
     <Window.Resources>
         <converters:SecondsToStringConverter x:Key="SecondsConverter" />
     </Window.Resources>
+
+    <Interaction.Behaviors>
+        <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
+            <InvokeCommandAction Command="{Binding ProcessCommandLineCommand}" />
+        </RoutedEventTriggerBehavior>
+    </Interaction.Behaviors>
     
     <Window.Styles>
         <Style Selector="ToolTip">
@@ -69,7 +76,7 @@
         </NativeMenu>
     </NativeMenu.Menu>
 
-    <Grid DragDrop.AllowDrop="True" DragDrop.DragEnter="Root_OnDragEnter" DragDrop.DragLeave="Root_OnDragLeave" RowDefinitions="Auto, *">
+    <Grid DragDrop.AllowDrop="True" RowDefinitions="Auto, *">
         <Grid.Resources>
             <ResourceDictionary>
                 <ResourceDictionary.ThemeDictionaries>
@@ -89,7 +96,15 @@
                     </ResourceDictionary>
                 </ResourceDictionary.ThemeDictionaries>
             </ResourceDictionary>
-        </Grid.Resources>    
+        </Grid.Resources>
+        <Interaction.Behaviors>
+            <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DragEnterEvent}">
+                <ChangePropertyAction TargetObject="{Binding ElementName=DropMask}" PropertyName="IsVisible" Value="True" />
+            </RoutedEventTriggerBehavior>
+            <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DragLeaveEvent}">
+                <ChangePropertyAction TargetObject="{Binding ElementName=DropMask}" PropertyName="IsVisible" Value="False" />
+            </RoutedEventTriggerBehavior>
+        </Interaction.Behaviors>
         <ClassicBorderDecorator Grid.Row="0" DockPanel.Dock="Top" BorderThickness="2" BorderStyle="Etched">
             <DockPanel Margin="0, 2">
                 <commonControls:RebarHandle />
@@ -178,9 +193,16 @@
         <Grid Grid.Row="1" ZIndex="2"
               IsVisible="False"
               DragDrop.AllowDrop="True"
-              DragDrop.Drop="DropMask_OnDrop"
-              DragDrop.DragOver="DropMask_OnDragOver"
               x:Name="DropMask">
+            <Interaction.Behaviors>
+                <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DropEvent}">
+                    <InvokeCommandAction Command="{Binding DropCommand}" PassEventArgsToCommand="True" />
+                    <ChangePropertyAction PropertyName="IsVisible" Value="False" />
+                </RoutedEventTriggerBehavior>
+                <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DragOverEvent}">
+                    <InvokeCommandAction Command="{Binding DragOverCommand}" PassEventArgsToCommand="True" />
+                </RoutedEventTriggerBehavior>
+            </Interaction.Behaviors>
             <Border Background="{DynamicResource MaskBackgroundBrush}" Opacity="0.9" />
             <TextBlock Text="{DynamicResource String.DropToolTip}" VerticalAlignment="Center" HorizontalAlignment="Center" />
             <Rectangle Stroke="Gray" StrokeThickness="2" StrokeDashArray="3, 4" Width="200" Height="100" RadiusX="10" RadiusY="10"/>
@@ -527,6 +549,7 @@
                         <!-- 时间刻度、剪辑范围、播放头、总览与缩放共用同一套坐标换算。 -->
                         <controls:TimelineControl Grid.Row="1"
                                                   Name="MainTimeline"
+                                                  Focusable="True"
                                                   Height="48"
                                                   Margin="0,2"
                                                   HorizontalAlignment="Stretch"

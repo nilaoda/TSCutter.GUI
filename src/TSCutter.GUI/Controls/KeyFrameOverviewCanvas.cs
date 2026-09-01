@@ -28,6 +28,7 @@ public sealed class KeyFrameOverviewCanvas : Control
     private const double HorizontalGap = 12;
     private const double VerticalGap = 14;
     private IReadOnlyList<KeyFrameOverviewTile>? subscribedItems;
+    private KeyFrameOverviewTile? pendingDoubleClickTile;
 
     static KeyFrameOverviewCanvas()
     {
@@ -38,6 +39,8 @@ public sealed class KeyFrameOverviewCanvas : Control
     public KeyFrameOverviewCanvas()
     {
         PointerPressed += OnPointerPressed;
+        // 在释放事件中处理双击，确保关闭窗口时当前鼠标按下/释放序列已经完成。
+        PointerReleased += OnPointerReleased;
     }
 
     public IReadOnlyList<KeyFrameOverviewTile>? Items
@@ -163,10 +166,31 @@ public sealed class KeyFrameOverviewCanvas : Control
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || Items is null || e.ClickCount < 2)
+        pendingDoubleClickTile = null;
+        if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || e.ClickCount < 2)
             return;
 
-        var point = e.GetPosition(this);
+        pendingDoubleClickTile = GetTileAt(e.GetPosition(this));
+    }
+
+    private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
+    {
+        var tile = pendingDoubleClickTile;
+        pendingDoubleClickTile = null;
+        if (e.InitialPressMouseButton != MouseButton.Left || tile is null)
+            return;
+
+        e.Handled = true;
+        // 关闭模态窗口前解除可能由滚动容器建立的指针捕获，避免下一次主窗口点击只被旧输入状态消费。
+        e.Pointer.Capture(null);
+        TileActivated?.Invoke(tile);
+    }
+
+    private KeyFrameOverviewTile? GetTileAt(Point point)
+    {
+        if (Items is null)
+            return null;
+
         var columns = GetColumnCount(Bounds.Width);
         var rowHeight = TileWidth * ImageAspect + ImageLabelHeight + VerticalGap;
         var horizontalOffset = GetHorizontalOffset(columns);
@@ -174,15 +198,14 @@ public sealed class KeyFrameOverviewCanvas : Control
         var row = (int)Math.Floor(point.Y / rowHeight);
         var index = row * columns + column;
         if (column < 0 || column >= columns || index < 0 || index >= Items.Count)
-            return;
+            return null;
 
         var tileX = point.X - horizontalOffset - column * (TileWidth + HorizontalGap);
         var tileY = point.Y - row * rowHeight;
         if (tileX > TileWidth || tileY > ImageAspect * TileWidth + ImageLabelHeight)
-            return;
+            return null;
 
-        TileActivated?.Invoke(Items[index]);
-        e.Handled = true;
+        return Items[index];
     }
 
     private int GetColumnCount(double width) => Math.Max(1, (int)Math.Floor((width + HorizontalGap) / (TileWidth + HorizontalGap)));

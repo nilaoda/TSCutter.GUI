@@ -7,6 +7,7 @@
         mc:Ignorable="d"
         x:Class="TSCutter.GUI.Views.KeyFrameOverviewWindow"
         x:DataType="viewModels:KeyFrameOverviewWindowViewModel"
+        Focusable="True"
         Title="{Binding WindowTitle}"
         Width="1120" Height="760" MinWidth="760" MinHeight="500"
         WindowStartupLocation="CenterOwner"

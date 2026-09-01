@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ia="using:Avalonia.Xaml.Interactivity"
         xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
         xmlns:local="clr-namespace:TSCutter.GUI"
         mc:Ignorable="d"
@@ -14,9 +15,14 @@
         MinWidth="480"
         MinHeight="320"
         WindowStartupLocation="CenterOwner"
-        Loaded="Window_OnLoaded"
         CanMinimize="False"
         CanResize="True">
+
+    <Interaction.Behaviors>
+        <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
+            <InvokeCommandAction Command="{Binding BuildInfoCommand}" />
+        </RoutedEventTriggerBehavior>
+    </Interaction.Behaviors>
 
     <DockPanel Margin="8" LastChildFill="True">
 

@@ -59,19 +59,30 @@ public partial class KeyFrameOverviewWindow : ClassicWindow
         viewModel.PropertyChanged -= ViewModel_OnPropertyChanged;
         OverviewCanvas.TileActivated -= viewModel.SelectTile;
 
-        // 先恢复 owner 的激活状态，再等待缩略图和解码资源释放，避免首个输入只用于激活应用。
+        await viewModel.OnClosedAsync();
+
+        // 等待总览资源释放后再恢复 owner，避免模态关闭流程覆盖焦点。
         Dispatcher.UIThread.Post(() =>
         {
-            if (owner is MainWindow mainWindow)
-                mainWindow.RestoreFocusAfterOverview();
-            else
-            {
-                owner?.Activate();
-                owner?.Focus();
-            }
+            RestoreOwnerFocus(owner);
+            // Classic/Avalonia 11 在关闭模态窗口时可能稍后才完成原生激活，
+            // 再尝试一次可避免第一次键盘输入只用于激活 owner。
+            DispatcherTimer.RunOnce(
+                () => RestoreOwnerFocus(owner),
+                TimeSpan.FromMilliseconds(80),
+                DispatcherPriority.Input);
         }, DispatcherPriority.Input);
+    }
 
-        await viewModel.OnClosedAsync();
+    private static void RestoreOwnerFocus(WindowBase? owner)
+    {
+        if (owner is MainWindow mainWindow)
+            mainWindow.RestoreFocusAfterOverview();
+        else
+        {
+            owner?.Activate();
+            owner?.Focus();
+        }
     }
 
     private void ViewModel_OnRequestClose(object? sender, EventArgs e) => Close();

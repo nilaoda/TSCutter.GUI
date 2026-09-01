@@ -191,7 +191,8 @@ public sealed partial class KeyFrameOverviewWindowViewModel : ViewModelBase,
         selecting = true;
         SelectedTime = tile.Timestamp;
         DialogResult = true;
-        CloseWindow();
+        // 双击释放事件结束后再关闭窗口，避免原生窗口把后续输入当作激活操作。
+        Dispatcher.UIThread.Post(CloseWindow, DispatcherPriority.Background);
     }
 
     [RelayCommand]
