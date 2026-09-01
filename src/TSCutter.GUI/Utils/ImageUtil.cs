@@ -113,7 +113,7 @@ public static class ImageUtil
             try
             {
                 using var framebuffer = copy.Lock();
-                source.CopyPixels(framebuffer);
+                source.CopyPixels(framebuffer, AlphaFormat.Opaque);
                 return copy;
             }
             catch

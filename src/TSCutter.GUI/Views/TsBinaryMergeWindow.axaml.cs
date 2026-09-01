@@ -77,9 +77,9 @@ public partial class TsBinaryMergeWindow : ClassicWindow
 
     private static string[] GetDroppedPaths(DragEventArgs eventArgs)
     {
-        if (!eventArgs.DataTransfer.Contains(DataFormat.File))
+        if (!eventArgs.Data.Contains(DataFormats.Files))
             return [];
-        return eventArgs.DataTransfer.TryGetFiles()?
+        return eventArgs.Data.GetFiles()?
             .Select(item => item.Path.LocalPath)
             .ToArray() ?? [];
     }

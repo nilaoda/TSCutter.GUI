@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ia="using:Avalonia.Xaml.Interactivity"
         xmlns:local="clr-namespace:TSCutter.GUI"
         xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
         xmlns:converters="clr-namespace:TSCutter.GUI.Converters"
@@ -12,13 +13,18 @@
         CanMaximize="False"
         CanMinimize="False"
         WindowStartupLocation="CenterOwner"
-        Loaded="Window_OnLoaded"
         x:DataType="viewModels:OutputWindowViewModel"
         Title="{DynamicResource String.Output.Title}">
 
     <Window.Resources>
         <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
     </Window.Resources>
+
+    <Interaction.Behaviors>
+        <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
+            <InvokeCommandAction Command="{Binding OutputCommand}" />
+        </RoutedEventTriggerBehavior>
+    </Interaction.Behaviors>
 
     <Border BorderThickness="2" Padding="8">
         <Grid RowDefinitions="Auto,*,Auto">

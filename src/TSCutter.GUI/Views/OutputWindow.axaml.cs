@@ -1,5 +1,4 @@
 using System;
-using Avalonia.Interactivity;
 using Classic.Avalonia.Theme;
 using TSCutter.GUI.ViewModels;
 
@@ -22,7 +21,4 @@ public partial class OutputWindow : ClassicWindow
                 Height = 280;
         }
     }
-
-    private void Window_OnLoaded(object? sender, RoutedEventArgs e) =>
-        (DataContext as OutputWindowViewModel)?.OutputCommand.Execute(null);
 }

@@ -857,7 +857,6 @@ public partial class MainWindowViewModel : ViewModelBase
         keyFrameOverviewWindow = dialogViewModel;
         try
         {
-            // 等待窗口完全关闭后再执行 seek，确保主窗口不会与总览共用输入状态。
             await _dialogService.ShowDialogAsync(this, dialogViewModel);
             await dialogViewModel.ClosedTask;
             if (dialogViewModel.SelectedTime is { } time)
@@ -1598,9 +1597,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private string? CheckDropDataIsVideoFile(DragEventArgs? e)
     {
         if (e is null) return null;
-        if (!e.DataTransfer.Contains(DataFormat.File)) return null;
+        if (!e.Data.Contains(DataFormats.Files)) return null;
 
-        var fileNames = e.DataTransfer.TryGetFiles()?.ToArray();
+        var fileNames = e.Data.GetFiles()?.ToArray();
         if (fileNames is not { Length: > 0 }) return null;
         var filePath = fileNames[0].Path.LocalPath;
         if (File.Exists(filePath)

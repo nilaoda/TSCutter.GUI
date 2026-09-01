@@ -2,7 +2,6 @@ using System;
 using System.Collections.Specialized;
 using Avalonia.Controls;
 using Avalonia.Input;
-using Avalonia.Interactivity;
 using Avalonia.Threading;
 using Classic.Avalonia.Theme;
 using CommunityToolkit.Mvvm.Messaging;
@@ -15,6 +14,7 @@ namespace TSCutter.GUI.Views;
 public partial class MainWindow : ClassicWindow
 {
     private MainWindowViewModel ViewModel => (DataContext as MainWindowViewModel)!;
+    private bool _restoreFocusOnActivation;
     
     public MainWindow()
     {
@@ -35,6 +35,7 @@ public partial class MainWindow : ClassicWindow
                 vm.Clips.CollectionChanged += OnClipsCollectionChanged;
             }
         };
+        Activated += MainWindow_OnActivated;
     }
 
     private void OnClipsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -51,22 +52,6 @@ public partial class MainWindow : ClassicWindow
     private void Window_OnClosing(object? sender, WindowClosingEventArgs e)
     {
         ViewModel.Close();
-    }
-
-    private void Window_OnLoaded(object? sender, RoutedEventArgs e) =>
-        ViewModel.ProcessCommandLineCommand.Execute(null);
-
-    private void Root_OnDragEnter(object? sender, DragEventArgs e) => DropMask.IsVisible = true;
-
-    private void Root_OnDragLeave(object? sender, DragEventArgs e) => DropMask.IsVisible = false;
-
-    private void DropMask_OnDragOver(object? sender, DragEventArgs e) =>
-        ViewModel.DragOverCommand.Execute(e);
-
-    private void DropMask_OnDrop(object? sender, DragEventArgs e)
-    {
-        ViewModel.DropCommand.Execute(e);
-        DropMask.IsVisible = false;
     }
 
     private void ClipCard_OnPointerPressed(object? sender, PointerPressedEventArgs e)
@@ -130,7 +115,35 @@ public partial class MainWindow : ClassicWindow
 
     public void RestoreFocusAfterOverview()
     {
+        _restoreFocusOnActivation = true;
         Activate();
-        MainTimeline.Focus();
+        IsEnabled = true;
+        MainTimeline.Focus(NavigationMethod.Unspecified, KeyModifiers.None);
+        DispatcherTimer.RunOnce(
+            () =>
+            {
+                if (_restoreFocusOnActivation)
+                {
+                    _restoreFocusOnActivation = false;
+                    RestoreFocusCore();
+                }
+            },
+            TimeSpan.FromMilliseconds(120),
+            DispatcherPriority.Input);
+    }
+
+    private void MainWindow_OnActivated(object? sender, EventArgs e)
+    {
+        if (!_restoreFocusOnActivation)
+            return;
+        _restoreFocusOnActivation = false;
+        Dispatcher.UIThread.Post(RestoreFocusCore, DispatcherPriority.Input);
+    }
+
+    private void RestoreFocusCore()
+    {
+        Activate();
+        IsEnabled = true;
+        MainTimeline.Focus(NavigationMethod.Unspecified, KeyModifiers.None);
     }
 }
