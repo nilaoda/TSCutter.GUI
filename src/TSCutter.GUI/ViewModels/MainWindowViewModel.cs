@@ -30,6 +30,8 @@ public partial class MainWindowViewModel : ViewModelBase
 {
     private const int DefaultScrubPreviewWidth = 1280;
     private const int DefaultScrubPreviewHeight = 720;
+    private static readonly string[] PreviewFileExtensions =
+        ["ts", "m2ts", "mts", "mp4", "mkv", "mov", "avi", "webm", "m4v", "mpg", "mpeg", "wmv", "flv", "3gp"];
     private const int MaximumHistoryEntries = 100;
     private const int MaximumHistoryThumbnailEntries = 4;
     private string TitleInfo => $"TSCutter.GUI - Alpha.{App.CurrentTag.Split('_').Last()}";
@@ -156,7 +158,8 @@ public partial class MainWindowViewModel : ViewModelBase
     [NotifyCanExecuteChangedFor(
         nameof(AddClipCommand), nameof(RemoveClipCommand), nameof(MarkClipStartCommand),
         nameof(MarkClipEndCommand), nameof(SaveVideoClickCommand), nameof(CloseVideoClickCommand),
-        nameof(SaveFrameClickCommand), nameof(ShowMediaInfoClickCommand), nameof(ExportAllCommand)
+        nameof(SaveFrameClickCommand), nameof(ShowMediaInfoClickCommand), nameof(ExportAllCommand),
+        nameof(AddToQueueCommand)
     )]
     public partial PickedClip? SelectedClip { get; set; }
 
@@ -354,14 +357,14 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task ProcessCommandLineAsync()
     {
         var args = Environment.GetCommandLineArgs();
-        if (args.Length > 1 && File.Exists(args[1]) && Path.GetExtension(args[1]).ToLower() is ".ts")
+        if (args.Length > 1 && File.Exists(args[1]))
         {
             VideoPath = args[1];
             await LoadVideoAsync();
         }
     }
 
-    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    [RelayCommand(CanExecute = nameof(CanEditVideo))]
     private void AddClip()
     {
         RecordHistory();
@@ -384,7 +387,7 @@ public partial class MainWindowViewModel : ViewModelBase
         return newClip;
     }
 
-    [RelayCommand(CanExecute = nameof(HasSelectedClip))]
+    [RelayCommand(CanExecute = nameof(CanEditSelectedClip))]
     private void RemoveClip()
     {
         var index = Clips.ToList().FindIndex(x => x.ClipID == SelectedClip?.ClipID);
@@ -401,7 +404,7 @@ public partial class MainWindowViewModel : ViewModelBase
         NotifyClipSelectionChanged();
     }
 
-    [RelayCommand(CanExecute = nameof(HasSelectedClip))]
+    [RelayCommand(CanExecute = nameof(CanEditSelectedClip))]
     private void MarkClipStart()
     {
         RecordHistory();
@@ -423,7 +426,7 @@ public partial class MainWindowViewModel : ViewModelBase
         NotifyClipSelectionChanged();
     }
 
-    [RelayCommand(CanExecute = nameof(HasSelectedClip))]
+    [RelayCommand(CanExecute = nameof(CanEditSelectedClip))]
     private void MarkClipEnd()
     {
         RecordHistory();
@@ -446,7 +449,7 @@ public partial class MainWindowViewModel : ViewModelBase
         NotifyClipSelectionChanged();
     }
 
-    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    [RelayCommand(CanExecute = nameof(CanEditVideo))]
     private void MarkClipStartShortcut()
     {
         RecordHistory();
@@ -454,7 +457,7 @@ public partial class MainWindowViewModel : ViewModelBase
         MarkClipStartCore();
     }
 
-    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    [RelayCommand(CanExecute = nameof(CanEditVideo))]
     private void MarkClipEndShortcut()
     {
         RecordHistory();
@@ -899,7 +902,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _dialogService.Show(null, dialogViewModel);
     }
 
-    [RelayCommand(CanExecute = nameof(HasSelectedClip))]
+    [RelayCommand(CanExecute = nameof(CanEditSelectedClip))]
     private async Task SaveVideoClickAsync() => await SaveVideoAsync();
 
     [RelayCommand(CanExecute = nameof(CanMergeSelectedClips))]
@@ -973,7 +976,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private bool CanMergeSelectedClips => SelectedClipCount >= 2 &&
+    private bool CanMergeSelectedClips => CanEditVideo && SelectedClipCount >= 2 &&
                                           Clips.Where(clip => clip.IsSelected).All(clip =>
                                               clip.EndTime > clip.StartTime &&
                                               clip.StartPosition >= 0 &&
@@ -1052,7 +1055,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(WindowTitle))]
+    [NotifyPropertyChangedFor(nameof(WindowTitle), nameof(IsPreviewOnly))]
     public partial string VideoPath { get; set; }
 
     private Bitmap? decodedBitmap;
@@ -1124,7 +1127,7 @@ public partial class MainWindowViewModel : ViewModelBase
         : LocalizationManager.Instance.String_Status_SoftwareDecoding;
 
     public string StatusInfoText => IsVideoInitialized
-        ? $"{VideoInfoText} | {DecodeModeText} | {DecodeCost,3}ms"
+        ? $"{VideoInfoText}{(IsPreviewOnly ? $" | {LocalizationManager.Instance.String_PreviewOnly}" : string.Empty)} | {DecodeModeText} | {DecodeCost,3}ms"
         : PleaseLoadTip;
     public bool IsDecoding => DecodingOpCount > 0;
 
@@ -1163,11 +1166,12 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var settings = new OpenFileDialogSettings()
         {
-            Title = LocalizationManager.Instance.String_OpenTsFile,
-            Filters = new List<FileFilter>()
-            {
-                new(LocalizationManager.Instance.String_TsFiles, ["ts"]),
-            }
+            Title = LocalizationManager.Instance.String_OpenVideoFile,
+            Filters =
+            [
+                new(LocalizationManager.Instance.String_VideoFiles, PreviewFileExtensions),
+                new(LocalizationManager.Instance.String_AllFiles, "*")
+            ]
         };
         var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
         if (!result.Any()) return;
@@ -1487,9 +1491,7 @@ public partial class MainWindowViewModel : ViewModelBase
         DecodeCost = 0L;
         IsHardwareDecoding = false;
         ClearHistory();
-        KeyFrameOverviewClickCommand.NotifyCanExecuteChanged();
-        MarkClipStartShortcutCommand.NotifyCanExecuteChanged();
-        MarkClipEndShortcutCommand.NotifyCanExecuteChanged();
+        NotifyVideoCapabilityChanged();
     }
 
     private async Task LoadVideoAsync()
@@ -1516,8 +1518,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 SaveFrameClickCommand.NotifyCanExecuteChanged();
                 ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
                 KeyFrameOverviewClickCommand.NotifyCanExecuteChanged();
-                MarkClipStartShortcutCommand.NotifyCanExecuteChanged();
-                MarkClipEndShortcutCommand.NotifyCanExecuteChanged();
+                NotifyVideoCapabilityChanged();
 
                 // decode
                 await DrawNextFrameCoreAsync(1);
@@ -1532,7 +1533,9 @@ public partial class MainWindowViewModel : ViewModelBase
             _videoInstance?.Close();
             Console.WriteLine($"Failed to load video: {e}");
             await ShowMessageAsync(
-                FFmpegNativeBootstrapper.BuildLoadFailureMessage(e),
+                e is NoVideoStreamException
+                    ? LocalizationManager.Instance.String_NoVideoStream
+                    : FFmpegNativeBootstrapper.BuildLoadFailureMessage(e),
                 LocalizationManager.Instance.String_FailedToLoadVideo,
                 MessageBoxIcon.Error);
         }
@@ -1577,14 +1580,14 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void DragOver(DragEventArgs? e)
     {
-        var filePath = CheckDropDataIsTsFile(e);
+        var filePath = CheckDropDataIsVideoFile(e);
         e!.DragEffects = filePath is not null ? DragDropEffects.Copy : DragDropEffects.None;
     }
 
     [RelayCommand]
     private async Task Drop(DragEventArgs? e)
     {
-        var filePath = CheckDropDataIsTsFile(e);
+        var filePath = CheckDropDataIsVideoFile(e);
         if (filePath is not null)
         {
             VideoPath = filePath;
@@ -1592,7 +1595,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private string? CheckDropDataIsTsFile(DragEventArgs? e)
+    private string? CheckDropDataIsVideoFile(DragEventArgs? e)
     {
         if (e is null) return null;
         if (!e.DataTransfer.Contains(DataFormat.File)) return null;
@@ -1600,13 +1603,16 @@ public partial class MainWindowViewModel : ViewModelBase
         var fileNames = e.DataTransfer.TryGetFiles()?.ToArray();
         if (fileNames is not { Length: > 0 }) return null;
         var filePath = fileNames[0].Path.LocalPath;
-        var ext = Path.GetExtension(filePath);
-        if (File.Exists(filePath) && ext.ToLower() is ".ts" && VideoPath != filePath)
+        if (File.Exists(filePath)
+            && (string.IsNullOrWhiteSpace(VideoPath) || !PathsEqual(VideoPath, filePath)))
         {
             return filePath;
         }
         return null;
     }
+
+    private static bool IsTsFile(string? path) =>
+        string.Equals(Path.GetExtension(path), ".ts", StringComparison.OrdinalIgnoreCase);
 
     public void Close()
     {
@@ -1648,6 +1654,27 @@ public partial class MainWindowViewModel : ViewModelBase
         IsHardwareDecoding = _videoInstance.IsHardwareDecoding;
     }
 
+    public bool IsPreviewOnly => IsVideoInitialized && !IsTsFile(VideoPath);
+
+    private bool CanEditVideo => IsVideoInitialized && IsTsFile(VideoPath);
+    private bool CanEditSelectedClip => CanEditVideo && HasSelectedClip;
+
+    private void NotifyVideoCapabilityChanged()
+    {
+        OnPropertyChanged(nameof(IsPreviewOnly));
+        OnPropertyChanged(nameof(StatusInfoText));
+        AddClipCommand.NotifyCanExecuteChanged();
+        RemoveClipCommand.NotifyCanExecuteChanged();
+        MarkClipStartCommand.NotifyCanExecuteChanged();
+        MarkClipEndCommand.NotifyCanExecuteChanged();
+        MarkClipStartShortcutCommand.NotifyCanExecuteChanged();
+        MarkClipEndShortcutCommand.NotifyCanExecuteChanged();
+        SaveVideoClickCommand.NotifyCanExecuteChanged();
+        AddToQueueCommand.NotifyCanExecuteChanged();
+        MergeSelectedClipsCommand.NotifyCanExecuteChanged();
+        ExportAllCommand.NotifyCanExecuteChanged();
+    }
+
     private void DisposeClipThumbnails()
     {
         foreach (var clip in Clips)
@@ -1655,7 +1682,7 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     private bool HasSelectedClip => SelectedClip is not null;
-    private bool CanExportAll => Clips.Count > 0;
+    private bool CanExportAll => CanEditVideo && Clips.Count > 0;
     public bool IsVideoInitialized => _videoInstance is { Inited: true };
     
     private async Task SaveVideoAsync()
@@ -1735,7 +1762,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     // ---- 导出队列 ----
 
-    [RelayCommand(CanExecute = nameof(HasSelectedClip))]
+    [RelayCommand(CanExecute = nameof(CanEditSelectedClip))]
     private async Task AddToQueueAsync()
     {
         var sourceDirectory = Path.GetDirectoryName(SelectedClip!.InFileInfo.FullName)!;

@@ -18,6 +18,7 @@ TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It comb
 - **Flexible output**: Save one clip immediately, add clips to a batch export queue, or merge multiple selected clips into one TS file.
 - **Lossless media copy**: Preserve the original encoded audio and video without transcoding.
 - **Frame capture and media information**: Save or copy the current preview frame and inspect the opened file's stream information.
+- **General video preview**: Open MP4, MKV, MOV, WebM, and other FFmpeg-supported video files for preview, seeking, screenshots, and media information. Non-TS files are preview-only.
 
 ### TS tools
 
