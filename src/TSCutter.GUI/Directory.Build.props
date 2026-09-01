@@ -25,17 +25,13 @@
         <None Remove=".gitignore" />
     </ItemGroup>
 
-    <!-- Static Linked -->
-    <!--
-        https://github.com/AvaloniaUI/Avalonia/issues/9503
-        https://github.com/2ndlab/ANGLE.Static/releases
-        https://github.com/2ndlab/SkiaSharp.Static/releases
-    -->
+    <!-- Static Linked (win-x64 only) -->
     <ItemGroup Condition="'$(PublishAot)' == 'true' and '$(RuntimeIdentifier)' == 'win-x64'">
         <DirectPInvoke Include="libHarfBuzzSharp" />
         <NativeLibrary Include="lib\libHarfBuzzSharp.lib"/>
         <DirectPInvoke Include="libSkiaSharp" />
-        <NativeLibrary Include="lib\libSkiaSharp.lib"/>
+        <NativeLibrary Include="lib\SkiaSharp.lib"/>
+        <NativeLibrary Include="lib\skia.lib"/>
         <DirectPInvoke Include="av_libglesv2" />
         <NativeLibrary Include="lib\av_libglesv2.lib"/>
     </ItemGroup>

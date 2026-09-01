@@ -18,9 +18,9 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Avalonia" Version="12.0.1" />
-        <PackageReference Include="Avalonia.Desktop" Version="12.0.1" />
-        <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.1" />
+        <PackageReference Include="Avalonia" Version="12.0.4" />
+        <PackageReference Include="Avalonia.Desktop" Version="12.0.4" />
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="12.0.4" />
         <!-- Avalonia 12 尚未发布对应的 Diagnostics 包。 -->
     </ItemGroup>
 
