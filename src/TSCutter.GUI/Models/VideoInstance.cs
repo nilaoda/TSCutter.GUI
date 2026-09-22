@@ -11,6 +11,7 @@ using Sdcb.FFmpeg.Toolboxs.Extensions;
 using Sdcb.FFmpeg.Utils;
 using TSCutter.GUI.Extensions;
 using TSCutter.GUI.Rendering;
+using TSCutter.GUI.Services;
 using TSCutter.GUI.Utils;
 using static TSCutter.GUI.Utils.CommonUtil;
 
@@ -24,6 +25,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     };
 
     private const int MAX_FAILURE_COUT = 100;
+    private const int MaximumPacketsWithoutFrame = 20_000;
     private const int HardwareNoFrameFailureThreshold = 3;
     private const int MaximumEstimatedKeyFrames = 100_000;
     private const int AV_PKT_FLAG_KEY_FRAME = 0x0001;
@@ -73,6 +75,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
 
     public void InitVideo()
     {
+        if (TsScramblingProbe.HasScrambledPayload(videoPath))
+            throw new ScrambledTsException();
+
         var options = new MediaDictionary();
         options.Set("scan_all_pmts", "1"); // Scan and combine all PMTs
         inFc = FormatContext.OpenInputUrl(videoPath, options: options);
@@ -390,6 +395,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var failureCount = 0;
+        var packetsRead = 0;
         var backward = count < 0;
 
         if (retryCount > MAX_FAILURE_COUT)
@@ -409,11 +415,13 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             Seek(targetPts);
         }
 
-        foreach (var packet in inFc.ReadPackets(videoStreamIndex))
+        foreach (var packet in inFc.ReadPackets())
         {
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (++packetsRead > MaximumPacketsWithoutFrame)
+                    throw new TooManyDecodeFailuresException("No usable frame found within the packet scan limit.");
                 if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
                     continue;
                 if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
@@ -605,10 +613,13 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     private (long firstPts, long gap) ReadKeyFramePacketPts(int requiredKeyFrames = 3)
     {
         var keyFramePtsList = new List<long>();
-        foreach (var packet in inFc.ReadPackets(videoStreamIndex))
+        var packetsRead = 0;
+        foreach (var packet in inFc.ReadPackets())
         {
             try
             {
+                if (++packetsRead > MaximumPacketsWithoutFrame)
+                    break;
                 if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
                     continue;
                 if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
@@ -623,6 +634,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                 packet.Unref();
             }
         }
+
+        if (keyFramePtsList.Count == 0)
+            throw new TooManyDecodeFailuresException("No keyframe found within the packet scan limit.");
 
         if (keyFramePtsList.Count < 2)
             return (keyFramePtsList.Count > 0 ? keyFramePtsList[0] : 0, 0);

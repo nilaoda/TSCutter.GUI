@@ -1532,7 +1532,9 @@ public partial class MainWindowViewModel : ViewModelBase
             _videoInstance?.Close();
             Console.WriteLine($"Failed to load video: {e}");
             await ShowMessageAsync(
-                e is NoVideoStreamException
+                e is ScrambledTsException
+                    ? LocalizationManager.Instance.String_ScrambledTs
+                    : e is NoVideoStreamException
                     ? LocalizationManager.Instance.String_NoVideoStream
                     : FFmpegNativeBootstrapper.BuildLoadFailureMessage(e),
                 LocalizationManager.Instance.String_FailedToLoadVideo,

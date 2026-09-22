@@ -22,6 +22,7 @@
     <x:String x:Key="String.FailedToDecode">解码失败</x:String>
     <x:String x:Key="String.FailedToLoadVideo">无法加载视频</x:String>
     <x:String x:Key="String.NoVideoStream">所选文件不包含视频轨道。</x:String>
+    <x:String x:Key="String.ScrambledTs">文件包含加密（加扰）的 TS 数据包，无法预览，请先解密。仍可通过工具菜单进行原始切割和 TS 分析。</x:String>
     <x:String x:Key="String.SaveYourClip">保存片段</x:String>
     <x:String x:Key="String.Menu.File">文件(_F)</x:String>
     <x:String x:Key="String.Menu.Edit">编辑(_E)</x:String>
