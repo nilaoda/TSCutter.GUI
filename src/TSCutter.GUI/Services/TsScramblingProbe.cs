@@ -18,26 +18,24 @@ internal static class TsScramblingProbe
 
     internal static bool HasScrambledPayload(ReadOnlySpan<byte> data)
     {
-        // Also accept M2TS prefixes and RS-protected TS packets.
-        foreach (var stride in new[] { 188, 192, 204 })
+        var offset = 0;
+        while (offset < data.Length)
         {
-            for (var start = 0; start + stride * 3 + TsUtil.TsPacketSize <= data.Length; start++)
-            {
-                if (data[start] != TsUtil.TsSyncByte ||
-                    data[start + stride] != TsUtil.TsSyncByte ||
-                    data[start + stride * 2] != TsUtil.TsSyncByte ||
-                    data[start + stride * 3] != TsUtil.TsSyncByte)
-                    continue;
+            var syncOffset = TsUtil.FindPacketSync(data[offset..]);
+            if (syncOffset < 0)
+                break;
+            offset += syncOffset;
 
-                for (var offset = start; offset + TsUtil.TsPacketSize <= data.Length; offset += stride)
+            for (; offset + TsUtil.TsPacketSize <= data.Length; offset += TsUtil.TsPacketSize)
+            {
+                var info = TsPacketParser.Parse(data.Slice(offset, TsUtil.TsPacketSize));
+                if (!info.IsValid)
                 {
-                    var info = TsPacketParser.Parse(data.Slice(offset, TsUtil.TsPacketSize));
-                    if (!info.IsValid)
-                        break;
-                    if (info.Pid != 0x1fff && info.HasPayload && info.ScramblingControl >= 2)
-                        return true;
-                    start = offset;
+                    offset++;
+                    break;
                 }
+                if (info.Pid != 0x1fff && info.HasPayload && info.ScramblingControl >= 2)
+                    return true;
             }
         }
         return false;

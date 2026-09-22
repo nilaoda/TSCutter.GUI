@@ -23,7 +23,7 @@
     <x:String x:Key="String.FailedToLoadVideo">Failed to load video</x:String>
     <x:String x:Key="String.NoVideoStream">The selected file does not contain a video track.</x:String>
     <x:String x:Key="String.MediaReadTimeout">Reading the video timed out. Try seeking to another position or check whether the file is encrypted or damaged.</x:String>
-    <x:String x:Key="String.ScrambledTs">The file contains encrypted (scrambled) TS packets and cannot be previewed. Decrypt it first. Raw cutting and TS analysis remain available from the tools menu.</x:String>
+    <x:String x:Key="String.ScrambledTs">The file contains encrypted (scrambled) 188-byte TS packets and cannot be previewed. Decrypt it first. Raw cutting and TS analysis remain available from the tools menu.</x:String>
     <x:String x:Key="String.SaveYourClip">Save Your Clip</x:String>
     <x:String x:Key="String.Menu.File">_File</x:String>
     <x:String x:Key="String.Menu.Edit">_Edit</x:String>

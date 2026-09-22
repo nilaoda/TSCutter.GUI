@@ -7,13 +7,34 @@ namespace TSCutter.GUI.Tests;
 public class TsScramblingProbeTests
 {
     [Theory]
-    [InlineData(188, 0, 2)]
-    [InlineData(192, 4, 3)]
-    [InlineData(204, 17, 2)]
-    public void DetectsScramblingAfterClearPackets(int stride, int prefix, int scrambling)
+    [InlineData(0, 2)]
+    [InlineData(4, 3)]
+    [InlineData(17, 2)]
+    public void DetectsScramblingAfterClearPackets(int prefix, int scrambling)
+    {
+        var data = CreatePackets(188, prefix);
+        data[prefix + 188 * 5 + 3] = (byte)((scrambling << 6) | 0x10);
+        Assert.True(TsScramblingProbe.HasScrambledPayload(data));
+    }
+
+    [Theory]
+    [InlineData(192, 4)]
+    [InlineData(204, 0)]
+    public void DoesNotProbeUnsupportedPacketSizes(int stride, int prefix)
     {
         var data = CreatePackets(stride, prefix);
-        data[prefix + stride * 5 + 3] = (byte)((scrambling << 6) | 0x10);
+        for (var offset = prefix; offset + stride <= data.Length; offset += stride)
+            data[offset + 3] = 0x90;
+        Assert.False(TsScramblingProbe.HasScrambledPayload(data));
+    }
+
+    [Fact]
+    public void FindsScramblingAfterLostSynchronization()
+    {
+        var first = CreatePackets(188, 0);
+        var second = CreatePackets(188, 1);
+        second[1 + 188 * 5 + 3] = 0x90;
+        byte[] data = [.. first, .. second];
         Assert.True(TsScramblingProbe.HasScrambledPayload(data));
     }
 
