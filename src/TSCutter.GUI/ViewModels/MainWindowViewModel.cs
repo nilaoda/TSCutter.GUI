@@ -1298,7 +1298,9 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             Console.WriteLine(exception);
             await ShowMessageAsync(
-                exception.Message,
+                exception is MediaReadTimeoutException
+                    ? LocalizationManager.Instance.String_MediaReadTimeout
+                    : exception.Message,
                 LocalizationManager.Instance.String_FailedToDecode,
                 MessageBoxIcon.Error);
         }
@@ -1460,7 +1462,9 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception e)
         {
             Console.WriteLine(e);
-            await ShowMessageAsync(e.Message, LocalizationManager.Instance.String_FailedToDecode, MessageBoxIcon.Error);
+            await ShowMessageAsync(
+                e is MediaReadTimeoutException ? LocalizationManager.Instance.String_MediaReadTimeout : e.Message,
+                LocalizationManager.Instance.String_FailedToDecode, MessageBoxIcon.Error);
         }
         finally
         {
@@ -1532,7 +1536,9 @@ public partial class MainWindowViewModel : ViewModelBase
             _videoInstance?.Close();
             Console.WriteLine($"Failed to load video: {e}");
             await ShowMessageAsync(
-                e is ScrambledTsException
+                e is MediaReadTimeoutException
+                    ? LocalizationManager.Instance.String_MediaReadTimeout
+                    : e is ScrambledTsException
                     ? LocalizationManager.Instance.String_ScrambledTs
                     : e is NoVideoStreamException
                     ? LocalizationManager.Instance.String_NoVideoStream
