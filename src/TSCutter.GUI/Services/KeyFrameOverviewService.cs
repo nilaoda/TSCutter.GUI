@@ -23,7 +23,7 @@ internal sealed class KeyFrameOverviewService : IAsyncDisposable
         decoder = new VideoInstance(filePath, enableHardwareDecoding: false);
         try
         {
-            await decoder.InitVideoAsync().ConfigureAwait(false);
+            await decoder.InitVideoAsync(cancellationToken).ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
             return decoder.CreateEstimatedKeyFrameIndex();
         }

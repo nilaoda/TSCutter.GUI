@@ -11,6 +11,7 @@ using Sdcb.FFmpeg.Toolboxs.Extensions;
 using Sdcb.FFmpeg.Utils;
 using TSCutter.GUI.Extensions;
 using TSCutter.GUI.Rendering;
+using TSCutter.GUI.Services;
 using TSCutter.GUI.Utils;
 using static TSCutter.GUI.Utils.CommonUtil;
 
@@ -24,6 +25,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     };
 
     private const int MAX_FAILURE_COUT = 100;
+    private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan KeyFrameProbeTimeout = TimeSpan.FromSeconds(5);
+    private MediaReadDeadline? activeReadDeadline;
     private const int HardwareNoFrameFailureThreshold = 3;
     private const int MaximumEstimatedKeyFrames = 100_000;
     private const int AV_PKT_FLAG_KEY_FRAME = 0x0001;
@@ -66,17 +70,27 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     
     private readonly string videoPath = filePath;
 
-    public async Task InitVideoAsync()
+    public async Task InitVideoAsync(CancellationToken cancellationToken = default)
     {
-        await Task.Run(InitVideo);
+        await Task.Run(() => InitVideo(cancellationToken), cancellationToken);
     }
 
-    public void InitVideo()
+    public void InitVideo() => InitVideo(CancellationToken.None);
+
+    public void InitVideo(CancellationToken cancellationToken)
     {
-        var options = new MediaDictionary();
-        options.Set("scan_all_pmts", "1"); // Scan and combine all PMTs
-        inFc = FormatContext.OpenInputUrl(videoPath, options: options);
-        inFc.LoadStreamInfo();
+        cancellationToken.ThrowIfCancellationRequested();
+        if (TsScramblingProbe.HasScrambledPayload(videoPath))
+            throw new ScrambledTsException();
+
+        RunReadOperation(() =>
+        {
+            inFc = InterruptibleInputFormatContext.Open(videoPath,
+                () => activeReadDeadline?.ShouldInterrupt == true);
+            inFc.LoadStreamInfo();
+            activeReadDeadline!.ThrowIfInterrupted();
+            return true;
+        }, cancellationToken);
 
         if (!inFc.Streams.Any(stream => stream.Codecpar?.CodecType == AVMediaType.Video))
             throw new NoVideoStreamException();
@@ -119,22 +133,12 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         Console.WriteLine($"GPU presentation: {(gpuFramePresenter.Capabilities.IsAvailable ? "available" : "fallback to bitmap")} - "
             + gpuFramePresenter.Capabilities.UnavailableReason);
 
-        try
-        {
-            // calc KeyFrameGap from packet-level PTS (no frame decoding needed)
-            var (firstPts, gap) = ReadKeyFramePacketPts();
-            firstFrameTimestamp = firstPts;
-            maxPts = timelineDurationPts + firstFrameTimestamp;
-            keyFrameGap = gap;
-            Console.WriteLine($"keyFrameGap: {keyFrameGap}");
-            Seek(firstFrameTimestamp);
-        }
-        catch (TooManyDecodeFailuresException e)
-        {
-            Console.WriteLine(e);
-            Console.WriteLine("Try Audio Mode...");
-            InitAudio(inFc);
-        }
+        var (firstPts, gap) = ReadKeyFramePacketPts(cancellationToken);
+        firstFrameTimestamp = firstPts;
+        maxPts = timelineDurationPts + firstFrameTimestamp;
+        keyFrameGap = gap;
+        Console.WriteLine($"keyFrameGap: {keyFrameGap}");
+        RunReadOperation(() => { Seek(firstFrameTimestamp); return true; }, cancellationToken);
         
         Inited = true;
     }
@@ -290,13 +294,11 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         int maxHeight = 0,
         CancellationToken cancellationToken = default)
     {
-        return Task.Run(() =>
+        return Task.Run(() => RunReadOperation(() =>
         {
-            cancellationToken.ThrowIfCancellationRequested();
             SeekToTime(timeSpan);
-            cancellationToken.ThrowIfCancellationRequested();
             return DecodeNextFrame(1, cancellationToken, maxWidth, maxHeight);
-        }, cancellationToken);
+        }, cancellationToken), cancellationToken);
     }
 
     public void SeekToTime(TimeSpan timeSpan)
@@ -312,7 +314,12 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         //     return;
         Console.WriteLine($"SeekFile lastSeekPts: {lastSeekPts}, targetPts: {pts}");
         lastSeekPts = pts;
-        inFc.SeekFrame(pts - keyFrameGap * 4, videoStreamIndex);
+        RunReadOperation(() =>
+        {
+            inFc.SeekFrame(pts - keyFrameGap * 4, videoStreamIndex);
+            activeReadDeadline!.ThrowIfInterrupted();
+            return true;
+        }, CancellationToken.None);
         // flush
         videoDecoder.FlushBuffers();
     }
@@ -323,14 +330,20 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         //     return;
         Console.WriteLine($"lastSeekPts: {lastSeekPts}, targetPts: {pts}, flag: {flag}");
         lastSeekPts = pts;
-        inFc.SeekFrame(pts, videoStreamIndex, flag);
+        RunReadOperation(() =>
+        {
+            inFc.SeekFrame(pts, videoStreamIndex, flag);
+            activeReadDeadline!.ThrowIfInterrupted();
+            return true;
+        }, CancellationToken.None);
         // flush
         videoDecoder.FlushBuffers();
     }
 
-    public async Task<DecodeResult> DecodeNextFrameAsync(int count = 1)
+    public async Task<DecodeResult> DecodeNextFrameAsync(int count = 1, CancellationToken cancellationToken = default)
     {
-        return await Task.Run(() => DecodeNextFrame(count, CancellationToken.None, 0, 0));
+        return await Task.Run(() => RunReadOperation(
+            () => DecodeNextFrame(count, cancellationToken, 0, 0), cancellationToken), cancellationToken);
     }
 
     private DecodeResult DecodeNextFrame(
@@ -409,11 +422,12 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             Seek(targetPts);
         }
 
-        foreach (var packet in inFc.ReadPackets(videoStreamIndex))
+        foreach (var packet in inFc.ReadPackets())
         {
             try
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                activeReadDeadline?.ThrowIfInterrupted();
                 if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
                     continue;
                 if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
@@ -464,6 +478,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         }
 
         // No suitable keyframe found, retry by seeking slightly earlier
+        activeReadDeadline?.ThrowIfInterrupted();
         if (!AudioMode && lastSeekPts - 1000 < 0)
             throw new Exception("Decode Failed!");
 
@@ -602,34 +617,93 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     /// 仅读取 packet 级别的 PTS 来计算关键帧间隔，不执行真正的帧解码。
     /// 用于 InitVideo 阶段快速估算 keyFrameGap。
     /// </summary>
-    private (long firstPts, long gap) ReadKeyFramePacketPts(int requiredKeyFrames = 3)
+    private (long firstPts, long gap) ReadKeyFramePacketPts(CancellationToken cancellationToken, int requiredKeyFrames = 3)
     {
         var keyFramePtsList = new List<long>();
-        foreach (var packet in inFc.ReadPackets(videoStreamIndex))
+        try
         {
-            try
+            RunReadOperation(() =>
             {
-                if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
-                    continue;
-                if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
-                    continue;
+                foreach (var packet in inFc.ReadPackets())
+                {
+                    try
+                    {
+                        activeReadDeadline!.ThrowIfInterrupted();
+                        if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0 ||
+                            (packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
+                            continue;
 
-                keyFramePtsList.Add(packet.Pts);
-                if (keyFramePtsList.Count >= requiredKeyFrames)
-                    break;
-            }
-            finally
-            {
-                packet.Unref();
-            }
+                        keyFramePtsList.Add(packet.Pts);
+                        if (keyFramePtsList.Count >= requiredKeyFrames)
+                            break;
+                    }
+                    finally
+                    {
+                        packet.Unref();
+                    }
+                }
+                activeReadDeadline!.ThrowIfInterrupted();
+                return true;
+            }, cancellationToken, KeyFrameProbeTimeout);
+        }
+        catch (MediaReadTimeoutException)
+        {
+            // Sampling is optional; a long GOP must not switch the selected video to audio.
+            Console.WriteLine("Keyframe sampling timed out; using the available timestamps.");
         }
 
-        if (keyFramePtsList.Count < 2)
-            return (keyFramePtsList.Count > 0 ? keyFramePtsList[0] : 0, 0);
+        return ResolveKeyFrameTiming(keyFramePtsList, inVideoStream.StartTime, timeBase.Num, timeBase.Den);
+    }
 
-        var gap = Math.Abs(keyFramePtsList[^1] - keyFramePtsList[^2]);
-        Console.WriteLine($"KeyFramePacket PTS: {string.Join(", ", keyFramePtsList)}, gap: {gap}");
-        return (keyFramePtsList[0], gap);
+    internal static (long firstPts, long gap) ResolveKeyFrameTiming(
+        IReadOnlyList<long> keyFramePts, long streamStartTime, int timeBaseNumerator, int timeBaseDenominator)
+    {
+        var firstPts = keyFramePts.Count > 0 ? keyFramePts[0] :
+            streamStartTime == ffmpeg.AV_NOPTS_VALUE ? 0 : streamStartTime;
+        var gap = keyFramePts.Count >= 2 ? Math.Abs(keyFramePts[^1] - keyFramePts[^2]) : 0;
+        if (gap == 0)
+            gap = timeBaseNumerator > 0 && timeBaseDenominator > 0
+                ? Math.Max(1, (long)Math.Round(timeBaseDenominator / (double)timeBaseNumerator))
+                : 1;
+        return (firstPts, gap);
+    }
+
+    private unsafe T RunReadOperation<T>(Func<T> operation, CancellationToken cancellationToken, TimeSpan? timeout = null)
+    {
+        if (activeReadDeadline is not null)
+        {
+            activeReadDeadline.ThrowIfInterrupted();
+            return operation();
+        }
+
+        var deadline = new MediaReadDeadline(timeout ?? ReadTimeout, cancellationToken);
+        activeReadDeadline = deadline;
+        try
+        {
+            deadline.ThrowIfInterrupted();
+            return operation();
+        }
+        catch
+        {
+            // Translate native AVERROR_EXIT (or EOF after interruption) to cancellation/timeout.
+            deadline.ThrowIfInterrupted();
+            throw;
+        }
+        finally
+        {
+            activeReadDeadline = null;
+            if (deadline.ShouldInterrupt)
+            {
+                AVFormatContext* context = inFc;
+                if (context != null && context->pb != null)
+                {
+                    // Interrupted I/O can retain EOF/error state; allow the next seek to recover.
+                    context->pb->eof_reached = 0;
+                    if (context->pb->error == ffmpeg.AVERROR_EXIT)
+                        context->pb->error = 0;
+                }
+            }
+        }
     }
 
     public void Close()

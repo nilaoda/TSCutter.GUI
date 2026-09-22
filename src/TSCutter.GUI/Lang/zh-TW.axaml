@@ -22,6 +22,8 @@
     <x:String x:Key="String.FailedToDecode">解碼失敗</x:String>
     <x:String x:Key="String.FailedToLoadVideo">無法載入影片</x:String>
     <x:String x:Key="String.NoVideoStream">所選檔案不包含視訊軌。</x:String>
+    <x:String x:Key="String.MediaReadTimeout">讀取視訊逾時。請嘗試定位到其他位置，或檢查檔案是否加密或損壞。</x:String>
+    <x:String x:Key="String.ScrambledTs">檔案包含加密（加擾）的 188 位元組 TS 資料封包，無法預覽，請先解密。仍可透過工具選單進行原始切割和 TS 分析。</x:String>
     <x:String x:Key="String.SaveYourClip">儲存片段</x:String>
     <x:String x:Key="String.Menu.File">檔案(_F)</x:String>
     <x:String x:Key="String.Menu.Edit">編輯(_E)</x:String>
