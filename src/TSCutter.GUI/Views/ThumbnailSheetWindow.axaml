@@ -135,6 +135,7 @@
                                   Zoom="{Binding PreviewZoom, Mode=TwoWay}"
                                   MinZoomFactor="0.01"
                                   MaxZoomFactor="4"
+                                  FitOnSourceChanged="True"
                                   UseHighQualityInterpolation="True" />
         </Border>
 

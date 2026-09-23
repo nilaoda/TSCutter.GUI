@@ -137,7 +137,7 @@ public static class ThumbnailSheetComposer
     public static Bitmap Compose(
         ThumbnailSheetLayout layout,
         IReadOnlyList<ThumbnailSheetCell> cells,
-        IReadOnlyList<string> headerLines,
+        IReadOnlyList<ThumbnailSheetHeaderLine> headerLines,
         bool showCaption,
         bool showIndex)
     {
@@ -180,7 +180,7 @@ public static class ThumbnailSheetComposer
     private static void DrawHeader(
         DrawingContext context,
         ThumbnailSheetLayout layout,
-        IReadOnlyList<string> headerLines)
+        IReadOnlyList<ThumbnailSheetHeaderLine> headerLines)
     {
         var left = Padding;
         var top = Padding;
@@ -194,12 +194,14 @@ public static class ThumbnailSheetComposer
         {
             DrawText(
                 context,
-                headerLines[0],
+                headerLines[0].Text,
                 new Point(left, top),
                 titleSize,
                 SheetBrushes.HeaderPrimary,
                 SheetFonts.Header,
-                maxWidth: layout.Width - Padding * 2);
+                maxWidth: layout.Width - Padding * 2,
+                accentStart: headerLines[0].AccentStart,
+                accentLength: headerLines[0].AccentLength);
             top += HeaderTitleLineHeight * scale;
         }
 
@@ -208,12 +210,14 @@ public static class ThumbnailSheetComposer
         {
             DrawText(
                 context,
-                headerLines[index],
+                headerLines[index].Text,
                 new Point(left, top),
                 infoSize,
                 SheetBrushes.HeaderSecondary,
                 SheetFonts.Mono,
-                maxWidth: layout.Width - Padding * 2);
+                maxWidth: layout.Width - Padding * 2,
+                accentStart: headerLines[index].AccentStart,
+                accentLength: headerLines[index].AccentLength);
             top += HeaderInfoLineHeight * scale;
         }
     }
@@ -315,7 +319,9 @@ public static class ThumbnailSheetComposer
         double fontSize,
         IBrush brush,
         Typeface typeface,
-        double maxWidth)
+        double maxWidth,
+        int accentStart = -1,
+        int accentLength = 0)
     {
         if (string.IsNullOrEmpty(text) || maxWidth <= 0)
             return;
@@ -324,8 +330,9 @@ public static class ThumbnailSheetComposer
         var alignedOrigin = new Point(Math.Round(origin.X), Math.Round(origin.Y));
         var alignedFontSize = Math.Round(fontSize);
 
+        var displayText = text;
         var formatted = new FormattedText(
-            text,
+            displayText,
             CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
             typeface,
@@ -334,17 +341,24 @@ public static class ThumbnailSheetComposer
 
         if (formatted.Width > maxWidth)
         {
-            var clipped = Ellipsize(text, maxWidth, typeface, alignedFontSize, brush);
-            if (clipped.Length == 0)
+            displayText = Ellipsize(text, maxWidth, typeface, alignedFontSize, brush);
+            if (displayText.Length == 0)
                 return;
 
             formatted = new FormattedText(
-                clipped,
+                displayText,
                 CultureInfo.CurrentCulture,
                 FlowDirection.LeftToRight,
                 typeface,
                 alignedFontSize,
                 brush);
+        }
+
+        if (accentStart >= 0
+            && accentLength > 0
+            && accentStart + accentLength <= displayText.Length)
+        {
+            formatted.SetForegroundBrush(SheetBrushes.HeaderAccent, accentStart, accentLength);
         }
 
         context.DrawText(formatted, alignedOrigin);
@@ -400,6 +414,7 @@ internal static class SheetBrushes
     public static readonly IBrush CellPlaceholder = new SolidColorBrush(Color.FromRgb(46, 48, 53));
     public static readonly IBrush HeaderPrimary = new SolidColorBrush(Color.FromRgb(240, 241, 244));
     public static readonly IBrush HeaderSecondary = new SolidColorBrush(Color.FromRgb(168, 172, 180));
+    public static readonly IBrush HeaderAccent = new SolidColorBrush(Color.FromRgb(245, 158, 66));
     public static readonly IBrush Caption = new SolidColorBrush(Color.FromRgb(178, 182, 190));
 }
 

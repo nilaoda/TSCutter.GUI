@@ -782,6 +782,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                 var displayGeometry = AudioMode
                     ? default
                     : GetDisplayGeometry(frame);
+                var videoDynamicRange = AudioMode
+                    ? VideoDynamicRange.Standard
+                    : GetVideoDynamicRange(frame);
 #pragma warning restore CS0618 // Obsolete
 
                 // 优先让平台 presenter 直接使用原生 surface。只有 presenter
@@ -802,6 +805,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                                 GpuFrame = gpuFrame,
                                 SourcePixelSize = displayGeometry.PixelSize,
                                 RequiresSampleAspectRatioCorrection = displayGeometry.RequiresCorrection,
+                                VideoDynamicRange = videoDynamicRange,
                                 FrameTimestamp = PtsToTimeSpan(pts),
                                 PresentationMode = PresentationMode,
                             };
@@ -898,6 +902,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                             : displayGeometry.PixelSize,
                         RequiresSampleAspectRatioCorrection =
                             !AudioMode && displayGeometry.RequiresCorrection,
+                        VideoDynamicRange = videoDynamicRange,
                         FrameTimestamp = PtsToTimeSpan(pts),
                         PresentationMode = PresentationMode,
                     };
@@ -924,6 +929,23 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         // If no frames were successfully processed
         Console.WriteLine("no frames were successfully processed");
         return null;
+    }
+
+    private static unsafe VideoDynamicRange GetVideoDynamicRange(Frame frame)
+    {
+        AVFrame* rawFrame = frame;
+        var hasDolbyVisionMetadata =
+            ffmpeg.av_frame_get_side_data(rawFrame, AVFrameSideDataType.DoviRpuBuffer) != null
+            || ffmpeg.av_frame_get_side_data(rawFrame, AVFrameSideDataType.DoviMetadata) != null;
+        var hasHdrMetadata =
+            ffmpeg.av_frame_get_side_data(rawFrame, AVFrameSideDataType.MasteringDisplayMetadata) != null
+            || ffmpeg.av_frame_get_side_data(rawFrame, AVFrameSideDataType.ContentLightLevel) != null
+            || ffmpeg.av_frame_get_side_data(rawFrame, AVFrameSideDataType.DynamicHdrPlus) != null;
+        return VideoDynamicRangeDetector.Detect(
+            rawFrame->color_trc,
+            hasDolbyVisionMetadata,
+            hasHdrMetadata,
+            codecTag: 0);
     }
 
     private (Avalonia.PixelSize PixelSize, bool RequiresCorrection) GetDisplayGeometry(Frame frame)

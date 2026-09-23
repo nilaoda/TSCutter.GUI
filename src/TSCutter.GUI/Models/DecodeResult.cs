@@ -20,6 +20,7 @@ public class DecodeResult
     /// Consumers can use this to avoid an unnecessary resample for square pixels.
     /// </summary>
     public bool RequiresSampleAspectRatioCorrection { get; init; }
+    public VideoDynamicRange VideoDynamicRange { get; init; }
     public TimeSpan FrameTimestamp { get; init; }
     public VideoPresentationMode PresentationMode { get; init; } = VideoPresentationMode.SoftwareBitmap;
 }

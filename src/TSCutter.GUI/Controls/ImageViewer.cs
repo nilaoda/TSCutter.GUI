@@ -6,7 +6,6 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
-using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 using TSCutter.GUI.Rendering;
 
@@ -60,6 +59,13 @@ public class ImageViewer : Control
     /// Set to false when user manually zooms or drags, restored to true when FitToView is called.
     /// </summary>
     public static readonly StyledProperty<bool> AutoFitProperty = AvaloniaProperty.Register<ImageViewer, bool>(nameof(AutoFit), true);
+
+    /// <summary>
+    /// When true, loading a new image restores auto-fit and calculates the fitted
+    /// transform before the image is rendered for the first time.
+    /// </summary>
+    public static readonly StyledProperty<bool> FitOnSourceChangedProperty =
+        AvaloniaProperty.Register<ImageViewer, bool>(nameof(FitOnSourceChanged));
 
     public Bitmap? Image
     {
@@ -122,6 +128,12 @@ public class ImageViewer : Control
         set => SetValue(AutoFitProperty, value);
     }
 
+    public bool FitOnSourceChanged
+    {
+        get => GetValue(FitOnSourceChangedProperty);
+        set => SetValue(FitOnSourceChangedProperty, value);
+    }
+
     public ICommand FitCommand => new RelayCommand(FitToView, () => true);
 
     public ICommand ActualSizeCommand => new RelayCommand(ShowActualSize, () => true);
@@ -149,17 +161,8 @@ public class ImageViewer : Control
     {
         if (Image is null && GpuFrame is null) return;
 
-        var scalingFactor = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
-        var contentSize = GetContentPixelSize(
-            Image?.PixelSize ?? GpuFrame?.PixelSize ?? default,
-            SourcePixelSize);
-        Zoom = Math.Min(Bounds.Width / contentSize.Width, Bounds.Height / contentSize.Height) * scalingFactor;
-
-        OffsetX = (Bounds.Width - contentSize.Width * Zoom / scalingFactor) / 2;
-        OffsetY = (Bounds.Height - contentSize.Height * Zoom / scalingFactor) / 2;
-
-        // Re-enable auto-fit when user manually triggers fit
         AutoFit = true;
+        ApplyFitTransform(Bounds.Size);
     }
 
     private void ShowActualSize()
@@ -174,6 +177,22 @@ public class ImageViewer : Control
 
     private Size _previousBounds;
 
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        var sourceChanged = change.Property == ImageProperty || change.Property == GpuFrameProperty;
+        var geometryChanged = sourceChanged || change.Property == SourcePixelSizeProperty;
+        if (!geometryChanged || (Image is null && GpuFrame is null))
+            return;
+
+        if (sourceChanged && FitOnSourceChanged)
+            AutoFit = true;
+
+        if (AutoFit)
+            ApplyFitTransform(Bounds.Size);
+    }
+
     /// <summary>
     /// Override ArrangeOverride to detect size changes and auto-fit the image.
     /// </summary>
@@ -181,23 +200,49 @@ public class ImageViewer : Control
     {
         var result = base.ArrangeOverride(finalSize);
 
-        if (AutoFit && (Image is not null || GpuFrame is not null) && finalSize != _previousBounds && finalSize.Width > 0 && finalSize.Height > 0)
+        if (AutoFit && (Image is not null || GpuFrame is not null) && finalSize != _previousBounds)
         {
             _previousBounds = finalSize;
-            // Use Dispatcher to defer the fit call, ensuring Bounds is updated
-            Dispatcher.UIThread.Post(() =>
-            {
-                var scalingFactor = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
-                var contentSize = GetContentPixelSize(
-                    Image?.PixelSize ?? GpuFrame?.PixelSize ?? default,
-                    SourcePixelSize);
-                Zoom = Math.Min(Bounds.Width / contentSize.Width, Bounds.Height / contentSize.Height) * scalingFactor;
-                OffsetX = (Bounds.Width - contentSize.Width * Zoom / scalingFactor) / 2;
-                OffsetY = (Bounds.Height - contentSize.Height * Zoom / scalingFactor) / 2;
-            });
+            ApplyFitTransform(finalSize);
         }
 
         return result;
+    }
+
+    private void ApplyFitTransform(Size viewportSize)
+    {
+        var contentSize = GetContentPixelSize(
+            Image?.PixelSize ?? GpuFrame?.PixelSize ?? default,
+            SourcePixelSize);
+        var scalingFactor = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
+        var transform = CalculateFitTransform(viewportSize, contentSize, scalingFactor);
+        if (transform is not { } value)
+            return;
+
+        Zoom = value.Zoom;
+        OffsetX = value.OffsetX;
+        OffsetY = value.OffsetY;
+    }
+
+    internal static (double Zoom, double OffsetX, double OffsetY)? CalculateFitTransform(
+        Size viewportSize,
+        PixelSize contentSize,
+        double scalingFactor)
+    {
+        if (viewportSize.Width <= 0 || viewportSize.Height <= 0
+            || contentSize.Width <= 0 || contentSize.Height <= 0)
+        {
+            return null;
+        }
+
+        scalingFactor = scalingFactor > 0 ? scalingFactor : 1.0;
+        var zoom = Math.Min(
+            viewportSize.Width / contentSize.Width,
+            viewportSize.Height / contentSize.Height) * scalingFactor;
+        return (
+            zoom,
+            (viewportSize.Width - contentSize.Width * zoom / scalingFactor) / 2,
+            (viewportSize.Height - contentSize.Height * zoom / scalingFactor) / 2);
     }
 
     private Point _lastDragPoint;

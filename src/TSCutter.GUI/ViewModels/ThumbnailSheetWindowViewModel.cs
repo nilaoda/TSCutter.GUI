@@ -27,6 +27,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
 {
     /// <summary>格数上限，避免一次请求过多帧点把解码器压满。</summary>
     private const int MaximumCellCount = 240;
+    private const string HeaderItemSeparator = " | ";
     internal const double DefaultOutputWidth = 4000;
 
     /// <summary>参数变更后的去抖延迟，避免拖动滑块时反复重算。</summary>
@@ -697,6 +698,14 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
                 layout.Width,
                 layout.Height);
 
+            var decodedDynamicRange = service.DetectedVideoDynamicRange;
+            if (decodedDynamicRange != VideoDynamicRange.Standard
+                && (info.VideoDynamicRange == VideoDynamicRange.Standard
+                    || decodedDynamicRange == VideoDynamicRange.DolbyVision))
+            {
+                info = info with { VideoDynamicRange = decodedDynamicRange };
+            }
+
             var headerLines = BuildHeaderLines();
             composed = ThumbnailSheetComposer.Compose(
                 layout,
@@ -729,7 +738,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
     /// 表头按文件名、基本信息、视频、音频和字幕轨道分行。
     /// 缺失字段直接省略，避免出现 "Unknown" 之类的噪声。
     /// </summary>
-    private IReadOnlyList<string> BuildHeaderLines()
+    private IReadOnlyList<ThumbnailSheetHeaderLine> BuildHeaderLines()
     {
         var localization = LocalizationManager.Instance;
         return BuildHeaderLines(
@@ -742,7 +751,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             localization.String_ThumbnailSheet_Header_SubtitleTracks);
     }
 
-    internal static IReadOnlyList<string> BuildHeaderLines(
+    internal static IReadOnlyList<ThumbnailSheetHeaderLine> BuildHeaderLines(
         ThumbnailSheetInfo info,
         string fallbackFileName,
         string fileNameLabel,
@@ -751,11 +760,11 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
         string audioTracksLabel,
         string subtitleTracksLabel)
     {
-        var lines = new List<string>(5);
+        var lines = new List<ThumbnailSheetHeaderLine>(5);
 
         var name = string.IsNullOrEmpty(info.FileName) ? fallbackFileName : info.FileName;
         if (!string.IsNullOrEmpty(name))
-            lines.Add(fileNameLabel + name);
+            lines.Add(new ThumbnailSheetHeaderLine(fileNameLabel + name));
 
         var summaryParts = new List<string>();
         if (info.OverallBitRate > 0)
@@ -765,7 +774,8 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
         if (info.FileSize > 0)
             summaryParts.Add(CommonUtil.FormatFileSize(info.FileSize));
         if (summaryParts.Count > 0)
-            lines.Add(fileInfoLabel + string.Join("  |  ", summaryParts));
+            lines.Add(new ThumbnailSheetHeaderLine(
+                fileInfoLabel + string.Join(HeaderItemSeparator, summaryParts)));
 
         var videoTracks = new List<string>();
         if (info.HasVideo)
@@ -787,7 +797,23 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
         }
         videoTracks.AddRange(info.AdditionalVideoCodecs);
         if (videoTracks.Count > 0)
-            lines.Add(videoTracksLabel + string.Join("  |  ", videoTracks));
+        {
+            var videoLine = videoTracksLabel + string.Join(HeaderItemSeparator, videoTracks);
+            var dynamicRangeLabel = GetDynamicRangeLabel(info.VideoDynamicRange);
+            if (dynamicRangeLabel is null)
+            {
+                lines.Add(new ThumbnailSheetHeaderLine(videoLine));
+            }
+            else
+            {
+                var accentStart = videoLine.Length + 1;
+                var accentText = $"[{dynamicRangeLabel}]";
+                lines.Add(new ThumbnailSheetHeaderLine(
+                    $"{videoLine} {accentText}",
+                    accentStart,
+                    accentText.Length));
+            }
+        }
 
         var audioTracks = new List<string>();
         if (info.AudioCodec is { Length: > 0 } audio)
@@ -796,17 +822,38 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
                 audio += $" {info.AudioChannels}ch";
             if (info.AudioSampleRate > 0)
                 audio += $" {info.AudioSampleRate / 1000.0:0.##}kHz";
-            audioTracks.Add(audio);
+            audioTracks.Add(FormatTrack(audio, info.AudioLanguage));
         }
-        audioTracks.AddRange(info.AdditionalAudioCodecs);
+        foreach (var track in info.AdditionalAudioTracks)
+            audioTracks.Add(FormatTrack(track.Codec, track.Language));
         if (audioTracks.Count > 0)
-            lines.Add(audioTracksLabel + string.Join("  |  ", audioTracks));
+            lines.Add(new ThumbnailSheetHeaderLine(
+                audioTracksLabel + string.Join(HeaderItemSeparator, audioTracks)));
 
-        if (info.SubtitleCodecs.Count > 0)
-            lines.Add(subtitleTracksLabel + string.Join("  |  ", info.SubtitleCodecs));
+        if (info.SubtitleTracks.Count > 0)
+        {
+            var subtitleTracks = new List<string>(info.SubtitleTracks.Count);
+            foreach (var track in info.SubtitleTracks)
+                subtitleTracks.Add(FormatTrack(track.Codec, track.Language));
+            lines.Add(new ThumbnailSheetHeaderLine(
+                subtitleTracksLabel + string.Join(HeaderItemSeparator, subtitleTracks)));
+        }
 
         return lines;
     }
+
+    private static string FormatTrack(string codec, string? language) =>
+        string.IsNullOrWhiteSpace(language)
+            ? codec
+            : $"{codec} [{language.Trim()}]";
+
+    internal static string? GetDynamicRangeLabel(VideoDynamicRange dynamicRange) => dynamicRange switch
+    {
+        VideoDynamicRange.Hdr => "HDR",
+        VideoDynamicRange.Hlg => "HLG",
+        VideoDynamicRange.DolbyVision => "DoVi",
+        _ => null
+    };
 
     private void SetPreview(Bitmap? bitmap)
     {

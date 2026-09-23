@@ -1,4 +1,5 @@
 using Avalonia;
+using System.Linq;
 using Sdcb.FFmpeg.Raw;
 using TSCutter.GUI.Models;
 using TSCutter.GUI.Rendering;
@@ -37,6 +38,46 @@ public sealed class ThumbnailSheetTests
     }
 
     [Theory]
+    [InlineData(AVColorTransferCharacteristic.Unspecified, false, false, 0u, VideoDynamicRange.Standard)]
+    [InlineData(AVColorTransferCharacteristic.Smpte2084, false, false, 0u, VideoDynamicRange.Hdr)]
+    [InlineData(AVColorTransferCharacteristic.Unspecified, false, true, 0u, VideoDynamicRange.Hdr)]
+    [InlineData(AVColorTransferCharacteristic.AribStdB67, false, false, 0u, VideoDynamicRange.Hlg)]
+    [InlineData(AVColorTransferCharacteristic.Smpte2084, true, true, 0u, VideoDynamicRange.DolbyVision)]
+    public void VideoDynamicRangeUsesTransferAndStreamMetadata(
+        AVColorTransferCharacteristic colorTransfer,
+        bool hasDolbyVisionConfig,
+        bool hasHdrMetadata,
+        uint codecTag,
+        VideoDynamicRange expected)
+    {
+        Assert.Equal(
+            expected,
+            VideoDynamicRangeDetector.Detect(
+                colorTransfer,
+                hasDolbyVisionConfig,
+                hasHdrMetadata,
+                codecTag));
+    }
+
+    [Theory]
+    [InlineData('d', 'v', 'h', 'e')]
+    [InlineData('d', 'v', 'h', '1')]
+    [InlineData('d', 'v', 'a', 'v')]
+    [InlineData('d', 'v', 'a', '1')]
+    public void DolbyVisionCodecTagsAreRecognized(char a, char b, char c, char d)
+    {
+        var codecTag = VideoDynamicRangeDetector.MakeCodecTag(a, b, c, d);
+
+        Assert.Equal(
+            VideoDynamicRange.DolbyVision,
+            VideoDynamicRangeDetector.Detect(
+                AVColorTransferCharacteristic.Unspecified,
+                hasDolbyVisionMetadata: false,
+                hasHdrMetadata: false,
+                codecTag));
+    }
+
+    [Theory]
     [InlineData(1920, 1080, 1, 1, 16d / 9d)]
     [InlineData(1440, 1080, 1, 1, 4d / 3d)]
     [InlineData(720, 576, 16, 15, 4d / 3d)]
@@ -70,11 +111,12 @@ public sealed class ThumbnailSheetTests
             VideoHeight = 2160,
             VideoFrameRate = 50,
             AudioCodec = "Ac3",
+            AudioLanguage = "eng",
             AudioChannels = 6,
             AudioSampleRate = 48000,
             AdditionalVideoCodecs = ["Mjpeg"],
-            AdditionalAudioCodecs = ["Aac"],
-            SubtitleCodecs = ["SubRip", "HdmvPgsSubtitle"]
+            AdditionalAudioTracks = [new("Aac", "jpn")],
+            SubtitleTracks = [new("SubRip", "zho"), new("HdmvPgsSubtitle", "eng")]
         };
 
         var lines = ThumbnailSheetWindowViewModel.BuildHeaderLines(
@@ -87,11 +129,33 @@ public sealed class ThumbnailSheetTests
             "字幕轨道：");
 
         Assert.Equal(5, lines.Count);
-        Assert.Equal("文件名：sample.ts", lines[0]);
-        Assert.StartsWith("文件信息：", lines[1]);
-        Assert.Equal("视频轨道：Hevc 3840x2160 50fps  |  Mjpeg", lines[2]);
-        Assert.Equal("音频轨道：Ac3 6ch 48kHz  |  Aac", lines[3]);
-        Assert.Equal("字幕轨道：SubRip  |  HdmvPgsSubtitle", lines[4]);
+        Assert.Equal("文件名：sample.ts", lines[0].Text);
+        Assert.StartsWith("文件信息：", lines[1].Text);
+        Assert.Equal("视频轨道：Hevc 3840x2160 50fps | Mjpeg", lines[2].Text);
+        Assert.Equal("音频轨道：Ac3 6ch 48kHz [eng] | Aac [jpn]", lines[3].Text);
+        Assert.Equal("字幕轨道：SubRip [zho] | HdmvPgsSubtitle [eng]", lines[4].Text);
+    }
+
+    [Fact]
+    public void HeaderOmitsMissingTrackLanguages()
+    {
+        var info = new ThumbnailSheetInfo
+        {
+            AudioCodec = "Ac3",
+            AdditionalAudioTracks = [new("Aac")],
+            SubtitleTracks = [new("DvbSubtitle")]
+        };
+
+        var lines = ThumbnailSheetWindowViewModel.BuildHeaderLines(
+            info,
+            string.Empty,
+            "File: ",
+            "Info: ",
+            "Video: ",
+            "Audio: ",
+            "Subtitle: ");
+
+        Assert.Equal(["Audio: Ac3 | Aac", "Subtitle: DvbSubtitle"], lines.Select(line => line.Text));
     }
 
     [Fact]
@@ -112,7 +176,7 @@ public sealed class ThumbnailSheetTests
             "Audio: ",
             "Subtitle: ");
 
-        Assert.Equal(["File: audio-only.ts", "Audio: Aac"], lines);
+        Assert.Equal(["File: audio-only.ts", "Audio: Aac"], lines.Select(line => line.Text));
     }
 
     [Theory]
@@ -138,7 +202,35 @@ public sealed class ThumbnailSheetTests
             "Audio: ",
             "Subtitle: ");
 
-        Assert.Equal([expected], lines);
+        Assert.Equal([expected], lines.Select(line => line.Text));
+    }
+
+    [Theory]
+    [InlineData(VideoDynamicRange.Hdr, "HDR")]
+    [InlineData(VideoDynamicRange.Hlg, "HLG")]
+    [InlineData(VideoDynamicRange.DolbyVision, "DoVi")]
+    public void HeaderAppendsDynamicRangeAsAccent(
+        VideoDynamicRange dynamicRange,
+        string expectedLabel)
+    {
+        var info = new ThumbnailSheetInfo
+        {
+            VideoCodec = "Hevc",
+            VideoDynamicRange = dynamicRange
+        };
+
+        var lines = ThumbnailSheetWindowViewModel.BuildHeaderLines(
+            info,
+            string.Empty,
+            "File: ",
+            "Info: ",
+            "Video: ",
+            "Audio: ",
+            "Subtitle: ");
+
+        var line = Assert.Single(lines);
+        Assert.Equal($"Video: Hevc [{expectedLabel}]", line.Text);
+        Assert.Equal($"[{expectedLabel}]", line.Text.Substring(line.AccentStart, line.AccentLength));
     }
 
     [Fact]

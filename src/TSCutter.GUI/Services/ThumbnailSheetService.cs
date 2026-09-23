@@ -19,8 +19,10 @@ internal sealed class ThumbnailSheetService : IAsyncDisposable
 {
     private VideoInstance? decoder;
     private TimeSpan duration;
+    private VideoDynamicRange detectedVideoDynamicRange;
 
     public TimeSpan Duration => duration;
+    public VideoDynamicRange DetectedVideoDynamicRange => detectedVideoDynamicRange;
 
     /// <summary>
     /// 打开输入并解析时长。返回值表示是否拿到了有效的视频时长
@@ -163,6 +165,12 @@ internal sealed class ThumbnailSheetService : IAsyncDisposable
             cellSize.Height,
             cancellationToken).ConfigureAwait(false);
 
+        if (detectedVideoDynamicRange == VideoDynamicRange.Standard
+            || result.VideoDynamicRange == VideoDynamicRange.DolbyVision)
+        {
+            detectedVideoDynamicRange = result.VideoDynamicRange;
+        }
+
         try
         {
             if (result.Bitmap is null)
@@ -195,6 +203,7 @@ internal sealed class ThumbnailSheetService : IAsyncDisposable
         if (activeDecoder is not null)
             activeDecoder.Dispose();
         duration = TimeSpan.Zero;
+        detectedVideoDynamicRange = VideoDynamicRange.Standard;
         await ValueTask.CompletedTask;
     }
 }

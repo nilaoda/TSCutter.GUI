@@ -45,6 +45,34 @@ public sealed class ImageViewerTests
         Assert.Equal(new PixelSize(960, 540), result);
     }
 
+    [Fact]
+    public void FitTransformCentersImageWithoutWaitingForLayoutCallback()
+    {
+        var result = ImageViewer.CalculateFitTransform(
+            new Size(1000, 700),
+            new PixelSize(4000, 6000),
+            1.0);
+
+        Assert.NotNull(result);
+        Assert.Equal(700d / 6000d, result.Value.Zoom, 6);
+        Assert.Equal((1000d - 4000d * result.Value.Zoom) / 2, result.Value.OffsetX, 6);
+        Assert.Equal(0, result.Value.OffsetY, 6);
+    }
+
+    [Fact]
+    public void FitTransformAccountsForDisplayScaling()
+    {
+        var result = ImageViewer.CalculateFitTransform(
+            new Size(1000, 700),
+            new PixelSize(4000, 6000),
+            2.0);
+
+        Assert.NotNull(result);
+        Assert.Equal(2 * 700d / 6000d, result.Value.Zoom, 6);
+        Assert.Equal((1000d - 4000d * result.Value.Zoom / 2) / 2, result.Value.OffsetX, 6);
+        Assert.Equal(0, result.Value.OffsetY, 6);
+    }
+
     [Theory]
     [InlineData(1.0, 1.1, 0.01, 4.0, 1.1)]
     [InlineData(3.9, 1.1, 0.01, 4.0, 4.0)]

@@ -48,8 +48,8 @@ public static class ThumbnailSheetInfoBuilder
         var duration = ResolveDuration(hasVideo ? videoStream : default, hasVideo, fc.Duration);
 
         var additionalVideoCodecs = new List<string>();
-        var additionalAudioCodecs = new List<string>();
-        var subtitleCodecs = new List<string>();
+        var additionalAudioTracks = new List<ThumbnailSheetTrackInfo>();
+        var subtitleTracks = new List<ThumbnailSheetTrackInfo>();
         for (var i = 0; i < fc.Streams.Count; i++)
         {
             var codecParameters = fc.Streams[i].Codecpar!;
@@ -66,10 +66,14 @@ public static class ThumbnailSheetInfoBuilder
                     additionalVideoCodecs.Add(codec);
                     break;
                 case AVMediaType.Audio when i != audioIndex:
-                    additionalAudioCodecs.Add(codec);
+                    additionalAudioTracks.Add(new ThumbnailSheetTrackInfo(
+                        codec,
+                        GetLanguage(fc.Streams[i])));
                     break;
                 case AVMediaType.Subtitle:
-                    subtitleCodecs.Add(codec);
+                    subtitleTracks.Add(new ThumbnailSheetTrackInfo(
+                        codec,
+                        GetLanguage(fc.Streams[i])));
                     break;
             }
         }
@@ -87,6 +91,9 @@ public static class ThumbnailSheetInfoBuilder
             VideoScanMode = hasVideo
                 ? GetVideoScanMode(videoStream.Codecpar!.FieldOrder)
                 : VideoScanMode.Unknown,
+            VideoDynamicRange = hasVideo
+                ? GetVideoDynamicRange(videoStream)
+                : VideoDynamicRange.Standard,
             VideoDisplayAspectRatio = hasVideo
                 ? CalculateDisplayAspectRatio(
                     videoStream.Codecpar!.Width,
@@ -99,13 +106,23 @@ public static class ThumbnailSheetInfoBuilder
                 : 0,
             VideoBitRate = hasVideo ? videoStream.Codecpar!.BitRate : 0,
             AudioCodec = hasAudio ? audioStream.Codecpar!.CodecId.ToString() : null,
+            AudioLanguage = hasAudio ? GetLanguage(audioStream) : null,
             AudioChannels = hasAudio ? audioStream.Codecpar!.ChLayout.nb_channels : 0,
             AudioSampleRate = hasAudio ? audioStream.Codecpar!.SampleRate : 0,
             AudioBitRate = hasAudio ? audioStream.Codecpar!.BitRate : 0,
             AdditionalVideoCodecs = additionalVideoCodecs,
-            AdditionalAudioCodecs = additionalAudioCodecs,
-            SubtitleCodecs = subtitleCodecs
+            AdditionalAudioTracks = additionalAudioTracks,
+            SubtitleTracks = subtitleTracks
         };
+    }
+
+    private static string? GetLanguage(MediaStream stream)
+    {
+        if (!stream.Metadata.TryGetValue("language", out var language))
+            return null;
+
+        language = language.Trim();
+        return language.Length > 0 ? language : null;
     }
 
     internal static bool IsDisplayableStreamType(AVMediaType mediaType) =>
@@ -118,6 +135,34 @@ public static class ThumbnailSheetInfoBuilder
             VideoScanMode.Interlaced,
         _ => VideoScanMode.Unknown
     };
+
+    private static VideoDynamicRange GetVideoDynamicRange(MediaStream stream)
+    {
+        var codecParameters = stream.Codecpar!;
+        var hasDolbyVisionConfig = HasCodecSideData(codecParameters, AVPacketSideDataType.DoviConf);
+        var hasHdrMetadata =
+            HasCodecSideData(codecParameters, AVPacketSideDataType.MasteringDisplayMetadata)
+            || HasCodecSideData(codecParameters, AVPacketSideDataType.ContentLightLevel)
+            || HasCodecSideData(codecParameters, AVPacketSideDataType.DynamicHdr10Plus);
+        return VideoDynamicRangeDetector.Detect(
+            codecParameters.ColorTrc,
+            hasDolbyVisionConfig,
+            hasHdrMetadata,
+            codecParameters.CodecTag);
+    }
+
+    private static unsafe bool HasCodecSideData(CodecParameters codecParameters, AVPacketSideDataType type)
+    {
+        AVCodecParameters* rawParameters = codecParameters;
+        var sideData = rawParameters->coded_side_data;
+        for (var index = 0; sideData != null && index < rawParameters->nb_coded_side_data; index++)
+        {
+            if (sideData[index].type == type)
+                return true;
+        }
+
+        return false;
+    }
 
     internal static double CalculateDisplayAspectRatio(
         int width,

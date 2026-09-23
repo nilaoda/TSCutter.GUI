@@ -26,6 +26,15 @@ public enum VideoScanMode
     Interlaced
 }
 
+/// <summary>缩略图总览中轨道的编码及可选语言标签。</summary>
+public sealed record ThumbnailSheetTrackInfo(string Codec, string? Language = null);
+
+/// <summary>可为其中一段文字指定强调色的表头行。</summary>
+public sealed record ThumbnailSheetHeaderLine(
+    string Text,
+    int AccentStart = -1,
+    int AccentLength = 0);
+
 /// <summary>
 /// 缩略图总览表头所需的结构化媒体信息。
 /// 与 <see cref="Utils.MediaInfoBuilder"/> 的区别：后者输出的是对齐好的英文长文本，
@@ -53,6 +62,8 @@ public sealed record ThumbnailSheetInfo
 
     public VideoScanMode VideoScanMode { get; init; }
 
+    public VideoDynamicRange VideoDynamicRange { get; init; }
+
     /// <summary>应用像素宽高比后的显示宽高比（宽 / 高）。未知时为 0。</summary>
     public double VideoDisplayAspectRatio { get; init; }
 
@@ -61,6 +72,8 @@ public sealed record ThumbnailSheetInfo
     public long VideoBitRate { get; init; }
 
     public string? AudioCodec { get; init; }
+
+    public string? AudioLanguage { get; init; }
 
     public int AudioChannels { get; init; }
 
@@ -71,11 +84,11 @@ public sealed record ThumbnailSheetInfo
     /// <summary>除首条视频流之外的其他视频轨道编码。</summary>
     public IReadOnlyList<string> AdditionalVideoCodecs { get; init; } = [];
 
-    /// <summary>除首条音频流之外的其他音频轨道编码。</summary>
-    public IReadOnlyList<string> AdditionalAudioCodecs { get; init; } = [];
+    /// <summary>除首条音频流之外的其他音频轨道。</summary>
+    public IReadOnlyList<ThumbnailSheetTrackInfo> AdditionalAudioTracks { get; init; } = [];
 
-    /// <summary>所有字幕轨道编码。</summary>
-    public IReadOnlyList<string> SubtitleCodecs { get; init; } = [];
+    /// <summary>所有字幕轨道。</summary>
+    public IReadOnlyList<ThumbnailSheetTrackInfo> SubtitleTracks { get; init; } = [];
 
     public bool HasVideo => VideoCodec is not null;
 
