@@ -17,6 +17,16 @@ sealed class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .With(new Win32PlatformOptions
+            {
+                // DirectComposition can spin without waiting for VSync on some Windows VMs.
+                // Keep the modern GPU path and fall back to the redirection surface instead.
+                CompositionMode =
+                [
+                    Win32CompositionMode.WinUIComposition,
+                    Win32CompositionMode.RedirectionSurface
+                ]
+            })
             .UseMessageBoxSounds()
             .WithInterFont()
             .LogToTrace();
