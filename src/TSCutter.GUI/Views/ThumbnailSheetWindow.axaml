@@ -1,0 +1,223 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.ThumbnailSheetWindow"
+        d:DataContext="{x:Static local:App.ThumbnailSheetDialog}"
+        x:DataType="viewModels:ThumbnailSheetWindowViewModel"
+        Width="1120" Height="820"
+        MinWidth="760" MinHeight="560"
+        WindowStartupLocation="CenterOwner"
+        Focusable="True"
+        Closing="Window_OnClosing"
+        Title="{Binding WindowTitle}">
+
+    <Window.Styles>
+        <Style Selector="NumericUpDown">
+            <Setter Property="Height" Value="28" />
+        </Style>
+    </Window.Styles>
+
+    <Grid Margin="12" RowDefinitions="Auto,Auto,*,Auto,Auto" RowSpacing="8">
+
+        <!-- 参数行：列数 / 行数 / 成图宽度 / 进度 -->
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="8">
+            <TextBlock Grid.Column="0"
+                       Text="{DynamicResource String.ThumbnailSheet.Columns}"
+                       VerticalAlignment="Center" />
+            <NumericUpDown Grid.Column="1"
+                           Value="{Binding Columns, Mode=TwoWay}"
+                           Minimum="1" Maximum="12"
+                           Increment="1"
+                           ParsingNumberStyle="Integer"
+                           FormatString="0"
+                           Width="96" />
+
+            <TextBlock Grid.Column="2"
+                       Text="{DynamicResource String.ThumbnailSheet.Rows}"
+                       VerticalAlignment="Center"
+                       Margin="12,0,0,0" />
+            <NumericUpDown Grid.Column="3"
+                           Value="{Binding Rows, Mode=TwoWay}"
+                           Minimum="1" Maximum="{Binding MaximumRowsValue}"
+                           Increment="1"
+                           ParsingNumberStyle="Integer"
+                           FormatString="0"
+                           Width="96" />
+
+            <StackPanel Grid.Column="4"
+                        Orientation="Horizontal"
+                        Spacing="6"
+                        Margin="12,0,0,0"
+                        VerticalAlignment="Center">
+                <TextBlock Text="{DynamicResource String.ThumbnailSheet.CellSize}"
+                           VerticalAlignment="Center" />
+                <ComboBox ItemsSource="{Binding OutputWidthOptions}"
+                          SelectedItem="{Binding OutputWidth, Mode=TwoWay}"
+                          Width="120" />
+                <TextBlock Text="px"
+                           VerticalAlignment="Center"
+                           MinWidth="24" />
+            </StackPanel>
+
+            <Grid Grid.Column="5"
+                  ColumnDefinitions="Auto,140,Auto"
+                  ColumnSpacing="6"
+                  HorizontalAlignment="Right"
+                  VerticalAlignment="Center">
+                <TextBlock Grid.Column="0"
+                           Text="{DynamicResource String.ThumbnailSheet.Progress}"
+                           VerticalAlignment="Center" />
+                <ProgressBar Grid.Column="1"
+                             Height="14"
+                             Minimum="0" Maximum="100"
+                             Value="{Binding ProgressValue}"
+                             VerticalAlignment="Center" />
+                <Button Grid.Column="2"
+                        Content="{DynamicResource String.Cancel}"
+                        Command="{Binding CancelCommand}"
+                        MinWidth="80"
+                        VerticalAlignment="Center" />
+            </Grid>
+        </Grid>
+
+        <!-- 取帧方式与显示开关 -->
+        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="8">
+            <TextBlock Grid.Column="0"
+                       Text="{DynamicResource String.ThumbnailSheet.Sampling}"
+                       VerticalAlignment="Center" />
+            <ComboBox Grid.Column="1"
+                      ItemsSource="{Binding SamplingOptions}"
+                      SelectedItem="{Binding SelectedSampling, Mode=TwoWay}"
+                      DisplayMemberBinding="{Binding Label}"
+                      MinWidth="190" />
+            <StackPanel Grid.Column="2"
+                        Orientation="Horizontal"
+                        Spacing="6"
+                        VerticalAlignment="Center"
+                        IsVisible="{Binding IsIntervalSampling}">
+                <TextBlock Text="{DynamicResource String.ThumbnailSheet.Interval}"
+                           VerticalAlignment="Center" />
+                <NumericUpDown Value="{Binding IntervalSeconds, Mode=TwoWay}"
+                               Minimum="1" Maximum="3600"
+                               Increment="1"
+                               FormatString="0.##"
+                               Width="110" />
+                <TextBlock Text="{DynamicResource String.ThumbnailSheet.SecondsUnit}"
+                           VerticalAlignment="Center" />
+            </StackPanel>
+            <CheckBox Grid.Column="3"
+                      Content="{DynamicResource String.ThumbnailSheet.ShowHeader}"
+                      IsChecked="{Binding ShowHeader, Mode=TwoWay}"
+                      VerticalAlignment="Center"
+                      Margin="10,0,0,0" />
+            <CheckBox Grid.Column="4"
+                      Content="{DynamicResource String.ThumbnailSheet.ShowCaption}"
+                      IsChecked="{Binding ShowCaption, Mode=TwoWay}"
+                      VerticalAlignment="Center" />
+            <CheckBox Grid.Column="5"
+                      Content="{DynamicResource String.ThumbnailSheet.ShowIndex}"
+                      IsChecked="{Binding ShowIndex, Mode=TwoWay}"
+                      VerticalAlignment="Center" />
+        </Grid>
+
+        <!-- 预览区 -->
+        <Border Grid.Row="2"
+                BorderBrush="Gray"
+                BorderThickness="1"
+                Background="#FF1A1B1E">
+            <controls:ImageViewer x:Name="PreviewImageViewer"
+                                  Image="{Binding PreviewImage}"
+                                  Zoom="{Binding PreviewZoom, Mode=TwoWay}"
+                                  MinZoomFactor="0.01"
+                                  MaxZoomFactor="4"
+                                  FitOnSourceChanged="True"
+                                  UseHighQualityInterpolation="True" />
+        </Border>
+
+        <!-- 尺寸摘要与状态 -->
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0"
+                       Text="{Binding LayoutSummary}"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1"
+                       Text="{Binding EstimatedSizeText}"
+                       VerticalAlignment="Center"
+                       Opacity="0.8" />
+            <StackPanel Grid.Column="2"
+                        Orientation="Horizontal"
+                        Spacing="6">
+                <TextBlock Text="{Binding PreviewZoomText}"
+                           VerticalAlignment="Center"
+                           Opacity="0.8"
+                           MinWidth="120"
+                           TextAlignment="Right" />
+                <Button Content="{DynamicResource String.ThumbnailSheet.PreviewZoom}"
+                        Command="{Binding ActualSizeCommand, ElementName=PreviewImageViewer}"
+                        IsEnabled="{Binding HasPreview}"
+                        MinWidth="80" />
+                <Button Content="{DynamicResource String.ThumbnailSheet.PreviewFit}"
+                        Command="{Binding FitCommand, ElementName=PreviewImageViewer}"
+                        IsEnabled="{Binding HasPreview}"
+                        MinWidth="80" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 底部：格式选择与操作按钮 -->
+        <Grid Grid.Row="4" ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0"
+                       Text="{DynamicResource String.ThumbnailSheet.Format}"
+                       VerticalAlignment="Center" />
+            <RadioButton Grid.Column="1"
+                         Content="PNG"
+                         GroupName="SheetFormatGroup"
+                         IsChecked="{Binding IsPngFormat, Mode=TwoWay}"
+                         VerticalAlignment="Center" />
+            <StackPanel Grid.Column="2"
+                        Orientation="Horizontal"
+                        Spacing="6"
+                        VerticalAlignment="Center">
+                <RadioButton Content="JPG"
+                             GroupName="SheetFormatGroup"
+                             IsChecked="{Binding IsJpegFormat, Mode=TwoWay}"
+                             VerticalAlignment="Center" />
+                <TextBlock Text="{DynamicResource String.ThumbnailSheet.Quality}"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding IsJpegFormat}" />
+                <Slider Minimum="10" Maximum="100"
+                        Width="120"
+                        Value="{Binding JpegQuality, Mode=TwoWay}"
+                        IsVisible="{Binding IsJpegFormat}" />
+                <TextBlock Text="{Binding QualityText}"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding IsJpegFormat}"
+                           MinWidth="28" />
+            </StackPanel>
+
+            <TextBlock Grid.Column="4"
+                       Text="{Binding StatusText}"
+                       TextWrapping="Wrap"
+                       VerticalAlignment="Center"
+                       HorizontalAlignment="Right"
+                       Margin="0,0,8,0" />
+
+            <StackPanel Grid.Column="5" Orientation="Horizontal" Spacing="8">
+                <Button Content="{DynamicResource String.ThumbnailSheet.CopyToClipboard}"
+                        Command="{Binding CopyToClipboardCommand}"
+                        MinWidth="120" />
+                <Button Content="{DynamicResource String.ThumbnailSheet.SaveAs}"
+                        Command="{Binding SaveCommand}"
+                        MinWidth="120" />
+                <Button Content="{DynamicResource String.ThumbnailSheet.CloseButton}"
+                        Command="{Binding CloseCommand}"
+                        IsCancel="True"
+                        MinWidth="80" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

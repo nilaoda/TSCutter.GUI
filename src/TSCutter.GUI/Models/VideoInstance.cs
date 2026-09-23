@@ -779,6 +779,12 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                 // VideoToolbox/D3D11 的部分失败只会在首帧初始化时才报告，
                 // 此时解码器其实已经完成打开。
                 var isHardwareFrame = !AudioMode && frame.HwFramesContext != null;
+                var displayGeometry = AudioMode
+                    ? default
+                    : GetDisplayGeometry(frame);
+                var videoDynamicRange = AudioMode
+                    ? VideoDynamicRange.Standard
+                    : GetVideoDynamicRange(frame);
 #pragma warning restore CS0618 // Obsolete
 
                 // 优先让平台 presenter 直接使用原生 surface。只有 presenter
@@ -797,7 +803,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                             {
                                 Bitmap = null,
                                 GpuFrame = gpuFrame,
-                                SourcePixelSize = new Avalonia.PixelSize(frame.Width, frame.Height),
+                                SourcePixelSize = displayGeometry.PixelSize,
+                                RequiresSampleAspectRatioCorrection = displayGeometry.RequiresCorrection,
+                                VideoDynamicRange = videoDynamicRange,
                                 FrameTimestamp = PtsToTimeSpan(pts),
                                 PresentationMode = PresentationMode,
                             };
@@ -891,7 +899,10 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                         BitmapLease = bitmapLease,
                         SourcePixelSize = AudioMode
                             ? bitmap.PixelSize
-                            : new Avalonia.PixelSize(frame.Width, frame.Height),
+                            : displayGeometry.PixelSize,
+                        RequiresSampleAspectRatioCorrection =
+                            !AudioMode && displayGeometry.RequiresCorrection,
+                        VideoDynamicRange = videoDynamicRange,
                         FrameTimestamp = PtsToTimeSpan(pts),
                         PresentationMode = PresentationMode,
                     };
@@ -918,6 +929,73 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         // If no frames were successfully processed
         Console.WriteLine("no frames were successfully processed");
         return null;
+    }
+
+    private static unsafe VideoDynamicRange GetVideoDynamicRange(Frame frame)
+    {
+        AVFrame* rawFrame = frame;
+        var hasDolbyVisionMetadata =
+            ffmpeg.av_frame_get_side_data(rawFrame, AVFrameSideDataType.DoviRpuBuffer) != null
+            || ffmpeg.av_frame_get_side_data(rawFrame, AVFrameSideDataType.DoviMetadata) != null;
+        var hasHdrMetadata =
+            ffmpeg.av_frame_get_side_data(rawFrame, AVFrameSideDataType.MasteringDisplayMetadata) != null
+            || ffmpeg.av_frame_get_side_data(rawFrame, AVFrameSideDataType.ContentLightLevel) != null
+            || ffmpeg.av_frame_get_side_data(rawFrame, AVFrameSideDataType.DynamicHdrPlus) != null;
+        return VideoDynamicRangeDetector.Detect(
+            rawFrame->color_trc,
+            hasDolbyVisionMetadata,
+            hasHdrMetadata,
+            codecTag: 0);
+    }
+
+    private (Avalonia.PixelSize PixelSize, bool RequiresCorrection) GetDisplayGeometry(Frame frame)
+    {
+        var sampleAspectRatio = frame.SampleAspectRatio;
+        if (sampleAspectRatio.Num <= 0 || sampleAspectRatio.Den <= 0)
+            sampleAspectRatio = inVideoStream.Codecpar!.SampleAspectRatio;
+        if (sampleAspectRatio.Num <= 0 || sampleAspectRatio.Den <= 0)
+            sampleAspectRatio = inVideoStream.SampleAspectRatio;
+
+        var requiresCorrection = RequiresSampleAspectRatioCorrection(
+            sampleAspectRatio.Num,
+            sampleAspectRatio.Den);
+        return (
+            CalculateDisplayPixelSize(
+                frame.Width,
+                frame.Height,
+                sampleAspectRatio.Num,
+                sampleAspectRatio.Den),
+            requiresCorrection);
+    }
+
+    internal static bool RequiresSampleAspectRatioCorrection(
+        int sampleAspectRatioNumerator,
+        int sampleAspectRatioDenominator) =>
+        sampleAspectRatioNumerator > 0
+        && sampleAspectRatioDenominator > 0
+        && sampleAspectRatioNumerator != sampleAspectRatioDenominator;
+
+    internal static Avalonia.PixelSize CalculateDisplayPixelSize(
+        int codedWidth,
+        int codedHeight,
+        int sampleAspectRatioNumerator,
+        int sampleAspectRatioDenominator)
+    {
+        if (codedWidth <= 0 || codedHeight <= 0)
+            return default;
+        if (!RequiresSampleAspectRatioCorrection(
+                sampleAspectRatioNumerator,
+                sampleAspectRatioDenominator))
+            return new Avalonia.PixelSize(codedWidth, codedHeight);
+
+        var displayWidth = codedWidth * (double)sampleAspectRatioNumerator /
+                           sampleAspectRatioDenominator;
+        if (!double.IsFinite(displayWidth) || displayWidth <= 0 || displayWidth > int.MaxValue)
+            return new Avalonia.PixelSize(codedWidth, codedHeight);
+
+        return new Avalonia.PixelSize(
+            Math.Max(1, (int)Math.Round(displayWidth)),
+            codedHeight);
     }
 
     private sealed class HardwareDecodeException(Exception innerException, long? retryPts = null)
