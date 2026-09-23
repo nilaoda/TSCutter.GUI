@@ -39,6 +39,24 @@ public sealed class ImageUtilTests
     }
 
     [Theory]
+    [InlineData(720, 576, 4d / 3d, 160, 120)]
+    [InlineData(720, 576, 16d / 9d, 160, 90)]
+    public void CalculateAspectFitRectUsesDisplayAspectRatioForAnamorphicVideo(
+        double sourceWidth,
+        double sourceHeight,
+        double displayAspectRatio,
+        double targetWidth,
+        double targetHeight)
+    {
+        var result = ImageUtil.CalculateAspectFitRect(
+            new Size(sourceWidth, sourceHeight),
+            new Size(targetWidth, targetHeight),
+            displayAspectRatio);
+
+        Assert.Equal(new Rect(0, 0, targetWidth, targetHeight), result);
+    }
+
+    [Theory]
     [InlineData(7680, 4320, 1280, 720, 1280, 720)]
     [InlineData(3840, 1600, 1280, 720, 1280, 533)]
     [InlineData(1080, 1920, 1280, 720, 405, 720)]

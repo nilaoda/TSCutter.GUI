@@ -50,7 +50,12 @@ internal sealed class KeyFrameOverviewService : IAsyncDisposable
         {
             if (result.Bitmap is null)
                 return null;
-            return ImageUtil.CreateThumbnail(result.Bitmap, width, height);
+            var displayAspectRatio = result.RequiresSampleAspectRatioCorrection
+                && result.SourcePixelSize.Width > 0
+                && result.SourcePixelSize.Height > 0
+                    ? result.SourcePixelSize.Width / (double)result.SourcePixelSize.Height
+                    : 0;
+            return ImageUtil.CreateThumbnail(result.Bitmap, width, height, displayAspectRatio);
         }
         finally
         {

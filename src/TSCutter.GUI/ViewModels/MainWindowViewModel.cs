@@ -869,6 +869,14 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    private async Task ThumbnailSheetClickAsync()
+    {
+        var dialogViewModel = _dialogService.CreateViewModel<ThumbnailSheetWindowViewModel>();
+        dialogViewModel.FilePath = VideoPath;
+        await _dialogService.ShowDialogAsync(this, dialogViewModel);
+    }
+
     private async Task OnOverviewTimeSelected(TimeSpan time)
     {
         if (!IsVideoInitialized)
@@ -1041,15 +1049,26 @@ public partial class MainWindowViewModel : ViewModelBase
             var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
             if (result is null) return;
 
+            using var correctedBitmap = ImageUtil.CreateSampleAspectRatioCorrectedBitmap(
+                DecodedBitmap,
+                DecodedFrameSourceSize,
+                decodedFrameRequiresSampleAspectRatioCorrection);
+            var bitmapToSave = correctedBitmap ?? DecodedBitmap;
             using var stream = File.Create(result!.Path!.LocalPath);
             if (isPng)
-                DecodedBitmap.Save(stream);
+                bitmapToSave.Save(stream);
             else
-                ImageUtil.SaveAsJpeg(DecodedBitmap, stream);
+                ImageUtil.SaveAsJpeg(bitmapToSave, stream);
         }
         else
         {
-            ImageUtil.CopyBitmapToClipboard(DecodedBitmap, captureVm.IsPngFormat);
+            using var correctedBitmap = ImageUtil.CreateSampleAspectRatioCorrectedBitmap(
+                DecodedBitmap,
+                DecodedFrameSourceSize,
+                decodedFrameRequiresSampleAspectRatioCorrection);
+            await ImageUtil.CopyBitmapToClipboardAsync(
+                correctedBitmap ?? DecodedBitmap,
+                captureVm.IsPngFormat);
         }
     }
 
@@ -1106,6 +1125,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     [ObservableProperty]
     public partial PixelSize DecodedFrameSourceSize { get; set; }
+
+    private bool decodedFrameRequiresSampleAspectRatioCorrection;
 
     partial void OnCurrentTimeChanged(double value) => TimelineViewport.SetPlayhead(value);
 
@@ -1414,6 +1435,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private void ApplyDecodeResult(DecodeResult decodeResult)
     {
         DecodedFrameSourceSize = decodeResult.SourcePixelSize;
+        decodedFrameRequiresSampleAspectRatioCorrection =
+            decodeResult.RequiresSampleAspectRatioCorrection;
         DecodedGpuFrame?.Dispose();
         DecodedGpuFrame = decodeResult.GpuFrame;
         SetDecodedBitmap(decodeResult.Bitmap, decodeResult.BitmapLease);
@@ -1483,6 +1506,7 @@ public partial class MainWindowViewModel : ViewModelBase
         DecodedGpuFrame = null;
         SetDecodedBitmap(null);
         DecodedFrameSourceSize = default;
+        decodedFrameRequiresSampleAspectRatioCorrection = false;
         DisposeClipThumbnails();
         Clips.Clear();
         SelectedClip = null;
@@ -1521,6 +1545,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 SaveFrameClickCommand.NotifyCanExecuteChanged();
                 ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
                 KeyFrameOverviewClickCommand.NotifyCanExecuteChanged();
+                ThumbnailSheetClickCommand.NotifyCanExecuteChanged();
                 NotifyVideoCapabilityChanged();
 
                 // decode

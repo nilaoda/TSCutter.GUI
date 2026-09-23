@@ -44,4 +44,20 @@ public sealed class ImageViewerTests
 
         Assert.Equal(new PixelSize(960, 540), result);
     }
+
+    [Theory]
+    [InlineData(1.0, 1.1, 0.01, 4.0, 1.1)]
+    [InlineData(3.9, 1.1, 0.01, 4.0, 4.0)]
+    [InlineData(0.011, 0.9, 0.01, 4.0, 0.01)]
+    public void WheelZoomClampsToConfiguredRange(
+        double zoom,
+        double delta,
+        double minimum,
+        double maximum,
+        double expected)
+    {
+        var result = ImageViewer.CalculateNextZoom(zoom, delta, minimum, maximum);
+
+        Assert.Equal(expected, result, 6);
+    }
 }

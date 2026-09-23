@@ -42,6 +42,7 @@ public partial class App : Application
         SplatRegistrations.Register<TsBinaryMergeWindowViewModel>();
         SplatRegistrations.Register<TsPacketViewerWindowViewModel>();
         SplatRegistrations.Register<KeyFrameOverviewWindowViewModel>();
+        SplatRegistrations.Register<ThumbnailSheetWindowViewModel>();
         SplatRegistrations.Register<TsRemuxWindowViewModel>();
         SplatRegistrations.Register<TsEsExtractorWindowViewModel>();
         SplatRegistrations.Register<AboutWindowViewModel>();
@@ -128,6 +129,7 @@ public partial class App : Application
     public static SettingsWindowViewModel SettingsDialog => Locator.Current.GetService<SettingsWindowViewModel>()!;
     public static UpdatesInfoWindowViewModel UpdatesInfoDialog => Locator.Current.GetService<UpdatesInfoWindowViewModel>()!;
     public static CaptureFrameViewModel CaptureFrameDialog => Locator.Current.GetService<CaptureFrameViewModel>()!;
+    public static ThumbnailSheetWindowViewModel ThumbnailSheetDialog => Locator.Current.GetService<ThumbnailSheetWindowViewModel>()!;
     public static InverseBoolConverter InverseBoolConverter => InverseBoolConverter.Instance;
     public static IDialogService DialogService => Locator.Current.GetService<IDialogService>()!;
     public static ILocalizationService LocalizationService => Locator.Current.GetService<ILocalizationService>()!;

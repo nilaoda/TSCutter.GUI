@@ -28,7 +28,8 @@ public class ImageViewer : Control
             SourcePixelSizeProperty,
             ZoomProperty,
             OffsetXProperty,
-            OffsetYProperty);
+            OffsetYProperty,
+            UseHighQualityInterpolationProperty);
     }
 
     public static readonly StyledProperty<Bitmap?> ImageProperty = AvaloniaProperty.Register<ImageViewer, Bitmap?>(nameof(Image));
@@ -45,9 +46,14 @@ public class ImageViewer : Control
 
     public static readonly StyledProperty<double> OffsetYProperty = AvaloniaProperty.Register<ImageViewer, double>(nameof(OffsetY));
     
-    public static readonly StyledProperty<double> MaxZoomFactorProperty = AvaloniaProperty.Register<ImageViewer, double>(nameof(MaxZoomFactor));
+    public static readonly StyledProperty<double> MaxZoomFactorProperty =
+        AvaloniaProperty.Register<ImageViewer, double>(nameof(MaxZoomFactor), 4.0);
     
-    public static readonly StyledProperty<double> MinZoomFactorProperty = AvaloniaProperty.Register<ImageViewer, double>(nameof(MinZoomFactor));
+    public static readonly StyledProperty<double> MinZoomFactorProperty =
+        AvaloniaProperty.Register<ImageViewer, double>(nameof(MinZoomFactor), 0.01);
+
+    public static readonly StyledProperty<bool> UseHighQualityInterpolationProperty =
+        AvaloniaProperty.Register<ImageViewer, bool>(nameof(UseHighQualityInterpolation));
 
     /// <summary>
     /// When true, the image automatically scales to fit the control bounds when the control is resized.
@@ -103,6 +109,13 @@ public class ImageViewer : Control
         set => SetValue(MinZoomFactorProperty, value);
     }
 
+    /// <summary>静态图片缩小时使用高质量插值。视频预览默认关闭以避免增加逐帧渲染开销。</summary>
+    public bool UseHighQualityInterpolation
+    {
+        get => GetValue(UseHighQualityInterpolationProperty);
+        set => SetValue(UseHighQualityInterpolationProperty, value);
+    }
+
     public bool AutoFit
     {
         get => GetValue(AutoFitProperty);
@@ -110,6 +123,8 @@ public class ImageViewer : Control
     }
 
     public ICommand FitCommand => new RelayCommand(FitToView, () => true);
+
+    public ICommand ActualSizeCommand => new RelayCommand(ShowActualSize, () => true);
 
     /// <summary>
     /// Returns the physical pixel budget useful for a preview decode. The decoder
@@ -145,6 +160,16 @@ public class ImageViewer : Control
 
         // Re-enable auto-fit when user manually triggers fit
         AutoFit = true;
+    }
+
+    private void ShowActualSize()
+    {
+        if (Image is null && GpuFrame is null) return;
+
+        Zoom = 1.0;
+        OffsetX = 0;
+        OffsetY = 0;
+        AutoFit = false;
     }
 
     private Size _previousBounds;
@@ -229,22 +254,33 @@ public class ImageViewer : Control
         var zoomDelta = e.Delta.Y > 0 ? 1.1 : 0.9;
         var zoomCenter = e.GetPosition(this);
 
-        var newZoom = Zoom * zoomDelta;
+        var newZoom = CalculateNextZoom(Zoom, zoomDelta, MinZoomFactor, MaxZoomFactor);
+        if (Math.Abs(newZoom - Zoom) < double.Epsilon) return;
 
-        if (newZoom > MaxZoomFactor) newZoom = MaxZoomFactor;
-        if (newZoom < MinZoomFactor) newZoom = MinZoomFactor;
-        
-        if (newZoom == MaxZoomFactor || newZoom == MinZoomFactor) return;
+        var appliedZoomRatio = newZoom / Zoom;
         
         Zoom = newZoom;
 
-        OffsetX -= (zoomCenter.X - OffsetX) * (zoomDelta - 1);
-        OffsetY -= (zoomCenter.Y - OffsetY) * (zoomDelta - 1);
+        OffsetX -= (zoomCenter.X - OffsetX) * (appliedZoomRatio - 1);
+        OffsetY -= (zoomCenter.Y - OffsetY) * (appliedZoomRatio - 1);
 
         AutoFit = false;
         InvalidateVisual();
         _lastZoomTime = DateTime.Now;
         e.Handled = true;
+    }
+
+    internal static double CalculateNextZoom(double zoom, double zoomDelta, double minimum, double maximum)
+    {
+        if (!double.IsFinite(zoom) || zoom <= 0 ||
+            !double.IsFinite(zoomDelta) || zoomDelta <= 0)
+        {
+            return zoom;
+        }
+
+        var lower = Math.Max(double.Epsilon, Math.Min(minimum, maximum));
+        var upper = Math.Max(lower, Math.Max(minimum, maximum));
+        return Math.Clamp(zoom * zoomDelta, lower, upper);
     }
 
     public override void Render(DrawingContext dc)
@@ -294,12 +330,20 @@ public class ImageViewer : Control
         // Define the source rectangle based on the visible area
         var srcRect = MapVisibleRectToBitmap(visibleRect, destRect, Image.PixelSize);
 
-        // Draw the image using DrawImage
-        // dc.PushRenderOptions(new()
-        // {
-        //     BitmapInterpolationMode = BitmapInterpolationMode.HighQuality,
-        // });
-        dc.DrawImage(Image, srcRect, visibleRect);
+        if (UseHighQualityInterpolation)
+        {
+            using (dc.PushRenderOptions(new RenderOptions
+                   {
+                       BitmapInterpolationMode = BitmapInterpolationMode.HighQuality
+                   }))
+            {
+                dc.DrawImage(Image, srcRect, visibleRect);
+            }
+        }
+        else
+        {
+            dc.DrawImage(Image, srcRect, visibleRect);
+        }
     }
 
     internal static PixelSize GetContentPixelSize(PixelSize bitmapSize, PixelSize sourceSize) =>
