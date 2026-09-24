@@ -64,9 +64,39 @@ public class TsScramblingProbeTests
     }
 
     [Fact]
+    public void SkipsMp4EvenWhenItContainsTsLikeBytes()
+    {
+        var data = new byte[300_000];
+        var falsePackets = CreatePackets(188, 0);
+        falsePackets[3] = 0x90;
+        falsePackets.CopyTo(data, 273_370);
+
+        Assert.True(TsScramblingProbe.HasScrambledPayload(data));
+        var path = Path.Combine(Path.GetTempPath(), $"ts-probe-{Guid.NewGuid():N}.mp4");
+        try
+        {
+            File.WriteAllBytes(path, data);
+            Assert.False(TsScramblingProbe.HasScrambledPayload(path));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData("mp4")]
+    [InlineData("mov")]
+    public void SkipsNonTsFilesBeforeOpeningThem(string extension)
+    {
+        var missingPath = Path.Combine(Path.GetTempPath(), $"ts-probe-{Guid.NewGuid():N}.{extension}");
+        Assert.False(TsScramblingProbe.HasScrambledPayload(missingPath));
+    }
+
+    [Fact]
     public void EncryptedInputFailsBeforeNativeInitialization()
     {
-        var path = Path.GetTempFileName();
+        var path = Path.Combine(Path.GetTempPath(), $"ts-probe-{Guid.NewGuid():N}.ts");
         try
         {
             var data = CreatePackets(188, 0);
@@ -85,7 +115,7 @@ public class TsScramblingProbeTests
     [Fact]
     public void FileProbeStopsAtItsByteLimit()
     {
-        var path = Path.GetTempFileName();
+        var path = Path.Combine(Path.GetTempPath(), $"ts-probe-{Guid.NewGuid():N}.ts");
         try
         {
             using (var output = File.Create(path))
