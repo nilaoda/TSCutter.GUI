@@ -10,6 +10,14 @@ internal static class TsScramblingProbe
 
     public static bool HasScrambledPayload(string path)
     {
+        var extension = Path.GetExtension(path);
+        if (!extension.Equals(".ts", StringComparison.OrdinalIgnoreCase) &&
+            !extension.Equals(".m2ts", StringComparison.OrdinalIgnoreCase) &&
+            !extension.Equals(".mts", StringComparison.OrdinalIgnoreCase) &&
+            !extension.Equals(".m2t", StringComparison.OrdinalIgnoreCase) &&
+            !extension.Equals(".mpegts", StringComparison.OrdinalIgnoreCase))
+            return false;
+
         using var input = File.OpenRead(path);
         var buffer = new byte[(int)Math.Min(input.Length, MaximumProbeBytes)];
         var length = input.ReadAtLeast(buffer, buffer.Length, throwOnEndOfStream: false);
