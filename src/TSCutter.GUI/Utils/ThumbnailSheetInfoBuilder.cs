@@ -46,6 +46,30 @@ public static class ThumbnailSheetInfoBuilder
         // 时长优先取视频流，回退到容器时长。部分异常 TS 缺少流时长，
         // 此时容器已估算的时长更可靠（与 VideoInstance.ResolveTimelineDuration 的策略一致）。
         var duration = ResolveDuration(hasVideo ? videoStream : default, hasVideo, fc.Duration);
+        var videoBitRate = hasVideo ? videoStream.Codecpar!.BitRate : 0;
+        var videoBitRateEstimated = false;
+        if (hasVideo && videoBitRate <= 0 && fc.BitRate > 0)
+        {
+            var remainingBitRate = fc.BitRate;
+            for (var i = 0; i < fc.Streams.Count; i++)
+            {
+                if (i == videoIndex)
+                    continue;
+                var bitRate = fc.Streams[i].Codecpar?.BitRate ?? 0;
+                if (bitRate > 0)
+                {
+                    remainingBitRate = Math.Max(0, remainingBitRate - bitRate);
+                    if (remainingBitRate == 0)
+                        break;
+                }
+            }
+            if (remainingBitRate > 0)
+            {
+                // 容器码率包含少量封装开销，因此只作为近似视频码率显示。
+                videoBitRate = remainingBitRate;
+                videoBitRateEstimated = true;
+            }
+        }
 
         var additionalVideoCodecs = new List<string>();
         var additionalAudioTracks = new List<ThumbnailSheetTrackInfo>();
@@ -68,7 +92,10 @@ public static class ThumbnailSheetInfoBuilder
                 case AVMediaType.Audio when i != audioIndex:
                     additionalAudioTracks.Add(new ThumbnailSheetTrackInfo(
                         codec,
-                        GetLanguage(fc.Streams[i])));
+                        GetLanguage(fc.Streams[i]),
+                        codecParameters.ChLayout.nb_channels,
+                        codecParameters.SampleRate,
+                        codecParameters.BitRate));
                     break;
                 case AVMediaType.Subtitle:
                     subtitleTracks.Add(new ThumbnailSheetTrackInfo(
@@ -104,7 +131,8 @@ public static class ThumbnailSheetInfoBuilder
             VideoFrameRate = hasVideo && videoStream.AvgFrameRate.Num > 0
                 ? videoStream.AvgFrameRate.ToDouble()
                 : 0,
-            VideoBitRate = hasVideo ? videoStream.Codecpar!.BitRate : 0,
+            VideoBitRate = videoBitRate,
+            VideoBitRateEstimated = videoBitRateEstimated,
             AudioCodec = hasAudio ? audioStream.Codecpar!.CodecId.ToString() : null,
             AudioLanguage = hasAudio ? GetLanguage(audioStream) : null,
             AudioChannels = hasAudio ? audioStream.Codecpar!.ChLayout.nb_channels : 0,

@@ -26,8 +26,13 @@ public enum VideoScanMode
     Interlaced
 }
 
-/// <summary>缩略图总览中轨道的编码及可选语言标签。</summary>
-public sealed record ThumbnailSheetTrackInfo(string Codec, string? Language = null);
+/// <summary>缩略图总览中轨道的编码、语言及音频参数。</summary>
+public sealed record ThumbnailSheetTrackInfo(
+    string Codec,
+    string? Language = null,
+    int Channels = 0,
+    int SampleRate = 0,
+    long BitRate = 0);
 
 /// <summary>可为其中一段文字指定强调色的表头行。</summary>
 public sealed record ThumbnailSheetHeaderLine(
@@ -70,6 +75,9 @@ public sealed record ThumbnailSheetInfo
     public double VideoFrameRate { get; init; }
 
     public long VideoBitRate { get; init; }
+
+    /// <summary>码率来自容器总码率扣除其他轨道码率，包含少量封装开销。</summary>
+    public bool VideoBitRateEstimated { get; init; }
 
     public string? AudioCodec { get; init; }
 
