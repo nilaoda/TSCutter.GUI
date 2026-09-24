@@ -30,6 +30,7 @@ public class AppConfig
             IsHardwareDecodingSupported);
     }
     public string? FFmpegRootPath { get; set; }
+    public ThumbnailSheetPreferences ThumbnailSheetPreferences { get; set; } = new();
 
     [JsonIgnore]
     public static bool IsHardwareDecodingSupported =>

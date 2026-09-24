@@ -83,14 +83,17 @@ public static class ThumbnailSheetComposer
         var gridWidth = columns * cellWidth + (columns - 1) * CellGapX;
         var gridHeight = rows * cellHeight + (rows - 1) * CellGapY;
 
-        var width = (int)Math.Ceiling(gridWidth + Padding * 2);
+        // 编码器通常要求偶数宽高；只在画布右侧或底部补背景像素，不缩放格子。
+        var width = RoundUpToEven((int)Math.Ceiling(gridWidth + Padding * 2));
         var headerHeight = showHeader
             ? CalculateHeaderHeight(width, headerLineCount)
             : 0;
-        var height = (int)Math.Ceiling(gridHeight + headerHeight + Padding * 2);
+        var height = RoundUpToEven((int)Math.Ceiling(gridHeight + headerHeight + Padding * 2));
 
         return new ThumbnailSheetLayout(width, height, headerHeight, cellWidth, cellHeight, columns, rows);
     }
+
+    private static int RoundUpToEven(int value) => value + (value & 1);
 
     /// <summary>
     /// 在给定网格与显示开关下，计算能让成图落在后端上限内的最大单元格宽度。

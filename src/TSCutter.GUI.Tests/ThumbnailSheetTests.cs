@@ -1,5 +1,6 @@
 using Avalonia;
 using System.Linq;
+using System.Text.Json;
 using Sdcb.FFmpeg.Raw;
 using TSCutter.GUI.Models;
 using TSCutter.GUI.Rendering;
@@ -11,6 +12,55 @@ namespace TSCutter.GUI.Tests;
 
 public sealed class ThumbnailSheetTests
 {
+    [Fact]
+    public void ThumbnailSheetPreferencesSurviveConfigRoundTrip()
+    {
+        var config = new AppConfig
+        {
+            ThumbnailSheetPreferences = new ThumbnailSheetPreferences
+            {
+                Columns = 5,
+                Rows = 7,
+                OutputWidth = 6000,
+                Sampling = ThumbnailSheetSampling.Interval,
+                IntervalSeconds = 12.5,
+                ShowHeader = false,
+                ShowCaption = false,
+                ShowIndex = false,
+                IsPngFormat = false,
+                JpegQuality = 76
+            }
+        };
+
+        var json = JsonSerializer.Serialize(config, AppJsonContext.Default.AppConfig);
+        var restored = JsonSerializer.Deserialize(json, AppJsonContext.Default.AppConfig);
+        var oldConfig = JsonSerializer.Deserialize("{}", AppJsonContext.Default.AppConfig);
+
+        Assert.Equal(config.ThumbnailSheetPreferences, restored?.ThumbnailSheetPreferences);
+        Assert.Equal(new ThumbnailSheetPreferences(), oldConfig?.ThumbnailSheetPreferences);
+    }
+
+    [Fact]
+    public void InvalidSavedThumbnailSheetPreferencesFallBackToSafeValues()
+    {
+        var normalized = ThumbnailSheetWindowViewModel.NormalizePreferences(new ThumbnailSheetPreferences
+        {
+            Columns = 99,
+            Rows = 99,
+            OutputWidth = 4096,
+            Sampling = (ThumbnailSheetSampling)99,
+            IntervalSeconds = double.NaN,
+            JpegQuality = double.PositiveInfinity
+        });
+
+        Assert.Equal(12, normalized.Columns);
+        Assert.Equal(20, normalized.Rows);
+        Assert.Equal(4000, normalized.OutputWidth);
+        Assert.Equal(ThumbnailSheetSampling.Uniform, normalized.Sampling);
+        Assert.Equal(10, normalized.IntervalSeconds);
+        Assert.Equal(90, normalized.JpegQuality);
+    }
+
     [Theory]
     [InlineData(AVMediaType.Video, true)]
     [InlineData(AVMediaType.Audio, true)]
@@ -110,12 +160,14 @@ public sealed class ThumbnailSheetTests
             VideoWidth = 3840,
             VideoHeight = 2160,
             VideoFrameRate = 50,
+            VideoBitRate = 8_000_000,
             AudioCodec = "Ac3",
             AudioLanguage = "eng",
             AudioChannels = 6,
             AudioSampleRate = 48000,
+            AudioBitRate = 384_000,
             AdditionalVideoCodecs = ["Mjpeg"],
-            AdditionalAudioTracks = [new("Aac", "jpn")],
+            AdditionalAudioTracks = [new("Aac", "jpn", 2, 44100, 192_000)],
             SubtitleTracks = [new("SubRip", "zho"), new("HdmvPgsSubtitle", "eng")]
         };
 
@@ -131,9 +183,9 @@ public sealed class ThumbnailSheetTests
         Assert.Equal(5, lines.Count);
         Assert.Equal("文件名：sample.ts", lines[0].Text);
         Assert.StartsWith("文件信息：", lines[1].Text);
-        Assert.Equal("视频轨道：Hevc 3840x2160 50fps | Mjpeg", lines[2].Text);
-        Assert.Equal("音频轨道：Ac3 6ch 48kHz [eng] | Aac [jpn]", lines[3].Text);
-        Assert.Equal("字幕轨道：SubRip [zho] | HdmvPgsSubtitle [eng]", lines[4].Text);
+        Assert.Equal("视频轨道：HEVC 3840x2160 50fps 8 Mb/s | MJPEG", lines[2].Text);
+        Assert.Equal("音频轨道：AC3 6ch 48kHz 384 kb/s [eng] | AAC 2ch 44.1kHz 192 kb/s [jpn]", lines[3].Text);
+        Assert.Equal("字幕轨道：SUBRIP [zho] | HDMVPGSSUBTITLE [eng]", lines[4].Text);
     }
 
     [Fact]
@@ -155,7 +207,27 @@ public sealed class ThumbnailSheetTests
             "Audio: ",
             "Subtitle: ");
 
-        Assert.Equal(["Audio: Ac3 | Aac", "Subtitle: DvbSubtitle"], lines.Select(line => line.Text));
+        Assert.Equal(["Audio: AC3 | AAC", "Subtitle: DVBSUBTITLE"], lines.Select(line => line.Text));
+    }
+
+    [Fact]
+    public void AudioTracksContinueOnNextLineAfterFour()
+    {
+        var info = new ThumbnailSheetInfo
+        {
+            AudioCodec = "Aac",
+            AdditionalAudioTracks =
+            [
+                new("Ac3"), new("Eac3"), new("Dts"), new("Mp2", "eng", 2, 48000, 192_000)
+            ]
+        };
+
+        var lines = ThumbnailSheetWindowViewModel.BuildHeaderLines(
+            info, string.Empty, "File: ", "Info: ", "Video: ", "Audio: ", "Subtitle: ");
+
+        Assert.Equal(
+            ["Audio: AAC | AC3 | EAC3 | DTS", "Audio: MP2 2ch 48kHz 192 kb/s [eng]"],
+            lines.Select(line => line.Text));
     }
 
     [Fact]
@@ -176,7 +248,7 @@ public sealed class ThumbnailSheetTests
             "Audio: ",
             "Subtitle: ");
 
-        Assert.Equal(["File: audio-only.ts", "Audio: Aac"], lines.Select(line => line.Text));
+        Assert.Equal(["File: audio-only.ts", "Audio: AAC"], lines.Select(line => line.Text));
     }
 
     [Theory]
@@ -229,8 +301,26 @@ public sealed class ThumbnailSheetTests
             "Subtitle: ");
 
         var line = Assert.Single(lines);
-        Assert.Equal($"Video: Hevc [{expectedLabel}]", line.Text);
+        Assert.Equal($"Video: HEVC [{expectedLabel}]", line.Text);
         Assert.Equal($"[{expectedLabel}]", line.Text.Substring(line.AccentStart, line.AccentLength));
+    }
+
+    [Fact]
+    public void EstimatedVideoBitRateIsMarkedAndAccentStillTargetsHdr()
+    {
+        var info = new ThumbnailSheetInfo
+        {
+            VideoCodec = "Hevc",
+            VideoBitRate = 2_500_000,
+            VideoBitRateEstimated = true,
+            VideoDynamicRange = VideoDynamicRange.Hdr
+        };
+
+        var line = Assert.Single(ThumbnailSheetWindowViewModel.BuildHeaderLines(
+            info, string.Empty, "File: ", "Info: ", "Video: ", "Audio: ", "Subtitle: "));
+
+        Assert.Equal("Video: HEVC ≈2.5 Mb/s [HDR]", line.Text);
+        Assert.Equal("[HDR]", line.Text.Substring(line.AccentStart, line.AccentLength));
     }
 
     [Fact]
@@ -258,6 +348,24 @@ public sealed class ThumbnailSheetTests
             fourLines.Height - twoLines.Height);
     }
 
+    [Theory]
+    [InlineData(3, 2, 101, 55, false, false, 352, 150)]
+    [InlineData(1, 1, 100, 55, false, false, 132, 88)]
+    [InlineData(3, 2, 101, 55, true, true, 352, 244)]
+    public void SheetCanvasDimensionsAreEvenWithoutResizingCells(
+        int columns, int rows, int cellWidth, int cellHeight,
+        bool showHeader, bool showCaption, int expectedWidth, int expectedHeight)
+    {
+        var layout = ThumbnailSheetComposer.CalculateLayout(
+            columns, rows, new PixelSize(cellWidth, cellHeight), showHeader, showCaption);
+
+        Assert.Equal(expectedWidth, layout.Width);
+        Assert.Equal(expectedHeight, layout.Height);
+        Assert.Equal(cellWidth, layout.CellWidth);
+        Assert.Equal(0, layout.Width % 2);
+        Assert.Equal(0, layout.Height % 2);
+    }
+
     [Fact]
     public void FiveThousandPixelOutputProducesLargePortraitSheetWithEightRows()
     {
@@ -273,6 +381,7 @@ public sealed class ThumbnailSheetTests
         Assert.Equal(1236, cellWidth);
         Assert.Equal(5000, layout.Width);
         Assert.InRange(layout.Height, 6400, 6470);
+        Assert.Equal(0, layout.Height % 2);
         Assert.True((long)layout.Width * layout.Height < ThumbnailSheetComposer.MaximumPixelCount);
     }
 

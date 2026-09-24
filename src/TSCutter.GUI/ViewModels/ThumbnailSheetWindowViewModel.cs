@@ -27,6 +27,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
 {
     /// <summary>格数上限，避免一次请求过多帧点把解码器压满。</summary>
     private const int MaximumCellCount = 240;
+    private const int MaximumAudioTracksPerLine = 4;
     private const string HeaderItemSeparator = " | ";
     internal const double DefaultOutputWidth = 4000;
 
@@ -34,6 +35,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
     private static readonly TimeSpan RebuildDebounce = TimeSpan.FromMilliseconds(320);
 
     private readonly ThumbnailSheetService service = new();
+    private readonly IConfigurationService configService;
     private readonly SemaphoreSlim rebuildLock = new(1, 1);
     private readonly TaskCompletionSource initializationCompletion =
         new(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -63,8 +65,9 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
     private bool isClosed;
     private bool previewDirty = true;
 
-    public ThumbnailSheetWindowViewModel()
+    public ThumbnailSheetWindowViewModel(IConfigurationService configService)
     {
+        this.configService = configService;
         Cells = [];
         SamplingOptions =
         [
@@ -72,9 +75,44 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             new(ThumbnailSheetSampling.KeyFrame, LocalizationManager.Instance.String_ThumbnailSheet_Sampling_KeyFrame),
             new(ThumbnailSheetSampling.Interval, LocalizationManager.Instance.String_ThumbnailSheet_Sampling_Interval)
         ];
-        selectedSampling = SamplingOptions[0];
+        var preferences = NormalizePreferences(configService.CurrentConfig.ThumbnailSheetPreferences);
+        requestedColumns = preferences.Columns;
+        requestedRows = preferences.Rows;
+        outputWidth = preferences.OutputWidth;
+        sampling = preferences.Sampling;
+        selectedSampling = SamplingOptions[(int)sampling];
+        intervalSeconds = preferences.IntervalSeconds;
+        showHeader = preferences.ShowHeader;
+        showCaption = preferences.ShowCaption;
+        showIndex = preferences.ShowIndex;
+        isPngFormat = preferences.IsPngFormat;
+        jpegQuality = preferences.JpegQuality;
         RefreshLocalizedText();
         App.LocalizationService.LanguageChanged += OnLanguageChanged;
+    }
+
+    internal static ThumbnailSheetPreferences NormalizePreferences(ThumbnailSheetPreferences? preferences)
+    {
+        preferences ??= new ThumbnailSheetPreferences();
+        var columns = Math.Clamp(preferences.Columns, 1, 12);
+        return new ThumbnailSheetPreferences
+        {
+            Columns = columns,
+            Rows = Math.Clamp(preferences.Rows, 1, MaximumCellCount / columns),
+            OutputWidth = IsSupportedOutputWidth(preferences.OutputWidth)
+                ? preferences.OutputWidth : DefaultOutputWidth,
+            Sampling = preferences.Sampling is ThumbnailSheetSampling.Uniform
+                or ThumbnailSheetSampling.KeyFrame or ThumbnailSheetSampling.Interval
+                ? preferences.Sampling : ThumbnailSheetSampling.Uniform,
+            IntervalSeconds = double.IsFinite(preferences.IntervalSeconds)
+                ? Math.Clamp(preferences.IntervalSeconds, 1, 3600) : 10,
+            ShowHeader = preferences.ShowHeader,
+            ShowCaption = preferences.ShowCaption,
+            ShowIndex = preferences.ShowIndex,
+            IsPngFormat = preferences.IsPngFormat,
+            JpegQuality = double.IsFinite(preferences.JpegQuality)
+                ? Math.Clamp(preferences.JpegQuality, 10, 100) : 90
+        };
     }
 
     public ObservableCollection<SamplingOption> SamplingOptions { get; }
@@ -173,7 +211,6 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             OnPropertyChanged(nameof(CellSize));
             OnPropertyChanged(nameof(SamplingCount));
             OnPropertyChanged(nameof(LayoutSummary));
-            OnPropertyChanged(nameof(EstimatedSizeText));
             QueueRebuild();
         }
     }
@@ -189,7 +226,6 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             OnPropertyChanged(nameof(EffectiveRows));
             OnPropertyChanged(nameof(SamplingCount));
             OnPropertyChanged(nameof(LayoutSummary));
-            OnPropertyChanged(nameof(EstimatedSizeText));
             QueueRebuild();
         }
     }
@@ -203,7 +239,6 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
                 return;
             OnPropertyChanged(nameof(CellSize));
             OnPropertyChanged(nameof(LayoutSummary));
-            OnPropertyChanged(nameof(EstimatedSizeText));
             QueueRebuild();
         }
     }
@@ -309,7 +344,6 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             if (!SetProperty(ref showHeader, value))
                 return;
             OnPropertyChanged(nameof(LayoutSummary));
-            OnPropertyChanged(nameof(EstimatedSizeText));
             QueueRebuild();
         }
     }
@@ -322,7 +356,6 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             if (!SetProperty(ref showCaption, value))
                 return;
             OnPropertyChanged(nameof(LayoutSummary));
-            OnPropertyChanged(nameof(EstimatedSizeText));
             QueueRebuild();
         }
     }
@@ -348,7 +381,6 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             OnPropertyChanged(nameof(IsJpegFormat));
             OnPropertyChanged(nameof(QualityText));
             OnPropertyChanged(nameof(FormatSummary));
-            OnPropertyChanged(nameof(EstimatedSizeText));
         }
     }
 
@@ -367,7 +399,6 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             if (!SetProperty(ref jpegQuality, clamped))
                 return;
             OnPropertyChanged(nameof(QualityText));
-            OnPropertyChanged(nameof(EstimatedSizeText));
         }
     }
 
@@ -415,18 +446,6 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
                 layout.Columns,
                 layout.Rows);
             return IsLayoutSafe ? text : text + "  " + LocalizationManager.Instance.String_ThumbnailSheet_SizeWarning;
-        }
-    }
-
-    public string EstimatedSizeText
-    {
-        get
-        {
-            var layout = CurrentLayout;
-            var pixels = (long)layout.Width * layout.Height;
-            // 粗略估算：PNG 约 1.2 字节/像素，JPG 在高压缩比下约 0.15 字节/像素。
-            var bytes = isPngFormat ? pixels * 1.2 : pixels * (1.2 * jpegQuality / 100d * 0.12);
-            return CommonUtil.FormatFileSize(bytes);
         }
     }
 
@@ -485,7 +504,6 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
                 // 画面比例已知后立即刷新格高与布局摘要。
                 OnPropertyChanged(nameof(CellSize));
                 OnPropertyChanged(nameof(LayoutSummary));
-                OnPropertyChanged(nameof(EstimatedSizeText));
             }
 
             StatusText = LocalizationManager.Instance.String_ThumbnailSheet_Status_Opening;
@@ -735,7 +753,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
     }
 
     /// <summary>
-    /// 表头按文件名、基本信息、视频、音频和字幕轨道分行。
+    /// 表头按文件名、基本信息、视频、音频和字幕轨道分行；每行最多四条音轨。
     /// 缺失字段直接省略，避免出现 "Unknown" 之类的噪声。
     /// </summary>
     private IReadOnlyList<ThumbnailSheetHeaderLine> BuildHeaderLines()
@@ -760,7 +778,8 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
         string audioTracksLabel,
         string subtitleTracksLabel)
     {
-        var lines = new List<ThumbnailSheetHeaderLine>(5);
+        var lines = new List<ThumbnailSheetHeaderLine>(
+            5 + info.AdditionalAudioTracks.Count / MaximumAudioTracksPerLine);
 
         var name = string.IsNullOrEmpty(info.FileName) ? fallbackFileName : info.FileName;
         if (!string.IsNullOrEmpty(name))
@@ -780,7 +799,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
         var videoTracks = new List<string>();
         if (info.HasVideo)
         {
-            var video = info.VideoCodec!;
+            var video = info.VideoCodec!.ToUpperInvariant();
             if (info.VideoWidth > 0 && info.VideoHeight > 0)
             {
                 var scanSuffix = info.VideoScanMode switch
@@ -793,9 +812,12 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             }
             if (info.VideoFrameRate > 0)
                 video += $" {info.VideoFrameRate:0.###}fps";
+            if (info.VideoBitRate > 0)
+                video += $" {(info.VideoBitRateEstimated ? "≈" : string.Empty)}{CommonUtil.FormatBitrate(info.VideoBitRate)}";
             videoTracks.Add(video);
         }
-        videoTracks.AddRange(info.AdditionalVideoCodecs);
+        foreach (var codec in info.AdditionalVideoCodecs)
+            videoTracks.Add(codec.ToUpperInvariant());
         if (videoTracks.Count > 0)
         {
             var videoLine = videoTracksLabel + string.Join(HeaderItemSeparator, videoTracks);
@@ -817,18 +839,14 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
 
         var audioTracks = new List<string>();
         if (info.AudioCodec is { Length: > 0 } audio)
-        {
-            if (info.AudioChannels > 0)
-                audio += $" {info.AudioChannels}ch";
-            if (info.AudioSampleRate > 0)
-                audio += $" {info.AudioSampleRate / 1000.0:0.##}kHz";
-            audioTracks.Add(FormatTrack(audio, info.AudioLanguage));
-        }
+            audioTracks.Add(FormatAudioTrack(new ThumbnailSheetTrackInfo(audio, info.AudioLanguage,
+                info.AudioChannels, info.AudioSampleRate, info.AudioBitRate)));
         foreach (var track in info.AdditionalAudioTracks)
-            audioTracks.Add(FormatTrack(track.Codec, track.Language));
-        if (audioTracks.Count > 0)
+            audioTracks.Add(FormatAudioTrack(track));
+        for (var i = 0; i < audioTracks.Count; i += MaximumAudioTracksPerLine)
             lines.Add(new ThumbnailSheetHeaderLine(
-                audioTracksLabel + string.Join(HeaderItemSeparator, audioTracks)));
+                audioTracksLabel + string.Join(HeaderItemSeparator,
+                    audioTracks.GetRange(i, Math.Min(MaximumAudioTracksPerLine, audioTracks.Count - i)))));
 
         if (info.SubtitleTracks.Count > 0)
         {
@@ -844,8 +862,23 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
 
     private static string FormatTrack(string codec, string? language) =>
         string.IsNullOrWhiteSpace(language)
-            ? codec
-            : $"{codec} [{language.Trim()}]";
+            ? codec.ToUpperInvariant()
+            : $"{codec.ToUpperInvariant()} [{language.Trim()}]";
+
+    private static string FormatAudioTrack(ThumbnailSheetTrackInfo track)
+    {
+        var parts = new List<string> { track.Codec.ToUpperInvariant() };
+        if (track.Channels > 0)
+            parts.Add($"{track.Channels}ch");
+        if (track.SampleRate > 0)
+            parts.Add($"{track.SampleRate / 1000.0:0.##}kHz");
+        if (track.BitRate > 0)
+            parts.Add(CommonUtil.FormatBitrate(track.BitRate));
+        var details = string.Join(" ", parts);
+        return string.IsNullOrWhiteSpace(track.Language)
+            ? details
+            : $"{details} [{track.Language.Trim()}]";
+    }
 
     internal static string? GetDynamicRangeLabel(VideoDynamicRange dynamicRange) => dynamicRange switch
     {
@@ -1004,6 +1037,25 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
         isClosed = true;
         App.LocalizationService.LanguageChanged -= OnLanguageChanged;
 
+        var preferences = new ThumbnailSheetPreferences
+        {
+            Columns = requestedColumns,
+            Rows = requestedRows,
+            OutputWidth = outputWidth,
+            Sampling = sampling,
+            IntervalSeconds = intervalSeconds,
+            ShowHeader = showHeader,
+            ShowCaption = showCaption,
+            ShowIndex = showIndex,
+            IsPngFormat = isPngFormat,
+            JpegQuality = jpegQuality
+        };
+        if (configService.CurrentConfig.ThumbnailSheetPreferences != preferences)
+        {
+            configService.CurrentConfig.ThumbnailSheetPreferences = preferences;
+            configService.Save();
+        }
+
         if (!isInitialized)
             initializationCompletion.TrySetResult();
         CancelSafely(initializationCancellation);
@@ -1059,7 +1111,6 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
         OnPropertyChanged(nameof(WindowTitle));
         OnPropertyChanged(nameof(FormatSummary));
         OnPropertyChanged(nameof(LayoutSummary));
-        OnPropertyChanged(nameof(EstimatedSizeText));
         QueueRebuild();
     }
 }
