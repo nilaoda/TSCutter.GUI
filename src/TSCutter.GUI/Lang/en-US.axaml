@@ -3,7 +3,7 @@
     <x:String x:Key="String.PleaseLoadVideo">Please Load Video</x:String>
     <x:String x:Key="String.PleaseLoadAVideo">Please load a video</x:String>
     <x:String x:Key="String.VideoNotInit">Video Not Initialized</x:String>
-    <x:String x:Key="String.DropToolTip">Drop to load video</x:String>
+    <x:String x:Key="String.DropToolTip">Drop a video or project to open</x:String>
     <x:String x:Key="String.PleaseInputValidTime">Please input a valid time</x:String>
     <x:String x:Key="String.WrongFormat">Wrong Format</x:String>
     <x:String x:Key="String.SaveFrame">Save a frame</x:String>
@@ -30,6 +30,18 @@
     <x:String x:Key="String.Menu.Undo">_Undo</x:String>
     <x:String x:Key="String.Menu.Redo">_Redo</x:String>
     <x:String x:Key="String.Menu.OpenVideo">_Open Video...</x:String>
+    <x:String x:Key="String.Project.Open">Open Project...</x:String>
+    <x:String x:Key="String.Project.Save">Save Project</x:String>
+    <x:String x:Key="String.Project.SaveAs">Save Project As...</x:String>
+    <x:String x:Key="String.Project.Files">TSCutter project files</x:String>
+    <x:String x:Key="String.Project.OpenFailed">Could not open the project: {0}</x:String>
+    <x:String x:Key="String.Project.SaveFailed">Could not save the project: {0}</x:String>
+    <x:String x:Key="String.Project.ReplaceConfirm">Opening this project will replace the current clips and export queue. Continue?</x:String>
+    <x:String x:Key="String.Project.UnsavedChanges">This project has unsaved changes. Save before continuing? Choose No to discard them, or Cancel to stay here.</x:String>
+    <x:String x:Key="String.Project.FileEnd">File end</x:String>
+    <x:String x:Key="String.Project.SourceMissing">Source file is missing: {0}</x:String>
+    <x:String x:Key="String.Project.SourceChanged">The saved part of this source file has changed or been shortened: {0}</x:String>
+    <x:String x:Key="String.Project.Invalid">The project file or its saved ranges are invalid.</x:String>
     <x:String x:Key="String.Menu.SaveClip">_Save Clip...</x:String>
     <x:String x:Key="String.Menu.ExportQueue">Export Queue</x:String>
     <x:String x:Key="String.Menu.CloseVideo">_Close Video</x:String>

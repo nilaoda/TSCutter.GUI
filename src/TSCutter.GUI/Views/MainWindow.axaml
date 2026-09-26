@@ -113,6 +113,13 @@
                         <MenuItem Header="{DynamicResource String.Menu.OpenVideo}"
                                   Command="{Binding LoadVideoClickCommand}"
                                   InputGesture="{OnPlatform Ctrl+O, macOS=⌘+O}" />
+                        <MenuItem Header="{DynamicResource String.Project.Open}"
+                                  Command="{Binding OpenProjectCommand}" />
+                        <MenuItem Header="{DynamicResource String.Project.Save}"
+                                  Command="{Binding SaveProjectCommand}" />
+                        <MenuItem Header="{DynamicResource String.Project.SaveAs}"
+                                  Command="{Binding SaveProjectAsCommand}" />
+                        <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.SaveClip}"
                                   Command="{Binding SaveVideoClickCommand}"
                                   InputGesture="{OnPlatform Ctrl+S, macOS=⌘+S}" />
