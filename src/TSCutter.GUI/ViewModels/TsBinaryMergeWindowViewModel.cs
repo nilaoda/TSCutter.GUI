@@ -23,6 +23,7 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
     private readonly List<TsBinaryMergeFileItem> _selectedFiles = [];
     private CancellationTokenSource? _cancellationTokenSource;
     private TsBinaryMergeAnalysis? _analysis;
+    private TsBinaryMergeMode _mode = TsBinaryMergeMode.Direct;
     private bool _isClosing;
     private int _generation;
 
@@ -43,15 +44,22 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
         LocalizationManager.Instance.String_TsBinaryMerge_FileSummary,
         Files.Count,
         CommonUtil.FormatFileSize(Files.Sum(item => item.FileSize)));
-    public bool IsOverlapMode
+    public bool IsDirectMode
     {
-        get => !IsDirectMode;
-        set
-        {
-            if (value)
-                IsDirectMode = false;
-        }
+        get => _mode == TsBinaryMergeMode.Direct;
+        set { if (value) SetMode(TsBinaryMergeMode.Direct); }
     }
+    public bool IsExactOverlapMode
+    {
+        get => _mode == TsBinaryMergeMode.ExactOverlap;
+        set { if (value) SetMode(TsBinaryMergeMode.ExactOverlap); }
+    }
+    public bool IsContentOverlapMode
+    {
+        get => _mode == TsBinaryMergeMode.ContentOverlap;
+        set { if (value) SetMode(TsBinaryMergeMode.ContentOverlap); }
+    }
+    public bool IsOverlapMode => !IsDirectMode;
     public bool HasAnalysis => _analysis is not null;
     public bool HasUnmatchedJoins => _analysis?.HasUnmatchedJoins == true;
     public bool CanModifyFiles => !IsBusy;
@@ -66,11 +74,6 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
     public bool CanMoveUp => CanRemove && _selectedFiles.Any(item => Files.IndexOf(item) > 0);
     public bool CanMoveDown => CanRemove && _selectedFiles.Any(item =>
         Files.IndexOf(item) >= 0 && Files.IndexOf(item) < Files.Count - 1);
-
-    [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(IsOverlapMode), nameof(CanAnalyze), nameof(CanMerge))]
-    [NotifyCanExecuteChangedFor(nameof(AnalyzeCommand), nameof(MergeCommand))]
-    private bool _isDirectMode = true;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanMerge))]
@@ -109,9 +112,17 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
     [ObservableProperty]
     private string _analysisSummaryText = string.Empty;
 
-    partial void OnIsDirectModeChanged(bool value)
+    private void SetMode(TsBinaryMergeMode mode)
     {
+        if (_mode == mode)
+            return;
+        _mode = mode;
+        OnPropertyChanged(nameof(IsDirectMode));
+        OnPropertyChanged(nameof(IsExactOverlapMode));
+        OnPropertyChanged(nameof(IsContentOverlapMode));
         OnPropertyChanged(nameof(IsOverlapMode));
+        OnPropertyChanged(nameof(CanAnalyze));
+        OnPropertyChanged(nameof(CanMerge));
         InvalidateAnalysis();
         ResetProgressDisplay();
         StatusText = GetModeReadyStatus();
@@ -309,7 +320,9 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
         OnPropertyChanged(nameof(HasUnmatchedJoins));
         PrepareRowsForAnalysis();
         AnalysisSummaryText = string.Empty;
-        StatusText = LocalizationManager.Instance.String_TsBinaryMerge_Status_Analyzing;
+        StatusText = _mode == TsBinaryMergeMode.ContentOverlap
+            ? LocalizationManager.Instance.String_TsBinaryMerge_Status_ContentAnalyzing
+            : LocalizationManager.Instance.String_TsBinaryMerge_Status_Analyzing;
         try
         {
             var progress = new Progress<TsBinaryMergeProgress>(value =>
@@ -326,7 +339,8 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
                 paths,
                 maximumBytes,
                 progress,
-                cancellation.Token);
+                cancellation.Token,
+                _mode);
             if (_isClosing || generation != _generation)
                 return;
             _analysis = result;
@@ -338,7 +352,9 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
             MergeCommand.NotifyCanExecuteChanged();
             StatusText = result.HasUnmatchedJoins
                 ? LocalizationManager.Instance.String_TsBinaryMerge_Status_AnalysisWarning
-                : LocalizationManager.Instance.String_TsBinaryMerge_Status_AnalysisCompleted;
+                : _mode == TsBinaryMergeMode.ContentOverlap
+                    ? LocalizationManager.Instance.String_TsBinaryMerge_Status_ContentAnalysisCompleted
+                    : LocalizationManager.Instance.String_TsBinaryMerge_Status_AnalysisCompleted;
         }
         catch (OperationCanceledException)
         {
@@ -483,7 +499,9 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
             return LocalizationManager.Instance.String_TsBinaryMerge_Status_Ready;
         return IsDirectMode
             ? LocalizationManager.Instance.String_TsBinaryMerge_Status_DirectReady
-            : LocalizationManager.Instance.String_TsBinaryMerge_Status_OverlapReady;
+            : _mode == TsBinaryMergeMode.ContentOverlap
+                ? LocalizationManager.Instance.String_TsBinaryMerge_Status_ContentReady
+                : LocalizationManager.Instance.String_TsBinaryMerge_Status_OverlapReady;
     }
 
     private void ApplyProgress(TsBinaryMergeProgress value)
@@ -504,7 +522,9 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
                 value.CurrentSourceIndex,
                 value.SourceCount - 1),
             TsBinaryMergeProgressPhase.Verifying => string.Format(
-                LocalizationManager.Instance.String_TsBinaryMerge_Status_Verifying,
+                _mode == TsBinaryMergeMode.ContentOverlap
+                    ? LocalizationManager.Instance.String_TsBinaryMerge_Status_ContentVerifying
+                    : LocalizationManager.Instance.String_TsBinaryMerge_Status_Verifying,
                 value.CurrentSourceIndex,
                 value.SourceCount - 1),
             _ => string.Format(

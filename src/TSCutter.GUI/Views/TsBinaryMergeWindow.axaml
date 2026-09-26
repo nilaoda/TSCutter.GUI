@@ -16,10 +16,16 @@
             <Grid RowDefinitions="Auto,Auto" RowSpacing="7">
                 <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="18">
                     <RadioButton Content="{DynamicResource String.TsBinaryMerge.Mode.Direct}"
+                                 ToolTip.Tip="{DynamicResource String.TsBinaryMerge.Mode.DirectHint}"
                                  IsChecked="{Binding IsDirectMode, Mode=TwoWay}"
                                  IsEnabled="{Binding CanModifyFiles}" />
                     <RadioButton Content="{DynamicResource String.TsBinaryMerge.Mode.Overlap}"
-                                 IsChecked="{Binding IsOverlapMode, Mode=TwoWay}"
+                                 ToolTip.Tip="{DynamicResource String.TsBinaryMerge.Mode.OverlapHint}"
+                                 IsChecked="{Binding IsExactOverlapMode, Mode=TwoWay}"
+                                 IsEnabled="{Binding CanModifyFiles}" />
+                    <RadioButton Content="{DynamicResource String.TsBinaryMerge.Mode.ContentOverlap}"
+                                 ToolTip.Tip="{DynamicResource String.TsBinaryMerge.Mode.ContentOverlapHint}"
+                                 IsChecked="{Binding IsContentOverlapMode, Mode=TwoWay}"
                                  IsEnabled="{Binding CanModifyFiles}" />
                 </StackPanel>
                 <Grid Grid.Row="1" ColumnDefinitions="Auto,110,Auto,*,Auto" ColumnSpacing="8"
