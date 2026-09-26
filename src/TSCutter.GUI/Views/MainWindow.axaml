@@ -76,12 +76,13 @@
         </NativeMenu>
     </NativeMenu.Menu>
 
-    <Grid DragDrop.AllowDrop="True" RowDefinitions="Auto, *">
+    <Grid x:Name="DropSurface" DragDrop.AllowDrop="True" RowDefinitions="Auto, *">
         <Grid.Resources>
             <ResourceDictionary>
                 <ResourceDictionary.ThemeDictionaries>
                     <ResourceDictionary x:Key="Light">
                         <SolidColorBrush x:Key="MaskBackgroundBrush">White</SolidColorBrush>
+                        <SolidColorBrush x:Key="DropPanelBrush" Color="#C0C0C0" />
                         <SolidColorBrush x:Key="ClipSelectionBackgroundBrush"
                                          Color="{DynamicResource SystemAccentColorLight1}" />
                         <SolidColorBrush x:Key="ClipThumbnailBackgroundBrush" Color="#303236" />
@@ -89,22 +90,21 @@
                     </ResourceDictionary>
                     <ResourceDictionary x:Key="Dark">
                         <SolidColorBrush x:Key="MaskBackgroundBrush" Color="#111316" />
+                        <SolidColorBrush x:Key="DropPanelBrush" Color="#30343A" />
                         <!-- 选中卡片只做轻微蓝色染色，避免与标题栏、进度条争夺视觉焦点。 -->
                         <SolidColorBrush x:Key="ClipSelectionBackgroundBrush" Color="#2B3B4B" />
                         <SolidColorBrush x:Key="ClipThumbnailBackgroundBrush" Color="#111316" />
                         <SolidColorBrush x:Key="ClipThumbnailPlaceholderBrush" Color="#969DA5" />
                     </ResourceDictionary>
                 </ResourceDictionary.ThemeDictionaries>
+                <LinearGradientBrush x:Key="DropTitleBrush" StartPoint="0%,0%" EndPoint="100%,0%">
+                    <GradientStop Color="{DynamicResource {x:Static commonControls:SystemColors.InactiveCaptionColorKey}}" Offset="0" />
+                    <GradientStop Color="{DynamicResource {x:Static commonControls:SystemColors.GradientInactiveCaptionColorKey}}" Offset="1" />
+                </LinearGradientBrush>
+                <SolidColorBrush x:Key="DropTitleTextBrush"
+                                 Color="{DynamicResource {x:Static commonControls:SystemColors.ActiveCaptionTextColorKey}}" />
             </ResourceDictionary>
         </Grid.Resources>
-        <Interaction.Behaviors>
-            <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DragEnterEvent}">
-                <ChangePropertyAction TargetObject="{Binding ElementName=DropMask}" PropertyName="IsVisible" Value="True" />
-            </RoutedEventTriggerBehavior>
-            <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DragLeaveEvent}">
-                <ChangePropertyAction TargetObject="{Binding ElementName=DropMask}" PropertyName="IsVisible" Value="False" />
-            </RoutedEventTriggerBehavior>
-        </Interaction.Behaviors>
         <ClassicBorderDecorator Grid.Row="0" DockPanel.Dock="Top" BorderThickness="2" BorderStyle="Etched">
             <DockPanel Margin="0, 2">
                 <commonControls:RebarHandle />
@@ -203,18 +203,31 @@
               IsVisible="False"
               DragDrop.AllowDrop="True"
               x:Name="DropMask">
-            <Interaction.Behaviors>
-                <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DropEvent}">
-                    <InvokeCommandAction Command="{Binding DropCommand}" PassEventArgsToCommand="True" />
-                    <ChangePropertyAction PropertyName="IsVisible" Value="False" />
-                </RoutedEventTriggerBehavior>
-                <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DragOverEvent}">
-                    <InvokeCommandAction Command="{Binding DragOverCommand}" PassEventArgsToCommand="True" />
-                </RoutedEventTriggerBehavior>
-            </Interaction.Behaviors>
-            <Border Background="{DynamicResource MaskBackgroundBrush}" Opacity="0.9" />
-            <TextBlock Text="{DynamicResource String.DropToolTip}" VerticalAlignment="Center" HorizontalAlignment="Center" />
-            <Rectangle Stroke="Gray" StrokeThickness="2" StrokeDashArray="3, 4" Width="200" Height="100" RadiusX="10" RadiusY="10"/>
+            <Border Background="{DynamicResource MaskBackgroundBrush}" Opacity="0.78" />
+            <ClassicBorderDecorator BorderThickness="2" BorderStyle="Raised"
+                                    Background="{DynamicResource DropPanelBrush}"
+                                    Width="340" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Padding="4">
+                <Grid RowDefinitions="24,Auto">
+                    <Border Background="{DynamicResource DropTitleBrush}" Padding="8,2">
+                        <TextBlock Text="TSCutter.GUI" Foreground="{DynamicResource DropTitleTextBrush}" FontWeight="Bold"
+                                   VerticalAlignment="Center" />
+                    </Border>
+                    <ClassicBorderDecorator Grid.Row="1" BorderThickness="2" BorderStyle="Sunken"
+                                            Margin="8" Padding="14,16">
+                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                            <Image Source="/Assets/directory_movie-3.png" Width="32" Height="32"
+                                   Stretch="Uniform" VerticalAlignment="Center" />
+                            <StackPanel Spacing="4" Width="220" VerticalAlignment="Center">
+                                <TextBlock Text="{DynamicResource String.DropToolTip}" FontWeight="Bold"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Text="{DynamicResource String.Drop.Release}" FontSize="12"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+                    </ClassicBorderDecorator>
+                </Grid>
+            </ClassicBorderDecorator>
         </Grid>
         <DockPanel Grid.Row="1">
             <!-- 状态栏 -->

@@ -4,6 +4,7 @@
     <x:String x:Key="String.PleaseLoadAVideo">請載入一個影片</x:String>
     <x:String x:Key="String.VideoNotInit">影片未初始化</x:String>
     <x:String x:Key="String.DropToolTip">拖放影片或專案以開啟</x:String>
+    <x:String x:Key="String.Drop.Release">放開滑鼠即可開啟檔案</x:String>
     <x:String x:Key="String.PleaseInputValidTime">請輸入有效的時間</x:String>
     <x:String x:Key="String.WrongFormat">格式錯誤</x:String>
     <x:String x:Key="String.SaveFrame">儲存影格</x:String>

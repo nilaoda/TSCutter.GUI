@@ -4,6 +4,7 @@
     <x:String x:Key="String.PleaseLoadAVideo">Please load a video</x:String>
     <x:String x:Key="String.VideoNotInit">Video Not Initialized</x:String>
     <x:String x:Key="String.DropToolTip">Drop a video or project to open</x:String>
+    <x:String x:Key="String.Drop.Release">Release to open the file</x:String>
     <x:String x:Key="String.PleaseInputValidTime">Please input a valid time</x:String>
     <x:String x:Key="String.WrongFormat">Wrong Format</x:String>
     <x:String x:Key="String.SaveFrame">Save a frame</x:String>
