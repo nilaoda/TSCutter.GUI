@@ -891,6 +891,27 @@ public partial class MainWindowViewModel : ViewModelBase
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
 
+    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    private async Task FrameSearchClickAsync()
+    {
+        var manager = _dialogService.CreateViewModel<FrameTemplateManagerWindowViewModel>();
+        manager.FilePath = VideoPath;
+        manager.CurrentTimeSeconds = CurrentTime;
+        manager.SearchFromCurrent = CurrentTime > 0;
+        await _dialogService.ShowDialogAsync(this, manager);
+        if (manager.ChosenTemplate is not { } template) return;
+
+        var search = _dialogService.CreateViewModel<FrameSearchWindowViewModel>();
+        search.FilePath = VideoPath;
+        search.Template = template;
+        search.StartTime = manager.SearchFromCurrent
+            ? TimeSpan.FromSeconds(manager.CurrentTimeSeconds) : TimeSpan.Zero;
+        await _dialogService.ShowDialogAsync(this, search);
+        await search.ClosedTask;
+        if (search.SelectedTime is { } time)
+            await OnOverviewTimeSelected(time);
+    }
+
     private async Task OnOverviewTimeSelected(TimeSpan time)
     {
         if (!IsVideoInitialized)
@@ -1870,6 +1891,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
                 KeyFrameOverviewClickCommand.NotifyCanExecuteChanged();
                 ThumbnailSheetClickCommand.NotifyCanExecuteChanged();
+                FrameSearchClickCommand.NotifyCanExecuteChanged();
                 NotifyVideoCapabilityChanged();
 
                 // decode
