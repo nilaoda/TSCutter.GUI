@@ -123,9 +123,10 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
             var options = new TsStreamAnalyzeOptions
             {
                 InventoryOnly = true,
+                MinimumBytes = TsStreamAnalyzeOptions.StandardProbeBytes,
                 MaxBytes = MaxProbeBytes,
                 StablePacketCount = 8_192,
-                Features = TsStreamAnalyzeFeatures.None
+                Features = TsStreamAnalyzeFeatures.Bitrate
             };
             var result = await Task.Run(() => analyzer.AnalyzeAsync(
                 FilePath, progress, cancellationTokenSource.Token, options));
@@ -187,6 +188,7 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
                     ProgramText = pid.ProgramNumber?.ToString() ?? "-",
                     SamplePacketCount = pid.PacketCount,
                     SamplePacketCountText = pid.PacketCount.ToString("N0"),
+                    BitrateText = CommonUtil.FormatOptionalBitrate(pid.Bitrate),
                     IsProgramStream = isProgramStream,
                     IsSelected = isProgramStream
                 };

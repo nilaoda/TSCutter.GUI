@@ -1,0 +1,146 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.TsRemuxWindow"
+        x:DataType="viewModels:TsRemuxWindowViewModel"
+        Title="{Binding WindowTitle}"
+        Width="920" Height="600" MinWidth="760" MinHeight="500"
+        WindowStartupLocation="CenterScreen">
+        <Grid Margin="12" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
+        <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="4">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource String.TsRemux.File}" VerticalAlignment="Center" />
+                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding FilePath}" IsReadOnly="True" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="{DynamicResource String.TsRemux.FileSize}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding FileSizeText}" FontWeight="Bold" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource String.TsRemux.Status}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding StatusText}" TextWrapping="Wrap" />
+            </Grid>
+        </ClassicBorderDecorator>
+
+        <Grid Grid.Row="1" RowDefinitions="18,Auto,Auto" ColumnDefinitions="180,180,*,110" ColumnSpacing="12" RowSpacing="6">
+            <ProgressBar Grid.Row="0" Grid.Column="0" Grid.ColumnSpan="3" Minimum="0" Maximum="100" Value="{Binding Percent}" Height="18" />
+            <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding Percent, StringFormat={}{0:0.00}%}"
+                       IsVisible="{Binding ShowOutputProgress}" TextAlignment="Right" VerticalAlignment="Center" />
+            <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="4" Text="{Binding ProbeSummaryText}"
+                       IsVisible="{Binding !ShowOutputProgress}" Opacity="0.75" TextWrapping="Wrap" />
+            <TextBlock Grid.Row="1" Grid.Column="0" IsVisible="{Binding ShowOutputProgress}" VerticalAlignment="Center">
+                <Run Text="{DynamicResource String.TsRemux.Progress}"/><Run Text=" "/>
+                <Run Text="{Binding ProgressText}" FontWeight="Bold"/>
+            </TextBlock>
+            <TextBlock Grid.Row="1" Grid.Column="1" IsVisible="{Binding ShowOutputProgress}" VerticalAlignment="Center">
+                <Run Text="{DynamicResource String.TsRemux.Speed}"/><Run Text=" "/>
+                <Run Text="{Binding SpeedText}" FontWeight="Bold"/>
+            </TextBlock>
+            <Grid Grid.Row="2" Grid.Column="0" Grid.ColumnSpan="4"
+                  ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="14" IsEnabled="{Binding CanEdit}">
+                <TextBlock Text="{DynamicResource String.TsRemux.GlobalSettings}" FontWeight="Bold" VerticalAlignment="Center" />
+                <CheckBox Grid.Column="1" Content="{DynamicResource String.TsRemux.KeepEpg}" IsChecked="{Binding KeepEpg}"
+                          ToolTip.Tip="{DynamicResource String.TsRemux.KeepEpgHint}" />
+                <CheckBox Grid.Column="2" Content="{DynamicResource String.TsRemux.PreservePacketCount}" IsChecked="{Binding PreservePacketCount}"
+                          ToolTip.Tip="{DynamicResource String.TsRemux.PreservePacketCountHint}" />
+                <Button Grid.Column="4" Content="{DynamicResource String.TsRemux.AutoAssignPids}" Command="{Binding AutoAssignPidsCommand}" MinWidth="100" />
+                <Button Grid.Column="5" Content="{DynamicResource String.TsRemux.RestoreSourcePids}" Command="{Binding RestoreSourcePidsCommand}" MinWidth="100" />
+            </Grid>
+        </Grid>
+
+        <Grid Grid.Row="2" RowDefinitions="120,*" RowSpacing="8">
+            <Grid Grid.Row="0" ColumnDefinitions="2*,3*" ColumnSpacing="8">
+                <ClassicBorderDecorator Grid.Column="0" BorderThickness="1" BorderStyle="Etched" Padding="6">
+                    <Grid RowDefinitions="Auto,*" RowSpacing="5">
+                        <TextBlock Text="{DynamicResource String.TsRemux.Services}" FontWeight="Bold" />
+                        <DataGrid Grid.Row="1" ItemsSource="{Binding Services}" SelectedItem="{Binding SelectedService, Mode=TwoWay}"
+                                  AutoGenerateColumns="False" GridLinesVisibility="All" CanUserSortColumns="False"
+                                  IsEnabled="{Binding CanEdit}" HeadersVisibility="Column">
+                            <DataGrid.Columns>
+                                <DataGridTemplateColumn Header="{DynamicResource String.TsRemux.Column.Keep}" Width="55">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate><CheckBox IsChecked="{Binding IsSelected}" HorizontalAlignment="Center" /></DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="Service ID" Binding="{Binding SourceServiceIdText}" Width="105" IsReadOnly="True" />
+                                <DataGridTextColumn Header="{DynamicResource String.TsRemux.Column.Name}" Binding="{Binding OriginalServiceName}" Width="*" IsReadOnly="True" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+                    </Grid>
+                </ClassicBorderDecorator>
+
+                <ClassicBorderDecorator Grid.Column="1" BorderThickness="1" BorderStyle="Etched" Padding="8">
+                    <Grid ColumnDefinitions="Auto,*,16,Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="7" RowSpacing="5"
+                          IsVisible="{Binding HasSelectedService}" IsEnabled="{Binding CanEdit}">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource String.TsRemux.OutputServiceId}" VerticalAlignment="Center" />
+                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedService.OutputServiceIdText}" />
+                        <TextBlock Grid.Row="0" Grid.Column="3" Text="{DynamicResource String.TsRemux.OutputPmtPid}" VerticalAlignment="Center" />
+                        <TextBox Grid.Row="0" Grid.Column="4" Text="{Binding SelectedService.OutputPmtPidText}" />
+
+                        <CheckBox Grid.Row="1" Grid.Column="3" Content="{DynamicResource String.TsRemux.WriteServiceName}"
+                                  IsChecked="{Binding SelectedService.WriteServiceName}" VerticalAlignment="Center" />
+                        <TextBox Grid.Row="1" Grid.Column="4" Text="{Binding SelectedService.ServiceName}"
+                                 IsEnabled="{Binding SelectedService.WriteServiceName}" />
+                        <CheckBox Grid.Row="1" Grid.Column="0" Content="{DynamicResource String.TsRemux.WriteProviderName}"
+                                  IsChecked="{Binding SelectedService.WriteProviderName}" VerticalAlignment="Center" />
+                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding SelectedService.ProviderName}"
+                                 IsEnabled="{Binding SelectedService.WriteProviderName}" />
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource String.TsRemux.ServiceType}" VerticalAlignment="Center" />
+                        <ComboBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="4" ItemsSource="{Binding ServiceTypeOptions}"
+                                  SelectedItem="{Binding SelectedService.SelectedServiceType, Mode=TwoWay}"
+                                  DisplayMemberBinding="{Binding DisplayName}" />
+                    </Grid>
+                </ClassicBorderDecorator>
+            </Grid>
+
+            <ClassicBorderDecorator Grid.Row="1" BorderThickness="1" BorderStyle="Etched" Padding="8">
+                <Grid RowDefinitions="Auto,*" RowSpacing="8" IsEnabled="{Binding CanEdit}">
+                    <Grid ColumnDefinitions="*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
+                        <TextBlock Text="{DynamicResource String.TsRemux.Tracks}" FontWeight="Bold" VerticalAlignment="Center" />
+                        <Button Grid.Column="1" Content="{DynamicResource String.TsRemux.SelectAll}" Command="{Binding SelectAllTracksCommand}" MinWidth="68" />
+                        <Button Grid.Column="2" Content="{DynamicResource String.TsRemux.ClearAll}" Command="{Binding ClearAllTracksCommand}" MinWidth="68" />
+                        <Button Grid.Column="3" Content="{DynamicResource String.TsRemux.MoveUp}" Command="{Binding MoveTrackUpCommand}" MinWidth="58" />
+                        <Button Grid.Column="4" Content="{DynamicResource String.TsRemux.MoveDown}" Command="{Binding MoveTrackDownCommand}" MinWidth="58" />
+                    </Grid>
+
+                    <DataGrid Grid.Row="1" ItemsSource="{Binding SelectedService.Tracks}" SelectedItem="{Binding SelectedTrack, Mode=TwoWay}" AutoGenerateColumns="False"
+                              GridLinesVisibility="All" CanUserSortColumns="False" HeadersVisibility="Column">
+                        <DataGrid.Columns>
+                            <DataGridTemplateColumn Header="{DynamicResource String.TsRemux.Column.Keep}" Width="55">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <CheckBox IsChecked="{Binding IsSelected}" IsEnabled="{Binding !IsPcrOnly}"
+                                                  HorizontalAlignment="Center" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="{DynamicResource String.TsRemux.Column.SourcePid}" Binding="{Binding SourcePidText}" Width="90" IsReadOnly="True" />
+                            <DataGridTextColumn Header="{DynamicResource String.TsRemux.Column.Type}" Binding="{Binding TypeText}" Width="*" IsReadOnly="True" />
+                            <DataGridTextColumn Header="{DynamicResource String.TsRemux.Column.Role}" Binding="{Binding RoleText}" Width="150" IsReadOnly="True" />
+                            <DataGridTextColumn Header="{DynamicResource String.TsRemux.Column.Bitrate}" Binding="{Binding BitrateText}" Width="105" IsReadOnly="True" />
+                            <DataGridTemplateColumn Header="{DynamicResource String.TsRemux.Column.Language}" Width="135">
+                                <DataGridTemplateColumn.CellTemplate>
+                                    <DataTemplate>
+                                        <ComboBox ItemsSource="{Binding LanguageOptions}"
+                                                  SelectedItem="{Binding SelectedLanguage, Mode=TwoWay}"
+                                                  IsEnabled="{Binding !IsPcrOnly}"
+                                                  DisplayMemberBinding="{Binding DisplayName}" />
+                                    </DataTemplate>
+                                </DataGridTemplateColumn.CellTemplate>
+                            </DataGridTemplateColumn>
+                            <DataGridTextColumn Header="{DynamicResource String.TsRemux.Column.OutputPid}" Binding="{Binding OutputPidText}" Width="100" />
+                        </DataGrid.Columns>
+                    </DataGrid>
+                </Grid>
+            </ClassicBorderDecorator>
+        </Grid>
+
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <TextBlock Text="{Binding ChangeSummaryText}" Opacity="0.75" VerticalAlignment="Center" TextWrapping="Wrap" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                <Button Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}" Width="100" />
+                <Button Content="{DynamicResource String.TsRemux.Output}" Command="{Binding OutputCommand}" Width="130" />
+            </StackPanel>
+        </Grid>
+    </Grid>
+</Window>

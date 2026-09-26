@@ -27,6 +27,9 @@ public sealed partial class TsCheckPidSummaryView : ObservableObject
     private string _packetPercentageText = "-";
 
     [ObservableProperty]
+    private string _bitrateText = "-";
+
+    [ObservableProperty]
     private double _packetPercentage;
 
     [ObservableProperty]
@@ -40,7 +43,9 @@ public sealed partial class TsCheckPidSummaryView : ObservableObject
     public bool HasErrors => ErrorCount > 0;
     public bool HasWarnings => WarningCount > 0;
 
-    public void Update(TsCheckPidProgress progress, long totalPacketCount, TsCheckTextFormatter text)
+    public void Update(
+        TsCheckPidProgress progress, long totalPacketCount, TsCheckTextFormatter text,
+        double? bitrate = null)
     {
         PacketCount = progress.PacketCount;
         PacketCountText = progress.PacketCount.ToString("N0");
@@ -50,6 +55,8 @@ public sealed partial class TsCheckPidSummaryView : ObservableObject
         PacketPercentageText = totalPacketCount > 0 && progress.PacketCount > 0
             ? $"{PacketPercentage:0.00}%"
             : "-";
+        if (bitrate is { } value)
+            BitrateText = CommonUtil.FormatOptionalBitrate(value);
         ErrorCount = progress.ErrorCount;
         WarningCount = progress.WarningCount;
         Stream = text.FormatPidDescription(

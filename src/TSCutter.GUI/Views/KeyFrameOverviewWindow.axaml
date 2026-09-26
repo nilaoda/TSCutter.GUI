@@ -1,0 +1,44 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels"
+        xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.KeyFrameOverviewWindow"
+        x:DataType="viewModels:KeyFrameOverviewWindowViewModel"
+        Focusable="True"
+        Title="{Binding WindowTitle}"
+        Width="1120" Height="760" MinWidth="760" MinHeight="500"
+        WindowStartupLocation="CenterOwner"
+        Closing="Window_OnClosing">
+    <Grid Margin="12" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Grid.Column="0" Text="{DynamicResource String.KeyFrameOverview.Sampling}" VerticalAlignment="Center" />
+            <ComboBox Grid.Column="1" ItemsSource="{Binding SamplingOptions}"
+                      SelectedItem="{Binding SelectedSampling, Mode=TwoWay}"
+                      DisplayMemberBinding="{Binding Label}" MinWidth="180" />
+            <TextBlock Grid.Column="2" Text="{DynamicResource String.KeyFrameOverview.TileSize}" VerticalAlignment="Center" />
+            <Slider Grid.Column="3" Minimum="160" Maximum="360" Width="170"
+                    Value="{Binding ThumbnailWidth, Mode=TwoWay}" />
+            <TextBlock Grid.Column="4" Text="{Binding ThumbnailWidth, StringFormat={}{0}px}" VerticalAlignment="Center" MinWidth="48" />
+            <Button Grid.Column="5" Content="{DynamicResource String.Cancel}"
+                    Command="{Binding CancelCommand}" MinWidth="88" />
+        </Grid>
+
+        <TextBlock Grid.Row="1" Text="{Binding StatusText}" TextWrapping="Wrap" VerticalAlignment="Center" />
+
+        <ScrollViewer Grid.Row="2" x:Name="OverviewScrollViewer"
+                      VerticalScrollBarVisibility="Visible"
+                      HorizontalScrollBarVisibility="Disabled"
+                      ScrollChanged="OverviewScrollViewer_OnScrollChanged">
+            <controls:KeyFrameOverviewCanvas x:Name="OverviewCanvas"
+                                             Items="{Binding Tiles}"
+                                             TileWidth="{Binding ThumbnailWidth}"
+                                             SizeChanged="OverviewCanvas_OnSizeChanged" />
+        </ScrollViewer>
+
+        <TextBlock Grid.Row="3" Text="{DynamicResource String.KeyFrameOverview.Hint}"
+                   Opacity="0.72" TextWrapping="Wrap" />
+    </Grid>
+</Window>

@@ -7,6 +7,7 @@ using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Media;
 using TSCutter.GUI.Models;
+using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.Controls;
 
@@ -275,7 +276,7 @@ public sealed class TsCheckTimeline : Control
             var y = _plotBounds.Bottom - _plotBounds.Height * ratio;
             using (context.PushOpacity(0.28))
                 context.DrawLine(gridPen, new Point(_plotBounds.Left, y), new Point(_plotBounds.Right, y));
-            var label = CreateText(FormatBitrate(maxBitrate * ratio), 11, textBrush);
+            var label = CreateText(CommonUtil.FormatBitrate(maxBitrate * ratio), 11, textBrush);
             context.DrawText(label, new Point(Math.Max(2, _plotBounds.Left - label.Width - 7), y - label.Height / 2));
         }
 
@@ -369,9 +370,9 @@ public sealed class TsCheckTimeline : Control
             new Point(pointer.X, _plotBounds.Top), new Point(pointer.X, _anomalyBounds.Bottom));
 
         var totalBitrate = bucket.TotalBitrate;
-        var content = $"{FormatTime(time)}\n{TotalText}  {FormatBitrate(totalBitrate)}";
+        var content = $"{FormatTime(time)}\n{TotalText}  {CommonUtil.FormatBitrate(totalBitrate)}";
         if (SelectedPid >= 0)
-            content += $"\n{SeriesName}  {FormatBitrate(bucket.GetPidBitrate(SelectedPid))}";
+            content += $"\n{SeriesName}  {CommonUtil.FormatBitrate(bucket.GetPidBitrate(SelectedPid))}";
 
         var markerPixel = Math.Clamp((int)(time / _maxTime * (_markerEvents.Length - 1)), 0, _markerEvents.Length - 1);
         if (_markerEvents[markerPixel] is { } marker)
@@ -520,10 +521,6 @@ public sealed class TsCheckTimeline : Control
         var ceiling = normalized <= 1 ? 1 : normalized <= 2 ? 2 : normalized <= 5 ? 5 : 10;
         return ceiling * exponent;
     }
-
-    private static string FormatBitrate(double bitsPerSecond) => bitsPerSecond >= 1_000_000
-        ? $"{bitsPerSecond / 1_000_000:0.##} Mb/s"
-        : $"{bitsPerSecond / 1_000:0.##} kb/s";
 
     private static string FormatTime(double seconds)
     {

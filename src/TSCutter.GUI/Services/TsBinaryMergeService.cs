@@ -13,7 +13,7 @@ using TSCutter.GUI.Models;
 namespace TSCutter.GUI.Services;
 
 /// <summary>
-/// 按原始 TS 包合并多个文件，可选择严格移除相邻文件的二进制重叠区域。
+/// 按原始 TS 包合并多个文件，支持严格字节匹配或忽略连续计数器的同源重叠匹配。
 /// </summary>
 internal sealed class TsBinaryMergeService
 {
@@ -21,6 +21,7 @@ internal sealed class TsBinaryMergeService
     private const int RequiredSyncPackets = 5;
     private const int AnchorPacketCount = 32;
     private const int SignatureProbePacketCount = 256;
+    private const int ContentProbeBytes = 1024 * 1024;
     private const int ScanPacketCount = 16_384;
     private const int CopyBufferBytes = 4 * 1024 * 1024;
     private const int AnchorBytes = AnchorPacketCount * PacketSize;
@@ -30,10 +31,13 @@ internal sealed class TsBinaryMergeService
         IReadOnlyList<string> sourcePaths,
         long maximumSearchBytes,
         IProgress<TsBinaryMergeProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        TsBinaryMergeMode mode = TsBinaryMergeMode.ExactOverlap)
     {
         if (sourcePaths.Count < 2)
             throw new TsBinaryMergeException(TsBinaryMergeErrorCode.TooFewSources);
+        if (mode is not (TsBinaryMergeMode.ExactOverlap or TsBinaryMergeMode.ContentOverlap))
+            throw new ArgumentOutOfRangeException(nameof(mode));
 
         var snapshots = new List<TsBinaryMergeSourceSnapshot>(sourcePaths.Count);
         for (var index = 0; index < sourcePaths.Count; index++)
@@ -64,13 +68,11 @@ internal sealed class TsBinaryMergeService
             cancellationToken.ThrowIfCancellationRequested();
             var previous = snapshots[previousSourceIndex];
             var current = snapshots[sourceIndex];
-            var overlapBytes = await FindOverlapAsync(
-                previous,
-                current,
-                maximumSearchBytes,
-                sourceIndex,
-                progressState,
-                cancellationToken).ConfigureAwait(false);
+            var overlapBytes = mode == TsBinaryMergeMode.ContentOverlap
+                ? await FindContentOverlapAsync(previous, current, maximumSearchBytes,
+                    sourceIndex, progressState, cancellationToken).ConfigureAwait(false)
+                : await FindOverlapAsync(previous, current, maximumSearchBytes,
+                    sourceIndex, progressState, cancellationToken).ConfigureAwait(false);
 
             var hasReliableOverlap = overlapBytes >= AnchorBytes;
             var fullyContained = hasReliableOverlap && overlapBytes == current.FileSize;
@@ -99,6 +101,7 @@ internal sealed class TsBinaryMergeService
 
         return new TsBinaryMergeAnalysis
         {
+            Mode = mode,
             Sources = snapshots,
             Joins = joins,
             EstimatedOutputBytes = estimatedOutputBytes,
@@ -145,6 +148,9 @@ internal sealed class TsBinaryMergeService
         var stopwatch = Stopwatch.StartNew();
         var temporaryPath = BuildTemporaryPath(fullOutputPath);
         var buffer = ArrayPool<byte>.Shared.Rent(CopyBufferBytes);
+        var continuity = analysis?.Mode == TsBinaryMergeMode.ContentOverlap
+            ? new ContinuityRewriter()
+            : null;
         long processedBytes = 0;
         var lastProgressTimestamp = Stopwatch.GetTimestamp();
 
@@ -177,19 +183,32 @@ internal sealed class TsBinaryMergeService
                         .ConfigureAwait(false);
 
                     var startOffset = appendOffsets[sourceIndex];
+                    continuity?.BeginSource();
                     source.Position = startOffset;
                     var remaining = snapshot.FileSize - startOffset;
                     while (remaining > 0)
                     {
                         cancellationToken.ThrowIfCancellationRequested();
                         var requested = (int)Math.Min(buffer.Length, remaining);
-                        var bytesRead = await source.ReadAsync(
-                            buffer.AsMemory(0, requested), cancellationToken).ConfigureAwait(false);
+                        int bytesRead;
+                        if (continuity is null)
+                        {
+                            bytesRead = await source.ReadAsync(
+                                buffer.AsMemory(0, requested), cancellationToken).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            requested = (int)AlignDown(requested);
+                            await source.ReadExactlyAsync(
+                                buffer.AsMemory(0, requested), cancellationToken).ConfigureAwait(false);
+                            bytesRead = requested;
+                        }
                         if (bytesRead <= 0)
                             throw new TsBinaryMergeException(
                                 TsBinaryMergeErrorCode.SourceChanged,
                                 snapshot.FilePath);
 
+                        continuity?.Rewrite(buffer.AsSpan(0, bytesRead));
                         await output.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken)
                             .ConfigureAwait(false);
                         processedBytes += bytesRead;
@@ -365,6 +384,181 @@ internal sealed class TsBinaryMergeService
             ArrayPool<byte>.Shared.Return(scanBuffer);
             ArrayPool<byte>.Shared.Return(compareBuffer);
         }
+    }
+
+    private static async Task<long> FindContentOverlapAsync(
+        TsBinaryMergeSourceSnapshot previous,
+        TsBinaryMergeSourceSnapshot current,
+        long maximumSearchBytes,
+        int sourceIndex,
+        AnalysisProgressState progress,
+        CancellationToken cancellationToken)
+    {
+        // A recorder may insert its own packets near the beginning of a file.
+        // Start beyond that region, then fall back to the beginning for short overlaps.
+        foreach (var probeBytes in new[] { ContentProbeBytes, ContentProbeBytes * 4, 0 })
+        {
+            var probeOffset = AlignDown(probeBytes);
+            if (current.FileSize - probeOffset < AnchorBytes)
+                continue;
+            var overlap = await FindContentOverlapAtOffsetAsync(
+                previous, current, maximumSearchBytes, probeOffset,
+                sourceIndex, progress, cancellationToken).ConfigureAwait(false);
+            if (overlap > 0)
+                return overlap;
+        }
+        return 0;
+    }
+
+    private static async Task<long> FindContentOverlapAtOffsetAsync(
+        TsBinaryMergeSourceSnapshot previous,
+        TsBinaryMergeSourceSnapshot current,
+        long maximumSearchBytes,
+        long probeOffset,
+        int sourceIndex,
+        AnalysisProgressState progress,
+        CancellationToken cancellationToken)
+    {
+        var searchBytes = AlignDown(Math.Min(maximumSearchBytes, previous.FileSize));
+        if (searchBytes < AnchorBytes || current.FileSize - probeOffset < AnchorBytes)
+            return 0;
+
+        var anchorBuffer = ArrayPool<byte>.Shared.Rent(AnchorBytes);
+        var scanBuffer = ArrayPool<byte>.Shared.Rent(ScanPacketCount * PacketSize);
+        var compareBuffer = ArrayPool<byte>.Shared.Rent(AnchorBytes);
+        try
+        {
+            await using var previousStream = new FileStream(
+                previous.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                scanBuffer.Length, FileOptions.Asynchronous | FileOptions.RandomAccess);
+            await using var currentStream = new FileStream(
+                current.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                scanBuffer.Length, FileOptions.Asynchronous | FileOptions.RandomAccess);
+            await ReadExactlyAtAsync(currentStream.SafeFileHandle,
+                anchorBuffer.AsMemory(0, AnchorBytes), probeOffset, cancellationToken)
+                .ConfigureAwait(false);
+            progress.AddBytes(AnchorBytes);
+            var signatureIndex = FindBestSignaturePacket(anchorBuffer, AnchorPacketCount);
+            var signature = CreateSignature(anchorBuffer.AsSpan(
+                signatureIndex * PacketSize, PacketSize));
+
+            var candidateLower = AlignUp(Math.Max(previous.FileSize - searchBytes, probeOffset));
+            var candidateUpper = AlignDown(previous.FileSize - AnchorBytes);
+            if (candidateLower > candidateUpper)
+                return 0;
+
+            var scanPosition = candidateLower + signatureIndex * PacketSize;
+            var scanEnd = candidateUpper + signatureIndex * PacketSize;
+            previousStream.Position = scanPosition;
+            while (scanPosition <= scanEnd)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var requested = (int)AlignDown(Math.Min(
+                    scanBuffer.Length, scanEnd - scanPosition + PacketSize));
+                await previousStream.ReadExactlyAsync(
+                    scanBuffer.AsMemory(0, requested), cancellationToken).ConfigureAwait(false);
+                progress.AddBytes(requested);
+
+                for (var offset = 0; offset < requested; offset += PacketSize)
+                {
+                    if (!signature.Equals(CreateSignature(scanBuffer.AsSpan(offset, PacketSize))))
+                        continue;
+                    var candidateStart = scanPosition + offset - signatureIndex * PacketSize;
+                    await ReadExactlyAtAsync(previousStream.SafeFileHandle,
+                        compareBuffer.AsMemory(0, AnchorBytes), candidateStart,
+                        cancellationToken).ConfigureAwait(false);
+                    progress.AddBytes(AnchorBytes);
+                    if (!PacketsMatchIgnoringContinuity(
+                            anchorBuffer.AsSpan(0, AnchorBytes),
+                            compareBuffer.AsSpan(0, AnchorBytes)))
+                        continue;
+
+                    var sourceShift = candidateStart - probeOffset;
+                    var appendOffset = Math.Min(current.FileSize, previous.FileSize - sourceShift);
+                    var verifiedBytes = Math.Min(previous.FileSize - candidateStart,
+                        current.FileSize - probeOffset);
+                    if (appendOffset < AnchorBytes || verifiedBytes < AnchorBytes)
+                        continue;
+                    if (await VerifyContentOverlapAsync(previousStream.SafeFileHandle,
+                            currentStream.SafeFileHandle, candidateStart, probeOffset,
+                            verifiedBytes, sourceIndex, progress, cancellationToken)
+                        .ConfigureAwait(false))
+                        return appendOffset;
+                }
+
+                scanPosition += requested;
+                progress.ReportSearch(sourceIndex,
+                    scanPosition - candidateLower - signatureIndex * PacketSize,
+                    scanEnd - candidateLower - signatureIndex * PacketSize + PacketSize);
+            }
+            return 0;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(anchorBuffer);
+            ArrayPool<byte>.Shared.Return(scanBuffer);
+            ArrayPool<byte>.Shared.Return(compareBuffer);
+        }
+    }
+
+    private static async Task<bool> VerifyContentOverlapAsync(
+        SafeFileHandle previousHandle,
+        SafeFileHandle currentHandle,
+        long previousOffset,
+        long currentOffset,
+        long length,
+        int sourceIndex,
+        AnalysisProgressState progress,
+        CancellationToken cancellationToken)
+    {
+        var previousBuffer = ArrayPool<byte>.Shared.Rent(ScanPacketCount * PacketSize);
+        var currentBuffer = ArrayPool<byte>.Shared.Rent(ScanPacketCount * PacketSize);
+        try
+        {
+            long verified = 0;
+            while (verified < length)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var requested = (int)Math.Min(ScanPacketCount * PacketSize, length - verified);
+                await ReadExactlyAtAsync(previousHandle, previousBuffer.AsMemory(0, requested),
+                    previousOffset + verified, cancellationToken).ConfigureAwait(false);
+                await ReadExactlyAtAsync(currentHandle, currentBuffer.AsMemory(0, requested),
+                    currentOffset + verified, cancellationToken).ConfigureAwait(false);
+                progress.AddBytes(requested * 2L);
+                if (!PacketsMatchIgnoringContinuity(
+                        previousBuffer.AsSpan(0, requested),
+                        currentBuffer.AsSpan(0, requested)))
+                    return false;
+                verified += requested;
+                progress.ReportVerification(sourceIndex, verified, length);
+            }
+            return true;
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(previousBuffer);
+            ArrayPool<byte>.Shared.Return(currentBuffer);
+        }
+    }
+
+    private static bool PacketsMatchIgnoringContinuity(
+        ReadOnlySpan<byte> left,
+        ReadOnlySpan<byte> right)
+    {
+        if (left.Length != right.Length || left.Length % PacketSize != 0)
+            return false;
+        for (var offset = 0; offset < left.Length; offset += PacketSize)
+        {
+            var first = left.Slice(offset, PacketSize);
+            var second = right.Slice(offset, PacketSize);
+            if (first.SequenceEqual(second))
+                continue;
+            if (!first[..3].SequenceEqual(second[..3]) ||
+                (first[3] & 0xF0) != (second[3] & 0xF0) ||
+                !first[4..].SequenceEqual(second[4..]))
+                return false;
+        }
+        return true;
     }
 
     private static async Task<bool> VerifyOverlapAsync(
@@ -623,6 +817,48 @@ internal sealed class TsBinaryMergeService
         ulong Second,
         ulong Third,
         ulong Fourth);
+
+    private sealed class ContinuityRewriter
+    {
+        private readonly bool[] _seen = new bool[0x2000];
+        private readonly int[] _last = new int[0x2000];
+        private readonly bool[] _offsetSet = new bool[0x2000];
+        private readonly int[] _offset = new int[0x2000];
+        private int _sourceIndex = -1;
+
+        public void BeginSource()
+        {
+            _sourceIndex++;
+            Array.Clear(_offsetSet);
+        }
+
+        public void Rewrite(Span<byte> data)
+        {
+            for (var position = 0; position < data.Length; position += PacketSize)
+            {
+                var packet = data.Slice(position, PacketSize);
+                if (packet[0] != 0x47)
+                    continue;
+                var pid = ((packet[1] & 0x1F) << 8) | packet[2];
+                if (pid == 0x1FFF)
+                    continue;
+                var incoming = packet[3] & 0x0F;
+                var hasPayload = (packet[3] & 0x10) != 0 &&
+                                 ((packet[3] & 0x20) == 0 || packet[4] < 183);
+                if (_sourceIndex > 0 && !_offsetSet[pid])
+                {
+                    _offsetSet[pid] = true;
+                    _offset[pid] = _seen[pid]
+                        ? (_last[pid] + (hasPayload ? 1 : 0) - incoming + 16) & 0x0F
+                        : 0;
+                }
+                var adjusted = (_sourceIndex > 0 ? incoming + _offset[pid] : incoming) & 0x0F;
+                packet[3] = (byte)((packet[3] & 0xF0) | adjusted);
+                _last[pid] = adjusted;
+                _seen[pid] = true;
+            }
+        }
+    }
 
     private sealed class AnalysisProgressState(
         IProgress<TsBinaryMergeProgress>? progress,

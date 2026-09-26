@@ -103,6 +103,7 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
             {
                 InventoryOnly = true,
                 IncludeServiceMetadata = true,
+                MinimumBytes = TsStreamAnalyzeOptions.StandardProbeBytes,
                 MaxBytes = MaxProbeBytes,
                 StablePacketCount = 8_192,
                 Features = TsStreamAnalyzeFeatures.None

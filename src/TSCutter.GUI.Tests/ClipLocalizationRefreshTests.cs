@@ -49,6 +49,24 @@ public sealed class ClipLocalizationRefreshTests
         Assert.Contains(nameof(ExportQueueItem.StatusText), changed);
     }
 
+    [Fact]
+    public void PickedClipTimeChangesRefreshBoundaryText()
+    {
+        var clip = new PickedClip
+        {
+            InFileInfo = new FileInfo("sample.ts")
+        };
+        var changed = CollectChangedProperties(clip);
+
+        clip.StartTime = 1.25;
+        clip.EndTime = 2.5;
+
+        Assert.Equal("[ 00:00:01.250", clip.StartBoundaryTimeStr);
+        Assert.Equal("00:00:02.500 ]", clip.EndBoundaryTimeStr);
+        Assert.Contains(nameof(PickedClip.StartBoundaryTimeStr), changed);
+        Assert.Contains(nameof(PickedClip.EndBoundaryTimeStr), changed);
+    }
+
     private static List<string> CollectChangedProperties(INotifyPropertyChanged source)
     {
         var changed = new List<string>();

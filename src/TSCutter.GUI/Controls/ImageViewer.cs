@@ -6,8 +6,8 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
-using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
+using TSCutter.GUI.Rendering;
 
 namespace TSCutter.GUI.Controls;
 
@@ -21,10 +21,23 @@ public class ImageViewer : Control
 {
     static ImageViewer()
     {
-        AffectsRender<ImageViewer>(ImageProperty, ZoomProperty, OffsetXProperty, OffsetYProperty);
+        AffectsRender<ImageViewer>(
+            ImageProperty,
+            GpuFrameProperty,
+            SourcePixelSizeProperty,
+            ZoomProperty,
+            OffsetXProperty,
+            OffsetYProperty,
+            UseHighQualityInterpolationProperty);
     }
 
     public static readonly StyledProperty<Bitmap?> ImageProperty = AvaloniaProperty.Register<ImageViewer, Bitmap?>(nameof(Image));
+
+    public static readonly StyledProperty<IGpuFrameLease?> GpuFrameProperty =
+        AvaloniaProperty.Register<ImageViewer, IGpuFrameLease?>(nameof(GpuFrame));
+
+    public static readonly StyledProperty<PixelSize> SourcePixelSizeProperty =
+        AvaloniaProperty.Register<ImageViewer, PixelSize>(nameof(SourcePixelSize));
 
     public static readonly StyledProperty<double> ZoomProperty = AvaloniaProperty.Register<ImageViewer, double>(nameof(Zoom), 1.0);
 
@@ -32,9 +45,14 @@ public class ImageViewer : Control
 
     public static readonly StyledProperty<double> OffsetYProperty = AvaloniaProperty.Register<ImageViewer, double>(nameof(OffsetY));
     
-    public static readonly StyledProperty<double> MaxZoomFactorProperty = AvaloniaProperty.Register<ImageViewer, double>(nameof(MaxZoomFactor));
+    public static readonly StyledProperty<double> MaxZoomFactorProperty =
+        AvaloniaProperty.Register<ImageViewer, double>(nameof(MaxZoomFactor), 4.0);
     
-    public static readonly StyledProperty<double> MinZoomFactorProperty = AvaloniaProperty.Register<ImageViewer, double>(nameof(MinZoomFactor));
+    public static readonly StyledProperty<double> MinZoomFactorProperty =
+        AvaloniaProperty.Register<ImageViewer, double>(nameof(MinZoomFactor), 0.01);
+
+    public static readonly StyledProperty<bool> UseHighQualityInterpolationProperty =
+        AvaloniaProperty.Register<ImageViewer, bool>(nameof(UseHighQualityInterpolation));
 
     /// <summary>
     /// When true, the image automatically scales to fit the control bounds when the control is resized.
@@ -42,10 +60,29 @@ public class ImageViewer : Control
     /// </summary>
     public static readonly StyledProperty<bool> AutoFitProperty = AvaloniaProperty.Register<ImageViewer, bool>(nameof(AutoFit), true);
 
+    /// <summary>
+    /// When true, loading a new image restores auto-fit and calculates the fitted
+    /// transform before the image is rendered for the first time.
+    /// </summary>
+    public static readonly StyledProperty<bool> FitOnSourceChangedProperty =
+        AvaloniaProperty.Register<ImageViewer, bool>(nameof(FitOnSourceChanged));
+
     public Bitmap? Image
     {
         get => GetValue(ImageProperty);
         set => SetValue(ImageProperty, value);
+    }
+
+    public IGpuFrameLease? GpuFrame
+    {
+        get => GetValue(GpuFrameProperty);
+        set => SetValue(GpuFrameProperty, value);
+    }
+
+    public PixelSize SourcePixelSize
+    {
+        get => GetValue(SourcePixelSizeProperty);
+        set => SetValue(SourcePixelSizeProperty, value);
     }
 
     public double Zoom
@@ -78,29 +115,83 @@ public class ImageViewer : Control
         set => SetValue(MinZoomFactorProperty, value);
     }
 
+    /// <summary>静态图片缩小时使用高质量插值。视频预览默认关闭以避免增加逐帧渲染开销。</summary>
+    public bool UseHighQualityInterpolation
+    {
+        get => GetValue(UseHighQualityInterpolationProperty);
+        set => SetValue(UseHighQualityInterpolationProperty, value);
+    }
+
     public bool AutoFit
     {
         get => GetValue(AutoFitProperty);
         set => SetValue(AutoFitProperty, value);
     }
 
+    public bool FitOnSourceChanged
+    {
+        get => GetValue(FitOnSourceChangedProperty);
+        set => SetValue(FitOnSourceChangedProperty, value);
+    }
+
     public ICommand FitCommand => new RelayCommand(FitToView, () => true);
+
+    public ICommand ActualSizeCommand => new RelayCommand(ShowActualSize, () => true);
+
+    /// <summary>
+    /// Returns the physical pixel budget useful for a preview decode. The decoder
+    /// still clamps this to the video's native dimensions, so a large viewer never
+    /// causes an upscale.
+    /// </summary>
+    public PixelSize GetDecodeTargetSize()
+    {
+        var scalingFactor = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
+        return CalculateDecodeTargetSize(Bounds.Size, scalingFactor);
+    }
+
+    internal static PixelSize CalculateDecodeTargetSize(Size bounds, double scalingFactor)
+    {
+        scalingFactor = scalingFactor > 0 ? scalingFactor : 1.0;
+        return new PixelSize(
+            Math.Max(1, (int)Math.Ceiling(bounds.Width * scalingFactor)),
+            Math.Max(1, (int)Math.Ceiling(bounds.Height * scalingFactor)));
+    }
     
     private void FitToView()
     {
-        if (Image is null) return;
+        if (Image is null && GpuFrame is null) return;
 
-        var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
-        Zoom = Math.Min(Bounds.Width / Image.PixelSize.Width, Bounds.Height / Image.PixelSize.Height) * scalingFactor;
-
-        OffsetX = (Bounds.Width - Image.PixelSize.Width * Zoom / scalingFactor) / 2;
-        OffsetY = (Bounds.Height - Image.PixelSize.Height * Zoom / scalingFactor) / 2;
-
-        // Re-enable auto-fit when user manually triggers fit
         AutoFit = true;
+        ApplyFitTransform(Bounds.Size);
+    }
+
+    private void ShowActualSize()
+    {
+        if (Image is null && GpuFrame is null) return;
+
+        Zoom = 1.0;
+        OffsetX = 0;
+        OffsetY = 0;
+        AutoFit = false;
     }
 
     private Size _previousBounds;
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+
+        var sourceChanged = change.Property == ImageProperty || change.Property == GpuFrameProperty;
+        var geometryChanged = sourceChanged || change.Property == SourcePixelSizeProperty;
+        if (!geometryChanged || (Image is null && GpuFrame is null))
+            return;
+
+        if (sourceChanged && FitOnSourceChanged)
+            AutoFit = true;
+
+        if (AutoFit)
+            ApplyFitTransform(Bounds.Size);
+    }
 
     /// <summary>
     /// Override ArrangeOverride to detect size changes and auto-fit the image.
@@ -109,20 +200,49 @@ public class ImageViewer : Control
     {
         var result = base.ArrangeOverride(finalSize);
 
-        if (AutoFit && Image is not null && finalSize != _previousBounds && finalSize.Width > 0 && finalSize.Height > 0)
+        if (AutoFit && (Image is not null || GpuFrame is not null) && finalSize != _previousBounds)
         {
             _previousBounds = finalSize;
-            // Use Dispatcher to defer the fit call, ensuring Bounds is updated
-            Dispatcher.UIThread.Post(() =>
-            {
-                var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
-                Zoom = Math.Min(Bounds.Width / Image.PixelSize.Width, Bounds.Height / Image.PixelSize.Height) * scalingFactor;
-                OffsetX = (Bounds.Width - Image.PixelSize.Width * Zoom / scalingFactor) / 2;
-                OffsetY = (Bounds.Height - Image.PixelSize.Height * Zoom / scalingFactor) / 2;
-            });
+            ApplyFitTransform(finalSize);
         }
 
         return result;
+    }
+
+    private void ApplyFitTransform(Size viewportSize)
+    {
+        var contentSize = GetContentPixelSize(
+            Image?.PixelSize ?? GpuFrame?.PixelSize ?? default,
+            SourcePixelSize);
+        var scalingFactor = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
+        var transform = CalculateFitTransform(viewportSize, contentSize, scalingFactor);
+        if (transform is not { } value)
+            return;
+
+        Zoom = value.Zoom;
+        OffsetX = value.OffsetX;
+        OffsetY = value.OffsetY;
+    }
+
+    internal static (double Zoom, double OffsetX, double OffsetY)? CalculateFitTransform(
+        Size viewportSize,
+        PixelSize contentSize,
+        double scalingFactor)
+    {
+        if (viewportSize.Width <= 0 || viewportSize.Height <= 0
+            || contentSize.Width <= 0 || contentSize.Height <= 0)
+        {
+            return null;
+        }
+
+        scalingFactor = scalingFactor > 0 ? scalingFactor : 1.0;
+        var zoom = Math.Min(
+            viewportSize.Width / contentSize.Width,
+            viewportSize.Height / contentSize.Height) * scalingFactor;
+        return (
+            zoom,
+            (viewportSize.Width - contentSize.Width * zoom / scalingFactor) / 2,
+            (viewportSize.Height - contentSize.Height * zoom / scalingFactor) / 2);
     }
 
     private Point _lastDragPoint;
@@ -144,7 +264,7 @@ public class ImageViewer : Control
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (Image is null) return;
+        if (Image is null && GpuFrame is null) return;
         
         _lastDragPoint = e.GetPosition(this);
         _isDragging = true;
@@ -153,7 +273,7 @@ public class ImageViewer : Control
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (Image is null) return;
+        if (Image is null && GpuFrame is null) return;
 
         _isDragging = false;
         e.Handled = true;
@@ -161,7 +281,7 @@ public class ImageViewer : Control
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
     {
-        if (Image is null || !_isDragging) return;
+        if ((Image is null && GpuFrame is null) || !_isDragging) return;
         
         var currentPoint = e.GetPosition(this);
         OffsetX += currentPoint.X - _lastDragPoint.X;
@@ -174,27 +294,38 @@ public class ImageViewer : Control
 
     private void OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
-        if (Image is null || (DateTime.Now - _lastZoomTime).TotalMilliseconds < ZoomIntervalMs) return;
+        if ((Image is null && GpuFrame is null) || (DateTime.Now - _lastZoomTime).TotalMilliseconds < ZoomIntervalMs) return;
         
         var zoomDelta = e.Delta.Y > 0 ? 1.1 : 0.9;
         var zoomCenter = e.GetPosition(this);
 
-        var newZoom = Zoom * zoomDelta;
+        var newZoom = CalculateNextZoom(Zoom, zoomDelta, MinZoomFactor, MaxZoomFactor);
+        if (Math.Abs(newZoom - Zoom) < double.Epsilon) return;
 
-        if (newZoom > MaxZoomFactor) newZoom = MaxZoomFactor;
-        if (newZoom < MinZoomFactor) newZoom = MinZoomFactor;
-        
-        if (newZoom == MaxZoomFactor || newZoom == MinZoomFactor) return;
+        var appliedZoomRatio = newZoom / Zoom;
         
         Zoom = newZoom;
 
-        OffsetX -= (zoomCenter.X - OffsetX) * (zoomDelta - 1);
-        OffsetY -= (zoomCenter.Y - OffsetY) * (zoomDelta - 1);
+        OffsetX -= (zoomCenter.X - OffsetX) * (appliedZoomRatio - 1);
+        OffsetY -= (zoomCenter.Y - OffsetY) * (appliedZoomRatio - 1);
 
         AutoFit = false;
         InvalidateVisual();
         _lastZoomTime = DateTime.Now;
         e.Handled = true;
+    }
+
+    internal static double CalculateNextZoom(double zoom, double zoomDelta, double minimum, double maximum)
+    {
+        if (!double.IsFinite(zoom) || zoom <= 0 ||
+            !double.IsFinite(zoomDelta) || zoomDelta <= 0)
+        {
+            return zoom;
+        }
+
+        var lower = Math.Max(double.Epsilon, Math.Min(minimum, maximum));
+        var upper = Math.Max(lower, Math.Max(minimum, maximum));
+        return Math.Clamp(zoom * zoomDelta, lower, upper);
     }
 
     public override void Render(DrawingContext dc)
@@ -206,12 +337,18 @@ public class ImageViewer : Control
         var customColorBrush = new SolidColorBrush(Colors.Black);
         dc.FillRectangle(customColorBrush, backgroundRect);
         
-        if (Image is null) return;
+        if (Image is null && GpuFrame is null) return;
 
         // Need calc with current System Scaling
-        var scalingFactor = VisualRoot?.RenderScaling ?? 1.0;
-        var imgWidth = (int)(Image.PixelSize.Width * Zoom / scalingFactor);
-        var imgHeight = (int)(Image.PixelSize.Height * Zoom / scalingFactor);
+            var scalingFactor = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
+        var contentSize = GetContentPixelSize(
+            Image?.PixelSize ?? GpuFrame?.PixelSize ?? default,
+            SourcePixelSize);
+        var imgWidth = contentSize.Width * Zoom / scalingFactor;
+        var imgHeight = contentSize.Height * Zoom / scalingFactor;
+
+        if (imgWidth <= 0 || imgHeight <= 0)
+            return;
 
         // Define the destination rectangle where the image will be drawn
         var destRect = new Rect(OffsetX, OffsetY, imgWidth, imgHeight);
@@ -222,18 +359,53 @@ public class ImageViewer : Control
 
         if (visibleRect is not { Width: > 0, Height: > 0 }) return;
         
-        // Define the source rectangle based on the visible area
-        var srcRect = new Rect(
-            (visibleRect.X - OffsetX) * scalingFactor / Zoom,
-            (visibleRect.Y - OffsetY) * scalingFactor / Zoom,
-            visibleRect.Width * scalingFactor / Zoom,
-            visibleRect.Height * scalingFactor / Zoom);
+        if (GpuFrame is not null)
+        {
+            // The native visual owns the GPU image; only its viewport changes
+            // while the user zooms, pans, or resizes the control.
+            if (!GpuFrame.TryAttach(this))
+                return;
+            GpuFrame.UpdateViewport(destRect);
+            return;
+        }
 
-        // Draw the image using DrawImage
-        // dc.PushRenderOptions(new()
-        // {
-        //     BitmapInterpolationMode = BitmapInterpolationMode.HighQuality,
-        // });
-        dc.DrawImage(Image, srcRect, visibleRect);
+        if (Image is null)
+            return;
+
+        // Define the source rectangle based on the visible area
+        var srcRect = MapVisibleRectToBitmap(visibleRect, destRect, Image.PixelSize);
+
+        if (UseHighQualityInterpolation)
+        {
+            using (dc.PushRenderOptions(new RenderOptions
+                   {
+                       BitmapInterpolationMode = BitmapInterpolationMode.HighQuality
+                   }))
+            {
+                dc.DrawImage(Image, srcRect, visibleRect);
+            }
+        }
+        else
+        {
+            dc.DrawImage(Image, srcRect, visibleRect);
+        }
+    }
+
+    internal static PixelSize GetContentPixelSize(PixelSize bitmapSize, PixelSize sourceSize) =>
+        sourceSize.Width > 0 && sourceSize.Height > 0 ? sourceSize : bitmapSize;
+
+    internal static Rect MapVisibleRectToBitmap(Rect visibleRect, Rect destinationRect, PixelSize bitmapSize)
+    {
+        if (destinationRect.Width <= 0 || destinationRect.Height <= 0 ||
+            bitmapSize.Width <= 0 || bitmapSize.Height <= 0)
+        {
+            return default;
+        }
+
+        return new Rect(
+            (visibleRect.X - destinationRect.X) / destinationRect.Width * bitmapSize.Width,
+            (visibleRect.Y - destinationRect.Y) / destinationRect.Height * bitmapSize.Height,
+            visibleRect.Width / destinationRect.Width * bitmapSize.Width,
+            visibleRect.Height / destinationRect.Height * bitmapSize.Height);
     }
 }

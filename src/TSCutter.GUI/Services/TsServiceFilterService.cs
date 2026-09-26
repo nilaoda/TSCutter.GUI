@@ -7,6 +7,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models;
+using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.Services;
 
@@ -204,34 +205,17 @@ public sealed class TsServiceFilterService
     private static byte[] BuildSdtSection(TsCheckResult catalog, TsServiceSummary? service, int serviceId)
     {
         var descriptors = service?.Descriptors ?? [];
-        var sectionLength = 12 + 5 + descriptors.Length;
-        if (sectionLength > 1021)
-            throw new TsFilterException(TsFilterErrorCode.SdtTooLarge);
-        var section = new byte[3 + sectionLength];
-        section[0] = 0x42;
-        section[1] = (byte)(0xF0 | (sectionLength >> 8));
-        section[2] = (byte)sectionLength;
-        section[3] = (byte)(catalog.TransportStreamId >> 8);
-        section[4] = (byte)catalog.TransportStreamId;
-        section[5] = (byte)(0xC1 | ((((service?.SdtVersion ?? 0) + 1) & 0x1F) << 1));
-        section[6] = 0;
-        section[7] = 0;
-        var networkId = service?.OriginalNetworkId ?? 0;
-        section[8] = (byte)(networkId >> 8);
-        section[9] = (byte)networkId;
-        section[10] = 0xFF;
-        section[11] = (byte)(serviceId >> 8);
-        section[12] = (byte)serviceId;
-        section[13] = (byte)(0xFC |
-            (service?.EitSchedule == true ? 0x02 : 0) |
-            (service?.EitPresentFollowing == true ? 0x01 : 0));
-        section[14] = (byte)(((service?.RunningStatus ?? 4) << 5) |
-            (service?.FreeCaMode == true ? 0x10 : 0) |
-            (descriptors.Length >> 8));
-        section[15] = (byte)descriptors.Length;
-        descriptors.CopyTo(section, 16);
-        TsStreamFilterService.WriteCrc(section);
-        return section;
+        return TsPsiSectionBuilder.BuildSdt(
+            catalog.TransportStreamId,
+            (byte)(((service?.SdtVersion ?? 0) + 1) & 0x1F),
+            service?.OriginalNetworkId ?? 0,
+            [new TsPsiSectionBuilder.SdtService(
+                serviceId,
+                descriptors,
+                service?.EitSchedule == true,
+                service?.EitPresentFollowing == true,
+                service?.RunningStatus ?? 4,
+                service?.FreeCaMode == true)]);
     }
 
     private static void TryDelete(string path)

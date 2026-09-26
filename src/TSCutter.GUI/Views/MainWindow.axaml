@@ -3,6 +3,7 @@
         xmlns:vm="using:TSCutter.GUI.ViewModels"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ia="using:Avalonia.Xaml.Interactivity"
         xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
         xmlns:converters="clr-namespace:TSCutter.GUI.Converters"
         xmlns:local="clr-namespace:TSCutter.GUI"
@@ -14,6 +15,7 @@
         x:Class="TSCutter.GUI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         x:Name="CutterMainWindow"
+        Focusable="True"
         Closing="Window_OnClosing"
         Icon="/Assets/logo.ico"
         DataContext="{x:Static local:App.MainWindow}"
@@ -23,13 +25,13 @@
     <Window.Resources>
         <converters:SecondsToStringConverter x:Key="SecondsConverter" />
     </Window.Resources>
-    
+
     <Interaction.Behaviors>
         <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
             <InvokeCommandAction Command="{Binding ProcessCommandLineCommand}" />
         </RoutedEventTriggerBehavior>
     </Interaction.Behaviors>
-
+    
     <Window.Styles>
         <Style Selector="ToolTip">
             <Setter Property="FontWeight" Value="Normal" />
@@ -59,10 +61,14 @@
     <Window.KeyBindings>
         <KeyBinding Gesture="{OnPlatform Ctrl+O, macOS=⌘+O}" Command="{Binding LoadVideoClickCommand}"/>
         <KeyBinding Gesture="{OnPlatform Ctrl+S, macOS=⌘+S}" Command="{Binding SaveVideoClickCommand}"/>
+        <KeyBinding Gesture="{OnPlatform Ctrl+Z, macOS=⌘+Z}" Command="{Binding UndoCommand}"/>
+        <KeyBinding Gesture="{OnPlatform Ctrl+Y, macOS=⌘+Shift+Z}" Command="{Binding RedoCommand}"/>
         <KeyBinding Gesture="Left" Command="{Binding PrevGopClickCommand}"/>
         <KeyBinding Gesture="Shift+Left" Command="{Binding Prev10GopClickCommand}"/>
         <KeyBinding Gesture="Right" Command="{Binding NextGopClickCommand}"/>
         <KeyBinding Gesture="Shift+Right" Command="{Binding Next10GopClickCommand}"/>
+        <KeyBinding Gesture="I" Command="{Binding MarkClipStartShortcutCommand}"/>
+        <KeyBinding Gesture="O" Command="{Binding MarkClipEndShortcutCommand}"/>
     </Window.KeyBindings>
 
     <NativeMenu.Menu>
@@ -70,31 +76,35 @@
         </NativeMenu>
     </NativeMenu.Menu>
 
-    <Grid DragDrop.AllowDrop="True" RowDefinitions="Auto, *">
+    <Grid x:Name="DropSurface" DragDrop.AllowDrop="True" RowDefinitions="Auto, *">
         <Grid.Resources>
             <ResourceDictionary>
                 <ResourceDictionary.ThemeDictionaries>
                     <ResourceDictionary x:Key="Light">
                         <SolidColorBrush x:Key="MaskBackgroundBrush">White</SolidColorBrush>
+                        <SolidColorBrush x:Key="DropPanelBrush" Color="#C0C0C0" />
                         <SolidColorBrush x:Key="ClipSelectionBackgroundBrush"
                                          Color="{DynamicResource SystemAccentColorLight1}" />
+                        <SolidColorBrush x:Key="ClipThumbnailBackgroundBrush" Color="#303236" />
+                        <SolidColorBrush x:Key="ClipThumbnailPlaceholderBrush" Color="#D8DADD" />
                     </ResourceDictionary>
                     <ResourceDictionary x:Key="Dark">
                         <SolidColorBrush x:Key="MaskBackgroundBrush" Color="#111316" />
+                        <SolidColorBrush x:Key="DropPanelBrush" Color="#30343A" />
                         <!-- 选中卡片只做轻微蓝色染色，避免与标题栏、进度条争夺视觉焦点。 -->
                         <SolidColorBrush x:Key="ClipSelectionBackgroundBrush" Color="#2B3B4B" />
+                        <SolidColorBrush x:Key="ClipThumbnailBackgroundBrush" Color="#111316" />
+                        <SolidColorBrush x:Key="ClipThumbnailPlaceholderBrush" Color="#969DA5" />
                     </ResourceDictionary>
                 </ResourceDictionary.ThemeDictionaries>
+                <LinearGradientBrush x:Key="DropTitleBrush" StartPoint="0%,0%" EndPoint="100%,0%">
+                    <GradientStop Color="{DynamicResource {x:Static commonControls:SystemColors.InactiveCaptionColorKey}}" Offset="0" />
+                    <GradientStop Color="{DynamicResource {x:Static commonControls:SystemColors.GradientInactiveCaptionColorKey}}" Offset="1" />
+                </LinearGradientBrush>
+                <SolidColorBrush x:Key="DropTitleTextBrush"
+                                 Color="{DynamicResource {x:Static commonControls:SystemColors.ActiveCaptionTextColorKey}}" />
             </ResourceDictionary>
-        </Grid.Resources>    
-        <Interaction.Behaviors>
-            <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DragEnterEvent}">
-                <ChangePropertyAction TargetObject="{Binding ElementName=DropMask}" PropertyName="IsVisible" Value="True" />
-            </RoutedEventTriggerBehavior>
-            <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DragLeaveEvent}">
-                <ChangePropertyAction TargetObject="{Binding ElementName=DropMask}" PropertyName="IsVisible" Value="False" />
-            </RoutedEventTriggerBehavior>
-        </Interaction.Behaviors>
+        </Grid.Resources>
         <ClassicBorderDecorator Grid.Row="0" DockPanel.Dock="Top" BorderThickness="2" BorderStyle="Etched">
             <DockPanel Margin="0, 2">
                 <commonControls:RebarHandle />
@@ -103,9 +113,20 @@
                         <MenuItem Header="{DynamicResource String.Menu.OpenVideo}"
                                   Command="{Binding LoadVideoClickCommand}"
                                   InputGesture="{OnPlatform Ctrl+O, macOS=⌘+O}" />
+                        <MenuItem Header="{DynamicResource String.Project.Open}"
+                                  Command="{Binding OpenProjectCommand}" />
+                        <MenuItem Header="{DynamicResource String.Project.Save}"
+                                  Command="{Binding SaveProjectCommand}" />
+                        <MenuItem Header="{DynamicResource String.Project.SaveAs}"
+                                  Command="{Binding SaveProjectAsCommand}" />
+                        <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.SaveClip}"
                                   Command="{Binding SaveVideoClickCommand}"
                                   InputGesture="{OnPlatform Ctrl+S, macOS=⌘+S}" />
+                        <MenuItem Header="{DynamicResource String.Menu.KeyFrameOverview}"
+                                  Command="{Binding KeyFrameOverviewClickCommand}" />
+                        <MenuItem Header="{DynamicResource String.Menu.ThumbnailSheet}"
+                                  Command="{Binding ThumbnailSheetClickCommand}" />
                         <MenuItem Header="{DynamicResource String.AddToQueue}"
                                   Command="{Binding AddToQueueCommand}" />
                         <MenuItem Header="{DynamicResource String.MergeClips.Menu}"
@@ -118,25 +139,46 @@
                         <MenuItem Header="{DynamicResource String.Menu.Exit}"
                                   Command="{Binding ExitApplicationCommand}"/>
                     </MenuItem>
+                    <MenuItem Header="{DynamicResource String.Menu.Edit}">
+                        <MenuItem Header="{DynamicResource String.Menu.Undo}"
+                                  Command="{Binding UndoCommand}"
+                                  InputGesture="{OnPlatform Ctrl+Z, macOS=⌘+Z}" />
+                        <MenuItem Header="{DynamicResource String.Menu.Redo}"
+                                  Command="{Binding RedoCommand}"
+                                  InputGesture="{OnPlatform Ctrl+Y, macOS=⌘+Shift+Z}" />
+                    </MenuItem>
                     <MenuItem Header="{DynamicResource String.Menu.Tools}">
-                        <MenuItem Header="{DynamicResource String.Menu.RawCutter}"
-                                  Command="{Binding RawCutterClickCommand}" />
-                        <MenuItem Header="{DynamicResource String.Menu.TsCheck}"
-                                  Command="{Binding TsCheckClickCommand}" />
-                        <MenuItem Header="{DynamicResource String.Menu.TsTimelineRepair}"
-                                  Command="{Binding TsTimelineRepairClickCommand}" />
-                        <MenuItem Header="{DynamicResource String.Menu.TsFilter}">
+                        <MenuItem Header="{DynamicResource String.FrameSearch.Menu}"
+                                  Command="{Binding FrameSearchClickCommand}" />
+                        <Separator />
+                        <MenuItem Header="{DynamicResource String.Menu.ToolGroupAnalyze}">
+                            <MenuItem Header="{DynamicResource String.Menu.TsCheck}"
+                                      Command="{Binding TsCheckClickCommand}" />
+                            <MenuItem Header="{DynamicResource String.Menu.TsPacketViewer}"
+                                      Command="{Binding TsPacketViewerClickCommand}" />
+                        </MenuItem>
+                        <MenuItem Header="{DynamicResource String.Menu.ToolGroupExtract}">
+                            <MenuItem Header="{DynamicResource String.Menu.RawCutter}"
+                                      Command="{Binding RawCutterClickCommand}" />
                             <MenuItem Header="{DynamicResource String.Menu.TsFilterPid}"
                                       Command="{Binding TsFilterClickCommand}" />
                             <MenuItem Header="{DynamicResource String.Menu.TsFilterService}"
                                       Command="{Binding TsServiceFilterClickCommand}" />
+                            <MenuItem Header="{DynamicResource String.Menu.TsEsExtractor}"
+                                      Command="{Binding TsEsExtractorClickCommand}" />
                         </MenuItem>
-                        <MenuItem Header="{DynamicResource String.Menu.TsMultiSourceRepair}"
-                                  Command="{Binding TsMultiSourceRepairClickCommand}" />
-                        <MenuItem Header="{DynamicResource String.Menu.TsBinaryMerge}"
-                                  Command="{Binding TsBinaryMergeClickCommand}" />
-                        <MenuItem Header="{DynamicResource String.Menu.TsPacketViewer}"
-                                  Command="{Binding TsPacketViewerClickCommand}" />
+                        <MenuItem Header="{DynamicResource String.Menu.ToolGroupEdit}">
+                            <MenuItem Header="{DynamicResource String.Menu.TsRemux}"
+                                      Command="{Binding TsRemuxClickCommand}" />
+                            <MenuItem Header="{DynamicResource String.Menu.TsTimelineRepair}"
+                                      Command="{Binding TsTimelineRepairClickCommand}" />
+                            <MenuItem Header="{DynamicResource String.Menu.TsMultiSourceRepair}"
+                                      Command="{Binding TsMultiSourceRepairClickCommand}" />
+                        </MenuItem>
+                        <MenuItem Header="{DynamicResource String.Menu.ToolGroupMerge}">
+                            <MenuItem Header="{DynamicResource String.Menu.TsBinaryMerge}"
+                                      Command="{Binding TsBinaryMergeClickCommand}" />
+                        </MenuItem>
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.Settings}"
                                   Command="{Binding SettingsClickCommand}" />
@@ -164,18 +206,31 @@
               IsVisible="False"
               DragDrop.AllowDrop="True"
               x:Name="DropMask">
-              <Interaction.Behaviors>
-                  <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DropEvent}">
-                      <InvokeCommandAction Command="{Binding DropCommand}" PassEventArgsToCommand="True" />
-                      <ChangePropertyAction PropertyName="IsVisible" Value="False" />
-                  </RoutedEventTriggerBehavior>
-                  <RoutedEventTriggerBehavior RoutedEvent="{x:Static DragDrop.DragOverEvent}">
-                      <InvokeCommandAction Command="{Binding DragOverCommand}" PassEventArgsToCommand="True" />
-                  </RoutedEventTriggerBehavior>
-              </Interaction.Behaviors>
-            <Border Background="{DynamicResource MaskBackgroundBrush}" Opacity="0.9" />
-            <TextBlock Text="{DynamicResource String.DropToolTip}" VerticalAlignment="Center" HorizontalAlignment="Center" />
-            <Rectangle Stroke="Gray" StrokeThickness="2" StrokeDashArray="3, 4" Width="200" Height="100" RadiusX="10" RadiusY="10"/>
+            <Border Background="{DynamicResource MaskBackgroundBrush}" Opacity="0.78" />
+            <ClassicBorderDecorator BorderThickness="2" BorderStyle="Raised"
+                                    Background="{DynamicResource DropPanelBrush}"
+                                    Width="340" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Padding="4">
+                <Grid RowDefinitions="24,Auto">
+                    <Border Background="{DynamicResource DropTitleBrush}" Padding="8,2">
+                        <TextBlock Text="TSCutter.GUI" Foreground="{DynamicResource DropTitleTextBrush}" FontWeight="Bold"
+                                   VerticalAlignment="Center" />
+                    </Border>
+                    <ClassicBorderDecorator Grid.Row="1" BorderThickness="2" BorderStyle="Sunken"
+                                            Margin="8" Padding="14,16">
+                        <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
+                            <Image Source="/Assets/directory_movie-3.png" Width="32" Height="32"
+                                   Stretch="Uniform" VerticalAlignment="Center" />
+                            <StackPanel Spacing="4" Width="220" VerticalAlignment="Center">
+                                <TextBlock Text="{DynamicResource String.DropToolTip}" FontWeight="Bold"
+                                           TextWrapping="Wrap" />
+                                <TextBlock Text="{DynamicResource String.Drop.Release}" FontSize="12"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+                        </StackPanel>
+                    </ClassicBorderDecorator>
+                </Grid>
+            </ClassicBorderDecorator>
         </Grid>
         <DockPanel Grid.Row="1">
             <!-- 状态栏 -->
@@ -221,6 +276,14 @@
                                                       LargeIcon="/Assets/fit.png"
                                                       Text="{DynamicResource String.ToolBar.Fit}"
                                                       Command="{Binding FitCommand, ElementName=ImageViewer}" />
+                        <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.KeyFrameOverviewTip}"
+                                                      LargeIcon="/Assets/keyframe_overview.png"
+                                                      Text="{DynamicResource String.ToolBar.KeyFrameOverview}"
+                                                      Command="{Binding KeyFrameOverviewClickCommand}" />
+                        <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.ThumbnailSheetTip}"
+                                                      LargeIcon="/Assets/thumbnail_sheet.png"
+                                                      Text="{DynamicResource String.ToolBar.ThumbnailSheet}"
+                                                      Command="{Binding ThumbnailSheetClickCommand}" />
                         <Separator />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.SaveFrameTip}"
                                                       LargeIcon="/Assets/kodak_imaging-0.png"
@@ -235,7 +298,7 @@
                                                       Command="{Binding ShowMediaInfoClickCommand}" />
                     </commonControls:ToolBar>
                     <Grid Grid.Row="1" RowDefinitions="*, Auto, Auto">
-                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto, 190">
+                        <Grid Grid.Row="0" ColumnDefinitions="*, Auto, 240">
                             <!-- 图片预览区域 -->
                             <ClassicBorderDecorator Grid.Column="0" BorderThickness="0, 2" BorderStyle="Etched">
                                 <controls:ImageViewer Name="ImageViewer"
@@ -244,6 +307,8 @@
                                                       OffsetX="{Binding OffsetX, Mode=TwoWay}"
                                                       OffsetY="{Binding OffsetY, Mode=TwoWay}"
                                                       Image="{Binding DecodedBitmap}"
+                                                      GpuFrame="{Binding DecodedGpuFrame}"
+                                                      SourcePixelSize="{Binding DecodedFrameSourceSize}"
                                                       Zoom="{Binding ZoomFactor, Mode=TwoWay}">
                                 </controls:ImageViewer>
                             </ClassicBorderDecorator>
@@ -260,13 +325,22 @@
                                                 </TextBlock>
                                             </TabItem.Header>
                                             <DockPanel>
-                                                <Button DockPanel.Dock="Bottom"
-                                                        Command="{Binding ExportAllCommand}"
-                                                        HorizontalAlignment="Stretch"
-                                                        ToolTip.Tip="{DynamicResource String.ExportAllTip}"
-                                                        Margin="0,2,0,0">
-                                                    <TextBlock Text="{DynamicResource String.ExportAll}" />
-                                                </Button>
+                                                <Grid DockPanel.Dock="Bottom"
+                                                      ColumnDefinitions="*,*"
+                                                      ColumnSpacing="4"
+                                                      Margin="0,2,0,0">
+                                                    <Button Grid.Column="0"
+                                                            Command="{Binding SelectAllClipsCommand}"
+                                                            ToolTip.Tip="{DynamicResource String.Clips.SelectAllTip}">
+                                                        <TextBlock Text="{DynamicResource String.Clips.SelectAll}" />
+                                                    </Button>
+                                                    <Button Grid.Column="1"
+                                                            Command="{Binding ExportAllCommand}"
+                                                            HorizontalAlignment="Stretch"
+                                                            ToolTip.Tip="{DynamicResource String.ExportAllTip}">
+                                                        <TextBlock Text="{DynamicResource String.ExportAll}" />
+                                                    </Button>
+                                                </Grid>
                                                 <Grid>
                                                     <!-- Empty state -->
                                                     <TextBlock Text="{DynamicResource String.Clips.Empty}"
@@ -301,39 +375,72 @@
                                                                         <ClassicBorderDecorator BorderThickness="2" BorderStyle="Sunken"
                                                                                                 IsVisible="{Binding IsActive}" />
                                                                         <!-- Content -->
-                                                                        <StackPanel Margin="4" Spacing="2">
+                                                                        <Grid Margin="4"
+                                                                              RowDefinitions="Auto,64,Auto,Auto"
+                                                                              ColumnDefinitions="*,8,*">
                                                                             <!-- Header: ID + Status -->
-                                                                            <Grid ColumnDefinitions="Auto,*,Auto">
+                                                                            <Grid Grid.Row="0" Grid.ColumnSpan="3"
+                                                                                  ColumnDefinitions="Auto,*,Auto">
                                                                                 <TextBlock Text="{Binding ClipID, StringFormat='#{0}'}"
                                                                                            FontWeight="Bold"
                                                                                            FontSize="12" />
                                                                                 <TextBlock Grid.Column="2"
                                                                                            Text="{Binding StatusText}" />
                                                                             </Grid>
-                                                                            <!-- Start time -->
-                                                                            <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
-                                                                                <TextBlock Text="{DynamicResource String.Table.StartTime}"
-                                                                                           Margin="0,0,4,0"
-                                                                                           VerticalAlignment="Center" />
-                                                                                <Button Grid.Column="1"
-                                                                                        Content="{Binding StartTimeStr}"
-                                                                                        Classes="hyperlink"
-                                                                                        Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToStartTimeCommand}"
-                                                                                        CommandParameter="{Binding}" />
-                                                                            </Grid>
-                                                                            <!-- End time -->
-                                                                            <Grid ColumnDefinitions="Auto,*">
-                                                                                <TextBlock Text="{DynamicResource String.Table.EndTime}"
-                                                                                           Margin="0,0,4,0"
-                                                                                           VerticalAlignment="Center" />
-                                                                                <Button Grid.Column="1"
-                                                                                        Content="{Binding EndTimeStr}"
-                                                                                        Classes="hyperlink"
-                                                                                        Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToEndTimeCommand}"
-                                                                                        CommandParameter="{Binding}" />
-                                                                            </Grid>
+                                                                            <Button Grid.Row="1" Grid.Column="0" Padding="2"
+                                                                                    MinWidth="0"
+                                                                                    HorizontalContentAlignment="Stretch"
+                                                                                    VerticalContentAlignment="Stretch"
+                                                                                    IsEnabled="{Binding HasStartThumbnail}"
+                                                                                    Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToStartTimeCommand}"
+                                                                                    CommandParameter="{Binding}">
+                                                                                <Grid Background="{DynamicResource ClipThumbnailBackgroundBrush}"
+                                                                                      ClipToBounds="True">
+                                                                                    <Image Source="{Binding StartThumbnail}"
+                                                                                           Stretch="Uniform" />
+                                                                                    <TextBlock Text="—"
+                                                                                               IsVisible="{Binding HasStartThumbnail, Converter={x:Static local:App.InverseBoolConverter}}"
+                                                                                               Foreground="{DynamicResource ClipThumbnailPlaceholderBrush}"
+                                                                                               HorizontalAlignment="Center"
+                                                                                               VerticalAlignment="Center" />
+                                                                                </Grid>
+                                                                            </Button>
+                                                                            <Button Grid.Row="1" Grid.Column="2" Padding="2"
+                                                                                    MinWidth="0"
+                                                                                    HorizontalContentAlignment="Stretch"
+                                                                                    VerticalContentAlignment="Stretch"
+                                                                                    IsEnabled="{Binding HasEndThumbnail}"
+                                                                                    Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToEndTimeCommand}"
+                                                                                    CommandParameter="{Binding}">
+                                                                                <Grid Background="{DynamicResource ClipThumbnailBackgroundBrush}"
+                                                                                      ClipToBounds="True">
+                                                                                    <Image Source="{Binding EndThumbnail}"
+                                                                                           Stretch="Uniform" />
+                                                                                    <TextBlock Text="—"
+                                                                                               IsVisible="{Binding HasEndThumbnail, Converter={x:Static local:App.InverseBoolConverter}}"
+                                                                                               Foreground="{DynamicResource ClipThumbnailPlaceholderBrush}"
+                                                                                               HorizontalAlignment="Center"
+                                                                                               VerticalAlignment="Center" />
+                                                                                </Grid>
+                                                                            </Button>
+
+                                                                            <Button Grid.Row="2" Grid.Column="0"
+                                                                                    Content="{Binding StartBoundaryTimeStr}"
+                                                                                    Classes="hyperlink"
+                                                                                    HorizontalAlignment="Center"
+                                                                                    IsEnabled="{Binding HasStartThumbnail}"
+                                                                                    Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToStartTimeCommand}"
+                                                                                    CommandParameter="{Binding}" />
+                                                                            <Button Grid.Row="2" Grid.Column="2"
+                                                                                    Content="{Binding EndBoundaryTimeStr}"
+                                                                                    Classes="hyperlink"
+                                                                                    HorizontalAlignment="Center"
+                                                                                    IsEnabled="{Binding HasEndThumbnail}"
+                                                                                    Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToEndTimeCommand}"
+                                                                                    CommandParameter="{Binding}" />
                                                                             <!-- Size + Output Path -->
-                                                                            <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
+                                                                            <Grid Grid.Row="3" Grid.ColumnSpan="3"
+                                                                                  ColumnDefinitions="Auto,*" Margin="0,2,0,0">
                                                                                 <TextBlock Text="{Binding EstimatedSizeStr}"
                                                                                            VerticalAlignment="Center"
                                                                                            Margin="0,0,8,0" />
@@ -345,7 +452,7 @@
                                                                                         Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).FindFileCommand}"
                                                                                         CommandParameter="{Binding OutputFileInfo}" />
                                                                             </Grid>
-                                                                        </StackPanel>
+                                                                        </Grid>
                                                                     </Grid>
                                                                 </Border>
                                                             </DataTemplate>
@@ -429,21 +536,11 @@
                                                                                        TextTrimming="CharacterEllipsis"
                                                                                        FontWeight="Bold"
                                                                                        FontSize="12" />
-                                                                            <!-- Start time -->
-                                                                            <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
-                                                                                <TextBlock Text="{DynamicResource String.Table.StartTime}"
-                                                                                           Margin="0,0,4,0"
-                                                                                           VerticalAlignment="Center" />
-                                                                                <TextBlock Grid.Column="1"
-                                                                                           Text="{Binding StartTimeStr}" />
-                                                                            </Grid>
-                                                                            <!-- End time -->
-                                                                            <Grid ColumnDefinitions="Auto,*">
-                                                                                <TextBlock Text="{DynamicResource String.Table.EndTime}"
-                                                                                           Margin="0,0,4,0"
-                                                                                           VerticalAlignment="Center" />
-                                                                                <TextBlock Grid.Column="1"
-                                                                                           Text="{Binding EndTimeStr}" />
+                                                                            <!-- Boundary times -->
+                                                                            <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2,0,0">
+                                                                                <TextBlock Text="{Binding StartBoundaryTimeStr}" />
+                                                                                <TextBlock Grid.Column="2"
+                                                                                           Text="{Binding EndBoundaryTimeStr}" />
                                                                             </Grid>
                                                                             <!-- Size + Output path -->
                                                                             <Grid ColumnDefinitions="Auto,*" Margin="0,2,0,0">
@@ -481,6 +578,7 @@
                         <!-- 时间刻度、剪辑范围、播放头、总览与缩放共用同一套坐标换算。 -->
                         <controls:TimelineControl Grid.Row="1"
                                                   Name="MainTimeline"
+                                                  Focusable="True"
                                                   Height="48"
                                                   Margin="0,2"
                                                   HorizontalAlignment="Stretch"
@@ -491,6 +589,9 @@
                                                   ViewportEnd="{Binding TimelineViewport.ViewEnd}"
                                                   ZoomLevel="{Binding TimelineViewport.ZoomLevel}"
                                                   Ranges="{Binding SelectedClipRanges}"
+                                                  ScrubStarted="Timeline_OnScrubStarted"
+                                                  ScrubPreviewRequested="Timeline_OnScrubPreviewRequested"
+                                                  ScrubCanceled="Timeline_OnScrubCanceled"
                                                   SeekRequested="Timeline_OnSeekRequested"
                                                   PanRequested="Timeline_OnPanRequested"
                                                   ZoomRequested="Timeline_OnZoomRequested"

@@ -55,6 +55,23 @@ public sealed class TsStreamAnalyzerTests
     }
 
     [Fact]
+    public async Task ScrambledPayloadPacketsAreCountedWithoutTreatingReservedValueAsEncryption()
+    {
+        const int pid = 0x0101;
+        var clear = CreatePacket(pid, 0);
+        var reserved = CreatePacket(pid, 1);
+        reserved[3] |= 0x40;
+        var evenKey = CreatePacket(pid, 2);
+        evenKey[3] |= 0x80;
+        var oddKey = CreatePacket(pid, 3);
+        oddKey[3] |= 0xC0;
+
+        var result = await AnalyzeAsync([clear, reserved, evenKey, oddKey]);
+
+        Assert.Equal(2, result.Pids[pid].ScrambledPayloadPacketCount);
+    }
+
+    [Fact]
     public async Task ReliablePcrJumpAfterTransportErrorIsStillReported()
     {
         var packets = new[]
@@ -185,11 +202,70 @@ public sealed class TsStreamAnalyzerTests
         Assert.True(Count(result, TsCheckEventType.AvSyncDrift) > 0);
     }
 
+    [Fact]
+    public async Task InventoryProbeHonorsMinimumBytesAfterCatalogIsStable()
+    {
+        const int pmtPid = 0x0100;
+        const int videoPid = 0x0101;
+        var packets = new List<byte[]>
+        {
+            CreatePsiPacket(0x0000, 0, BuildPatSection(pmtPid)),
+            CreatePsiPacket(pmtPid, 0, BuildPmtSection(videoPid))
+        };
+        for (var index = 0; index < 200; index++)
+            packets.Add(CreatePacket(videoPid, index & 0x0F));
+
+        var result = await AnalyzeAsync(packets, new TsStreamAnalyzeOptions
+        {
+            InventoryOnly = true,
+            MinimumBytes = 100L * TsStreamAnalyzer.PacketSize,
+            StablePacketCount = 10,
+            Features = TsStreamAnalyzeFeatures.None
+        });
+
+        Assert.True(result.BytesScanned >= 100L * TsStreamAnalyzer.PacketSize);
+        Assert.True(result.PacketCount < packets.Count);
+        Assert.All(result.Pids.Values, item => Assert.Equal(0, item.Bitrate));
+    }
+
+    [Fact]
+    public async Task InventoryProbeCalculatesPidBitratesFromPcrClock()
+    {
+        const int pmtPid = 0x0100;
+        const int videoPid = 0x0101;
+        const int audioPid = 0x0102;
+        var packets = new List<byte[]>
+        {
+            CreatePsiPacket(0x0000, 0, BuildPatSection(pmtPid)),
+            CreatePsiPacket(pmtPid, 0, BuildPmtSection(
+                videoPid, (TsStreamTypes.H264, videoPid), (TsStreamTypes.Mpeg1Audio, audioPid)))
+        };
+        for (var index = 0; index < 1_000; index++)
+        {
+            var pid = index % 4 == 3 ? audioPid : videoPid;
+            packets.Add(CreatePacket(
+                pid, index & 0x0F,
+                pcrBase: pid == videoPid && index % 100 == 0 ? index * 90L : null));
+        }
+
+        var result = await AnalyzeAsync(packets, new TsStreamAnalyzeOptions
+        {
+            InventoryOnly = true,
+            MinimumBytes = long.MaxValue,
+            Features = TsStreamAnalyzeFeatures.Bitrate
+        });
+
+        var totalBitrate = result.Pids.Values.Sum(item => item.Bitrate);
+        Assert.InRange(totalBitrate, 1_500_000, 1_508_000);
+        Assert.InRange(result.Pids[videoPid].Bitrate / result.Pids[audioPid].Bitrate, 2.9, 3.1);
+    }
+
     private static int Count(TsCheckResult result, TsCheckEventType type) => result.Events
         .Where(item => item.Type == type)
         .Sum(item => item.Occurrences);
 
-    private static async Task<TsCheckResult> AnalyzeAsync(IEnumerable<byte[]> packets)
+    private static async Task<TsCheckResult> AnalyzeAsync(
+        IEnumerable<byte[]> packets, TsStreamAnalyzeOptions? options = null)
     {
         var path = Path.Combine(Path.GetTempPath(), $"ts-check-{Guid.NewGuid():N}.ts");
         try
@@ -199,7 +275,7 @@ public sealed class TsStreamAnalyzerTests
                 foreach (var packet in packets)
                     await stream.WriteAsync(packet);
             }
-            return await new TsStreamAnalyzer().AnalyzeAsync(path);
+            return await new TsStreamAnalyzer().AnalyzeAsync(path, options: options);
         }
         finally
         {

@@ -9,6 +9,8 @@ namespace TSCutter.GUI.Utils;
 )]
 [JsonSerializable(typeof(AppConfig))]
 [JsonSerializable(typeof(GitHubVersionInfo))]
+[JsonSerializable(typeof(CutterProject))]
+[JsonSerializable(typeof(SavedFrameLibrary))]
 public partial class AppJsonContext : JsonSerializerContext
 {
 }

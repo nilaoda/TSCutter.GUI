@@ -295,6 +295,7 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
                 continue;
             var insertion = FindGapInsertion(plan, track.ReferencePid, gap.ReferenceInsertOffset);
             var status = ResolveStatus(isSelected, gap.Candidates.Count > 0, insertion is not null);
+            var hasPts = IsTimelinePtsUsable(gap.ReferencePts90k);
             var start = GetTimeSeconds(gap.ReferencePts90k, gap.ReferenceInsertOffset);
             var end = Math.Min(DurationSeconds, start + GetMarkerDuration());
             var candidate = gap.Candidates.FirstOrDefault(item => insertion is not null &&
@@ -308,16 +309,16 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
                 Status = status,
                 StartSeconds = start,
                 EndSeconds = end,
-                IsEstimatedTime = gap.ReferencePts90k == long.MinValue,
+                IsEstimatedTime = !hasPts,
                 StartOffset = gap.ReferenceInsertOffset,
                 EndOffset = gap.ReferenceInsertOffset,
                 TrackText = row.DisplayText,
                 IssueText = _text.Strings.String_TsRepair_Map_IssuePacketGap,
                 StatusText = FormatStatus(status),
-                TimeText = FormatTimePoint(start, gap.ReferencePts90k == long.MinValue),
+                TimeText = FormatTimePoint(start, !hasPts),
                 BroadcastTimeText = FormatBroadcastTimePoint(
                     track.ProgramNumber, gap.ReferencePts90k, gap.ReferenceInsertOffset,
-                    gap.ReferencePts90k == long.MinValue),
+                    !hasPts),
                 PositionText = FormatPosition(gap.ReferenceInsertOffset, gap.ReferenceInsertOffset),
                 SourceText = FormatCandidateSource(insertion?.SourcePath ?? candidate?.SourcePath,
                     insertion?.SourcePid ?? candidate?.SourcePid),
@@ -469,7 +470,8 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
             var status = ResolveStatus(
                 isSelected, region.Candidates.Count > 0 || coveringLargeGap is not null,
                 replacement is not null || coveringInsertion is not null || coveringLargeGap is not null);
-            var hasPts = region.ReferenceFirstPts90k != long.MinValue;
+            var hasPts = IsTimelinePtsUsable(region.ReferenceFirstPts90k) &&
+                         IsTimelinePtsUsable(region.ReferenceLastPts90k);
             var start = GetTimeSeconds(region.ReferenceFirstPts90k, region.ReferenceStartOffset);
             var end = region.ReferenceLastPts90k != long.MinValue
                 ? GetTimeSeconds(region.ReferenceLastPts90k, region.ReferenceEndOffset)
@@ -498,9 +500,14 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
                 StartOffset = region.ReferenceStartOffset,
                 EndOffset = region.ReferenceEndOffset,
                 TrackText = row.DisplayText,
-                IssueText = region.Reason == TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch
-                    ? _text.Strings.String_TsRepair_Map_IssueElementaryMismatch
-                    : _text.Strings.String_TsRepair_Map_IssuePesMismatch,
+                IssueText = region.Reason switch
+                {
+                    TsRepairPesRegionReason.CorrelatedVideoElementaryMismatch =>
+                        _text.Strings.String_TsRepair_Map_IssueElementaryMismatch,
+                    TsRepairPesRegionReason.DenseTransportDamage =>
+                        _text.Strings.String_TsRepair_Map_IssueDenseTransportDamage,
+                    _ => _text.Strings.String_TsRepair_Map_IssuePesMismatch
+                },
                 StatusText = FormatStatus(status),
                 TimeText = FormatTimeRange(start, end, !hasPts),
                 BroadcastTimeText = FormatBroadcastTimeRange(
@@ -765,10 +772,25 @@ public partial class TsRepairMapWindowViewModel : ViewModelBase
 
     private double GetTimeSeconds(long pts90k, long fileOffset)
     {
-        if (pts90k != long.MinValue && _analysis.TimelineStartPts90k != long.MinValue)
+        if (IsTimelinePtsUsable(pts90k))
             return Math.Clamp((pts90k - _analysis.TimelineStartPts90k) / 90_000.0, 0, DurationSeconds);
         var size = Math.Max(1, _analysis.ReferenceSource.Catalog.FileSize);
         return Math.Clamp(fileOffset / (double)size * DurationSeconds, 0, DurationSeconds);
+    }
+
+    private bool IsTimelinePtsUsable(long pts90k)
+    {
+        if (pts90k == long.MinValue || _analysis.TimelineStartPts90k == long.MinValue ||
+            _analysis.TimelineEndPts90k <= _analysis.TimelineStartPts90k)
+        {
+            return false;
+        }
+
+        // 允许首尾各一秒的编码重排序余量；更远的值视为占位或离群时间戳，
+        // 地图改用文件位置估算，避免把几十秒的文件拉伸成数小时。
+        const long tolerance90k = 90_000;
+        return pts90k >= _analysis.TimelineStartPts90k - tolerance90k &&
+               pts90k <= _analysis.TimelineEndPts90k + tolerance90k;
     }
 
     private double GetLargeGapTimeSeconds(long pts90k)

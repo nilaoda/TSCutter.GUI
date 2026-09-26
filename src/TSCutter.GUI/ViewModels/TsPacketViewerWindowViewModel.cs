@@ -24,6 +24,7 @@ public partial class TsPacketViewerWindowViewModel : ViewModelBase, IModalDialog
     private readonly TsPacketViewerService _service = new();
     private CancellationTokenSource? _cancellationTokenSource;
     private TsPacketViewerSession? _session;
+    private long? _initialPacketIndex;
     private bool _isClosing;
     private int _generation;
 
@@ -92,10 +93,16 @@ public partial class TsPacketViewerWindowViewModel : ViewModelBase, IModalDialog
 
     public event Action<TsPacketViewerRow>? SelectionRequested;
 
+    public void Initialize(string filePath, long packetIndex)
+    {
+        FilePath = filePath;
+        _initialPacketIndex = Math.Max(0, packetIndex);
+    }
+
     public async Task InitializeAsync()
     {
         if (!string.IsNullOrEmpty(FilePath))
-            await OpenPathAsync(FilePath).ConfigureAwait(true);
+            await OpenPathAsync(FilePath, _initialPacketIndex).ConfigureAwait(true);
     }
 
     [RelayCommand(CanExecute = nameof(CanOpenFile))]
@@ -174,7 +181,7 @@ public partial class TsPacketViewerWindowViewModel : ViewModelBase, IModalDialog
     private bool CanMoveNextWindow() =>
         CanNavigate && SelectedPacket!.PacketIndex < _session!.TotalPackets - 1;
 
-    private async Task OpenPathAsync(string path)
+    private async Task OpenPathAsync(string path, long? initialPacketIndex = null)
     {
         var generation = ++_generation;
         var cancellation = ReplaceCancellation();
@@ -198,7 +205,9 @@ public partial class TsPacketViewerWindowViewModel : ViewModelBase, IModalDialog
                 session.SyncOffset.ToString("N0"),
                 session.TotalPackets.ToString("N0"));
             OnPropertyChanged(nameof(WindowTitle));
-            await LoadAroundCoreAsync(0, generation, cancellation.Token).ConfigureAwait(true);
+            // 快速检查传入的是扫描时的 0-based 包号；文件边界变化时仍在当前会话范围内安全收敛。
+            var targetPacket = Math.Clamp(initialPacketIndex ?? 0, 0, Math.Max(0, session.TotalPackets - 1));
+            await LoadAroundCoreAsync(targetPacket, generation, cancellation.Token).ConfigureAwait(true);
             StatusText = LocalizationManager.Instance.String_TsPacketViewer_Status_Ready;
         }
         catch (OperationCanceledException)

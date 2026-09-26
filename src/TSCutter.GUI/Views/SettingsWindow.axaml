@@ -120,6 +120,10 @@
                     </HeaderedContentControl>
                     <CheckBox IsChecked="{Binding AutoCheckForUpdates}"
                               Content="{DynamicResource String.Settings.AutoCheckForUpdates}" />
+                    <CheckBox IsChecked="{Binding PreferHardwareDecoding}"
+                              IsEnabled="{Binding IsHardwareDecodingAvailable}"
+                              Content="{DynamicResource String.Settings.PreferHardwareDecoding}"
+                              ToolTip.Tip="{DynamicResource String.Settings.PreferHardwareDecodingTip}" />
                 </StackPanel>
             </TabItem>
         </TabControl>

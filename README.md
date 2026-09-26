@@ -4,7 +4,7 @@
   <p><strong>English</strong> | <a href="README_CN.md">中文版</a></p>
 </div>
 
-TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It combines fast keyframe-based cutting with stream checking, filtering, repair, merging, and packet inspection tools, without transcoding the original audio or video.
+TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It combines fast keyframe-based cutting with stream inspection, extraction, filtering, structural editing, repair, merging, and packet analysis tools, without transcoding the original audio or video.
 
 > The software is still under development and has not been officially released, so it may contain **MANY BUGS**.  
 
@@ -15,19 +15,24 @@ TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It comb
 - **Keyframe-accurate cutting**: Preview and navigate nearby keyframes or jump to a specific time before marking clip boundaries.
 - **Zoomable timeline**: Continuously zoom, pan, or return to a full-file overview for accurate navigation in long recordings.
 - **Multiple clip management**: Create and edit several clip ranges, view their positions on the timeline, and compare duration and estimated size.
+- **Editing projects**: Save the current source, clip ranges, timeline view, and cross-file export queue in a `.tscut` file for later editing. Projects can reopen recordings that have grown since saving.
 - **Flexible output**: Save one clip immediately, add clips to a batch export queue, or merge multiple selected clips into one TS file.
 - **Lossless media copy**: Preserve the original encoded audio and video without transcoding.
 - **Frame capture and media information**: Save or copy the current preview frame and inspect the opened file's stream information.
+- **High-resolution thumbnail sheets**: Generate configurable N×M contact sheets up to 12,000 pixels wide, preview them with zoom and pan, and export PNG or JPEG images with timestamps and labeled video, audio, and subtitle metadata, including language and HDR, HLG, or Dolby Vision indicators.
+- **General video preview**: Open MP4, MKV, MOV, WebM, and other FFmpeg-supported video files for preview, seeking, screenshots, and media information. Non-TS files are preview-only.
 
 ### TS tools
 
 - **TS Raw Stream Cutter**: Extract a byte or packet range directly from a TS file.
 - **TS Quick Check**: Scan for synchronization loss, TEI/continuity/PES errors, PCR/PTS/DTS issues, A/V drift, bitrate changes, and export a text report.
-- **TS Timeline Repair**: Analyze and safely correct supported PCR and timestamp discontinuities without hiding transport or packet-loss errors.
-- **TS Stream Filter**: Keep selected PIDs or split selected services while rebuilding the required program and service tables.
-- **TS Multi-source Repair**: Compare compatible recordings of the same feed and time period, then use healthy packet, PES, or elementary-stream data to repair damaged regions and long gaps where safe.
-- **TS Binary Merge**: Directly append ordered TS segments, or detect and remove byte-identical overlap between adjacent files before merging.
 - **TS Packet Viewer**: Inspect individual 188-byte packets, navigate by packet number, offset, or PID, and link parsed fields to highlighted Hex bytes.
+- **TS Elementary Stream Extractor**: Select one or more tracks and export their raw video, audio, subtitle, or data payload after removing TS and PES encapsulation.
+- **TS Stream Filter**: Keep selected PIDs or split selected services while rebuilding the required program and service tables.
+- **TS Stream Editor**: Remove tracks or services, remap identifiers and PIDs, and edit service or language metadata while preserving the original encoded media.
+- **TS Timeline Repair**: Analyze and safely correct supported PCR and timestamp discontinuities without hiding transport or packet-loss errors.
+- **TS Multi-source Repair**: Compare compatible recordings of the same feed and time period, then use healthy packet, PES, or elementary-stream data to repair damaged regions and long gaps where safe.
+- **TS Binary Merge**: Append ordered TS segments, remove byte-identical overlaps, or merge overlapping recordings from the same source when only TS continuity counters differ.
 
 ### General
 
@@ -72,6 +77,7 @@ On macOS, the app automatically probes common Homebrew locations. If your FFmpeg
 2. Open a TS file or drag it into the main window.
 3. Navigate or zoom the timeline, add a clip, and mark its start and end points.
 4. Save the current clip, add it to the export queue, or select multiple clips and merge them.
+5. Use the File menu to save a `.tscut` project and reopen it later to restore clips and queued exports. A growing source is accepted when verification of its saved portion succeeds.
 
 ### Independent TS tools
 

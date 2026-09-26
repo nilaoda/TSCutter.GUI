@@ -29,6 +29,7 @@ public sealed partial class TsFilterPidItem : ObservableObject
     public required string StreamText { get; init; }
     public required string ProgramText { get; init; }
     public required string SamplePacketCountText { get; init; }
+    public required string BitrateText { get; init; }
     public required long SamplePacketCount { get; init; }
     public bool IsProgramStream { get; init; }
 

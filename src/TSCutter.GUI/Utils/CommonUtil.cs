@@ -97,6 +97,19 @@ public static partial class CommonUtil
         };
     }
 
+    public static string FormatBitrate(double bitsPerSecond)
+    {
+        if (bitsPerSecond < 0)
+            throw new ArgumentOutOfRangeException(nameof(bitsPerSecond));
+        return bitsPerSecond >= 1_000_000
+            ? $"{bitsPerSecond / 1_000_000:0.##} Mb/s"
+            : $"{bitsPerSecond / 1_000:0.##} kb/s";
+    }
+
+    public static string FormatOptionalBitrate(double bitsPerSecond) => bitsPerSecond > 0
+        ? FormatBitrate(bitsPerSecond)
+        : "-";
+
     public static void OpenFileLocation(string filePath)
     {
         if (!File.Exists(filePath))

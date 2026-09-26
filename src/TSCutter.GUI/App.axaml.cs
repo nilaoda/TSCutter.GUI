@@ -18,7 +18,7 @@ namespace TSCutter.GUI;
 
 public partial class App : Application
 {
-    public const string CurrentTag = "alphabuild_20260730";
+    public const string CurrentTag = "alphabuild_20260927";
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -41,6 +41,12 @@ public partial class App : Application
         SplatRegistrations.Register<TsMultiSourceRepairWindowViewModel>();
         SplatRegistrations.Register<TsBinaryMergeWindowViewModel>();
         SplatRegistrations.Register<TsPacketViewerWindowViewModel>();
+        SplatRegistrations.Register<KeyFrameOverviewWindowViewModel>();
+        SplatRegistrations.Register<FrameTemplateManagerWindowViewModel>();
+        SplatRegistrations.Register<FrameSearchWindowViewModel>();
+        SplatRegistrations.Register<ThumbnailSheetWindowViewModel>();
+        SplatRegistrations.Register<TsRemuxWindowViewModel>();
+        SplatRegistrations.Register<TsEsExtractorWindowViewModel>();
         SplatRegistrations.Register<AboutWindowViewModel>();
         SplatRegistrations.Register<JumpTimeViewModel>();
         SplatRegistrations.Register<MediainfoWindowViewModel>();
@@ -117,12 +123,15 @@ public partial class App : Application
     public static TsMultiSourceRepairWindowViewModel TsMultiSourceRepairDialog => Locator.Current.GetService<TsMultiSourceRepairWindowViewModel>()!;
     public static TsBinaryMergeWindowViewModel TsBinaryMergeDialog => Locator.Current.GetService<TsBinaryMergeWindowViewModel>()!;
     public static TsPacketViewerWindowViewModel TsPacketViewerDialog => Locator.Current.GetService<TsPacketViewerWindowViewModel>()!;
+    public static TsRemuxWindowViewModel TsRemuxDialog => Locator.Current.GetService<TsRemuxWindowViewModel>()!;
+    public static TsEsExtractorWindowViewModel TsEsExtractorDialog => Locator.Current.GetService<TsEsExtractorWindowViewModel>()!;
     public static JumpTimeViewModel JumpTimeDialog => Locator.Current.GetService<JumpTimeViewModel>()!;
     public static AboutWindowViewModel AboutDialog => Locator.Current.GetService<AboutWindowViewModel>()!;
     public static MediainfoWindowViewModel MediainfoDialog => Locator.Current.GetService<MediainfoWindowViewModel>()!;
     public static SettingsWindowViewModel SettingsDialog => Locator.Current.GetService<SettingsWindowViewModel>()!;
     public static UpdatesInfoWindowViewModel UpdatesInfoDialog => Locator.Current.GetService<UpdatesInfoWindowViewModel>()!;
     public static CaptureFrameViewModel CaptureFrameDialog => Locator.Current.GetService<CaptureFrameViewModel>()!;
+    public static ThumbnailSheetWindowViewModel ThumbnailSheetDialog => Locator.Current.GetService<ThumbnailSheetWindowViewModel>()!;
     public static InverseBoolConverter InverseBoolConverter => InverseBoolConverter.Instance;
     public static IDialogService DialogService => Locator.Current.GetService<IDialogService>()!;
     public static ILocalizationService LocalizationService => Locator.Current.GetService<ILocalizationService>()!;
