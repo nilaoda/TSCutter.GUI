@@ -148,6 +148,9 @@
                                   InputGesture="{OnPlatform Ctrl+Y, macOS=⌘+Shift+Z}" />
                     </MenuItem>
                     <MenuItem Header="{DynamicResource String.Menu.Tools}">
+                        <MenuItem Header="{DynamicResource String.FrameSearch.Menu}"
+                                  Command="{Binding FrameSearchClickCommand}" />
+                        <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.ToolGroupAnalyze}">
                             <MenuItem Header="{DynamicResource String.Menu.TsCheck}"
                                       Command="{Binding TsCheckClickCommand}" />

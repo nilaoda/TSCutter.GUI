@@ -1,0 +1,65 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:TSCutter.GUI.ViewModels"
+        xmlns:models="clr-namespace:TSCutter.GUI.Models"
+        x:Class="TSCutter.GUI.Views.FrameSearchWindow"
+        x:DataType="vm:FrameSearchWindowViewModel"
+        Title="{Binding WindowTitle}"
+        Width="900" Height="700" MinWidth="880" MinHeight="480"
+        WindowStartupLocation="CenterOwner"
+        Closing="Window_OnClosing">
+    <Grid Margin="12" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="9">
+        <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+            <Border BorderThickness="1" BorderBrush="Gray" Padding="2">
+                <Image Source="{Binding ReferenceImage}" Width="96" Height="54" Stretch="Uniform" />
+            </Border>
+            <TextBlock Grid.Column="1" Text="{Binding StatusText}" TextWrapping="Wrap"
+                       VerticalAlignment="Center" />
+        </Grid>
+        <ProgressBar Grid.Row="1" Minimum="0" Maximum="100" Value="{Binding ProgressPercent}" Height="15" />
+        <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
+            <ItemsControl ItemsSource="{Binding Matches}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="models:FrameSearchMatch">
+                        <Border BorderThickness="1" BorderBrush="Gray" Margin="0,0,0,10" Padding="8">
+                            <StackPanel Spacing="7">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                                    <TextBlock Text="{Binding RangeText}" FontWeight="Bold" />
+                                    <TextBlock Grid.Column="1" Text="{Binding SimilarityText}" />
+                                </Grid>
+                                <ItemsControl ItemsSource="{Binding NearbyFrames}">
+                                    <ItemsControl.ItemsPanel>
+                                        <ItemsPanelTemplate>
+                                            <StackPanel Orientation="Horizontal" Spacing="8" />
+                                        </ItemsPanelTemplate>
+                                    </ItemsControl.ItemsPanel>
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="models:FrameSearchPreviewFrame">
+                                            <Button Tag="{Binding}" Click="FrameButton_OnClick" Padding="4">
+                                                <StackPanel Spacing="3">
+                                                    <Image Source="{Binding Bitmap}" Width="150" Height="84"
+                                                           Stretch="Uniform" />
+                                                    <TextBlock Text="{Binding Label}" HorizontalAlignment="Center" />
+                                                    <TextBlock Text="{Binding TimeText}" HorizontalAlignment="Center" />
+                                                </StackPanel>
+                                            </Button>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </StackPanel>
+                        </Border>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Text="{DynamicResource String.FrameSearch.ResultHint}"
+                       VerticalAlignment="Center" TextWrapping="Wrap" />
+            <Button Grid.Column="1" Content="{DynamicResource String.FrameSearch.Continue}"
+                    Command="{Binding ContinueSearchCommand}" IsVisible="{Binding IsPaused}"
+                    MinWidth="100" />
+            <Button Grid.Column="2" Content="{DynamicResource String.Cancel}"
+                    Command="{Binding CancelCommand}" MinWidth="88" />
+        </Grid>
+    </Grid>
+</Window>

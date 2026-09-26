@@ -67,6 +67,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     private long lastSeekPts;
     private double timelineDurationSeconds;
     private long timelineDurationPts;
+    private bool suppressSearchFrameLogs;
     
     private readonly string videoPath = filePath;
 
@@ -278,9 +279,13 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         hardwareDecoderName = string.Empty;
     }
     
-    public async Task SeekToTimeAsync(TimeSpan timeSpan)
+    public async Task SeekToTimeAsync(TimeSpan timeSpan, CancellationToken cancellationToken = default)
     {
-        await Task.Run(() => SeekToTime(timeSpan));
+        await Task.Run(() => RunReadOperation(() =>
+        {
+            SeekToTime(timeSpan);
+            return true;
+        }, cancellationToken), cancellationToken);
     }
     
     public async Task SeekFileAsync(long pts)
@@ -344,6 +349,50 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     {
         return await Task.Run(() => RunReadOperation(
             () => DecodeNextFrame(count, cancellationToken, 0, 0), cancellationToken), cancellationToken);
+    }
+
+    /// <summary>
+    /// 按文件中的包顺序扫描关键帧，供画面搜索使用。
+    /// 扫描结束时返回空结果，不像交互式跳帧那样回退并重试。
+    /// </summary>
+    internal Task<DecodeResult?> DecodeNextSearchFrameAsync(
+        int maxWidth, int maxHeight, CancellationToken cancellationToken)
+    {
+        return Task.Run(() => RunReadOperation(() =>
+        {
+            suppressSearchFrameLogs = true;
+            try
+            {
+                var failures = 0;
+                foreach (var packet in inFc.ReadPackets())
+                {
+                    try
+                    {
+                        cancellationToken.ThrowIfCancellationRequested();
+                        activeReadDeadline!.ThrowIfInterrupted();
+                        if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0 ||
+                            (packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
+                            continue;
+
+                        var result = DecodePacket(packet, packet.Position, cancellationToken, maxWidth, maxHeight);
+                        if (result is not null)
+                            return result;
+                        if (++failures > MAX_FAILURE_COUT)
+                            ThrowDecodeFailure();
+                    }
+                    finally
+                    {
+                        packet.Unref();
+                    }
+                }
+                activeReadDeadline!.ThrowIfInterrupted();
+                return null;
+            }
+            finally
+            {
+                suppressSearchFrameLogs = false;
+            }
+        }, cancellationToken), cancellationToken);
     }
 
     private DecodeResult DecodeNextFrame(
@@ -765,13 +814,15 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                     pts = frame.BestEffortTimestamp;
                 
                 currentKeyFramePts = pts;
-                Console.WriteLine($"Current keyFrame: {pts}");
+                if (!suppressSearchFrameLogs)
+                    Console.WriteLine($"Current keyFrame: {pts}");
                 var pktPosition = frame.PktPosition;
                 if (!AudioMode && pktPosition == -1)
                     pktPosition = packetPosition;
                 
                 PositionInFile = pktPosition;
-                Console.WriteLine($"Current keyFrame PktPosition: {pktPosition}");
+                if (!suppressSearchFrameLogs)
+                    Console.WriteLine($"Current keyFrame PktPosition: {pktPosition}");
                 if (AudioMode && pktPosition == -1)
                     continue;
 
