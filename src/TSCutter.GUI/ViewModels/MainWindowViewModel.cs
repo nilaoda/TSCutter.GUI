@@ -41,9 +41,11 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         get
         {
+            var projectName = _projectPath is null ? string.Empty :
+                $" [{Path.GetFileName(_projectPath)}]";
             if (!string.IsNullOrEmpty(VideoPath))
-                return $"{TitleInfo} - {Path.GetFileName(VideoPath)}";
-            return TitleInfo;
+                return $"{TitleInfo} - {Path.GetFileName(VideoPath)}{projectName}";
+            return TitleInfo + projectName;
         }
     }
     private VideoInstance? _videoInstance;
@@ -67,6 +69,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _dialogService = dialogService;
         _configService = configService;
+        ExportQueue.CollectionChanged += (_, _) => NotifyQueueChanged();
         // 构造菜单项
         BuildThemeMenuItems();
         // 计算型本地化文本不会随资源字典自动刷新，语言切换后需主动通知界面重新取值。
@@ -149,6 +152,13 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private long _queueIdCounter;
     private string? _lastQueueOutputDirectory;
+    private string? _projectPath;
+    private string? _savedProjectState;
+    private void SetProjectPath(string? path)
+    {
+        _projectPath = path;
+        OnPropertyChanged(nameof(WindowTitle));
+    }
     public ObservableCollection<ExportQueueItem> ExportQueue { get; } = new();
 
     public bool HasExportQueue => ExportQueue.Count > 0;
@@ -359,8 +369,12 @@ public partial class MainWindowViewModel : ViewModelBase
         var args = Environment.GetCommandLineArgs();
         if (args.Length > 1 && File.Exists(args[1]))
         {
-            VideoPath = args[1];
-            await LoadVideoAsync();
+            if (IsProjectFile(args[1]))
+            {
+                await OpenProjectPathAsync(args[1]);
+                return;
+            }
+            await OpenVideoPathAsync(args[1]);
         }
     }
 
@@ -1007,10 +1021,13 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
-    private void CloseVideoClick()
+    private async Task CloseVideoClickAsync()
     {
+        if (!await ConfirmProjectReplacementAsync()) return;
         Close();
         ClearVars();
+        SetProjectPath(null);
+        if (ExportQueue.Count == 0) MarkProjectCheckpoint();
     }
 
     [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
@@ -1164,7 +1181,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         if (Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktopApp)
         {
-            desktopApp.Shutdown();
+            desktopApp.MainWindow?.Close();
         }
     }
     
@@ -1196,8 +1213,313 @@ public partial class MainWindowViewModel : ViewModelBase
         var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
         if (!result.Any()) return;
 
-        VideoPath = result[0].LocalPath;
-        await LoadVideoAsync();
+        await OpenVideoPathAsync(result[0].LocalPath);
+    }
+
+    [RelayCommand]
+    private async Task OpenProjectAsync()
+    {
+        var settings = new OpenFileDialogSettings
+        {
+            Title = LocalizationManager.Instance.String_Project_Open,
+            Filters = [new(LocalizationManager.Instance.String_Project_Files, ["tscut"])]
+        };
+        var selected = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+        if (!selected.Any())
+            return;
+
+        await OpenProjectPathAsync(selected[0].LocalPath);
+    }
+
+    private async Task OpenProjectPathAsync(string projectPath)
+    {
+        CutterProject project;
+        try
+        {
+            project = await CutterProjectService.LoadAsync(projectPath);
+        }
+        catch (Exception exception)
+        {
+            await ShowMessageAsync(string.Format(
+                    LocalizationManager.Instance.String_Project_OpenFailed,
+                    FormatProjectError(exception)),
+                LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
+            return;
+        }
+
+        if (HasUnsavedProjectChanges)
+        {
+            if (!await ConfirmProjectReplacementAsync()) return;
+        }
+        else if ((IsVideoInitialized || Clips.Count > 0 || ExportQueue.Count > 0) &&
+                 !await ShowConfirmAsync(LocalizationManager.Instance.String_Project_ReplaceConfirm))
+            return;
+
+        if (project.Source is not null)
+        {
+            VideoInstance? prepared = null;
+            try
+            {
+                prepared = new VideoInstance(project.Source.Path,
+                    _configService.CurrentConfig.PreferHardwareDecoding);
+                await prepared.InitVideoAsync();
+            }
+            catch (Exception exception)
+            {
+                prepared?.Dispose();
+                await ShowMessageAsync(string.Format(
+                        LocalizationManager.Instance.String_Project_OpenFailed,
+                        FormatProjectError(exception)),
+                    LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
+                return;
+            }
+            VideoPath = project.Source.Path;
+            if (!await LoadVideoAsync(prepared))
+                return;
+        }
+        else
+        {
+            await CompleteScrubPreviewAsync();
+            Close();
+            ClearVars();
+        }
+
+        await RestoreProjectAsync(project);
+        SetProjectPath(projectPath);
+        MarkProjectCheckpoint();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSaveProject))]
+    private async Task SaveProjectAsync() => await SaveProjectCoreAsync(saveAs: false);
+
+    [RelayCommand(CanExecute = nameof(CanSaveProject))]
+    private async Task SaveProjectAsAsync() => await SaveProjectCoreAsync(saveAs: true);
+
+    private bool CanSaveProject => IsVideoInitialized || ExportQueue.Count > 0;
+
+    private async Task<bool> SaveProjectCoreAsync(bool saveAs)
+    {
+        var path = saveAs ? null : _projectPath;
+        if (path is null)
+        {
+            var settings = new SaveFileDialogSettings
+            {
+                Title = LocalizationManager.Instance.String_Project_Save,
+                SuggestedStartLocation = new DesktopDialogStorageFolder(
+                    Path.GetDirectoryName(_projectPath ?? VideoPath) ??
+                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)),
+                SuggestedFileName = GetSuggestedProjectName(),
+                Filters = [new(LocalizationManager.Instance.String_Project_Files, ["tscut"])],
+                DefaultExtension = "tscut"
+            };
+            var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+            if (result?.Path is null)
+                return false;
+            path = result.Path.LocalPath;
+        }
+
+        try
+        {
+            var project = CaptureProject(includeThumbnails: true);
+            var savedState = CutterProjectService.Serialize(CaptureProject(includeThumbnails: false));
+            await Task.Run(() => CutterProjectService.PopulateSources(project));
+            await CutterProjectService.SaveAsync(path, project);
+            SetProjectPath(path);
+            _savedProjectState = savedState;
+            return true;
+        }
+        catch (Exception exception)
+        {
+            await ShowMessageAsync(string.Format(
+                    LocalizationManager.Instance.String_Project_SaveFailed,
+                    FormatProjectError(exception)),
+                LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
+            return false;
+        }
+    }
+
+    private string GetSuggestedProjectName()
+    {
+        var name = _projectPath is not null
+            ? Path.GetFileNameWithoutExtension(_projectPath)
+            : string.IsNullOrEmpty(VideoPath) ? "TSCutter" : Path.GetFileNameWithoutExtension(VideoPath);
+        while (name.EndsWith(".tscut", StringComparison.OrdinalIgnoreCase))
+            name = name[..^".tscut".Length];
+        return string.IsNullOrWhiteSpace(name) ? "TSCutter" : name;
+    }
+
+    private CutterProject CaptureProject(bool includeThumbnails) => new()
+    {
+        Source = IsVideoInitialized ? new ProjectSource { Path = VideoPath } : null,
+        Clips = Clips.Select(clip => new ProjectClip
+        {
+            StartTime = clip.StartTime,
+            EndTime = clip.EndTime,
+            StartPts = clip.StartPts,
+            EndPts = clip.EndPts,
+            StartPosition = clip.StartPosition,
+            EndPosition = clip.EndPosition,
+            IsSelected = clip.IsSelected,
+            StartThumbnailJpeg = includeThumbnails ? EncodeProjectThumbnail(clip.StartThumbnail) : null,
+            EndThumbnailJpeg = includeThumbnails ? EncodeProjectThumbnail(clip.EndThumbnail) : null,
+            OutputFilePath = clip.OutputFileInfo?.FullName,
+            WasExported = clip.ExportStatus == ClipExportStatus.Done &&
+                          clip.OutputFileInfo?.Exists == true
+        }).ToList(),
+        Queue = ExportQueue.Select(item => new ProjectQueueItem
+        {
+            Source = new ProjectSource { Path = item.SourceFilePath },
+            OutputFilePath = item.OutputFilePath,
+            StartTime = item.StartTimeSeconds,
+            EndTime = item.EndTimeSeconds,
+            StartPosition = item.StartPosition,
+            EndPosition = item.EndPosition
+        }).ToList(),
+        SelectedClipIndex = SelectedClip is null ? -1 : Clips.IndexOf(SelectedClip),
+        CurrentTime = includeThumbnails ? CurrentTime : 0,
+        TimelineZoomLevel = includeThumbnails ? TimelineViewport.ZoomLevel : 0,
+        TimelineViewStart = includeThumbnails ? TimelineViewport.ViewStart : 0
+    };
+
+    public bool HasUnsavedProjectChanges => _savedProjectState is null
+        ? Clips.Count > 0 || ExportQueue.Count > 0
+        : _savedProjectState != CutterProjectService.Serialize(CaptureProject(includeThumbnails: false));
+
+    private void MarkProjectCheckpoint() =>
+        _savedProjectState = CutterProjectService.Serialize(CaptureProject(includeThumbnails: false));
+
+    public async Task<bool> ConfirmProjectReplacementAsync()
+    {
+        if (!HasUnsavedProjectChanges) return true;
+        if (Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktopApp)
+            return false;
+        var result = await MessageBox.ShowDialog(desktopApp.MainWindow!,
+            LocalizationManager.Instance.String_Project_UnsavedChanges,
+            LocalizationManager.Instance.String_Project_Save,
+            MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+        return result switch
+        {
+            MessageBoxResult.Yes => await SaveProjectCoreAsync(saveAs: false),
+            MessageBoxResult.No => true,
+            _ => false
+        };
+    }
+
+    private async Task OpenVideoPathAsync(string path)
+    {
+        if (!await ConfirmProjectReplacementAsync()) return;
+        VideoPath = path;
+        if (await LoadVideoAsync() && ExportQueue.Count == 0)
+            MarkProjectCheckpoint();
+    }
+
+    private async Task RestoreProjectAsync(CutterProject project)
+    {
+        var currentSourceLength = project.Source is null ? 0 : new FileInfo(project.Source.Path).Length;
+        foreach (var saved in project.Clips)
+        {
+            var clip = new PickedClip
+            {
+                InFileInfo = new FileInfo(project.Source!.Path),
+                StartTime = saved.StartTime,
+                EndTime = saved.EndPosition < 0 ? DurationMax : saved.EndTime,
+                StartPts = saved.StartPts,
+                EndPts = saved.EndPts,
+                StartPosition = saved.StartPosition,
+                EndPosition = saved.EndPosition,
+                IsSelected = saved.IsSelected,
+                OutputFileInfo = saved.OutputFilePath is not null && File.Exists(saved.OutputFilePath)
+                    ? new FileInfo(saved.OutputFilePath) : null,
+                ExportStatus = CutterProjectService.IsSavedExportCurrent(
+                                   saved, project.Source.Length, currentSourceLength) &&
+                               saved.OutputFilePath is not null && File.Exists(saved.OutputFilePath)
+                    ? ClipExportStatus.Done : ClipExportStatus.Pending
+            };
+            clip.ReplaceStartThumbnail(DecodeProjectThumbnail(saved.StartThumbnailJpeg));
+            clip.ReplaceEndThumbnail(DecodeProjectThumbnail(saved.EndThumbnailJpeg));
+            Clips.Add(clip);
+        }
+
+        SelectedClip = project.SelectedClipIndex >= 0 ? Clips[project.SelectedClipIndex] : null;
+        _clipSelectionAnchor = SelectedClip;
+        NotifyClipSelectionChanged();
+
+        ExportQueue.Clear();
+        foreach (var saved in project.Queue)
+            ExportQueue.Add(new ExportQueueItem
+            {
+                QueueItemId = Interlocked.Increment(ref _queueIdCounter),
+                SourceFilePath = saved.Source.Path,
+                SourceFileName = Path.GetFileName(saved.Source.Path),
+                OutputFilePath = saved.OutputFilePath,
+                StartTimeSeconds = saved.StartTime,
+                EndTimeSeconds = saved.EndPosition < 0 ? -1 : saved.EndTime,
+                StartPosition = saved.StartPosition,
+                EndPosition = saved.EndPosition,
+                EstimatedBytes = Math.Max(0,
+                    (saved.EndPosition > 0 ? saved.EndPosition :
+                        new FileInfo(saved.Source.Path).Length) - saved.StartPosition)
+            });
+        _lastQueueOutputDirectory = ExportQueue.LastOrDefault() is { } last
+            ? Path.GetDirectoryName(last.OutputFilePath) : null;
+        NotifyQueueChanged();
+
+        if (IsVideoInitialized)
+        {
+            // The saved time is a navigation hint. Decode to a real keyframe before
+            // the user edits a boundary, so byte offsets and PTS stay in sync.
+            await SeekToTimeAndDrawFrameAsync(TimeSpan.FromSeconds(
+                Math.Clamp(project.CurrentTime, 0, DurationMax)));
+            TimelineViewport.SetZoomLevel(project.TimelineZoomLevel, CurrentTime);
+            TimelineViewport.ViewStart = project.TimelineViewStart;
+        }
+    }
+
+    private void NotifyQueueChanged()
+    {
+        OnPropertyChanged(nameof(HasExportQueue));
+        OnPropertyChanged(nameof(ExportQueueCount));
+        AddToQueueCommand.NotifyCanExecuteChanged();
+        ClearQueueCommand.NotifyCanExecuteChanged();
+        BatchExportQueueCommand.NotifyCanExecuteChanged();
+        SaveProjectCommand.NotifyCanExecuteChanged();
+        SaveProjectAsCommand.NotifyCanExecuteChanged();
+    }
+
+    private static string FormatProjectError(Exception exception) => exception switch
+    {
+        ProjectSourceChangedException changed => string.Format(
+            LocalizationManager.Instance.String_Project_SourceChanged, changed.SourcePath),
+        FileNotFoundException missing when missing.FileName is not null => string.Format(
+            LocalizationManager.Instance.String_Project_SourceMissing, missing.FileName),
+        InvalidDataException or System.Text.Json.JsonException =>
+            LocalizationManager.Instance.String_Project_Invalid,
+        _ => exception.Message
+    };
+
+    private static byte[]? EncodeProjectThumbnail(Bitmap? bitmap)
+    {
+        if (bitmap is null)
+            return null;
+        using var stream = new MemoryStream();
+        ImageUtil.SaveAsJpeg(bitmap, stream, quality: 80);
+        return stream.ToArray();
+    }
+
+    private static Bitmap? DecodeProjectThumbnail(byte[]? jpeg)
+    {
+        if (jpeg is null)
+            return null;
+        try
+        {
+            using var stream = new MemoryStream(jpeg, writable: false);
+            return new Bitmap(stream);
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"Unable to restore project thumbnail: {exception.Message}");
+            return null;
+        }
     }
 
     [RelayCommand]
@@ -1521,19 +1843,21 @@ public partial class MainWindowViewModel : ViewModelBase
         NotifyVideoCapabilityChanged();
     }
 
-    private async Task LoadVideoAsync()
+    private async Task<bool> LoadVideoAsync(VideoInstance? prepared = null)
     {
         try
         {
             await CompleteScrubPreviewAsync();
             ClearVars();
+            SetProjectPath(null);
             _videoInstance?.Close();
             await RunDecodeOperationAsync(async () =>
             {
-                _videoInstance = new VideoInstance(
+                _videoInstance = prepared ?? new VideoInstance(
                     VideoPath,
                     _configService.CurrentConfig.PreferHardwareDecoding);
-                await _videoInstance.InitVideoAsync();
+                if (prepared is null)
+                    await _videoInstance.InitVideoAsync();
                 UpdateDecodeMode();
                 VideoInfoText = _videoInstance.GetVideoInfoText();
                 DurationMax = _videoInstance.GetVideoDurationInSeconds();
@@ -1553,6 +1877,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 // 发送消息通知 View 执行 FitCommand
                 WeakReferenceMessenger.Default.Send(new FitMessage());
             });
+            return true;
         }
         catch (Exception e)
         {
@@ -1570,6 +1895,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     : FFmpegNativeBootstrapper.BuildLoadFailureMessage(e),
                 LocalizationManager.Instance.String_FailedToLoadVideo,
                 MessageBoxIcon.Error);
+            return false;
         }
     }
 
@@ -1612,22 +1938,26 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void DragOver(DragEventArgs? e)
     {
-        var filePath = CheckDropDataIsVideoFile(e);
+        var filePath = CheckDropFilePath(e);
         e!.DragEffects = filePath is not null ? DragDropEffects.Copy : DragDropEffects.None;
     }
 
     [RelayCommand]
     private async Task Drop(DragEventArgs? e)
     {
-        var filePath = CheckDropDataIsVideoFile(e);
+        var filePath = CheckDropFilePath(e);
         if (filePath is not null)
         {
-            VideoPath = filePath;
-            await LoadVideoAsync();
+            if (IsProjectFile(filePath))
+            {
+                await OpenProjectPathAsync(filePath);
+                return;
+            }
+            await OpenVideoPathAsync(filePath);
         }
     }
 
-    private string? CheckDropDataIsVideoFile(DragEventArgs? e)
+    private string? CheckDropFilePath(DragEventArgs? e)
     {
         if (e is null) return null;
         if (!e.Data.Contains(DataFormats.Files)) return null;
@@ -1645,6 +1975,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private static bool IsTsFile(string? path) =>
         string.Equals(Path.GetExtension(path), ".ts", StringComparison.OrdinalIgnoreCase);
+
+    private static bool IsProjectFile(string? path) =>
+        string.Equals(Path.GetExtension(path), ".tscut", StringComparison.OrdinalIgnoreCase);
 
     public void Close()
     {
@@ -1705,6 +2038,8 @@ public partial class MainWindowViewModel : ViewModelBase
         AddToQueueCommand.NotifyCanExecuteChanged();
         MergeSelectedClipsCommand.NotifyCanExecuteChanged();
         ExportAllCommand.NotifyCanExecuteChanged();
+        SaveProjectCommand.NotifyCanExecuteChanged();
+        SaveProjectAsCommand.NotifyCanExecuteChanged();
     }
 
     private void DisposeClipThumbnails()
@@ -1803,7 +2138,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var previousItem = ExportQueue.LastOrDefault();
         // 只有上一项确实偏离系统默认名称时，才把它当作用户的手工命名参照；如果用户
         // 始终沿用默认名称，则每个源文件继续独立生成文件名，仅记住输出目录。
-        var suggestedName = previousItem is not null && !FileNamesEqual(
+        var suggestedName = previousItem is not null && previousItem.EndTimeSeconds >= 0 && !FileNamesEqual(
             previousItem.OutputFileName,
             GenerateQueueFileName(
                 previousItem.SourceFilePath,

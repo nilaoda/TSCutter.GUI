@@ -3,7 +3,7 @@
     <x:String x:Key="String.PleaseLoadVideo">请加载视频</x:String>
     <x:String x:Key="String.PleaseLoadAVideo">请加载一个视频</x:String>
     <x:String x:Key="String.VideoNotInit">视频未初始化</x:String>
-    <x:String x:Key="String.DropToolTip">拖拽以加载视频</x:String>
+    <x:String x:Key="String.DropToolTip">拖放视频或工程以打开</x:String>
     <x:String x:Key="String.PleaseInputValidTime">请输入有效的时间</x:String>
     <x:String x:Key="String.WrongFormat">格式错误</x:String>
     <x:String x:Key="String.SaveFrame">保存帧</x:String>
@@ -30,6 +30,18 @@
     <x:String x:Key="String.Menu.Undo">撤销</x:String>
     <x:String x:Key="String.Menu.Redo">重做</x:String>
     <x:String x:Key="String.Menu.OpenVideo">打开视频(_O)...</x:String>
+    <x:String x:Key="String.Project.Open">打开工程...</x:String>
+    <x:String x:Key="String.Project.Save">保存工程</x:String>
+    <x:String x:Key="String.Project.SaveAs">工程另存为...</x:String>
+    <x:String x:Key="String.Project.Files">TSCutter 工程文件</x:String>
+    <x:String x:Key="String.Project.OpenFailed">无法打开工程：{0}</x:String>
+    <x:String x:Key="String.Project.SaveFailed">无法保存工程：{0}</x:String>
+    <x:String x:Key="String.Project.ReplaceConfirm">打开工程将替换当前剪辑和导出队列，是否继续？</x:String>
+    <x:String x:Key="String.Project.UnsavedChanges">工程有未保存的修改。是否先保存？选择“否”将放弃修改，选择“取消”将留在当前界面。</x:String>
+    <x:String x:Key="String.Project.FileEnd">文件末尾</x:String>
+    <x:String x:Key="String.Project.SourceMissing">找不到源文件：{0}</x:String>
+    <x:String x:Key="String.Project.SourceChanged">源文件已保存部分发生变化或文件缩短：{0}</x:String>
+    <x:String x:Key="String.Project.Invalid">工程文件或其中的剪辑范围无效。</x:String>
     <x:String x:Key="String.Menu.SaveClip">保存片段(_S)...</x:String>
     <x:String x:Key="String.Menu.ExportQueue">导出队列</x:String>
     <x:String x:Key="String.Menu.CloseVideo">关闭视频</x:String>

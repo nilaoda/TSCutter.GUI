@@ -15,6 +15,8 @@ public partial class MainWindow : ClassicWindow
 {
     private MainWindowViewModel ViewModel => (DataContext as MainWindowViewModel)!;
     private bool _restoreFocusOnActivation;
+    private bool _closePromptActive;
+    private bool _closeApproved;
     
     public MainWindow()
     {
@@ -49,8 +51,27 @@ public partial class MainWindow : ClassicWindow
         }
     }
 
-    private void Window_OnClosing(object? sender, WindowClosingEventArgs e)
+    private async void Window_OnClosing(object? sender, WindowClosingEventArgs e)
     {
+        if (!_closeApproved && ViewModel.HasUnsavedProjectChanges)
+        {
+            e.Cancel = true;
+            if (_closePromptActive) return;
+            _closePromptActive = true;
+            try
+            {
+                if (await ViewModel.ConfirmProjectReplacementAsync())
+                {
+                    _closeApproved = true;
+                    Close();
+                }
+            }
+            finally
+            {
+                _closePromptActive = false;
+            }
+            return;
+        }
         ViewModel.Close();
     }
 

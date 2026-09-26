@@ -3,7 +3,7 @@
     <x:String x:Key="String.PleaseLoadVideo">請載入影片</x:String>
     <x:String x:Key="String.PleaseLoadAVideo">請載入一個影片</x:String>
     <x:String x:Key="String.VideoNotInit">影片未初始化</x:String>
-    <x:String x:Key="String.DropToolTip">拖放以載入影片</x:String>
+    <x:String x:Key="String.DropToolTip">拖放影片或專案以開啟</x:String>
     <x:String x:Key="String.PleaseInputValidTime">請輸入有效的時間</x:String>
     <x:String x:Key="String.WrongFormat">格式錯誤</x:String>
     <x:String x:Key="String.SaveFrame">儲存影格</x:String>
@@ -30,6 +30,18 @@
     <x:String x:Key="String.Menu.Undo">復原</x:String>
     <x:String x:Key="String.Menu.Redo">重做</x:String>
     <x:String x:Key="String.Menu.OpenVideo">開啟影片(_O)...</x:String>
+    <x:String x:Key="String.Project.Open">開啟專案...</x:String>
+    <x:String x:Key="String.Project.Save">儲存專案</x:String>
+    <x:String x:Key="String.Project.SaveAs">專案另存新檔...</x:String>
+    <x:String x:Key="String.Project.Files">TSCutter 專案檔案</x:String>
+    <x:String x:Key="String.Project.OpenFailed">無法開啟專案：{0}</x:String>
+    <x:String x:Key="String.Project.SaveFailed">無法儲存專案：{0}</x:String>
+    <x:String x:Key="String.Project.ReplaceConfirm">開啟專案將取代目前的剪輯和匯出佇列，是否繼續？</x:String>
+    <x:String x:Key="String.Project.UnsavedChanges">專案有尚未儲存的變更。是否先儲存？選擇「否」將捨棄變更，選擇「取消」將留在目前畫面。</x:String>
+    <x:String x:Key="String.Project.FileEnd">檔案結尾</x:String>
+    <x:String x:Key="String.Project.SourceMissing">找不到來源檔案：{0}</x:String>
+    <x:String x:Key="String.Project.SourceChanged">來源檔案已儲存的部分發生變更或檔案縮短：{0}</x:String>
+    <x:String x:Key="String.Project.Invalid">專案檔案或其中的剪輯範圍無效。</x:String>
     <x:String x:Key="String.Menu.SaveClip">儲存片段(_S)...</x:String>
     <x:String x:Key="String.Menu.ExportQueue">匯出佇列</x:String>
     <x:String x:Key="String.Menu.CloseVideo">關閉影片</x:String>
