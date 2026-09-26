@@ -1938,14 +1938,14 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private void DragOver(DragEventArgs? e)
     {
-        var filePath = CheckDropFilePath(e);
+        var filePath = CheckDropFilePath(e, requireExistingFile: false);
         e!.DragEffects = filePath is not null ? DragDropEffects.Copy : DragDropEffects.None;
     }
 
     [RelayCommand]
     private async Task Drop(DragEventArgs? e)
     {
-        var filePath = CheckDropFilePath(e);
+        var filePath = CheckDropFilePath(e, requireExistingFile: true);
         if (filePath is not null)
         {
             if (IsProjectFile(filePath))
@@ -1957,7 +1957,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private string? CheckDropFilePath(DragEventArgs? e)
+    private string? CheckDropFilePath(DragEventArgs? e, bool requireExistingFile)
     {
         if (e is null) return null;
         if (!e.Data.Contains(DataFormats.Files)) return null;
@@ -1965,7 +1965,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var fileNames = e.Data.GetFiles()?.ToArray();
         if (fileNames is not { Length: > 0 }) return null;
         var filePath = fileNames[0].Path.LocalPath;
-        if (File.Exists(filePath)
+        if ((!requireExistingFile || File.Exists(filePath))
             && (string.IsNullOrWhiteSpace(VideoPath) || !PathsEqual(VideoPath, filePath)))
         {
             return filePath;
