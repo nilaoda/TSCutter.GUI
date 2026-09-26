@@ -68,6 +68,124 @@ public sealed class TsBinaryMergeServiceTests
     }
 
     [Fact]
+    public async Task ContentOverlapAcceptsDifferentContinuityCountersAndRewritesJoin()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var firstPath = Path.Combine(directory, "first.ts");
+            var secondPath = Path.Combine(directory, "second.ts");
+            var outputPath = Path.Combine(directory, "merged.ts");
+            await File.WriteAllBytesAsync(firstPath, CreatePackets(0, 200));
+            var second = CreatePackets(120, 180);
+            for (var offset = 0; offset < second.Length; offset += PacketSize)
+                second[offset + 3] = (byte)((second[offset + 3] & 0xF0) |
+                    ((second[offset + 3] + 5) & 0x0F));
+            await File.WriteAllBytesAsync(secondPath, second);
+
+            var service = new TsBinaryMergeService();
+            var exact = await service.AnalyzeOverlapsAsync(
+                [firstPath, secondPath], 200L * PacketSize);
+            Assert.True(exact.HasUnmatchedJoins);
+
+            var analysis = await service.AnalyzeOverlapsAsync(
+                [firstPath, secondPath], 200L * PacketSize,
+                mode: TsBinaryMergeMode.ContentOverlap);
+            var join = Assert.Single(analysis.Joins);
+            Assert.True(join.HasReliableOverlap);
+            Assert.Equal(80L * PacketSize, join.AppendOffset);
+
+            await service.MergeAsync([firstPath, secondPath], outputPath, analysis, false);
+            Assert.Equal(CreatePackets(0, 300), await File.ReadAllBytesAsync(outputPath));
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public async Task ContentOverlapFindsMatchAfterDifferentRecordingPrefix()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var firstPath = Path.Combine(directory, "first.ts");
+            var secondPath = Path.Combine(directory, "second.ts");
+            await File.WriteAllBytesAsync(firstPath, CreatePackets(0, 15_000));
+            var second = CreatePackets(8_000, 13_000);
+            for (var index = 0; index < 100; index++)
+                second[index * PacketSize + 4] ^= 0x7F;
+            await File.WriteAllBytesAsync(secondPath, second);
+
+            var analysis = await new TsBinaryMergeService().AnalyzeOverlapsAsync(
+                [firstPath, secondPath], 8_000L * PacketSize,
+                mode: TsBinaryMergeMode.ContentOverlap);
+
+            var join = Assert.Single(analysis.Joins);
+            Assert.True(join.HasReliableOverlap);
+            Assert.Equal(7_000L * PacketSize, join.AppendOffset);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public async Task ContentOverlapRejectsChangedPayloadWithinTheJoin()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var firstPath = Path.Combine(directory, "first.ts");
+            var secondPath = Path.Combine(directory, "second.ts");
+            await File.WriteAllBytesAsync(firstPath, CreatePackets(0, 200));
+            var second = CreatePackets(120, 180);
+            second[50 * PacketSize + 4] ^= 0x7F;
+            await File.WriteAllBytesAsync(secondPath, second);
+
+            var analysis = await new TsBinaryMergeService().AnalyzeOverlapsAsync(
+                [firstPath, secondPath], 200L * PacketSize,
+                mode: TsBinaryMergeMode.ContentOverlap);
+
+            Assert.True(analysis.HasUnmatchedJoins);
+            Assert.False(Assert.Single(analysis.Joins).HasReliableOverlap);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
+    public async Task ContentOverlapFallsBackToStartForShortOverlap()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var firstPath = Path.Combine(directory, "first.ts");
+            var secondPath = Path.Combine(directory, "second.ts");
+            await File.WriteAllBytesAsync(firstPath, CreatePackets(0, 10_000));
+            var second = CreatePackets(9_000, 15_000);
+            for (var offset = 0; offset < second.Length; offset += PacketSize)
+                second[offset + 3] ^= 0x05;
+            await File.WriteAllBytesAsync(secondPath, second);
+
+            var analysis = await new TsBinaryMergeService().AnalyzeOverlapsAsync(
+                [firstPath, secondPath], 2_000L * PacketSize,
+                mode: TsBinaryMergeMode.ContentOverlap);
+
+            Assert.Equal(1_000L * PacketSize, Assert.Single(analysis.Joins).AppendOffset);
+            Assert.False(analysis.HasUnmatchedJoins);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [Fact]
     public async Task UnmatchedJoinRequiresExplicitDirectAppendFallback()
     {
         var directory = CreateTemporaryDirectory();

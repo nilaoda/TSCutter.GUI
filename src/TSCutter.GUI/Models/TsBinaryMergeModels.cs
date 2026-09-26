@@ -3,6 +3,13 @@ using System.Collections.Generic;
 
 namespace TSCutter.GUI.Models;
 
+internal enum TsBinaryMergeMode
+{
+    Direct,
+    ExactOverlap,
+    ContentOverlap
+}
+
 internal enum TsBinaryMergeProgressPhase
 {
     Validating,
@@ -28,6 +35,7 @@ internal sealed class TsBinaryMergeJoinAnalysis
 
 internal sealed class TsBinaryMergeAnalysis
 {
+    public required TsBinaryMergeMode Mode { get; init; }
     public required IReadOnlyList<TsBinaryMergeSourceSnapshot> Sources { get; init; }
     public required IReadOnlyList<TsBinaryMergeJoinAnalysis> Joins { get; init; }
     public required long EstimatedOutputBytes { get; init; }
