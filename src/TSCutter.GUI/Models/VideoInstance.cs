@@ -25,6 +25,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     };
 
     private const int MAX_FAILURE_COUT = 100;
+    private const int FastPathNoFrameThreshold = 8;
     private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan KeyFrameProbeTimeout = TimeSpan.FromSeconds(5);
     private MediaReadDeadline? activeReadDeadline;
@@ -48,6 +49,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     private string hardwareDecoderName = string.Empty;
     private bool AudioMode { get; set; } = false;
     private bool hardwareDecoderOpened;
+    private bool useFullPacketDecoding;
     private readonly bool preferHardwareDecoding = enableHardwareDecoding && AppConfig.IsHardwareDecodingSupported;
     private readonly IGpuFramePresenter gpuFramePresenter = GpuFramePresenterFactory.CreateDefault();
     private readonly HostFramePresenter hostFramePresenter = new();
@@ -144,7 +146,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         Inited = true;
     }
 
-    private bool TryOpenHardwareDecoder()
+    private bool TryOpenHardwareDecoder(bool fullPacketDecoding = false)
     {
         foreach (var deviceType in GetHardwareDeviceCandidates())
         {
@@ -158,18 +160,21 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                 {
                     candidate = new CodecContext(decoder);
                     candidate.FillParameters(inVideoStream.Codecpar!);
-                    candidate.SkipFrame = AVDiscard.Nonkey;
+                    if (!fullPacketDecoding)
+                        candidate.SkipFrame = AVDiscard.Nonkey;
                     candidate.AttachHardwareDevice(deviceType);
                     candidate.Open();
                     ReplaceVideoDecoder(candidate);
                     candidate = null;
 
                     hardwareDecoderOpened = true;
+                    useFullPacketDecoding = fullPacketDecoding;
                     IsHardwareDecoding = true;
                     IsGpuPresentation = false;
                     PresentationMode = VideoPresentationMode.HardwareCpuTransfer;
                     hardwareDecoderName = GetHardwareDeviceDisplayName(deviceType);
-                    Console.WriteLine($"Hardware decoder opened: {decoder.Name} ({hardwareDecoderName})");
+                    Console.WriteLine($"Hardware decoder opened: {decoder.Name} ({hardwareDecoderName}, "
+                        + (fullPacketDecoding ? "full packets" : "key packets") + ")");
                     return true;
                 }
                 catch (Exception exception)
@@ -188,7 +193,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         return false;
     }
 
-    private bool TryOpenSoftwareDecoder()
+    private bool TryOpenSoftwareDecoder(bool fullPacketDecoding = false)
     {
         foreach (var decoder in softwareDecoders.AsEnumerable().Reverse())
         {
@@ -197,12 +202,14 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             {
                 candidate = new CodecContext(decoder);
                 candidate.FillParameters(inVideoStream.Codecpar!);
-                candidate.SkipFrame = AVDiscard.Nonkey;
+                if (!fullPacketDecoding)
+                    candidate.SkipFrame = AVDiscard.Nonkey;
                 candidate.Open();
                 ReplaceVideoDecoder(candidate);
                 candidate = null;
 
                 hardwareDecoderOpened = false;
+                useFullPacketDecoding = fullPacketDecoding;
                 IsHardwareDecoding = false;
                 IsGpuPresentation = false;
                 PresentationMode = VideoPresentationMode.SoftwareBitmap;
@@ -302,7 +309,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         return Task.Run(() => RunReadOperation(() =>
         {
             SeekToTime(timeSpan);
-            return DecodeNextFrame(1, cancellationToken, maxWidth, maxHeight);
+            return DecodeNextFrame(1, cancellationToken, maxWidth, maxHeight, isNavigation: false);
         }, cancellationToken), cancellationToken);
     }
 
@@ -348,7 +355,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     public async Task<DecodeResult> DecodeNextFrameAsync(int count = 1, CancellationToken cancellationToken = default)
     {
         return await Task.Run(() => RunReadOperation(
-            () => DecodeNextFrame(count, cancellationToken, 0, 0), cancellationToken), cancellationToken);
+            () => DecodeNextFrame(count, cancellationToken, 0, 0, isNavigation: true), cancellationToken), cancellationToken);
     }
 
     /// <summary>
@@ -363,30 +370,21 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             suppressSearchFrameLogs = true;
             try
             {
-                var failures = 0;
-                foreach (var packet in inFc.ReadPackets())
+                try
                 {
-                    try
-                    {
-                        cancellationToken.ThrowIfCancellationRequested();
-                        activeReadDeadline!.ThrowIfInterrupted();
-                        if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0 ||
-                            (packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
-                            continue;
-
-                        var result = DecodePacket(packet, packet.Position, cancellationToken, maxWidth, maxHeight);
-                        if (result is not null)
-                            return result;
-                        if (++failures > MAX_FAILURE_COUT)
-                            ThrowDecodeFailure();
-                    }
-                    finally
-                    {
-                        packet.Unref();
-                    }
+                    return DecodeNextSearchFrame(maxWidth, maxHeight, cancellationToken);
                 }
-                activeReadDeadline!.ThrowIfInterrupted();
-                return null;
+                catch (FullDecodeRequiredException exception)
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (!TryOpenSoftwareDecoder(fullPacketDecoding: true))
+                        ThrowDecodeFailure();
+
+                    // 从首次失败的关键包前预读，避免重新扫描已搜索过的长片段。
+                    Seek(Math.Max(0, (exception.ResumePts ?? lastSeekPts) - keyFrameGap * 2),
+                        AVSEEK_FLAG.Backward);
+                    return DecodeNextSearchFrame(maxWidth, maxHeight, cancellationToken);
+                }
             }
             finally
             {
@@ -395,11 +393,53 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         }, cancellationToken), cancellationToken);
     }
 
+    private DecodeResult? DecodeNextSearchFrame(
+        int maxWidth, int maxHeight, CancellationToken cancellationToken)
+    {
+        var failures = 0;
+        long? firstFailedKeyPts = null;
+        foreach (var packet in inFc.ReadPackets())
+        {
+            try
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                activeReadDeadline!.ThrowIfInterrupted();
+                if (packet.StreamIndex != videoStreamIndex
+                    || (!useFullPacketDecoding && packet.Pts < 0))
+                    continue;
+
+                var isKeyPacket = (packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0;
+                if (!useFullPacketDecoding && !isKeyPacket)
+                    continue;
+
+                var result = DecodePacket(packet, packet.Position, cancellationToken, maxWidth, maxHeight);
+                if (result is not null)
+                    return result;
+                if (!isKeyPacket)
+                    continue;
+
+                firstFailedKeyPts ??= packet.Pts;
+                if (++failures > MAX_FAILURE_COUT)
+                    ThrowDecodeFailure();
+                if (!useFullPacketDecoding && failures >= FastPathNoFrameThreshold)
+                    throw new FullDecodeRequiredException(firstFailedKeyPts);
+            }
+            finally
+            {
+                packet.Unref();
+            }
+        }
+
+        activeReadDeadline!.ThrowIfInterrupted();
+        return null;
+    }
+
     private DecodeResult DecodeNextFrame(
         int count,
         CancellationToken cancellationToken,
         int maxWidth,
-        int maxHeight)
+        int maxHeight,
+        bool isNavigation)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var anchorPts = currentKeyFramePts;
@@ -417,20 +457,56 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         catch (HardwareDecodeException exception)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            Console.WriteLine($"Hardware decoding failed, switching to software: {exception.InnerException?.Message ?? exception.Message}");
-            if (!TryOpenSoftwareDecoder())
-                throw;
+            Console.WriteLine($"Hardware decoding failed: {exception.InnerException?.Message ?? exception.Message}");
+            return DecodeWithFullPacketFallback(
+                count, anchorPts, isNavigation, cancellationToken, maxWidth, maxHeight,
+                tryHardwareFirst: !useFullPacketDecoding && exception.AllowFullPacketRetry,
+                failurePts: exception.RetryPts);
+        }
+        catch (FullDecodeRequiredException)
+        {
+            return DecodeWithFullPacketFallback(
+                count, anchorPts, isNavigation, cancellationToken, maxWidth, maxHeight);
+        }
+    }
 
-            // 普通“下一帧”不会更新 lastSeekPts，回退时必须结合失败帧和当前锚点计算恢复位置。
-            var fallbackSeekPts = ResolveHardwareFallbackSeekPts(
-                count,
-                anchorPts,
-                lastSeekPts,
-                exception.RetryPts);
-            Seek(fallbackSeekPts, count < 0 ? AVSEEK_FLAG.Backward : 0);
+    private DecodeResult DecodeWithFullPacketFallback(
+        int count, long anchorPts, bool isNavigation,
+        CancellationToken cancellationToken, int maxWidth, int maxHeight,
+        bool tryHardwareFirst = false, long? failurePts = null)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var targetPts = isNavigation
+            ? ResolveHardwareFallbackSeekPts(count, anchorPts, lastSeekPts, failurePts)
+            : lastSeekPts;
+        var selectionAnchorPts = count < 0 ? anchorPts : targetPts - 1;
+
+        // 快速硬解没有画面时，先让同一设备接收完整码流；设备仍失败才用软解。
+        if (tryHardwareFirst && TryOpenHardwareDecoder(fullPacketDecoding: true))
+        {
+            try
+            {
+                return DecodeFullPacketsFromTarget();
+            }
+            catch (HardwareDecodeException exception)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                Console.WriteLine($"Full-packet hardware decoding failed, switching to software: "
+                    + (exception.InnerException?.Message ?? exception.Message));
+            }
+        }
+
+        if (!TryOpenSoftwareDecoder(fullPacketDecoding: true))
+            ThrowDecodeFailure();
+        return DecodeFullPacketsFromTarget();
+
+        DecodeResult DecodeFullPacketsFromTarget()
+        {
+            var prerollPts = Math.Max(0, targetPts - keyFrameGap * 2);
+            Seek(prerollPts, AVSEEK_FLAG.Backward);
             return DecodeNextFrame(
                 count,
-                anchorPts,
+                selectionAnchorPts,
                 applyInitialSeek: false,
                 retryCount: 0,
                 cancellationToken: cancellationToken,
@@ -477,15 +553,18 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 activeReadDeadline?.ThrowIfInterrupted();
-                if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
+                if (packet.StreamIndex != videoStreamIndex
+                    || (!useFullPacketDecoding && packet.Pts < 0))
                     continue;
-                if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
+                var isKeyPacket = (packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0;
+                if (!useFullPacketDecoding && !isKeyPacket)
                 {
                     // Console.WriteLine($"Skip[NonKey] packet: {packet.Pts}");
                     continue;
                 }
 
-                Console.WriteLine($"Current packet: {packet.Pts}");
+                if (!useFullPacketDecoding)
+                    Console.WriteLine($"Current packet: {packet.Pts}");
                 // PositionInFile = packet.Position;
                 // Console.WriteLine($"Current packet positon: {packet.Position}");
 
@@ -510,7 +589,12 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                         break;
                     continue;
                 }
+                if (!isKeyPacket)
+                    continue;
                 failureCount++;
+                if (!useFullPacketDecoding && !hardwareDecoderOpened
+                    && failureCount >= FastPathNoFrameThreshold)
+                    throw new FullDecodeRequiredException();
                 // 硬解设备在首帧初始化失败时通常只返回空结果，不会抛出异常。
                 // 连续几个关键包都没有帧即可判定硬解链路不可用，及时切换软件解码。
                 if (failureCount > MAX_FAILURE_COUT
@@ -800,6 +884,10 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             foreach (var frame in videoDecoder.DecodePacket(packet, destRef, unref: false))
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                // 回退路径仍只向关键帧导航返回关键帧，但必须先喂入完整码流。
+                if (useFullPacketDecoding && !AudioMode
+                    && (frame.Flags & ffmpeg.AV_FRAME_FLAG_KEY) == 0)
+                    continue;
                 if (firstFrameTimestamp == -1)
                 {
                     firstFrameTimestamp = frame.BestEffortTimestamp;
@@ -888,7 +976,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                     if (exception is OperationCanceledException)
                         throw;
                     // 硬件帧无法回读通常表示设备链路失效，此时才立即切换软件解码器。
-                    throw new HardwareDecodeException(exception, pts);
+                    throw new HardwareDecodeException(exception, pts, allowFullPacketRetry: false);
                 }
                 {
                     IBitmapFrameLease? bitmapLease = null;
@@ -1049,9 +1137,16 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             codedHeight);
     }
 
-    private sealed class HardwareDecodeException(Exception innerException, long? retryPts = null)
+    private sealed class HardwareDecodeException(
+        Exception innerException, long? retryPts = null, bool allowFullPacketRetry = true)
         : Exception("Hardware decoding failed.", innerException)
     {
         public long? RetryPts { get; } = retryPts;
+        public bool AllowFullPacketRetry { get; } = allowFullPacketRetry;
+    }
+
+    private sealed class FullDecodeRequiredException(long? resumePts = null) : Exception
+    {
+        public long? ResumePts { get; } = resumePts;
     }
 }
