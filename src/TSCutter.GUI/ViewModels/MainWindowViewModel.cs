@@ -1402,9 +1402,9 @@ public partial class MainWindowViewModel : ViewModelBase
         TimelineViewStart = includeThumbnails ? TimelineViewport.ViewStart : 0
     };
 
-    public bool HasUnsavedProjectChanges => _savedProjectState is null
-        ? Clips.Count > 0 || ExportQueue.Count > 0
-        : _savedProjectState != CutterProjectService.Serialize(CaptureProject(includeThumbnails: false));
+    public bool HasUnsavedProjectChanges => _projectPath is not null &&
+        (_savedProjectState is null ||
+         _savedProjectState != CutterProjectService.Serialize(CaptureProject(includeThumbnails: false)));
 
     private void MarkProjectCheckpoint() =>
         _savedProjectState = CutterProjectService.Serialize(CaptureProject(includeThumbnails: false));
