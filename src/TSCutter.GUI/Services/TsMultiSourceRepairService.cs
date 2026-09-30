@@ -123,7 +123,7 @@ public sealed class TsMultiSourceRepairService
         result.Sources.AddRange(sources);
         var referenceStates = BuildReferenceTracks(reference, result.Tracks);
         var referencePcrCollector = normalizeTimeline
-            ? new ReferencePcrCollector(reference.Catalog.SyncOffset)
+            ? new ReferencePcrCollector(reference.Catalog.SyncOffset, reference.Catalog)
             : null;
 
         var scanOrdinal = 0;
@@ -1390,6 +1390,7 @@ public sealed class TsMultiSourceRepairService
                 observedState?.ObservePacket();
                 if (!TryParsePacket(packet, out var info))
                 {
+                    pcrCollector?.MarkTransportDamage(rawPid, fileOffset);
                     if (observedState is not null)
                     {
                         observedState.RecordDenseDamage(packet, fileOffset, null);
@@ -1413,7 +1414,15 @@ public sealed class TsMultiSourceRepairService
                     if (!info.TransportError)
                         serviceInformationContinuity[info.Pid] = info.ContinuityCounter;
                 }
-                pcrCollector?.Process(packet, info, fileOffset);
+                if (pcrCollector is not null)
+                {
+                    // 复用主扫描的连续性状态；目录探测不保存错误详情，不能依赖 Catalog.Events。
+                    if (info.TransportError || !info.Discontinuity && info.HasPayload &&
+                        observedState is { HasContinuity: true } &&
+                        info.ContinuityCounter != ((observedState.LastContinuityCounter + 1) & 15))
+                        pcrCollector.MarkTransportDamage(info.Pid, fileOffset);
+                    pcrCollector.Process(packet, info, fileOffset);
+                }
                 if (info.Pid == TsDvbTimeTableParser.Pid)
                 {
                     broadcastClock.ProcessPacket(packet, info, fileOffset, states.Values);
@@ -2273,13 +2282,61 @@ public sealed class TsMultiSourceRepairService
 
     private delegate void PacketHandler(ReadOnlySpan<byte> packet, long fileOffset);
 
-    private sealed class ReferencePcrCollector(long syncOffset)
+    private sealed class ReferencePcrCollector(long syncOffset, TsCheckResult catalog)
     {
         private readonly Dictionary<int, PcrState> _states = [];
+        private readonly Dictionary<int, long> _damageOffsets = [];
+        private readonly Dictionary<int, PcrContinuityState>? _independentPcrContinuity =
+            CreateIndependentPcrContinuity(catalog);
         public Dictionary<int, List<TsTimelineRepairService.PcrSample>> Samples { get; } = [];
+
+        private static Dictionary<int, PcrContinuityState>? CreateIndependentPcrContinuity(TsCheckResult catalog)
+        {
+            Dictionary<int, PcrContinuityState>? result = null;
+            foreach (var program in catalog.Programs.Values)
+            {
+                var pid = program.PcrPid;
+                if (pid is < 0 or >= 0x1FFF || result?.ContainsKey(pid) == true)
+                    continue;
+                var isMediaPid = false;
+                foreach (var other in catalog.Programs.Values)
+                    if (other.Streams.ContainsKey(pid))
+                    {
+                        isMediaPid = true;
+                        break;
+                    }
+                if (!isMediaPid)
+                    (result ??= []).TryAdd(pid, new PcrContinuityState());
+            }
+            return result;
+        }
+
+        public void MarkTransportDamage(int pid, long fileOffset)
+        {
+            _damageOffsets[pid] = fileOffset;
+            foreach (var program in catalog.Programs.Values)
+                if (program.Streams.ContainsKey(pid))
+                    _damageOffsets[program.PcrPid] = fileOffset;
+        }
 
         public void Process(ReadOnlySpan<byte> packet, TsPacketInfo info, long fileOffset)
         {
+            // 独立 PCR PID 不属于媒体轨道，主扫描没有其 CC 状态。只为这些 PID 保存
+            // 连续性基线，包含不携带 PCR 的负载包；普通媒体 PID 继续复用主扫描状态。
+            if (_independentPcrContinuity is not null &&
+                _independentPcrContinuity.TryGetValue(info.Pid, out var continuity))
+            {
+                if (info.TransportError || info.Discontinuity)
+                    continuity.HasContinuity = false;
+                if (!info.TransportError && info.HasPayload)
+                {
+                    if (continuity.HasContinuity &&
+                        info.ContinuityCounter != ((continuity.LastCounter + 1) & 15))
+                        MarkTransportDamage(info.Pid, fileOffset);
+                    continuity.LastCounter = info.ContinuityCounter;
+                    continuity.HasContinuity = true;
+                }
+            }
             if (info.TransportError || (packet[3] & 0x20) == 0)
                 return;
             var adaptationLength = packet[4];
@@ -2299,13 +2356,26 @@ public sealed class TsMultiSourceRepairService
             state.WrapOffset = unwrapped - raw;
             var packetIndex = Math.Max(0, (fileOffset - syncOffset) / PacketSize);
             Samples[info.Pid].Add(new TsTimelineRepairService.PcrSample(
-                packetIndex, unwrapped, info.Discontinuity));
+                packetIndex, unwrapped, info.Discontinuity,
+                TsTimelineRepairService.ReadDecodeTimestamp90k(packet, unwrapped))
+            {
+                TransportDamage = _damageOffsets.TryGetValue(info.Pid, out var damagedOffset) &&
+                                  damagedOffset > state.LastSampleOffset
+            });
+            state.LastSampleOffset = fileOffset;
         }
 
         private sealed class PcrState
         {
             public long LastRaw = long.MinValue;
             public long WrapOffset;
+            public long LastSampleOffset = -1;
+        }
+
+        private sealed class PcrContinuityState
+        {
+            public bool HasContinuity;
+            public int LastCounter;
         }
     }
 

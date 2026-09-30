@@ -20,10 +20,6 @@ public sealed class TsStreamAnalyzer
     private const int MaxMpegAudioProbeBytes = 64 * 1024;
     private const double PcrGapThresholdSeconds = 0.5;
     private const double TimestampJumpThresholdSeconds = 10;
-    private const long TimelineRepairBoundary90k = 22_500;
-    private const long TimelineImmediateCandidateThreshold90k = 90_000;
-    private const int PcrRateSampleWindow = 31;
-    private const int MinimumPcrRateSamples = 5;
     private const double AvDriftThresholdSeconds = 0.5;
     private const int AvSyncBaselineSampleCount = 5;
     private const int MaxTimelineBuckets = 4_096;
@@ -49,6 +45,7 @@ public sealed class TsStreamAnalyzer
     private long _pendingSyncLossBytes;
     private long _lastKnownClock90k = long.MinValue;
     private long _lastKnownPcr90k = long.MinValue;
+    private long _lastGlobalTransportDamagePacket = -1;
     private long _timelineOrigin90k = long.MinValue;
     private int _errorCount;
     private int _warningCount;
@@ -194,6 +191,7 @@ public sealed class TsStreamAnalyzer
         _pendingSyncLossBytes = 0;
         _lastKnownClock90k = long.MinValue;
         _lastKnownPcr90k = long.MinValue;
+        _lastGlobalTransportDamagePacket = -1;
         _timelineOrigin90k = long.MinValue;
         _errorCount = 0;
         _warningCount = 0;
@@ -374,7 +372,7 @@ public sealed class TsStreamAnalyzer
         }
 
         if (!pcrBytes.IsEmpty && NeedsPcrProcessing)
-            ProcessPcr(pid, pcrBytes, state, fileOffset, discontinuity);
+            ProcessPcr(pid, packet, state, fileOffset, discontinuity);
 
         // Null packet 的 CC 没有连续性语义，不参与丢包判断。
         if (!_options.InventoryOnly && HasFeature(TsStreamAnalyzeFeatures.ContinuityValidation) &&
@@ -412,6 +410,10 @@ public sealed class TsStreamAnalyzer
             {
                 state.Summary.DuplicatePackets++;
                 var same = packetBody.SequenceEqual(state.LastPacketBody);
+                // HLS 分片可以重复发送相同的 PAT/PMT 和相同 CC。已验证且字节完全相同
+                // 的表不代表媒体重复或丢包；不同负载和媒体 PID 仍按原规则报告。
+                if (same && (pid == 0 || _pmtPidPrograms.ContainsKey(pid)) && IsValidRepeatedTable(packet))
+                    return false;
                 if (!same)
                 {
                     // 相同 CC 却包含不同 payload 时无法判断哪一份属于当前 PES，放弃长度结算以免二次误报。
@@ -449,10 +451,26 @@ public sealed class TsStreamAnalyzer
         return true;
     }
 
-    private void ProcessPcr(int pid, ReadOnlySpan<byte> bytes, PidState state, long fileOffset, bool discontinuity)
+    private static bool IsValidRepeatedTable(ReadOnlySpan<byte> packet)
+    {
+        if ((packet[1] & 0x40) == 0)
+            return false;
+        var payloadOffset = (packet[3] & 0x20) == 0 ? 4 : 5 + packet[4];
+        if (payloadOffset >= packet.Length)
+            return false;
+        var sectionOffset = payloadOffset + 1 + packet[payloadOffset];
+        if (sectionOffset + 3 > packet.Length)
+            return false;
+        var sectionLength = 3 + ((packet[sectionOffset + 1] & 15) << 8) + packet[sectionOffset + 2];
+        return sectionLength >= 12 && sectionOffset + sectionLength <= packet.Length &&
+               packet[sectionOffset] is 0x00 or 0x02 &&
+               HasValidPsiCrc(packet.Slice(sectionOffset, sectionLength));
+    }
+
+    private void ProcessPcr(int pid, ReadOnlySpan<byte> packet, PidState state, long fileOffset, bool discontinuity)
     {
         // PCR base 与 PTS/DTS 同为 90 kHz，先展开 33 位回绕，再检查倒退、跳变和长间隔。
-        var raw = TsTimestampFieldCodec.ReadPcrBase(bytes);
+        var raw = TsTimestampFieldCodec.ReadPcrBase(packet.Slice(6, 5));
         var pcr = TsTimestampFieldCodec.UnwrapTimestamp(
             raw, state.LastRawPcr, state.PcrWrapOffset);
         state.LastRawPcr = raw;
@@ -463,54 +481,25 @@ public sealed class TsStreamAnalyzer
         if (!NeedsClockProcessing)
             return;
 
+        var decodeTimestamp = HasFeature(TsStreamAnalyzeFeatures.Timeline)
+            ? TsTimelineRepairService.ReadDecodeTimestamp90k(packet, pcr)
+            : null;
         if (HasFeature(TsStreamAnalyzeFeatures.Timeline) && !discontinuity &&
             state.LastPcr90k != long.MinValue && state.LastPcrPacketIndex >= 0)
         {
-            var packetDelta = _packetIndex - state.LastPcrPacketIndex;
             var clockDelta = pcr - state.LastPcr90k;
-            // 每个 PCR PID 独立维护轻量包速率基线，使多节目 TS 的非图表参考节目也能给出候选提示。
-            // 仅使用短且正向的正常间隔更新基线，与专用修复器筛选中位速率的条件保持一致。
-            if (packetDelta > 0 && state.PcrRateSampleCount >= MinimumPcrRateSamples)
-            {
-                var baseline = state.GetPcrRateMedian();
-                var rateError = Math.Abs(clockDelta - packetDelta * baseline);
-                if (rateError >= TimelineImmediateCandidateThreshold90k)
-                {
-                    // 明显的单次时钟跳变应立即保留候选，即使该间隔本身不属于正常 PCR 采样范围。
-                    _result.TimelineHasRepairCandidate = true;
-                }
-            }
-
-            if (packetDelta > 0 && clockDelta > 0 && clockDelta < 45_000)
-            {
-                var currentRate = clockDelta / (double)packetDelta;
-                // PCR 间隔受 TS 复用调度影响很大。使用近期正常样本的中位数建立基线，
-                // 不让单个分片边界或短间隔样本污染后续判断；异常样本不回灌窗口。
-                if (state.PcrRateSampleCount >= MinimumPcrRateSamples)
-                {
-                    var baseline = state.GetPcrRateMedian();
-                    var rateError = Math.Abs(clockDelta - packetDelta * baseline);
-                    if (rateError >= TimelineRepairBoundary90k)
-                    {
-                        // 单个 PCR 调度离群点不足以说明时间轴损坏；要求连续多个异常
-                        // 样本，避免 HLS 分片边界或复用抖动触发误报。
-                        state.PcrRateAnomalyCount++;
-                        if (state.PcrRateAnomalyCount >= 3)
-                            _result.TimelineHasRepairCandidate = true;
-                    }
-                    else
-                    {
-                        state.PcrRateAnomalyCount = 0;
-                        state.AddPcrRateSample(currentRate);
-                    }
-                }
-                else
-                {
-                    state.AddPcrRateSample(currentRate);
-                }
-            }
+            if (state.PcrCadence.TryGetInterval(out var expected) &&
+                Math.Abs(clockDelta - expected) >= TsPcrCadence.BoundaryThreshold90k &&
+                !(clockDelta >= expected + TsPcrCadence.BoundaryThreshold90k &&
+                  (HasTransportDamageSincePcr(pid, packet, state) ||
+                   decodeTimestamp is { } dts && state.LastPcrDecodeTimestamp is { } previousDts &&
+                   Math.Abs(dts - previousDts - clockDelta) <= 90)))
+                _result.TimelineHasRepairCandidate = true;
+            else
+                state.PcrCadence.Observe(clockDelta);
         }
         state.LastPcrPacketIndex = _packetIndex;
+        state.LastPcrDecodeTimestamp = decodeTimestamp;
 
         if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation) &&
             !discontinuity && state.LastPcr90k != long.MinValue)
@@ -544,6 +533,20 @@ public sealed class TsStreamAnalyzer
         if (HasFeature(TsStreamAnalyzeFeatures.AvSyncValidation) &&
             _pcrPidPrograms.TryGetValue(pid, out var programNumber))
             CheckAvSyncAtPcr(programNumber, pcr, fileOffset);
+    }
+
+    private bool HasTransportDamageSincePcr(int pid, ReadOnlySpan<byte> packet, PidState state)
+    {
+        if (_lastGlobalTransportDamagePacket > state.LastPcrPacketIndex ||
+            state.LastTransportDamagePacket > state.LastPcrPacketIndex)
+            return true;
+        if (_pcrPidPrograms.TryGetValue(pid, out var programNumber) &&
+            _programClocks.TryGetValue(programNumber, out var clock) &&
+            clock.LastTransportDamagePacket > state.LastPcrPacketIndex)
+            return true;
+        // PCR 先于连续性检查处理，也要检查当前带负载包的 CC，包含整 16 包丢失的冲突重复。
+        return state.HasContinuity && (packet[3] & 0x10) != 0 && packet[4] < 183 &&
+               (packet[3] & 15) != ((state.LastContinuityCounter + 1) & 15);
     }
 
     private void ObserveBitrateClock(int pid, long pcr90k, bool discontinuity)
@@ -1320,6 +1323,20 @@ public sealed class TsStreamAnalyzer
         if (_options.InventoryOnly)
             return;
 
+        if (TsTimelineRepairService.IsTransportDamage(type))
+        {
+            if (pid < 0)
+                _lastGlobalTransportDamagePacket = packetIndex;
+            else
+            {
+                GetPidState(pid).LastTransportDamagePacket = packetIndex;
+                if ((_streamPidPrograms.TryGetValue(pid, out var programNumber) ||
+                     _pcrPidPrograms.TryGetValue(pid, out programNumber)) &&
+                    _programClocks.TryGetValue(programNumber, out var clock))
+                    clock.LastTransportDamagePacket = packetIndex;
+            }
+        }
+
         if (severity == TsCheckSeverity.Error)
             _errorCount++;
         else if (severity == TsCheckSeverity.Warning)
@@ -1790,10 +1807,9 @@ public sealed class TsStreamAnalyzer
         public long PcrWrapOffset;
         public long LastPcr90k = long.MinValue;
         public long LastPcrPacketIndex = -1;
-        private readonly double[] _pcrRateSamples = new double[PcrRateSampleWindow];
-        public int PcrRateSampleCount { get; private set; }
-        public int PcrRateAnomalyCount { get; set; }
-        private int _pcrRateSampleIndex;
+        public long LastTransportDamagePacket = -1;
+        public long? LastPcrDecodeTimestamp;
+        public TsPcrCadence PcrCadence { get; } = new();
         public long LastRawPts = long.MinValue;
         public long PtsWrapOffset;
         public long LastPts90k = long.MinValue;
@@ -1835,32 +1851,11 @@ public sealed class TsStreamAnalyzer
             LastPcr90k = LastPts90k = LastDts90k = long.MinValue;
             PcrWrapOffset = PtsWrapOffset = DtsWrapOffset = 0;
             LastPcrPacketIndex = -1;
-            PcrRateSampleCount = 0;
-            _pcrRateSampleIndex = 0;
-            PcrRateAnomalyCount = 0;
+            LastPcrDecodeTimestamp = null;
+            PcrCadence.Reset();
             PesHeaderLength = 0;
             DiscardPes();
             MpegAudioProbeTailLength = 0;
-        }
-
-        public void AddPcrRateSample(double value)
-        {
-            _pcrRateSamples[_pcrRateSampleIndex] = value;
-            _pcrRateSampleIndex = (_pcrRateSampleIndex + 1) % PcrRateSampleWindow;
-            PcrRateSampleCount = Math.Min(PcrRateSampleCount + 1, PcrRateSampleWindow);
-        }
-
-        public double GetPcrRateMedian()
-        {
-            Span<double> values = stackalloc double[PcrRateSampleWindow];
-            for (var index = 0; index < PcrRateSampleCount; index++)
-            {
-                var sourceIndex = (_pcrRateSampleIndex - PcrRateSampleCount + index +
-                                   PcrRateSampleWindow) % PcrRateSampleWindow;
-                values[index] = _pcrRateSamples[sourceIndex];
-            }
-            values[..PcrRateSampleCount].Sort();
-            return values[PcrRateSampleCount / 2];
         }
 
         public void DiscardPes()
@@ -1883,6 +1878,7 @@ public sealed class TsStreamAnalyzer
         public Dictionary<int, int> SyncDriftCounts { get; } = [];
         public long LastSyncSamplePcr90k = long.MinValue;
         public long LastDriftReport90k = long.MinValue;
+        public long LastTransportDamagePacket = -1;
 
         public void ResetSync()
         {
