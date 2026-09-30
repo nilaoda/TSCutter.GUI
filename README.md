@@ -6,7 +6,7 @@
 
 TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It combines fast keyframe-based cutting with stream inspection, extraction, filtering, structural editing, repair, merging, and packet analysis tools, without transcoding the original audio or video.
 
-> The software is still under development and has not been officially released, so it may contain **MANY BUGS**.  
+> TSCutter.GUI is now in public **Beta**, starting with version **0.1.0**. Download the [latest release](https://github.com/nilaoda/TSCutter.GUI/releases/latest) and report problems through [GitHub Issues](https://github.com/nilaoda/TSCutter.GUI/issues). The software is still under development and may contain bugs.
 
 ## Features
 

@@ -17,18 +17,44 @@ env:
   FFMPEG_RUNTIME_OSX_ARM64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20260614/ffmpeg-runtime-osx-arm64-gpl-shared-7.1.3.zip
 
 jobs:
-  set-date:
+  release-info:
     runs-on: ubuntu-latest
     outputs:
-      date: ${{ steps.get_date.outputs.date }}
+      version: ${{ steps.metadata.outputs.version }}
+      stage: ${{ steps.metadata.outputs.stage }}
+      tag: ${{ steps.metadata.outputs.tag }}
     steps:
-      - name: Get Date in UTC+8
-        id: get_date
-        run: echo "date=$(date -u -d '8 hours' +'%Y%m%d')" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+      - name: Set up dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+      - name: Read release metadata
+        id: metadata
+        shell: bash
+        run: |
+          dotnet msbuild src/TSCutter.GUI/TSCutter.GUI.csproj -nologo -getProperty:Version,ReleaseStage,ReleaseTag > "$RUNNER_TEMP/release-info.json"
+          python3 - <<'PYTHON'
+          import json
+          import os
+          import re
+
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "release-info.json")) as source:
+              properties = json.load(source)["Properties"]
+          version = properties["Version"]
+          stage = properties["ReleaseStage"]
+          tag = properties["ReleaseTag"]
+          if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+              raise ValueError("Release version must contain three numeric components")
+          if stage != "Beta" or tag != f"v{version}":
+              raise ValueError("Unexpected Beta release metadata")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              output.write(f"version={version}\nstage={stage}\ntag={tag}\n")
+          PYTHON
 
   build-win-x64:
     runs-on: windows-latest
-    needs: set-date
+    needs: release-info
 
     steps:
       - uses: actions/checkout@v4
@@ -78,17 +104,18 @@ jobs:
       - name: Package [win-x64]
         run: |
           cd src/TSCutter.GUI/artifact
-          zip -r ../../../TSCutter.GUI_Alpha_win-x64_${{ needs.set-date.outputs.date }}.zip . -x "lib*" -x "av_*" -x "*.pdb"
+          zip -r ../../../TSCutter.GUI_${{ needs.release-info.outputs.stage }}_win-x64_${{ needs.release-info.outputs.version }}.zip . -x "lib*" -x "av_*" -x "*.pdb"
 
       - name: Upload Artifact [win-x64]
         uses: actions/upload-artifact@v4
         with:
           name: TSCutter.GUI_win-x64
-          path: TSCutter.GUI_Alpha_win-x64_${{ needs.set-date.outputs.date }}.zip
+          path: TSCutter.GUI_${{ needs.release-info.outputs.stage }}_win-x64_${{ needs.release-info.outputs.version }}.zip
+          retention-days: 1
 
   build-linux-x64:
     runs-on: ubuntu-latest
-    needs: set-date
+    needs: release-info
 
     steps:
       - run: sudo apt-get update
@@ -111,17 +138,18 @@ jobs:
       - name: Package [linux-x64]
         run: |
           cd artifact
-          zip -r ../TSCutter.GUI_Alpha_linux-x64_${{ needs.set-date.outputs.date }}.zip . -x "*.dbg"
+          zip -r ../TSCutter.GUI_${{ needs.release-info.outputs.stage }}_linux-x64_${{ needs.release-info.outputs.version }}.zip . -x "*.dbg"
 
       - name: Upload Artifact [linux-x64]
         uses: actions/upload-artifact@v4
         with:
           name: TSCutter.GUI_linux-x64
-          path: TSCutter.GUI_Alpha_linux-x64_${{ needs.set-date.outputs.date }}.zip
+          path: TSCutter.GUI_${{ needs.release-info.outputs.stage }}_linux-x64_${{ needs.release-info.outputs.version }}.zip
+          retention-days: 1
 
   build-mac-arm64:
     runs-on: macos-14
-    needs: set-date
+    needs: release-info
 
     steps:
       - uses: actions/checkout@v4
@@ -142,7 +170,7 @@ jobs:
           MACOS_DIR="$CONTENTS_DIR/MacOS"
           RESOURCES_DIR="$CONTENTS_DIR/Resources"
           ICON_SOURCE="$GITHUB_WORKSPACE/src/TSCutter.GUI/Assets/logo.png"
-          APP_VERSION="$(grep -m1 '<Version>' src/TSCutter.GUI/TSCutter.GUI.csproj | sed -E 's/.*<Version>([^<]+)<\/Version>.*/\1/')"
+          APP_VERSION="${{ needs.release-info.outputs.version }}"
 
           rm -rf "$APP_ROOT"
           mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
@@ -178,7 +206,7 @@ jobs:
             <key>CFBundleShortVersionString</key>
             <string>$APP_VERSION</string>
             <key>CFBundleVersion</key>
-            <string>${{ needs.set-date.outputs.date }}</string>
+            <string>${{ needs.release-info.outputs.version }}</string>
             <key>LSMinimumSystemVersion</key>
             <string>13.0</string>
             <key>NSHighResolutionCapable</key>
@@ -190,35 +218,35 @@ jobs:
       - name: Package [osx-arm64]
         run: |
           cd "$RUNNER_TEMP"
-          ditto -c -k --sequesterRsrc --keepParent "TSCutter.GUI.app" "$GITHUB_WORKSPACE/TSCutter.GUI_Alpha_osx-arm64_${{ needs.set-date.outputs.date }}.zip"
+          ditto -c -k --sequesterRsrc --keepParent "TSCutter.GUI.app" "$GITHUB_WORKSPACE/TSCutter.GUI_${{ needs.release-info.outputs.stage }}_osx-arm64_${{ needs.release-info.outputs.version }}.zip"
 
       - name: Upload Artifact [osx-arm64]
         uses: actions/upload-artifact@v4
         with:
           name: TSCutter.GUI_osx-arm64
-          path: TSCutter.GUI_Alpha_osx-arm64_${{ needs.set-date.outputs.date }}.zip
+          path: TSCutter.GUI_${{ needs.release-info.outputs.stage }}_osx-arm64_${{ needs.release-info.outputs.version }}.zip
+          retention-days: 1
 
   release:
     if: ${{ github.event.inputs.publish_release != 'false' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
-    needs: [build-win-x64, build-linux-x64, build-mac-arm64, set-date]
+    needs: [build-win-x64, build-linux-x64, build-mac-arm64, release-info]
 
     steps:
       - name: Fetch artifacts
         uses: actions/download-artifact@v4
 
-      - name: Get Release Time
-        id: get_release_time
-        run: echo "release_time=$(date -u -d '8 hours' +'%Y-%m-%d %H:%M:%S')" >> "$GITHUB_OUTPUT"
-
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
         with:
-          tag: alphabuild_${{ needs.set-date.outputs.date }}
-          name: Alpha-Build (${{ steps.get_release_time.outputs.release_time }})
+          tag: ${{ needs.release-info.outputs.tag }}
+          commit: ${{ github.sha }}
+          name: ${{ needs.release-info.outputs.stage }} ${{ needs.release-info.outputs.version }}
           artifacts: "TSCutter.GUI_linux-x64/*,TSCutter.GUI_osx-arm64/*,TSCutter.GUI_win-x64/*"
           draft: false
-          allowUpdates: true
+          prerelease: false
+          makeLatest: true
+          allowUpdates: false
           generateReleaseNotes: true

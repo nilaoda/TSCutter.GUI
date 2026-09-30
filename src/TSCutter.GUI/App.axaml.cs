@@ -18,7 +18,7 @@ namespace TSCutter.GUI;
 
 public partial class App : Application
 {
-    public const string CurrentTag = "alphabuild_20260928";
+    public static string CurrentTag => ReleaseInfo.Tag;
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
@@ -98,7 +98,7 @@ public partial class App : Application
         //     await _dialogService.ShowDialogAsync(this, viewModel);
         // }
         var latestTag = await VersionChecker.GetLatestTagAsync();
-        if (latestTag.Length > 0 && latestTag != CurrentTag && Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktopApp)
+        if (VersionChecker.IsNewerTag(latestTag, CurrentTag) && Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktopApp)
         {
             var result = await MessageBox.ShowDialog(desktopApp.MainWindow!,
                 string.Format(LocalizationManager.Instance.String_UpdatesInfo_NewVersionInfo, CurrentTag, latestTag)

@@ -6,7 +6,7 @@
 
 TSCutter.GUI 是一个跨平台 MPEG-TS 剪辑与诊断工具。它在快速关键帧剪辑之外，还提供流检查、提取、过滤、结构编辑、修复、合并和逐包分析能力，并且不会转码原始音视频。
 
-> 该软件仍在开发中，尚未正式发布，因此可能包含 **许多BUG**。
+> TSCutter.GUI 已进入公开 **Beta 测试阶段**，版本从 **0.1.0** 开始。请下载[最新版本](https://github.com/nilaoda/TSCutter.GUI/releases/latest)，并通过 [GitHub Issues](https://github.com/nilaoda/TSCutter.GUI/issues) 反馈问题。软件仍在开发中，可能存在缺陷。
 
 ## 功能
 
