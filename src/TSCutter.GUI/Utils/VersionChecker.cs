@@ -13,13 +13,31 @@ public static class VersionChecker
     private const string ReleaseUrl = "https://github.com/nilaoda/TSCutter.GUI/releases/latest";
     private const string ReleaseUrlPrefix = "https://github.com/nilaoda/TSCutter.GUI/releases/tag/";
 
+    internal static bool IsNewerTag(string candidateTag, string currentTag)
+    {
+        // Versioned Beta releases supersede the dated Alpha releases. Ignore legacy
+        // and unrecognized tags so a stale /latest response cannot suggest a downgrade.
+        return TryParseVersionTag(candidateTag, out var candidate)
+               && TryParseVersionTag(currentTag, out var current)
+               && candidate > current;
+    }
+
+    private static bool TryParseVersionTag(string tag, out Version? version)
+    {
+        version = null;
+        return !string.IsNullOrEmpty(tag) && tag[0] == 'v'
+               && Version.TryParse(tag.AsSpan(1), out version)
+               && version.Build >= 0 && version.Revision == -1;
+    }
+
     public static async Task<string> GetLatestTagAsync()
     {
         try
         {
             var redirctUrl = await Get302Async(ReleaseUrl);
-            var latestTag = redirctUrl.Replace(ReleaseUrlPrefix, "");
-            return latestTag;
+            return redirctUrl.StartsWith(ReleaseUrlPrefix, StringComparison.Ordinal)
+                ? redirctUrl[ReleaseUrlPrefix.Length..]
+                : "";
         }
         catch (Exception ex)
         {
@@ -61,7 +79,7 @@ public static class VersionChecker
         };
         var redirectedUrl = "";
         using var client = new HttpClient(handler);
-        using var response = await client.GetAsync(url);
+        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
         using var content = response.Content;
         if (response.StatusCode != HttpStatusCode.Found) return redirectedUrl;
         

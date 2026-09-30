@@ -34,7 +34,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ["ts", "m2ts", "mts", "mp4", "mkv", "mov", "avi", "webm", "m4v", "mpg", "mpeg", "wmv", "flv", "3gp"];
     private const int MaximumHistoryEntries = 100;
     private const int MaximumHistoryThumbnailEntries = 4;
-    private string TitleInfo => $"TSCutter.GUI - Alpha.{App.CurrentTag.Split('_').Last()}";
+    private static string TitleInfo => ReleaseInfo.WindowTitle;
 
     private static string PleaseLoadTip => LocalizationManager.Instance.String_PleaseLoadVideo;
     public string WindowTitle
