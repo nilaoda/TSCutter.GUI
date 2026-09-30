@@ -31,6 +31,7 @@
         <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Vertical" Spacing="2">
             <TextBlock Text="{Binding AppName}" FontWeight="Bold" />
             <TextBlock Text="{Binding AppVersion}" />
+            <TextBlock Text="{Binding BuildDate}" />
             <TextBlock Text="{Binding Copyright}" />
         </StackPanel>
 

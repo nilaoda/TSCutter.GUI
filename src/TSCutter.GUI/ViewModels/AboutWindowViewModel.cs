@@ -16,6 +16,7 @@ public partial class AboutWindowViewModel : ViewModelBase, IModalDialogViewModel
     public string ProjectUrl => "https://github.com/nilaoda/TSCutter.GUI";
     public string AppName => "TSCutter.GUI";
     public string AppVersion => ReleaseInfo.AboutVersion;
+    public string BuildDate => ReleaseInfo.BuildDate;
     public string Copyright => "nilaoda";
 
     public List<LibraryDesc> AllLibraries =>

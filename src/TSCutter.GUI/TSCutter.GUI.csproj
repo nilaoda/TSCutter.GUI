@@ -2,6 +2,8 @@
     <PropertyGroup>
         <AssemblyName>TSCutterGUI</AssemblyName>
         <Version>0.1.0</Version>
+        <!-- Refresh BuildDate when updating Version. -->
+        <BuildDate>2026-10-01</BuildDate>
         <ReleaseStage>Beta</ReleaseStage>
         <ReleaseTag>v$(Version)</ReleaseTag>
         <OutputType>WinExe</OutputType>
@@ -17,6 +19,7 @@
 
     <ItemGroup>
         <AssemblyMetadata Include="ReleaseVersion" Value="$(Version)" />
+        <AssemblyMetadata Include="BuildDate" Value="$(BuildDate)" />
         <AssemblyMetadata Include="ReleaseStage" Value="$(ReleaseStage)" />
         <AssemblyMetadata Include="ReleaseTag" Value="$(ReleaseTag)" />
     </ItemGroup>

@@ -7,6 +7,7 @@ namespace TSCutter.GUI.Utils;
 internal static class ReleaseInfo
 {
     public static readonly string Version;
+    public static readonly string BuildDate;
     public static readonly string Stage;
     public static readonly string Tag;
     public static readonly string WindowTitle;
@@ -19,12 +20,14 @@ internal static class ReleaseInfo
             switch (attribute.Key)
             {
                 case "ReleaseVersion": Version = attribute.Value!; break;
+                case "BuildDate": BuildDate = attribute.Value!; break;
                 case "ReleaseStage": Stage = attribute.Value!; break;
                 case "ReleaseTag": Tag = attribute.Value!; break;
             }
         }
 
-        if (string.IsNullOrEmpty(Version) || string.IsNullOrEmpty(Stage) || string.IsNullOrEmpty(Tag))
+        if (string.IsNullOrEmpty(Version) || string.IsNullOrEmpty(BuildDate)
+            || string.IsNullOrEmpty(Stage) || string.IsNullOrEmpty(Tag))
             throw new InvalidOperationException("Release metadata is missing from the application assembly.");
 
         WindowTitle = $"TSCutter.GUI - {Stage} {Version}";
