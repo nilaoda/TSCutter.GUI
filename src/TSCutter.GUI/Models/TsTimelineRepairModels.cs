@@ -58,27 +58,38 @@ internal sealed class TsTimelineCorrectionSegment
     public required long EndPacketExclusive { get; init; }
     public required long StartAnchorPacket { get; init; }
     public required long EndAnchorPacket { get; init; }
-    public required long StartAnchorPcr90k { get; init; }
-    public required long EndAnchorPcr90k { get; init; }
     public required long ConstantOffset90k { get; init; }
-    public required long TimestampStartCorrection90k { get; init; }
-    public required long TimestampEndCorrection90k { get; init; }
     public required bool UseInterpolation { get; init; }
     public required bool AffectsStreamTimestamps { get; init; }
+    public TsTimelineCorrectionPoint[] CorrectionPoints { get; init; } = [];
 
-    public long GetCorrection90k(long packetIndex, long current90k)
+    public long GetCorrection90k(long packetIndex)
     {
         if (packetIndex < StartPacket || packetIndex >= EndPacketExclusive)
             return 0;
         if (!UseInterpolation || EndAnchorPacket <= StartAnchorPacket)
             return ConstantOffset90k;
 
-        var ratio = (packetIndex - StartAnchorPacket) / (double)(EndAnchorPacket - StartAnchorPacket);
-        var expected = StartAnchorPcr90k +
-                       (long)Math.Round((EndAnchorPcr90k - StartAnchorPcr90k) * ratio);
-        return expected - current90k;
+        // 插值的是独立修正量，而非原始锚点的绝对 PCR；这样不会取消其他持续区段的修正。
+        var low = 0;
+        var high = CorrectionPoints.Length - 1;
+        while (low + 1 < high)
+        {
+            var middle = (low + high) / 2;
+            if (CorrectionPoints[middle].PacketIndex <= packetIndex)
+                low = middle;
+            else
+                high = middle;
+        }
+        var before = CorrectionPoints[low];
+        var after = CorrectionPoints[high];
+        var ratio = (packetIndex - before.PacketIndex) / (double)(after.PacketIndex - before.PacketIndex);
+        return before.Correction90k +
+               (long)Math.Round((after.Correction90k - before.Correction90k) * ratio);
     }
 }
+
+internal readonly record struct TsTimelineCorrectionPoint(long PacketIndex, long Correction90k);
 
 public readonly record struct TsTimelineRepairProgress(
     long BytesProcessed,

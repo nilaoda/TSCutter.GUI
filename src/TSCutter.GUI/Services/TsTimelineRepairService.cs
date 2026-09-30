@@ -15,7 +15,7 @@ public sealed class TsTimelineRepairService
 {
     private const int PacketSize = TsStreamAnalyzer.PacketSize;
     private const int ReadPacketCount = 32_768;
-    private const long BoundaryThreshold90k = 22_500;
+    private const long BoundaryThreshold90k = TsPcrCadence.BoundaryThreshold90k;
     private const long PairMinimumTolerance90k = 9_000;
     private const double MaximumPairedDurationSeconds = 120;
     private const int MinimumDriftIntervals = 20;
@@ -77,7 +77,10 @@ public sealed class TsTimelineRepairService
             CheckResult = checkResult
         };
         foreach (var pair in samples)
+        {
             BuildPidPlan(pair.Key, pair.Value, checkResult, analysis);
+            ValidatePidPlan(pair.Key, pair.Value, analysis);
+        }
         return analysis;
     }
 
@@ -151,7 +154,7 @@ public sealed class TsTimelineRepairService
                             rawPcr90k, state.LastRawPcr90k, state.WrapOffset90k);
                         state.LastRawPcr90k = rawPcr90k;
                         state.WrapOffset90k = unwrapped - rawPcr90k;
-                        var correction = FindCorrection(analysis.Segments, pid, packetIndex, unwrapped);
+                        var correction = FindCorrection(analysis.Segments, pid, packetIndex);
                         var corrected = unwrapped + correction;
                         if (correction != 0)
                         {
@@ -297,7 +300,7 @@ public sealed class TsTimelineRepairService
                 state.LastRawPcr90k = rawPcr90k;
                 state.WrapOffset90k = unwrapped - rawPcr90k;
                 var correction = applyPcrCorrection
-                    ? FindCorrection(_segments, pid, packetIndex, unwrapped)
+                    ? FindCorrection(_segments, pid, packetIndex)
                     : 0;
                 var corrected = unwrapped + correction;
                 if (correction != 0)
@@ -368,7 +371,8 @@ public sealed class TsTimelineRepairService
                         rawPcr90k, state.LastRawPcr90k, state.WrapOffset90k);
                     state.LastRawPcr90k = rawPcr90k;
                     state.WrapOffset90k = unwrapped - rawPcr90k;
-                    result[pid].Add(new PcrSample(packetIndex, unwrapped, discontinuity));
+                    result[pid].Add(new PcrSample(packetIndex, unwrapped, discontinuity,
+                        ReadDecodeTimestamp90k(packet, unwrapped)));
                 }
 
                 buffered -= completeBytes;
@@ -398,86 +402,279 @@ public sealed class TsTimelineRepairService
     {
         if (samples.Count < 3)
             return;
-        var rates = new List<double>(samples.Count - 1);
+        var intervals = new List<long>(samples.Count - 1);
         for (var index = 1; index < samples.Count; index++)
         {
-            var packetDelta = samples[index].PacketIndex - samples[index - 1].PacketIndex;
             var clockDelta = samples[index].Pcr90k - samples[index - 1].Pcr90k;
-            if (!samples[index].Discontinuity && packetDelta > 0 && clockDelta > 0 && clockDelta < 45_000)
-                rates.Add(clockDelta / (double)packetDelta);
+            if (!samples[index].Discontinuity && clockDelta > 0 && clockDelta < 45_000)
+                intervals.Add(clockDelta);
         }
-        if (rates.Count == 0)
+        intervals.Sort();
+        if (!TsPcrCadence.TryGetInterval(System.Runtime.InteropServices.CollectionsMarshal.AsSpan(intervals),
+                out var interval90k))
             return;
-        rates.Sort();
-        var ticksPerPacket = rates[rates.Count / 2];
-        var errors = new double[samples.Count];
+        MarkTransportDamageIntervals(pid, samples, checkResult);
         var boundaries = new List<int>();
         for (var index = 1; index < samples.Count; index++)
         {
-            var expected = (samples[index].PacketIndex - samples[index - 1].PacketIndex) * ticksPerPacket;
-            errors[index] = samples[index].Pcr90k - samples[index - 1].Pcr90k - expected;
-            if (!samples[index].Discontinuity && Math.Abs(errors[index]) >= BoundaryThreshold90k)
+            if (samples[index].Discontinuity)
+                continue;
+            if (Math.Abs(GetIntervalError(samples, index, interval90k)) >= BoundaryThreshold90k)
                 boundaries.Add(index);
         }
-
-        var consumed = new HashSet<int>();
+        if (boundaries.Count == 0)
+            return;
+        // 部分广播流在规则采样之间还插入短 PCR，按中位周期累计会有系统性偏差。
+        // 正常短间隔的均值仅用于估计回溯的不确定度，不用包速率推断时钟。
+        long normalSum = 0;
+        var normalCount = 0;
+        var upperNormalInterval = interval90k + Math.Max(90, interval90k / 20);
+        foreach (var interval in intervals)
+        {
+            if (interval > upperNormalInterval)
+                break;
+            normalSum += interval;
+            normalCount++;
+        }
+        var cadenceBias90k = Math.Abs(interval90k - normalSum / (double)normalCount);
+        var lastBoundary = 0;
+        var nextDiscontinuity = 0;
         for (var boundaryIndex = 0; boundaryIndex < boundaries.Count; boundaryIndex++)
         {
             var first = boundaries[boundaryIndex];
-            if (consumed.Contains(first))
-                continue;
+            var firstError = GetIntervalError(samples, first, interval90k);
             var paired = -1;
-            for (var candidateIndex = boundaryIndex + 1; candidateIndex < boundaries.Count; candidateIndex++)
+            if (boundaryIndex + 1 < boundaries.Count)
             {
-                var candidate = boundaries[candidateIndex];
-                var estimatedDuration =
-                    (samples[candidate].PacketIndex - samples[first].PacketIndex) * ticksPerPacket / 90_000.0;
-                if (estimatedDuration > MaximumPairedDurationSeconds)
-                    break;
-                if (Math.Sign(errors[first]) == Math.Sign(errors[candidate]))
-                    continue;
+                var candidate = boundaries[boundaryIndex + 1];
+                var estimatedDuration = (candidate - first) * interval90k / 90_000.0;
+                var candidateError = GetIntervalError(samples, candidate, interval90k);
                 var tolerance = Math.Max(PairMinimumTolerance90k,
-                    Math.Max(Math.Abs(errors[first]), Math.Abs(errors[candidate])) * 0.05);
-                if (Math.Abs(errors[first] + errors[candidate]) <= tolerance)
-                {
+                    Math.Max(Math.Abs(firstError), Math.Abs(candidateError)) * 0.05);
+                // 只配对相邻边界，不能跨过其他独立异常寻找远处的闭合点。
+                if (estimatedDuration <= MaximumPairedDurationSeconds &&
+                    Math.Sign(firstError) != Math.Sign(candidateError) &&
+                    Math.Abs(firstError + candidateError) <= tolerance &&
+                    !HasUncertainInterval(samples, first, candidate) &&
+                    IsStableTemporaryOffset(samples, first, candidate, interval90k, tolerance))
                     paired = candidate;
-                    break;
-                }
             }
 
             if (paired > first)
             {
                 AddInterpolatedSegment(pid, samples, first, paired,
-                    TsTimelineIssueKind.TemporaryPcrOffset, errors[first], ticksPerPacket,
+                    TsTimelineIssueKind.TemporaryPcrOffset, firstError,
                     checkResult, analysis);
-                consumed.Add(first);
-                consumed.Add(paired);
+                boundaryIndex++;
+                lastBoundary = paired;
                 continue;
             }
 
-            if (TryFindDriftStart(samples, errors, ticksPerPacket, first, out var driftStart))
+            if (TryFindDriftStart(samples, interval90k, cadenceBias90k,
+                    first, lastBoundary + 1, out var driftStart))
             {
                 AddInterpolatedSegment(pid, samples, driftStart, first,
-                    TsTimelineIssueKind.GradualPcrDrift, errors[first], ticksPerPacket,
+                    TsTimelineIssueKind.GradualPcrDrift, firstError,
                     checkResult, analysis);
-                consumed.Add(first);
+                lastBoundary = first;
                 continue;
             }
 
-            AddPersistentSegment(pid, samples, first, errors[first], ticksPerPacket, checkResult, analysis);
-            consumed.Add(first);
+            // 下一显式边界只向前查找一次，避免每个持续段反复扫描文件余下样本。
+            if (nextDiscontinuity >= 0 && nextDiscontinuity <= first)
+                nextDiscontinuity = samples.FindIndex(first + 1, static sample => sample.Discontinuity);
+            AddPersistentSegment(pid, samples, first, nextDiscontinuity, firstError, checkResult, analysis);
+            lastBoundary = first;
         }
+    }
+
+    private static long GetIntervalError(List<PcrSample> samples, int index, long interval90k)
+    {
+        var clockDelta = samples[index].Pcr90k - samples[index - 1].Pcr90k;
+        // 丢包会同时丢掉中间 PCR；长正向间隔不能作为压缩缺失内容的依据。
+        if (clockDelta >= interval90k + BoundaryThreshold90k && samples[index].TransportDamage)
+            return 0;
+        // PCR 和同包 DTS 一起正向跨越时，可能只是缺少采样或媒体内容，不能压缩时间。
+        if (clockDelta >= interval90k + BoundaryThreshold90k &&
+            samples[index].DecodeTimestamp90k is { } dts &&
+            samples[index - 1].DecodeTimestamp90k is { } previousDts &&
+            Math.Abs(dts - previousDts - clockDelta) <= 90)
+            return 0;
+        return clockDelta - interval90k;
+    }
+
+    internal static bool IsTransportDamage(TsCheckEventType type) =>
+        type is TsCheckEventType.ContinuityGap or TsCheckEventType.ConflictingDuplicate or
+            TsCheckEventType.TransportError or TsCheckEventType.SyncLoss or TsCheckEventType.InvalidPacketHeader;
+
+    private static void MarkTransportDamageIntervals(int pid, List<PcrSample> samples, TsCheckResult checkResult)
+    {
+        List<TsCheckEvent>? damage = null;
+        foreach (var item in checkResult.Events)
+        {
+            if (!IsTransportDamage(item.Type))
+                continue;
+            var related = item.Pid < 0 || item.Pid == pid;
+            if (!related)
+                foreach (var program in checkResult.Programs.Values)
+                    if (program.PcrPid == pid && program.Streams.ContainsKey(item.Pid))
+                    {
+                        related = true;
+                        break;
+                    }
+            if (related)
+                (damage ??= []).Add(item);
+        }
+        if (damage is null && checkResult.OmittedEventCount == 0)
+            return;
+        damage?.Sort(static (left, right) => left.StartPacket.CompareTo(right.StartPacket));
+        var next = 0;
+        long damagedThrough = -1;
+        for (var index = 1; index < samples.Count; index++)
+        {
+            var sample = samples[index];
+            while (damage is not null && next < damage.Count && damage[next].StartPacket <= sample.PacketIndex)
+            {
+                var item = damage[next++];
+                damagedThrough = Math.Max(damagedThrough, Math.Max(item.StartPacket, item.EndPacket));
+            }
+            // 详情被截断时无法排除未记录的丢包，保守地保留正向缺口。
+            if (damagedThrough > samples[index - 1].PacketIndex || checkResult.OmittedEventCount > 0)
+                samples[index] = sample with { TransportDamage = true };
+        }
+    }
+
+    private static bool HasUncertainInterval(List<PcrSample> samples, int start, int end)
+    {
+        for (var index = start; index <= end; index++)
+            if (samples[index].Discontinuity || samples[index].TransportDamage)
+                return true;
+        return false;
+    }
+
+    private static bool IsStableTemporaryOffset(
+        List<PcrSample> samples, int start, int end, long interval90k, double tolerance)
+    {
+        long accumulated = 0;
+        for (var index = start + 1; index < end; index++)
+        {
+            accumulated += GetIntervalError(samples, index, interval90k);
+            if (Math.Abs(accumulated) > tolerance)
+                return false;
+        }
+        return true;
+    }
+
+    private static void ValidatePidPlan(int pid, List<PcrSample> samples, TsTimelineRepairAnalysis analysis)
+    {
+        var segments = analysis.Segments.Where(item => item.PcrPid == pid).ToList();
+        if (segments.Count == 0)
+            return;
+        segments.Sort(static (left, right) => left.StartPacket.CompareTo(right.StartPacket));
+        var nextSegment = 0;
+        long constantCorrection = 0, constantTimestampCorrection = 0;
+        // 常量段只在开始/结束边界更新累计值，持续到文件末尾的段不占用结束队列。
+        var endingConstants = new PriorityQueue<TsTimelineCorrectionSegment, long>();
+        List<TsTimelineCorrectionSegment>? interpolated = null;
+        long? mediaOffset = null;
+        long? previousCorrected = null;
+        for (var index = 0; index < samples.Count; index++)
+        {
+            var sample = samples[index];
+            while (endingConstants.TryPeek(out _, out var end) && end <= sample.PacketIndex)
+            {
+                var segment = endingConstants.Dequeue();
+                constantCorrection -= segment.ConstantOffset90k;
+                if (segment.AffectsStreamTimestamps)
+                    constantTimestampCorrection -= segment.ConstantOffset90k;
+            }
+            while (nextSegment < segments.Count && segments[nextSegment].StartPacket <= sample.PacketIndex)
+            {
+                var segment = segments[nextSegment++];
+                if (segment.EndPacketExclusive <= sample.PacketIndex)
+                    continue;
+                if (segment.UseInterpolation)
+                {
+                    (interpolated ??= []).Add(segment);
+                    continue;
+                }
+                constantCorrection += segment.ConstantOffset90k;
+                if (segment.AffectsStreamTimestamps)
+                    constantTimestampCorrection += segment.ConstantOffset90k;
+                if (segment.EndPacketExclusive != long.MaxValue)
+                    endingConstants.Enqueue(segment, segment.EndPacketExclusive);
+            }
+            long correction = constantCorrection, timestampCorrection = constantTimestampCorrection;
+            // 只遍历当前有效的渐进段；构造方案时已禁止渐进段互相重叠。
+            for (var active = (interpolated?.Count ?? 0) - 1; active >= 0; active--)
+            {
+                var segment = interpolated![active];
+                if (segment.EndPacketExclusive <= sample.PacketIndex)
+                {
+                    interpolated.RemoveAt(active);
+                    continue;
+                }
+                var value = segment.GetCorrection90k(sample.PacketIndex);
+                correction += value;
+                if (segment.AffectsStreamTimestamps)
+                    timestampCorrection += value;
+            }
+            var corrected = sample.Pcr90k + correction;
+            if (sample.Discontinuity)
+                mediaOffset = null;
+            if (!sample.Discontinuity && previousCorrected is { } previous)
+            {
+                var rawDelta = sample.Pcr90k - samples[index - 1].Pcr90k;
+                var correctedDelta = corrected - previous;
+                if (correctedDelta < Math.Min(-90, rawDelta) || correctedDelta <= 0 && rawDelta > 0 ||
+                    correctedDelta > Math.Max(45_000, rawDelta))
+                {
+                    Reject();
+                    return;
+                }
+            }
+            if (sample.DecodeTimestamp90k is { } dts)
+            {
+                mediaOffset ??= dts - sample.Pcr90k;
+                var rawError = Math.Abs(dts - sample.Pcr90k - mediaOffset.Value);
+                var correctedError = Math.Abs(dts + timestampCorrection - corrected - mediaOffset.Value);
+                if (correctedError > rawError + 90)
+                {
+                    Reject();
+                    return;
+                }
+            }
+            previousCorrected = corrected;
+        }
+
+        void Reject()
+        {
+            // 使用已收集的样本预演，不再读取素材；不交付会新增时钟异常的自动方案。
+            analysis.Segments.RemoveAll(item => item.PcrPid == pid);
+            analysis.Issues.RemoveAll(item => item.PcrPid == pid);
+        }
+    }
+
+    internal static long? ReadDecodeTimestamp90k(ReadOnlySpan<byte> packet, long pcr90k)
+    {
+        if (!TsTimestampFieldCodec.TryLocatePesTimestamps(packet, out _, out var dtsOffset) || dtsOffset < 0)
+            return null;
+        var rawDts = TsTimestampFieldCodec.ReadPesTimestamp(packet.Slice(dtsOffset, 5));
+        var rawPcr = pcr90k & ((1L << 33) - 1);
+        return TsTimestampFieldCodec.UnwrapTimestamp(rawDts, rawPcr, pcr90k - rawPcr);
     }
 
     private static bool TryFindDriftStart(
         List<PcrSample> samples,
-        double[] errors,
-        double ticksPerPacket,
+        long interval90k,
+        double cadenceBias90k,
         int boundary,
+        int minimumStart,
         out int start)
     {
         start = boundary;
-        if (boundary <= MinimumDriftIntervals || errors[boundary] == 0)
+        var boundaryError = GetIntervalError(samples, boundary, interval90k);
+        if (boundary <= MinimumDriftIntervals || boundaryError == 0)
             return false;
 
         // 渐进漂移的每个 PCR 增量很小，录制抖动可能使个别增量短暂反号，不能要求整段
@@ -486,17 +683,18 @@ public sealed class TsTimelineRepairService
         var accumulated = 0.0;
         var bestResidual = double.MaxValue;
         var bestStart = boundary;
-        for (var index = boundary - 1; index > 0; index--)
+        for (var index = boundary - 1; index >= minimumStart; index--)
         {
-            var estimatedDuration =
-                (samples[boundary].PacketIndex - samples[index].PacketIndex) * ticksPerPacket / 90_000.0;
+            if (samples[index].Discontinuity || samples[index].TransportDamage)
+                break;
+            var estimatedDuration = (boundary - index) * interval90k / 90_000.0;
             if (estimatedDuration > MaximumPairedDurationSeconds)
                 break;
-            accumulated += errors[index];
+            accumulated += GetIntervalError(samples, index, interval90k);
             var count = boundary - index;
-            if (count < MinimumDriftIntervals || Math.Sign(accumulated) == Math.Sign(errors[boundary]))
+            if (count < MinimumDriftIntervals || Math.Sign(accumulated) == Math.Sign(boundaryError))
                 continue;
-            var residual = Math.Abs(accumulated + errors[boundary]);
+            var residual = Math.Abs(accumulated + boundaryError);
             if (residual < bestResidual)
             {
                 bestResidual = residual;
@@ -504,7 +702,8 @@ public sealed class TsTimelineRepairService
             }
         }
         if (bestStart == boundary ||
-            bestResidual > Math.Max(PairMinimumTolerance90k, Math.Abs(errors[boundary]) * 0.1))
+            bestResidual > Math.Max(PairMinimumTolerance90k,
+                Math.Abs(boundaryError) * 0.1 + cadenceBias90k * (boundary - bestStart + 1)))
         {
             return false;
         }
@@ -519,14 +718,24 @@ public sealed class TsTimelineRepairService
         int endIndex,
         TsTimelineIssueKind kind,
         double boundaryError90k,
-        double ticksPerPacket,
         TsCheckResult checkResult,
         TsTimelineRepairAnalysis analysis)
     {
         if (startIndex <= 0 || endIndex >= samples.Count || startIndex >= endIndex)
             return;
         var affectsTimestamps = HasMatchingTimestampIssue(
-            checkResult, samples[startIndex].PacketIndex, samples[endIndex].PacketIndex, boundaryError90k);
+            checkResult, pid, samples[startIndex].PacketIndex, samples[endIndex].PacketIndex, boundaryError90k);
+        var gradual = kind == TsTimelineIssueKind.GradualPcrDrift;
+        var correctionPoints = gradual ? new TsTimelineCorrectionPoint[endIndex - startIndex + 2] : [];
+        for (var index = startIndex - 1; gradual && index <= endIndex; index++)
+        {
+            // PCR 按采样序号构造目标时钟，包位置仅用于定位和跨包 PTS/DTS 插值。
+            var ratio = (index - startIndex + 1) / (double)(endIndex - startIndex + 1);
+            var expected = samples[startIndex - 1].Pcr90k +
+                           (long)Math.Round((samples[endIndex].Pcr90k - samples[startIndex - 1].Pcr90k) * ratio);
+            correctionPoints[index - startIndex + 1] =
+                new TsTimelineCorrectionPoint(samples[index].PacketIndex, expected - samples[index].Pcr90k);
+        }
         analysis.Segments.Add(new TsTimelineCorrectionSegment
         {
             PcrPid = pid,
@@ -534,16 +743,9 @@ public sealed class TsTimelineRepairService
             EndPacketExclusive = samples[endIndex].PacketIndex,
             StartAnchorPacket = samples[startIndex - 1].PacketIndex,
             EndAnchorPacket = samples[endIndex].PacketIndex,
-            StartAnchorPcr90k = samples[startIndex - 1].Pcr90k,
-            EndAnchorPcr90k = samples[endIndex].Pcr90k,
-            ConstantOffset90k = 0,
-            TimestampStartCorrection90k = kind == TsTimelineIssueKind.GradualPcrDrift
-                ? 0
-                : (long)Math.Round(-boundaryError90k),
-            TimestampEndCorrection90k = (long)Math.Round(kind == TsTimelineIssueKind.GradualPcrDrift
-                ? boundaryError90k
-                : -boundaryError90k),
-            UseInterpolation = true,
+            ConstantOffset90k = gradual ? 0 : (long)Math.Round(-boundaryError90k),
+            UseInterpolation = gradual,
+            CorrectionPoints = correctionPoints,
             AffectsStreamTimestamps = affectsTimestamps
         });
         analysis.Issues.Add(new TsTimelineRepairIssue
@@ -552,8 +754,8 @@ public sealed class TsTimelineRepairService
             PcrPid = pid,
             StartPacket = samples[startIndex].PacketIndex,
             EndPacket = samples[endIndex].PacketIndex,
-            StartTimeSeconds = EstimateTime(samples, startIndex, ticksPerPacket),
-            EndTimeSeconds = EstimateTime(samples, endIndex, ticksPerPacket),
+            StartTimeSeconds = EstimateTime(samples, startIndex),
+            EndTimeSeconds = EstimateTime(samples, endIndex),
             CorrectionSeconds = kind == TsTimelineIssueKind.GradualPcrDrift
                 ? boundaryError90k / 90_000.0
                 : -boundaryError90k / 90_000.0,
@@ -565,28 +767,22 @@ public sealed class TsTimelineRepairService
         int pid,
         List<PcrSample> samples,
         int boundary,
+        int end,
         double boundaryError90k,
-        double ticksPerPacket,
         TsCheckResult checkResult,
         TsTimelineRepairAnalysis analysis)
     {
-        var expected = (samples[boundary].PacketIndex - samples[boundary - 1].PacketIndex) * ticksPerPacket;
-        var desired = samples[boundary - 1].Pcr90k + (long)Math.Round(expected);
-        var correction = desired - samples[boundary].Pcr90k;
+        var correction = (long)Math.Round(-boundaryError90k);
         var affectsTimestamps = HasMatchingTimestampIssue(
-            checkResult, samples[boundary].PacketIndex, samples[boundary].PacketIndex, boundaryError90k);
+            checkResult, pid, samples[boundary].PacketIndex, samples[boundary].PacketIndex, boundaryError90k);
         analysis.Segments.Add(new TsTimelineCorrectionSegment
         {
             PcrPid = pid,
             StartPacket = samples[boundary].PacketIndex,
-            EndPacketExclusive = long.MaxValue,
+            EndPacketExclusive = end < 0 ? long.MaxValue : samples[end].PacketIndex,
             StartAnchorPacket = samples[boundary - 1].PacketIndex,
             EndAnchorPacket = samples[boundary].PacketIndex,
-            StartAnchorPcr90k = samples[boundary - 1].Pcr90k,
-            EndAnchorPcr90k = samples[boundary].Pcr90k,
             ConstantOffset90k = correction,
-            TimestampStartCorrection90k = correction,
-            TimestampEndCorrection90k = correction,
             UseInterpolation = false,
             AffectsStreamTimestamps = affectsTimestamps
         });
@@ -595,9 +791,9 @@ public sealed class TsTimelineRepairService
             Kind = TsTimelineIssueKind.PersistentClockDiscontinuity,
             PcrPid = pid,
             StartPacket = samples[boundary].PacketIndex,
-            EndPacket = long.MaxValue,
-            StartTimeSeconds = EstimateTime(samples, boundary, ticksPerPacket),
-            EndTimeSeconds = EstimateTime(samples, samples.Count - 1, ticksPerPacket),
+            EndPacket = end < 0 ? long.MaxValue : samples[end].PacketIndex,
+            StartTimeSeconds = EstimateTime(samples, boundary),
+            EndTimeSeconds = EstimateTime(samples, end < 0 ? samples.Count - 1 : end),
             CorrectionSeconds = correction / 90_000.0,
             AffectsStreamTimestamps = affectsTimestamps
         });
@@ -605,6 +801,7 @@ public sealed class TsTimelineRepairService
 
     private static bool HasMatchingTimestampIssue(
         TsCheckResult result,
+        int pcrPid,
         long startPacket,
         long endPacket,
         double pcrError90k)
@@ -615,6 +812,18 @@ public sealed class TsTimelineRepairService
         {
             if (item.Type is not (TsCheckEventType.PtsJump or TsCheckEventType.PtsBackward or
                 TsCheckEventType.DtsBackward))
+                continue;
+            if (pcrError90k > 0 && item.Type != TsCheckEventType.PtsJump ||
+                pcrError90k < 0 && item.Type == TsCheckEventType.PtsJump)
+                continue;
+            var sameProgram = false;
+            foreach (var program in result.Programs.Values)
+                if (program.PcrPid == pcrPid && program.Streams.ContainsKey(item.Pid))
+                {
+                    sameProgram = true;
+                    break;
+                }
+            if (!sameProgram)
                 continue;
             if (item.StartPacket < startPacket - padding || item.StartPacket > endPacket + padding)
                 continue;
@@ -678,28 +887,19 @@ public sealed class TsTimelineRepairService
 
     private static long GetTimestampCorrection(TsTimelineCorrectionSegment segment, long packetIndex)
     {
-        if (!segment.UseInterpolation || segment.EndAnchorPacket <= segment.StartAnchorPacket)
-            return segment.ConstantOffset90k;
-        // PTS/DTS 与 PCR 处于同一 90 kHz 时钟域。临时阶跃使用恒定校正量，
-        // 渐进漂移则从 0 线性过渡到末端校正量，避免媒体时间戳与 PCR 再次分离。
-        var ratio = (packetIndex - segment.StartAnchorPacket) /
-                    (double)(segment.EndAnchorPacket - segment.StartAnchorPacket);
-        return segment.TimestampStartCorrection90k +
-               (long)Math.Round((segment.TimestampEndCorrection90k -
-                                segment.TimestampStartCorrection90k) * ratio);
+        return segment.GetCorrection90k(packetIndex);
     }
 
     private static long FindCorrection(
         List<TsTimelineCorrectionSegment> segments,
         int pid,
-        long packetIndex,
-        long currentPcr90k)
+        long packetIndex)
     {
         long correction = 0;
         foreach (var segment in segments)
         {
             if (segment.PcrPid == pid)
-                correction += segment.GetCorrection90k(packetIndex, currentPcr90k + correction);
+                correction += segment.GetCorrection90k(packetIndex);
         }
         return correction;
     }
@@ -731,8 +931,8 @@ public sealed class TsTimelineRepairService
         return state;
     }
 
-    private static double EstimateTime(List<PcrSample> samples, int index, double ticksPerPacket) =>
-        (samples[index].PacketIndex - samples[0].PacketIndex) * ticksPerPacket / 90_000.0;
+    private static double EstimateTime(List<PcrSample> samples, int index) =>
+        Math.Max(0, (samples[index].Pcr90k - samples[0].Pcr90k) / 90_000.0);
 
     private static void TryDelete(string path)
     {
@@ -750,7 +950,23 @@ public sealed class TsTimelineRepairService
     private static StringComparison PathComparison =>
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
 
-    internal readonly record struct PcrSample(long PacketIndex, long Pcr90k, bool Discontinuity);
+    internal readonly record struct PcrSample(
+        long PacketIndex, long Pcr90k, bool Discontinuity)
+    {
+        public bool TransportDamage { get; init; }
+        private readonly int _decodeOffset90k = int.MinValue;
+        // 保存相对 PCR 的 DTS 偏移，利用原结构的对齐空间；不增加每个样本的结构大小。
+        // 超过 int 范围的时钟关系不作为自动修复依据。
+        internal PcrSample(long packetIndex, long pcr90k, bool discontinuity, long? decodeTimestamp90k)
+            : this(packetIndex, pcr90k, discontinuity)
+        {
+            _decodeOffset90k = decodeTimestamp90k is { } dts && dts - pcr90k is > int.MinValue and <= int.MaxValue
+                ? (int)(dts - pcr90k)
+                : int.MinValue;
+        }
+
+        public long? DecodeTimestamp90k => _decodeOffset90k == int.MinValue ? null : Pcr90k + _decodeOffset90k;
+    }
 
     private sealed class InputPcrState
     {

@@ -180,6 +180,294 @@ public sealed class TsStreamAnalyzerTests
         Assert.True(result.TimelineHasRepairCandidate);
     }
 
+    [Theory]
+    [InlineData(1_800)]
+    [InlineData(3_600)]
+    public async Task VariableBitrateWithStablePcrDoesNotCreateTimelineRepairCandidate(long interval90k)
+    {
+        var packets = new List<byte[]>
+        {
+            CreatePsiPacket(0, 0, BuildPatSection(0x0100)),
+            CreatePsiPacket(0x0100, 0, BuildPmtSection(0x0101))
+        };
+        var continuity = 0;
+        for (var sample = 0; sample < 100; sample++)
+        {
+            packets.Add(CreatePacket(0x0101, continuity++ & 15,
+                pcrBase: sample * interval90k + (interval90k == 3_600 ? sample % 2 : 0)));
+            packets.Add(CreatePesPacket(0x0101, continuity++ & 15, sample * interval90k + 9_000));
+            var packetCount = sample % 3 == 0 ? 500 : sample % 3 == 1 ? 1 : 10;
+            for (var filler = 1; filler < packetCount; filler++)
+                packets.Add(CreatePacket(0x0101, continuity++ & 15));
+        }
+
+        var result = await AnalyzeAsync(packets);
+        Assert.False(result.TimelineHasRepairCandidate);
+        Assert.Equal(0, result.ErrorCount);
+        Assert.Equal(0, Count(result, TsCheckEventType.PcrGap));
+    }
+
+    [Fact]
+    public async Task IdenticalPatAndPmtAtSegmentBoundariesDoNotProduceWarnings()
+    {
+        const int pmtPid = 0x1000;
+        var pat = CreatePsiPacket(0, 0, BuildPatSection(pmtPid));
+        var pmt = CreatePsiPacket(pmtPid, 0, BuildPmtSection(0x0101));
+        var packets = new List<byte[]>();
+        for (var index = 0; index < 20; index++)
+        {
+            packets.Add(pat);
+            packets.Add(pmt);
+            packets.Add(CreatePesPacket(0x0101, index & 15, index * 3_600L));
+        }
+        var result = await AnalyzeAsync(packets);
+        Assert.Equal(0, Count(result, TsCheckEventType.DuplicatePacket));
+        Assert.Equal(0, Count(result, TsCheckEventType.ContinuityGap));
+        Assert.Single(result.Programs);
+        Assert.True(result.Pids[0].DuplicatePackets > 0);
+    }
+
+    [Theory]
+    [InlineData(450_000L)]
+    [InlineData(22_500L)]
+    public async Task MatchingForwardPcrAndDtsGapDoesNotSuggestClockCompression(long gap90k)
+    {
+        var packets = new List<byte[]>
+        {
+            CreatePsiPacket(0, 0, BuildPatSection(0x0100)),
+            CreatePsiPacket(0x0100, 0, BuildPmtSection(0x0101))
+        };
+        for (var index = 0; index < 100; index++)
+        {
+            var pcr = index * 3_600L + (index >= 50 ? gap90k : 0);
+            var packet = CreatePacket(0x0101, index & 15, pcrBase: pcr);
+            packet[1] |= 0x40;
+            var payload = packet.AsSpan(12);
+            payload[..9].Clear();
+            payload[2] = 1;
+            payload[3] = 0xE0;
+            payload[6] = 0x80;
+            payload[7] = 0xC0;
+            payload[8] = 10;
+            WritePts(payload.Slice(9, 5), pcr + 10_800);
+            WritePts(payload.Slice(14, 5), pcr + 7_200);
+            payload[9] = (byte)((payload[9] & 15) | 0x30);
+            payload[14] = (byte)((payload[14] & 15) | 0x10);
+            packets.Add(packet);
+        }
+
+        var result = await AnalyzeAsync(packets);
+        Assert.False(result.TimelineHasRepairCandidate);
+        Assert.Equal(gap90k > 45_000 ? 1 : 0, Count(result, TsCheckEventType.PcrGap));
+    }
+
+    [Fact]
+    public async Task TransportLossAtRepairThresholdDoesNotCreateCandidateOrRepairPlan()
+    {
+        var packets = new List<byte[]>
+        {
+            CreatePsiPacket(0, 0, BuildPatSection(0x0100)),
+            CreatePsiPacket(0x0100, 0, BuildPmtSection(0x0101))
+        };
+        var continuity = 0;
+        for (var index = 0; index < 100; index++)
+        {
+            if (index == 50)
+                continuity += 3;
+            var pcr = index * 3_600L + (index >= 50 ? 22_500 : 0);
+            packets.Add(CreatePacket(0x0101, continuity++ & 15, pcrBase: pcr));
+            packets.Add(CreatePesPacket(0x0101, continuity++ & 15, pcr + 9_000));
+        }
+        var path = Path.Combine(Path.GetTempPath(), $"ts-threshold-loss-{Guid.NewGuid():N}.ts");
+        try
+        {
+            await File.WriteAllBytesAsync(path, packets.SelectMany(packet => packet).ToArray());
+            var check = await new TsStreamAnalyzer().AnalyzeAsync(path);
+            var plan = await new TsTimelineRepairService().AnalyzeAsync(path, check);
+            Assert.Equal(1, Count(check, TsCheckEventType.ContinuityGap));
+            Assert.False(check.TimelineHasRepairCandidate);
+            Assert.Empty(plan.Issues);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task MissingPacketsPreserveForwardGapButDoNotHideBackwardClock(bool lossBeforePcr, bool backward)
+    {
+        var packets = new List<byte[]>
+        {
+            CreatePsiPacket(0, 0, BuildPatSection(0x0100)),
+            CreatePsiPacket(0x0100, 0, BuildPmtSection(0x0101))
+        };
+        var continuity = 0;
+        for (var index = 0; index < 100; index++)
+        {
+            if (index == 50)
+            {
+                continuity += 3;
+                if (lossBeforePcr)
+                    packets.Add(CreatePacket(0x0101, continuity++ & 15));
+            }
+            var pcr = index * 3_600L + (index >= 50 ? (backward ? -90_000 : 90_000) : 0);
+            packets.Add(CreatePacket(0x0101, continuity++ & 15, pcrBase: pcr));
+        }
+
+        var result = await AnalyzeAsync(packets);
+        Assert.Equal(backward, result.TimelineHasRepairCandidate);
+        Assert.Equal(1, Count(result, TsCheckEventType.ContinuityGap));
+        Assert.Equal(1, Count(result, backward ? TsCheckEventType.PcrBackward : TsCheckEventType.PcrGap));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task LossOnAnotherProgramStreamDoesNotHideLaterClockDamage(bool laterClockDamage)
+    {
+        var packets = new List<byte[]>
+        {
+            CreatePsiPacket(0, 0, BuildPatSection(0x0100)),
+            CreatePsiPacket(0x0100, 0, BuildPmtSection(0x0101, (0x1B, 0x0101), (0x0F, 0x0102)))
+        };
+        var audioContinuity = 0;
+        for (var index = 0; index < 100; index++)
+        {
+            if (index == 50)
+                audioContinuity += 3;
+            packets.Add(CreatePacket(0x0102, audioContinuity++ & 15));
+            var pcr = index * 3_600L + (index >= 50 ? 90_000 : 0) +
+                      (laterClockDamage && index >= 75 ? 450_000 : 0);
+            packets.Add(CreatePacket(0x0101, index & 15, pcrBase: pcr));
+        }
+
+        var result = await AnalyzeAsync(packets);
+        Assert.Equal(laterClockDamage, result.TimelineHasRepairCandidate);
+        Assert.Equal(1, Count(result, TsCheckEventType.ContinuityGap));
+        Assert.Equal(laterClockDamage ? 2 : 1, Count(result, TsCheckEventType.PcrGap));
+    }
+
+    [Theory]
+    [InlineData(false, 450_000L, false)]
+    [InlineData(true, 450_000L, false)]
+    [InlineData(true, 90_000L, false)]
+    [InlineData(true, 22_500L, false)]
+    [InlineData(true, 90_000L, true)]
+    public async Task MultiSourceReferenceKeepsLossGapWithSeparatePcrAndPesPackets(
+        bool independentPcrPid, long gap90k, bool lossBeforePcr)
+    {
+        var pcrPid = independentPcrPid ? 0x0102 : 0x0101;
+        var packets = new List<byte[]>
+        {
+            CreatePsiPacket(0, 0, BuildPatSection(0x0100)),
+            CreatePsiPacket(0x0100, 0, BuildPmtSection(pcrPid, (0x1B, 0x0101)))
+        };
+        var continuity = 0;
+        for (var index = 0; index < 100; index++)
+        {
+            if (index == 50)
+            {
+                continuity += 3;
+                if (lossBeforePcr)
+                    packets.Add(CreatePacket(pcrPid, continuity++ & 15));
+            }
+            var pcr = index * 3_600L + (index >= 50 ? gap90k : 0);
+            packets.Add(CreatePacket(pcrPid, continuity++ & 15, pcrBase: pcr));
+            packets.Add(CreatePesPacket(0x0101, independentPcrPid ? index & 15 : continuity++ & 15, pcr + 9_000));
+        }
+        var referencePath = Path.Combine(Path.GetTempPath(), $"ts-reference-loss-{Guid.NewGuid():N}.ts");
+        var donorPath = Path.Combine(Path.GetTempPath(), $"ts-donor-loss-{Guid.NewGuid():N}.ts");
+        try
+        {
+            await File.WriteAllBytesAsync(referencePath, packets.SelectMany(packet => packet).ToArray());
+            File.Copy(referencePath, donorPath);
+            var result = await new TsMultiSourceRepairService().AnalyzeAsync(
+                [referencePath, donorPath], referencePath, normalizeTimeline: true);
+
+            Assert.NotNull(result.ReferenceSource.TimelineAnalysis);
+            Assert.Empty(result.ReferenceSource.TimelineAnalysis.Issues);
+            Assert.Equal(99 * 3_600L + gap90k, Assert.Single(result.Tracks).LastPts90k -
+                Assert.Single(result.Tracks).FirstPts90k);
+        }
+        finally
+        {
+            File.Delete(referencePath);
+            File.Delete(donorPath);
+        }
+    }
+
+    [Fact]
+    public async Task IndependentPcrAdaptationOnlyPacketsDoNotHideActualClockDamage()
+    {
+        const int pcrPid = 0x0102;
+        var packets = new List<byte[]>
+        {
+            CreatePsiPacket(0, 0, BuildPatSection(0x0100)),
+            CreatePsiPacket(0x0100, 0, BuildPmtSection(pcrPid, (0x1B, 0x0101)))
+        };
+        for (var index = 0; index < 100; index++)
+        {
+            packets.Add(CreatePacket(pcrPid, index & 15));
+            var pcr = index * 3_600L + (index >= 50 ? 450_000 : 0);
+            var clockPacket = CreatePacket(pcrPid, index & 15, pcrBase: pcr);
+            clockPacket[3] = (byte)(0x20 | (index & 15));
+            clockPacket[4] = 183;
+            packets.Add(clockPacket);
+            packets.Add(CreatePesPacket(0x0101, index & 15, index * 3_600L + 9_000));
+        }
+        var referencePath = Path.Combine(Path.GetTempPath(), $"ts-adaptation-pcr-{Guid.NewGuid():N}.ts");
+        var donorPath = Path.Combine(Path.GetTempPath(), $"ts-adaptation-donor-{Guid.NewGuid():N}.ts");
+        try
+        {
+            await File.WriteAllBytesAsync(referencePath, packets.SelectMany(packet => packet).ToArray());
+            File.Copy(referencePath, donorPath);
+            var result = await new TsMultiSourceRepairService().AnalyzeAsync(
+                [referencePath, donorPath], referencePath, normalizeTimeline: true);
+
+            Assert.NotNull(result.ReferenceSource.TimelineAnalysis);
+            Assert.Equal(-5, Assert.Single(result.ReferenceSource.TimelineAnalysis.Issues).CorrectionSeconds);
+            Assert.Equal(99 * 3_600L, Assert.Single(result.Tracks).LastPts90k -
+                Assert.Single(result.Tracks).FirstPts90k);
+        }
+        finally
+        {
+            File.Delete(referencePath);
+            File.Delete(donorPath);
+        }
+    }
+
+    [Fact]
+    public async Task RepeatedMediaPayloadStillProducesDuplicateWarning()
+    {
+        var packet = CreatePacket(0x0101, 0);
+        var result = await AnalyzeAsync([packet, packet, packet, packet]);
+        Assert.Equal(3, Count(result, TsCheckEventType.DuplicatePacket));
+    }
+
+    [Fact]
+    public async Task ChangedTableWithSameCounterStillProducesConflictError()
+    {
+        var first = CreatePsiPacket(0, 0, BuildPatSection(0x1000));
+        var changed = CreatePsiPacket(0, 0, BuildPatSection(0x1001));
+        var result = await AnalyzeAsync([first, changed, changed, changed]);
+        Assert.True(Count(result, TsCheckEventType.ConflictingDuplicate) > 0);
+    }
+
+    [Fact]
+    public async Task RepeatedInvalidTableIsNotTreatedAsValidRepetition()
+    {
+        var pat = CreatePsiPacket(0, 0, BuildPatSection(0x1000));
+        pat[10] ^= 1;
+        var result = await AnalyzeAsync([pat, pat, pat, pat]);
+        Assert.True(Count(result, TsCheckEventType.PsiCrcError) > 0);
+        Assert.True(Count(result, TsCheckEventType.DuplicatePacket) > 0);
+    }
+
     [Fact]
     public async Task MidGopStartupOffsetDoesNotCreateAvSyncDrift()
     {
