@@ -215,4 +215,142 @@ public sealed class FFmpeg9InteropTests(ITestOutputHelper output)
         for (var i = 0; i < 100; i++) converter.ConvertFrame(source, destination);
         Assert.Equal(before, GC.GetAllocatedBytesForCurrentThread());
     }
+
+    [NativeRuntimeFact]
+    public unsafe void Av3aSignalingRejectsGuessedMpegAudioParameters()
+    {
+        foreach (var tag in new uint[] { 0x61337661, 0xD5 })
+        {
+            AVCodecParameters raw = new()
+            {
+                codec_id = AVCodecID.AV_CODEC_ID_MP3,
+                codec_type = AVMediaType.AVMEDIA_TYPE_AUDIO,
+                codec_tag = tag,
+                sample_rate = 22_050,
+                bit_rate = 64_000,
+                ch_layout = new AVChannelLayout { nb_channels = 2 }
+            };
+            var parameters = new CodecParameters(&raw);
+            Assert.Equal("AV3A", parameters.CodecName);
+            Assert.Equal(AVMediaType.AVMEDIA_TYPE_AUDIO, parameters.CodecType);
+            Assert.Equal(AVCodecID.AV_CODEC_ID_NONE, parameters.CodecId);
+            Assert.False(parameters.HasReliableCodecParameters);
+            Assert.Equal(0, parameters.SampleRate);
+            Assert.Equal(0, parameters.BitRate);
+            Assert.Equal(0, parameters.ChLayout.nb_channels);
+        }
+    }
+
+    [NativeRuntimeFact]
+    public unsafe void UnsupportedAv3aStillAppearsAsAnAudioTrack()
+    {
+        AVCodecParameters raw = new()
+        {
+            codec_id = AVCodecID.AV_CODEC_ID_NONE,
+            codec_type = AVMediaType.AVMEDIA_TYPE_UNKNOWN,
+            codec_tag = 0x61337661
+        };
+        var parameters = new CodecParameters(&raw);
+        Assert.Equal("AV3A", parameters.CodecName);
+        Assert.True(ThumbnailSheetInfoBuilder.IsDisplayableStreamType(parameters.CodecType));
+        Assert.Equal(AVMediaType.AVMEDIA_TYPE_AUDIO, parameters.CodecType);
+        Assert.False(parameters.HasReliableCodecParameters);
+    }
+
+    [NativeRuntimeFact]
+    public unsafe void NativeAv3aParametersDoNotRequireProgramSignaling()
+    {
+        // 官方枚举不包含自定义 AV3A；从原生描述符找到实际编码值。
+        AVCodecID av3a = AVCodecID.AV_CODEC_ID_NONE;
+        for (var offset = 1; offset <= 4; offset++)
+        {
+            var id = (AVCodecID)((int)AVCodecID.AV_CODEC_ID_APPLE_APAC + offset);
+            var descriptor = FF.avcodec_descriptor_get(id);
+            if (descriptor != null && System.Runtime.InteropServices.Marshal.PtrToStringUTF8((IntPtr)descriptor->name) == "av3a")
+                av3a = id;
+        }
+        Assert.NotEqual(AVCodecID.AV_CODEC_ID_NONE, av3a);
+        AVCodecParameters raw = new()
+        {
+            codec_id = av3a,
+            codec_type = AVMediaType.AVMEDIA_TYPE_AUDIO,
+            codec_tag = 0,
+            sample_rate = 48_000,
+            bit_rate = 384_000,
+            ch_layout = new AVChannelLayout { order = AVChannelOrder.AV_CHANNEL_ORDER_UNSPEC, nb_channels = 10 }
+        };
+        var parameters = new CodecParameters(&raw);
+        Assert.True(parameters.IsAv3a);
+        Assert.True(parameters.HasReliableCodecParameters);
+        Assert.Equal("AV3A", parameters.CodecName);
+        Assert.Equal(48_000, parameters.SampleRate);
+        Assert.Equal(384_000, parameters.BitRate);
+        Assert.Equal(10, parameters.ChLayout.nb_channels);
+    }
+
+    [NativeRuntimeFact]
+    public async Task LateProgramTablesExpandOnlyTheTsProbe()
+    {
+        var source = Path.Combine(Environment.GetEnvironmentVariable("TSCUTTER_FFMPEG_TEST_SAMPLES")!, "1080i.ts");
+        using (var ordinary = FormatContext.OpenInputUrl(source))
+        {
+            long originalProbeSize;
+            unsafe
+            {
+                AVFormatContext* raw = ordinary;
+                Assert.True(raw->nb_programs > 0);
+                originalProbeSize = raw->probesize;
+            }
+            ordinary.LoadStreamInfo();
+            unsafe { Assert.Equal(originalProbeSize, ((AVFormatContext*)ordinary)->probesize); }
+        }
+
+        var temporary = Path.Combine(Path.GetTempPath(), $"ts-late-psi-{Guid.NewGuid():N}.ts");
+        try
+        {
+            // 模拟剪辑片段直到超过默认 5 MB 探测范围后才遇到原有节目表。
+            // 缓冲区固定大小，不把真实素材完整加载到内存。
+            var buffer = new byte[188 * 8192];
+            Array.Fill(buffer, (byte)0xFF);
+            for (var offset = 0; offset < buffer.Length; offset += 188)
+            {
+                buffer[offset] = 0x47;
+                buffer[offset + 1] = 0x1F;
+                buffer[offset + 2] = 0xFF;
+                buffer[offset + 3] = 0x10;
+            }
+            await using (var outputFile = File.Create(temporary))
+            {
+                for (var index = 0; index < 4; index++) await outputFile.WriteAsync(buffer);
+                await using var inputFile = File.OpenRead(source);
+                var read = await inputFile.ReadAsync(buffer);
+                await outputFile.WriteAsync(buffer.AsMemory(0, read));
+            }
+
+            // 节目相关工具使用独立逐包扫描，不依赖 FFmpeg 的 5 MB 探测上限。
+            foreach (var options in new[]
+            {
+                new Models.TsStreamAnalyzeOptions { InventoryOnly = true, MinimumBytes = Models.TsStreamAnalyzeOptions.StandardProbeBytes, MaxBytes = 64L * 1024 * 1024 },
+                new Models.TsStreamAnalyzeOptions { InventoryOnly = true, IncludeServiceMetadata = true, MaxBytes = 64L * 1024 * 1024 },
+                new Models.TsStreamAnalyzeOptions { InventoryOnly = true, MaxBytes = 256L * 1024 * 1024 }
+            })
+            {
+                var catalog = await new Services.TsStreamAnalyzer().AnalyzeAsync(temporary, options: options);
+                Assert.NotEmpty(catalog.Programs);
+                Assert.All(catalog.Programs.Values, program => Assert.NotEmpty(program.Streams));
+            }
+
+            using var delayed = FormatContext.OpenInputUrl(temporary);
+            unsafe { Assert.Equal(0u, ((AVFormatContext*)delayed)->nb_programs); }
+            delayed.LoadStreamInfo();
+            Assert.NotEmpty(delayed.Programs);
+            Assert.Equal(AVCodecID.AV_CODEC_ID_H264, delayed.GetVideoStream().Codecpar!.CodecId);
+            unsafe
+            {
+                Assert.Equal(Models.TsStreamAnalyzeOptions.StandardProbeBytes,
+                    ((AVFormatContext*)delayed)->probesize);
+            }
+        }
+        finally { File.Delete(temporary); }
+    }
 }

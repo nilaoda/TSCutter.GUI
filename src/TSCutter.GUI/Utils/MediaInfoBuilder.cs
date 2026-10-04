@@ -159,9 +159,9 @@ public static class MediaInfoBuilder
 
         string codec = cp.CodecName;
         AppendField(sb, "Format", codec);
-        AppendField(sb, "Format/Info", CodecLongName(cp.CodecId));
+        AppendField(sb, "Format/Info", cp.IsAv3a ? "Audio Vivid" : CodecLongName(cp.CodecId));
         if (codec == "AC3") AppendField(sb, "Commercial name", "Dolby Digital");
-        AppendField(sb, "Codec ID", ((int)cp.CodecId).ToString());
+        AppendField(sb, "Codec ID", cp.IsAv3a ? "av3a" : ((int)cp.CodecId).ToString());
 
         AppendField(sb, "Duration", FormatDuration(stream));
 
@@ -171,13 +171,16 @@ public static class MediaInfoBuilder
             AppendField(sb, "Bit rate", cp.BitRate / 1000.0 + " kb/s");
         }
 
-        AppendField(sb, "Channel(s)", cp.ChLayout.nb_channels + " channels");
-        AppendField(sb, "Channel layout", GetChannelLayoutDescription(cp.ChLayout));
+        if (cp.ChLayout.nb_channels > 0)
+        {
+            AppendField(sb, "Channel(s)", cp.ChLayout.nb_channels + " channels");
+            AppendField(sb, "Channel layout", GetChannelLayoutDescription(cp.ChLayout));
+        }
 
         if (cp.SampleRate > 0)
             AppendField(sb, "Sampling rate", cp.SampleRate / 1000.0 + " kHz");
 
-        if (stream.AvgFrameRate.num > 0)
+        if (cp.HasReliableCodecParameters && stream.AvgFrameRate.num > 0)
             AppendField(sb, "Frame rate", stream.AvgFrameRate.ToDouble().ToString("F3") + " FPS (1536 SPF)");
 
         AppendField(sb, "Compression mode", "Lossy");

@@ -34,16 +34,29 @@ public readonly unsafe struct Codec
 public sealed unsafe class CodecParameters
 {
     private readonly AVCodecParameters* raw;
-    internal CodecParameters(AVCodecParameters* raw) => this.raw = raw;
-    public AVCodecID CodecId => raw->codec_id;
-    public string CodecName => CodecNames.Get(CodecId);
-    public AVMediaType CodecType => raw->codec_type;
-    public long BitRate => raw->bit_rate;
+    private readonly bool hasNativeAv3aParameters;
+    public bool IsAv3a { get; }
+    internal CodecParameters(AVCodecParameters* raw)
+    {
+        this.raw = raw;
+        // 私有编码值不在官方绑定枚举中；解析器也能在节目表出现前提供可靠参数。
+        // 只查询一次原生描述符，缓存结果，不分配编码名称字符串。
+        var descriptor = FF.avcodec_descriptor_get(raw->codec_id);
+        var name = descriptor == null ? null : descriptor->name;
+        hasNativeAv3aParameters = name != null && name[0] == 'a' && name[1] == 'v'
+            && name[2] == '3' && name[3] == 'a' && name[4] == 0;
+        IsAv3a = hasNativeAv3aParameters || raw->codec_tag is 0x61337661 or 0xD5;
+    }
+    public bool HasReliableCodecParameters => !IsAv3a || hasNativeAv3aParameters;
+    public AVCodecID CodecId => HasReliableCodecParameters ? raw->codec_id : AVCodecID.AV_CODEC_ID_NONE;
+    public string CodecName => IsAv3a ? "AV3A" : CodecNames.Get(CodecId);
+    public AVMediaType CodecType => IsAv3a ? AVMediaType.AVMEDIA_TYPE_AUDIO : raw->codec_type;
+    public long BitRate => HasReliableCodecParameters ? raw->bit_rate : 0;
     public int Width => raw->width;
     public int Height => raw->height;
     public int Format => raw->format;
-    public int SampleRate => raw->sample_rate;
-    public int BitsPerRawSample => raw->bits_per_raw_sample;
+    public int SampleRate => HasReliableCodecParameters ? raw->sample_rate : 0;
+    public int BitsPerRawSample => HasReliableCodecParameters ? raw->bits_per_raw_sample : 0;
     public AVRational SampleAspectRatio => raw->sample_aspect_ratio;
     public AVFieldOrder FieldOrder => raw->field_order;
     public AVColorRange ColorRange => raw->color_range;
@@ -51,7 +64,7 @@ public sealed unsafe class CodecParameters
     public AVColorTransferCharacteristic ColorTrc => raw->color_trc;
     public AVColorSpace ColorSpace => raw->color_space;
     public AVChromaLocation ChromaLocation => raw->chroma_location;
-    public AVChannelLayout ChLayout => raw->ch_layout;
+    public AVChannelLayout ChLayout => HasReliableCodecParameters ? raw->ch_layout : default;
     public uint CodecTag => raw->codec_tag;
     public static implicit operator AVCodecParameters*(CodecParameters parameters) => parameters.raw;
 }

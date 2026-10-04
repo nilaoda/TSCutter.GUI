@@ -33,6 +33,12 @@ public unsafe class FormatContext : SafeHandle
 
     public void LoadStreamInfo()
     {
+        // 纯二进制剪辑可能从两次节目表之间开始。仅在 TS 尚未找到节目表时
+        // 扩大有界探测范围以读取节目清单。AV3A 内容探测修复后仍需要这一步：
+        // 某些视频（如 AVS3）在节目表到达前仍不能正确识别。
+        // 已有节目表的普通文件保留原探测上限，不额外扫描整个文件。
+        if (Raw->nb_programs == 0 && InputFormat?.Name == "mpegts")
+            Raw->probesize = Math.Max(Raw->probesize, Models.TsStreamAnalyzeOptions.StandardProbeBytes);
         FFmpegException.Check(FF.avformat_find_stream_info(Raw, null));
         var streams = new MediaStream[Raw->nb_streams];
         for (var i = 0; i < streams.Length; i++) streams[i] = new MediaStream(Raw->streams[i]);
