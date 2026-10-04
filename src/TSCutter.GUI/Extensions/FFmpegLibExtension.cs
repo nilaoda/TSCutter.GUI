@@ -1,10 +1,8 @@
+using TSCutter.GUI.FFmpeg;
 using System;
-using Sdcb.FFmpeg.Codecs;
-using Sdcb.FFmpeg.Common;
-using Sdcb.FFmpeg.Formats;
-using Sdcb.FFmpeg.Raw;
-using Sdcb.FFmpeg.Utils;
-using static Sdcb.FFmpeg.Raw.ffmpeg;
+using FFmpeg.AutoGen.Abstractions;
+using FF = TSCutter.GUI.FFmpeg.NativeMethods;
+using static TSCutter.GUI.FFmpeg.NativeMethods;
 
 namespace TSCutter.GUI.Extensions;
 
@@ -44,7 +42,7 @@ public static unsafe class FFmpegLibExtension
     /// <summary>
     /// <see cref="avio_size"/>
     /// </summary>
-    public static long GetFileSize(this FormatContext formatContext) => avio_size(formatContext.Pb!);
+    public static long GetFileSize(this FormatContext formatContext) => avio_size(formatContext.Pb);
 
     /// <summary>
     /// 判断解码器是否支持通过指定硬件设备上下文输出硬件帧。
@@ -72,7 +70,7 @@ public static unsafe class FFmpegLibExtension
     public static void AttachHardwareDevice(this CodecContext codecContext, AVHWDeviceType deviceType)
     {
         AVBufferRef* deviceContext = null;
-        av_hwdevice_ctx_create(ref deviceContext, deviceType, null, null, 0)
+        av_hwdevice_ctx_create(&deviceContext, deviceType, null, null, 0)
             .ThrowIfError($"Failed to create {deviceType} hardware device.");
 
         if (deviceContext == null)

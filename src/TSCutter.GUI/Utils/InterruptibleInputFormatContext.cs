@@ -1,7 +1,7 @@
+using TSCutter.GUI.FFmpeg;
 using System;
-using Sdcb.FFmpeg.Common;
-using Sdcb.FFmpeg.Formats;
-using Sdcb.FFmpeg.Raw;
+using FFmpeg.AutoGen.Abstractions;
+using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 
 namespace TSCutter.GUI.Utils;
 
@@ -17,7 +17,7 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
 
     public static FormatContext Open(string path, Func<bool> shouldInterrupt)
     {
-        AVFormatContext* context = ffmpeg.avformat_alloc_context();
+        AVFormatContext* context = FF.avformat_alloc_context();
         if (context == null)
             throw new OutOfMemoryException();
 
@@ -28,10 +28,10 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
             // The protocol layer copies this callback when opening the file.
             // Setting only AVFormatContext.interrupt_callback after opening is too late.
             context->interrupt_callback = new AVIOInterruptCB { callback = callback };
-            var result = ffmpeg.av_dict_set(&options, "scan_all_pmts", "1", 0);
+            var result = FF.av_dict_set(&options, "scan_all_pmts", "1", 0);
             if (result < 0)
                 throw FFmpegException.FromErrorCode(result, null);
-            result = ffmpeg.avformat_open_input(&context, path, null, &options);
+            result = FF.avformat_open_input(&context, path, null, &options);
             if (result < 0)
                 throw FFmpegException.FromErrorCode(result, null);
 
@@ -41,19 +41,18 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
         }
         finally
         {
-            ffmpeg.av_dict_free(&options);
+            FF.av_dict_free(&options);
             if (context != null)
-                ffmpeg.avformat_close_input(&context);
+                FF.avformat_close_input(&context);
             GC.KeepAlive(callback);
         }
     }
 
     protected override bool ReleaseHandle()
     {
-        AVFormatContext* context = this;
-        ffmpeg.avformat_close_input(&context);
-        handle = IntPtr.Zero;
+        // 由基类统一释放输入上下文及可复用包，原生关闭完成前保持回调存活。
+        var released = base.ReleaseHandle();
         GC.KeepAlive(interruptCallback);
-        return true;
+        return released;
     }
 }

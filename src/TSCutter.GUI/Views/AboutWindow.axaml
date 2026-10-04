@@ -54,16 +54,10 @@
                 <ItemsControl ItemsSource="{Binding AllLibraries}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel Orientation="Horizontal" Margin="0,2">
-                                <TextBlock>
-                                    <Run FontWeight="Bold" Text="· " />
-                                    <Run FontWeight="Bold" Text="{Binding Name}" />
-                                    <Run Text=": " />
-                                </TextBlock>
-                                <HyperlinkButton NavigateUri="{Binding Url}" Padding="0">
-                                    <TextBlock Text="{Binding Url}" TextDecorations="Underline" />
-                                </HyperlinkButton>
-                            </StackPanel>
+                            <HyperlinkButton NavigateUri="{Binding Url}" ToolTip.Tip="{Binding Url}"
+                                             Padding="0" Margin="0,2" HorizontalAlignment="Left">
+                                <TextBlock Text="{Binding Name}" TextDecorations="Underline" />
+                            </HyperlinkButton>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
@@ -71,6 +65,11 @@
         </Border>
 
         <!-- 底部按钮 -->
+        <Button Grid.Row="4" Grid.ColumnSpan="2"
+                Height="26"
+                HorizontalAlignment="Left"
+                Content="{DynamicResource String.About.Notices}"
+                Click="Notices_OnClick" />
         <Button Grid.Row="4" Grid.ColumnSpan="2"
                 Width="80" Height="26"
                 HorizontalAlignment="Right"

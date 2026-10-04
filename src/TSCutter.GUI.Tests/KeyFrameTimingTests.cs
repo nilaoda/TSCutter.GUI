@@ -1,4 +1,6 @@
-using Sdcb.FFmpeg.Raw;
+using TSCutter.GUI.FFmpeg;
+using FFmpeg.AutoGen.Abstractions;
+using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Models;
 using Xunit;
 
@@ -17,7 +19,7 @@ public sealed class KeyFrameTimingTests
     [Fact]
     public void UnknownStartFallsBackToZero()
     {
-        Assert.Equal((0L, 90_000L), VideoInstance.ResolveKeyFrameTiming([], ffmpeg.AV_NOPTS_VALUE, 1, 90_000));
+        Assert.Equal((0L, 90_000L), VideoInstance.ResolveKeyFrameTiming([], FF.AV_NOPTS_VALUE, 1, 90_000));
     }
 
     [Fact]

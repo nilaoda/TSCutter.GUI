@@ -1,4 +1,6 @@
-using Sdcb.FFmpeg.Raw;
+using TSCutter.GUI.FFmpeg;
+using FFmpeg.AutoGen.Abstractions;
+using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Models;
 
 namespace TSCutter.GUI.Utils;
@@ -13,9 +15,9 @@ internal static class VideoDynamicRangeDetector
     {
         if (hasDolbyVisionMetadata || IsDolbyVisionCodecTag(codecTag))
             return VideoDynamicRange.DolbyVision;
-        if (colorTransfer == AVColorTransferCharacteristic.AribStdB67)
+        if (colorTransfer == AVColorTransferCharacteristic.AVCOL_TRC_ARIB_STD_B67)
             return VideoDynamicRange.Hlg;
-        if (colorTransfer == AVColorTransferCharacteristic.Smpte2084 || hasHdrMetadata)
+        if (colorTransfer == AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084 || hasHdrMetadata)
             return VideoDynamicRange.Hdr;
         return VideoDynamicRange.Standard;
     }

@@ -1,9 +1,9 @@
+using TSCutter.GUI.FFmpeg;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using Sdcb.FFmpeg.Codecs;
-using Sdcb.FFmpeg.Formats;
-using Sdcb.FFmpeg.Raw;
+using FFmpeg.AutoGen.Abstractions;
+using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Models;
 
 namespace TSCutter.GUI.Utils;
@@ -27,9 +27,9 @@ public static class ThumbnailSheetInfoBuilder
         for (var i = 0; i < fc.Streams.Count; i++)
         {
             var type = fc.Streams[i].Codecpar!.CodecType;
-            if (type == AVMediaType.Video && videoIndex < 0)
+            if (type == AVMediaType.AVMEDIA_TYPE_VIDEO && videoIndex < 0)
                 videoIndex = i;
-            else if (type == AVMediaType.Audio && audioIndex < 0)
+            else if (type == AVMediaType.AVMEDIA_TYPE_AUDIO && audioIndex < 0)
                 audioIndex = i;
         }
 
@@ -40,7 +40,7 @@ public static class ThumbnailSheetInfoBuilder
         var sampleAspectRatio = hasVideo
             ? videoStream.Codecpar!.SampleAspectRatio
             : default;
-        if (hasVideo && (sampleAspectRatio.Num <= 0 || sampleAspectRatio.Den <= 0))
+        if (hasVideo && (sampleAspectRatio.num <= 0 || sampleAspectRatio.den <= 0))
             sampleAspectRatio = videoStream.SampleAspectRatio;
 
         // 时长优先取视频流，回退到容器时长。部分异常 TS 缺少流时长，
@@ -80,16 +80,16 @@ public static class ThumbnailSheetInfoBuilder
             if (!IsDisplayableStreamType(codecParameters.CodecType))
                 continue;
 
-            var codec = codecParameters.CodecId.ToString();
+            var codec = codecParameters.CodecName;
             if (string.IsNullOrEmpty(codec))
                 continue;
 
             switch (codecParameters.CodecType)
             {
-                case AVMediaType.Video when i != videoIndex:
+                case AVMediaType.AVMEDIA_TYPE_VIDEO when i != videoIndex:
                     additionalVideoCodecs.Add(codec);
                     break;
-                case AVMediaType.Audio when i != audioIndex:
+                case AVMediaType.AVMEDIA_TYPE_AUDIO when i != audioIndex:
                     additionalAudioTracks.Add(new ThumbnailSheetTrackInfo(
                         codec,
                         GetLanguage(fc.Streams[i]),
@@ -97,7 +97,7 @@ public static class ThumbnailSheetInfoBuilder
                         codecParameters.SampleRate,
                         codecParameters.BitRate));
                     break;
-                case AVMediaType.Subtitle:
+                case AVMediaType.AVMEDIA_TYPE_SUBTITLE:
                     subtitleTracks.Add(new ThumbnailSheetTrackInfo(
                         codec,
                         GetLanguage(fc.Streams[i])));
@@ -112,7 +112,7 @@ public static class ThumbnailSheetInfoBuilder
             FileSize = fi.Exists ? fi.Length : 0,
             Duration = duration,
             OverallBitRate = fc.BitRate > 0 ? fc.BitRate : 0,
-            VideoCodec = hasVideo ? videoStream.Codecpar!.CodecId.ToString() : null,
+            VideoCodec = hasVideo ? videoStream.Codecpar!.CodecName : null,
             VideoWidth = hasVideo ? videoStream.Codecpar!.Width : 0,
             VideoHeight = hasVideo ? videoStream.Codecpar!.Height : 0,
             VideoScanMode = hasVideo
@@ -125,15 +125,15 @@ public static class ThumbnailSheetInfoBuilder
                 ? CalculateDisplayAspectRatio(
                     videoStream.Codecpar!.Width,
                     videoStream.Codecpar!.Height,
-                    sampleAspectRatio.Num,
-                    sampleAspectRatio.Den)
+                    sampleAspectRatio.num,
+                    sampleAspectRatio.den)
                 : 0,
-            VideoFrameRate = hasVideo && videoStream.AvgFrameRate.Num > 0
+            VideoFrameRate = hasVideo && videoStream.AvgFrameRate.num > 0
                 ? videoStream.AvgFrameRate.ToDouble()
                 : 0,
             VideoBitRate = videoBitRate,
             VideoBitRateEstimated = videoBitRateEstimated,
-            AudioCodec = hasAudio ? audioStream.Codecpar!.CodecId.ToString() : null,
+            AudioCodec = hasAudio ? audioStream.Codecpar!.CodecName : null,
             AudioLanguage = hasAudio ? GetLanguage(audioStream) : null,
             AudioChannels = hasAudio ? audioStream.Codecpar!.ChLayout.nb_channels : 0,
             AudioSampleRate = hasAudio ? audioStream.Codecpar!.SampleRate : 0,
@@ -154,12 +154,12 @@ public static class ThumbnailSheetInfoBuilder
     }
 
     internal static bool IsDisplayableStreamType(AVMediaType mediaType) =>
-        mediaType is AVMediaType.Video or AVMediaType.Audio or AVMediaType.Subtitle;
+        mediaType is AVMediaType.AVMEDIA_TYPE_VIDEO or AVMediaType.AVMEDIA_TYPE_AUDIO or AVMediaType.AVMEDIA_TYPE_SUBTITLE;
 
     internal static VideoScanMode GetVideoScanMode(AVFieldOrder fieldOrder) => fieldOrder switch
     {
-        AVFieldOrder.Progressive => VideoScanMode.Progressive,
-        AVFieldOrder.Tt or AVFieldOrder.Bb or AVFieldOrder.Tb or AVFieldOrder.Bt =>
+        AVFieldOrder.AV_FIELD_PROGRESSIVE => VideoScanMode.Progressive,
+        AVFieldOrder.AV_FIELD_TT or AVFieldOrder.AV_FIELD_BB or AVFieldOrder.AV_FIELD_TB or AVFieldOrder.AV_FIELD_BT =>
             VideoScanMode.Interlaced,
         _ => VideoScanMode.Unknown
     };
@@ -167,11 +167,11 @@ public static class ThumbnailSheetInfoBuilder
     private static VideoDynamicRange GetVideoDynamicRange(MediaStream stream)
     {
         var codecParameters = stream.Codecpar!;
-        var hasDolbyVisionConfig = HasCodecSideData(codecParameters, AVPacketSideDataType.DoviConf);
+        var hasDolbyVisionConfig = HasCodecSideData(codecParameters, AVPacketSideDataType.AV_PKT_DATA_DOVI_CONF);
         var hasHdrMetadata =
-            HasCodecSideData(codecParameters, AVPacketSideDataType.MasteringDisplayMetadata)
-            || HasCodecSideData(codecParameters, AVPacketSideDataType.ContentLightLevel)
-            || HasCodecSideData(codecParameters, AVPacketSideDataType.DynamicHdr10Plus);
+            HasCodecSideData(codecParameters, AVPacketSideDataType.AV_PKT_DATA_MASTERING_DISPLAY_METADATA)
+            || HasCodecSideData(codecParameters, AVPacketSideDataType.AV_PKT_DATA_CONTENT_LIGHT_LEVEL)
+            || HasCodecSideData(codecParameters, AVPacketSideDataType.AV_PKT_DATA_DYNAMIC_HDR10_PLUS);
         return VideoDynamicRangeDetector.Detect(
             codecParameters.ColorTrc,
             hasDolbyVisionConfig,
@@ -213,7 +213,7 @@ public static class ThumbnailSheetInfoBuilder
         {
             // 与 MediaInfoBuilder.FormatDuration(AVStream*) 保持同一口径：
             // 流时长 × time_base 得到秒数。
-            var seconds = videoStream.Duration * ffmpeg.av_q2d(videoStream.TimeBase);
+            var seconds = videoStream.Duration * FF.av_q2d(videoStream.TimeBase);
             if (seconds > 0)
                 return TimeSpan.FromSeconds(seconds);
         }
