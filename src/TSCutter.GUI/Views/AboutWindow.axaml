@@ -54,10 +54,16 @@
                 <ItemsControl ItemsSource="{Binding AllLibraries}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate>
-                            <HyperlinkButton NavigateUri="{Binding Url}" ToolTip.Tip="{Binding Url}"
-                                             Padding="0" Margin="0,2" HorizontalAlignment="Left">
-                                <TextBlock Text="{Binding Name}" TextDecorations="Underline" />
-                            </HyperlinkButton>
+                            <StackPanel Orientation="Horizontal" Margin="0,2">
+                                <TextBlock>
+                                    <Run FontWeight="Bold" Text="· " />
+                                    <Run FontWeight="Bold" Text="{Binding Name}" />
+                                    <Run Text=": " />
+                                </TextBlock>
+                                <HyperlinkButton NavigateUri="{Binding Url}" Padding="0">
+                                    <TextBlock Text="{Binding Url}" TextDecorations="Underline" />
+                                </HyperlinkButton>
+                            </StackPanel>
                         </DataTemplate>
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
