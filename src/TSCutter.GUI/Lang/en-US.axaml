@@ -129,6 +129,8 @@
     <x:String x:Key="String.Ok">OK</x:String>
     <x:String x:Key="String.Cancel">Cancel</x:String>
     <x:String x:Key="String.Apply">Apply</x:String>
+    <x:String x:Key="String.About.ReferenceCode">reference code</x:String>
+    <x:String x:Key="String.About.Notices">Third-party notices...</x:String>
     <x:String x:Key="String.About.Project">Project:</x:String>
     <x:String x:Key="String.About.Title">About {0}</x:String>
     <x:String x:Key="String.Jump.Title">Jump to Time</x:String>

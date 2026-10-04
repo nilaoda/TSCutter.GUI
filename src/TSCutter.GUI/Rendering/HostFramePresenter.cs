@@ -1,12 +1,12 @@
+using TSCutter.GUI.FFmpeg;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
-using Sdcb.FFmpeg.Raw;
-using Sdcb.FFmpeg.Swscales;
-using Sdcb.FFmpeg.Utils;
+using FFmpeg.AutoGen.Abstractions;
+using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.Rendering;
@@ -106,8 +106,8 @@ public sealed unsafe class HostFramePresenter : IDisposable
         destinationFrame ??= new Frame();
         destinationFrame.Width = size.Width;
         destinationFrame.Height = size.Height;
-        destinationFrame.Format = (int)AVPixelFormat.Bgra;
-        destinationFrame.Data[0] = framebuffer.Address;
+        destinationFrame.Format = (int)AVPixelFormat.AV_PIX_FMT_BGRA;
+        destinationFrame.Data[0] = (byte*)framebuffer.Address;
         destinationFrame.Linesize[0] = framebuffer.RowBytes;
     }
 

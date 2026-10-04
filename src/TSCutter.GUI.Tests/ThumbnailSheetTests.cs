@@ -1,7 +1,9 @@
+using TSCutter.GUI.FFmpeg;
 using Avalonia;
 using System.Linq;
 using System.Text.Json;
-using Sdcb.FFmpeg.Raw;
+using FFmpeg.AutoGen.Abstractions;
+using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Models;
 using TSCutter.GUI.Rendering;
 using TSCutter.GUI.Utils;
@@ -62,12 +64,12 @@ public sealed class ThumbnailSheetTests
     }
 
     [Theory]
-    [InlineData(AVMediaType.Video, true)]
-    [InlineData(AVMediaType.Audio, true)]
-    [InlineData(AVMediaType.Subtitle, true)]
-    [InlineData(AVMediaType.Data, false)]
-    [InlineData(AVMediaType.Attachment, false)]
-    [InlineData(AVMediaType.Unknown, false)]
+    [InlineData(AVMediaType.AVMEDIA_TYPE_VIDEO, true)]
+    [InlineData(AVMediaType.AVMEDIA_TYPE_AUDIO, true)]
+    [InlineData(AVMediaType.AVMEDIA_TYPE_SUBTITLE, true)]
+    [InlineData(AVMediaType.AVMEDIA_TYPE_DATA, false)]
+    [InlineData(AVMediaType.AVMEDIA_TYPE_ATTACHMENT, false)]
+    [InlineData(AVMediaType.AVMEDIA_TYPE_UNKNOWN, false)]
     public void HeaderOnlyIncludesAudioVideoAndSubtitleStreams(
         AVMediaType mediaType,
         bool expected)
@@ -76,23 +78,23 @@ public sealed class ThumbnailSheetTests
     }
 
     [Theory]
-    [InlineData(AVFieldOrder.Progressive, VideoScanMode.Progressive)]
-    [InlineData(AVFieldOrder.Tt, VideoScanMode.Interlaced)]
-    [InlineData(AVFieldOrder.Bb, VideoScanMode.Interlaced)]
-    [InlineData(AVFieldOrder.Tb, VideoScanMode.Interlaced)]
-    [InlineData(AVFieldOrder.Bt, VideoScanMode.Interlaced)]
-    [InlineData(AVFieldOrder.Unknown, VideoScanMode.Unknown)]
+    [InlineData(AVFieldOrder.AV_FIELD_PROGRESSIVE, VideoScanMode.Progressive)]
+    [InlineData(AVFieldOrder.AV_FIELD_TT, VideoScanMode.Interlaced)]
+    [InlineData(AVFieldOrder.AV_FIELD_BB, VideoScanMode.Interlaced)]
+    [InlineData(AVFieldOrder.AV_FIELD_TB, VideoScanMode.Interlaced)]
+    [InlineData(AVFieldOrder.AV_FIELD_BT, VideoScanMode.Interlaced)]
+    [InlineData(AVFieldOrder.AV_FIELD_UNKNOWN, VideoScanMode.Unknown)]
     public void FieldOrderMapsToScanMode(AVFieldOrder fieldOrder, VideoScanMode expected)
     {
         Assert.Equal(expected, ThumbnailSheetInfoBuilder.GetVideoScanMode(fieldOrder));
     }
 
     [Theory]
-    [InlineData(AVColorTransferCharacteristic.Unspecified, false, false, 0u, VideoDynamicRange.Standard)]
-    [InlineData(AVColorTransferCharacteristic.Smpte2084, false, false, 0u, VideoDynamicRange.Hdr)]
-    [InlineData(AVColorTransferCharacteristic.Unspecified, false, true, 0u, VideoDynamicRange.Hdr)]
-    [InlineData(AVColorTransferCharacteristic.AribStdB67, false, false, 0u, VideoDynamicRange.Hlg)]
-    [InlineData(AVColorTransferCharacteristic.Smpte2084, true, true, 0u, VideoDynamicRange.DolbyVision)]
+    [InlineData(AVColorTransferCharacteristic.AVCOL_TRC_UNSPECIFIED, false, false, 0u, VideoDynamicRange.Standard)]
+    [InlineData(AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084, false, false, 0u, VideoDynamicRange.Hdr)]
+    [InlineData(AVColorTransferCharacteristic.AVCOL_TRC_UNSPECIFIED, false, true, 0u, VideoDynamicRange.Hdr)]
+    [InlineData(AVColorTransferCharacteristic.AVCOL_TRC_ARIB_STD_B67, false, false, 0u, VideoDynamicRange.Hlg)]
+    [InlineData(AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084, true, true, 0u, VideoDynamicRange.DolbyVision)]
     public void VideoDynamicRangeUsesTransferAndStreamMetadata(
         AVColorTransferCharacteristic colorTransfer,
         bool hasDolbyVisionConfig,
@@ -121,7 +123,7 @@ public sealed class ThumbnailSheetTests
         Assert.Equal(
             VideoDynamicRange.DolbyVision,
             VideoDynamicRangeDetector.Detect(
-                AVColorTransferCharacteristic.Unspecified,
+                AVColorTransferCharacteristic.AVCOL_TRC_UNSPECIFIED,
                 hasDolbyVisionMetadata: false,
                 hasHdrMetadata: false,
                 codecTag));

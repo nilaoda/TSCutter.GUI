@@ -129,6 +129,8 @@
     <x:String x:Key="String.Ok">确定</x:String>
     <x:String x:Key="String.Cancel">取消</x:String>
     <x:String x:Key="String.Apply">应用</x:String>
+    <x:String x:Key="String.About.ReferenceCode">参考代码</x:String>
+    <x:String x:Key="String.About.Notices">第三方声明...</x:String>
     <x:String x:Key="String.About.Project">项目:</x:String>
     <x:String x:Key="String.About.Title">关于 {0}</x:String>
     <x:String x:Key="String.Jump.Title">跳转到时间</x:String>

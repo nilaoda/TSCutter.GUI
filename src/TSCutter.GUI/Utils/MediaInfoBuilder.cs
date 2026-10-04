@@ -1,11 +1,11 @@
+using TSCutter.GUI.FFmpeg;
 using System;
 using System.IO;
 using System.Linq;
 using System.Text;
-using Sdcb.FFmpeg.Formats;
-using Sdcb.FFmpeg.Raw;
+using FFmpeg.AutoGen.Abstractions;
+using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using System.Runtime.InteropServices;
-using Sdcb.FFmpeg.Codecs;
 
 namespace TSCutter.GUI.Utils;
 
@@ -32,7 +32,7 @@ public static class MediaInfoBuilder
             AppendField(sb, "Overall bit rate mode", IsCbr(fc) ? "Constant" : "Variable");
             AppendField(sb, "Overall bit rate", (fc.BitRate / 1_000_000.0).ToString("0.00") + " Mb/s");
         }
-        if (firstStream.AvgFrameRate.Num > 0)
+        if (firstStream.AvgFrameRate.num > 0)
             AppendField(sb, "Frame rate", firstStream.AvgFrameRate.ToDouble().ToString("F3") + " FPS");
         sb.AppendLine();
 
@@ -42,9 +42,9 @@ public static class MediaInfoBuilder
             var cp = stream.Codecpar!;
             switch (cp.CodecType)
             {
-                case AVMediaType.Video: WriteVideo(sb, stream, cp, fc, fi); break;
-                case AVMediaType.Audio: WriteAudio(sb, stream, cp, fc, fi); break;
-                case AVMediaType.Subtitle: WriteSubtitle(sb, stream, cp); break;
+                case AVMediaType.AVMEDIA_TYPE_VIDEO: WriteVideo(sb, stream, cp, fc, fi); break;
+                case AVMediaType.AVMEDIA_TYPE_AUDIO: WriteAudio(sb, stream, cp, fc, fi); break;
+                case AVMediaType.AVMEDIA_TYPE_SUBTITLE: WriteSubtitle(sb, stream, cp); break;
                 default: WriteGeneric(sb, stream, cp); break;
             }
             sb.AppendLine();
@@ -86,11 +86,11 @@ public static class MediaInfoBuilder
         AppendField(sb, "ID", stream.Index + 256 + " (0x" + (stream.Index + 256).ToString("X") + ")");
         AppendField(sb, "Menu ID", "1 (0x1)");
 
-        string codec = cp.CodecId.ToString();
+        string codec = cp.CodecName;
         AppendField(sb, "Format", codec);
         AppendField(sb, "Format/Info", CodecLongName(cp.CodecId));
 
-        var descriptor = ffmpeg.avcodec_descriptor_get(cp.CodecId);
+        var descriptor = FF.avcodec_descriptor_get(cp.CodecId);
         if (descriptor != null && !string.IsNullOrEmpty(Marshal.PtrToStringAnsi((IntPtr)descriptor->long_name)))
             AppendField(sb, "Format profile", Marshal.PtrToStringAnsi((IntPtr)descriptor->long_name)!);
 
@@ -106,30 +106,30 @@ public static class MediaInfoBuilder
         AppendField(sb, "Width", cp.Width + " pixels");
         AppendField(sb, "Height", cp.Height + " pixels");
 
-        if (cp.SampleAspectRatio.Num != 0 && cp.SampleAspectRatio.Den != 0)
+        if (cp.SampleAspectRatio.num != 0 && cp.SampleAspectRatio.den != 0)
         {
-            int num = cp.Width * cp.SampleAspectRatio.Num;
-            int den = cp.Height * cp.SampleAspectRatio.Den;
+            int num = cp.Width * cp.SampleAspectRatio.num;
+            int den = cp.Height * cp.SampleAspectRatio.den;
             AvReduce(out var resultNum, out var resultDen, num, den, long.MaxValue);
             AppendField(sb, "Display aspect ratio", resultNum + ":" + resultDen);
         }
 
         AppendField(sb, "Frame rate", stream.AvgFrameRate.ToDouble().ToString("F3") + " FPS");
 
-        AppendField(sb, "Color space", cp.ColorSpace.ToString());
+        AppendField(sb, "Color space", cp.ColorSpace.ToString().Replace("AVCOL_SPC_", ""));
         AppendField(sb, "Chroma subsampling", ChromaLocation(cp.ChromaLocation));
         AppendField(sb, "Bit depth", GetBitDepth(cp) + " bits");
 
-        if (cp.ColorRange != AVColorRange.Unspecified)
-            AppendField(sb, "Color range", cp.ColorRange == AVColorRange.Jpeg ? "Full" : "Limited");
-        if (cp.ColorPrimaries != AVColorPrimaries.Unspecified)
-            AppendField(sb, "Color primaries", cp.ColorPrimaries.ToString().Replace("bt2020", "BT.2020"));
-        if (cp.ColorTrc != AVColorTransferCharacteristic.Unspecified)
-            AppendField(sb, "Transfer characteristics", cp.ColorTrc.ToString().ToUpper());
-        if (cp.ColorSpace != AVColorSpace.Unspecified)
-            AppendField(sb, "Matrix coefficients", cp.ColorSpace.ToString().Replace("bt2020nc", "BT.2020 non-constant"));
+        if (cp.ColorRange != AVColorRange.AVCOL_RANGE_UNSPECIFIED)
+            AppendField(sb, "Color range", cp.ColorRange == AVColorRange.AVCOL_RANGE_JPEG ? "Full" : "Limited");
+        if (cp.ColorPrimaries != AVColorPrimaries.AVCOL_PRI_UNSPECIFIED)
+            AppendField(sb, "Color primaries", cp.ColorPrimaries.ToString().Replace("AVCOL_PRI_", "").Replace("bt2020", "BT.2020"));
+        if (cp.ColorTrc != AVColorTransferCharacteristic.AVCOL_TRC_UNSPECIFIED)
+            AppendField(sb, "Transfer characteristics", cp.ColorTrc.ToString().Replace("AVCOL_TRC_", "").ToUpper());
+        if (cp.ColorSpace != AVColorSpace.AVCOL_SPC_UNSPECIFIED)
+            AppendField(sb, "Matrix coefficients", cp.ColorSpace.ToString().Replace("AVCOL_SPC_", "").Replace("bt2020nc", "BT.2020 non-constant"));
 
-        if (cp.BitRate > 0 && cp.Width > 0 && cp.Height > 0 && stream.AvgFrameRate.Num > 0)
+        if (cp.BitRate > 0 && cp.Width > 0 && cp.Height > 0 && stream.AvgFrameRate.num > 0)
         {
             double fps = stream.AvgFrameRate.ToDouble();
             double bppf = cp.BitRate / (cp.Width * cp.Height * fps);
@@ -140,8 +140,8 @@ public static class MediaInfoBuilder
         if (streamSize > 0)
             AppendField(sb, "Stream size", ToSize(streamSize) + " (" + (100.0 * streamSize / fi.Length).ToString("F0") + "%)");
 
-        if (stream.Codecpar!.FieldOrder != AVFieldOrder.Progressive && stream.Codecpar.FieldOrder != AVFieldOrder.Unknown)
-            AppendField(sb, "Scan type", stream.Codecpar.FieldOrder.ToString());
+        if (stream.Codecpar!.FieldOrder != AVFieldOrder.AV_FIELD_PROGRESSIVE && stream.Codecpar.FieldOrder != AVFieldOrder.AV_FIELD_UNKNOWN)
+            AppendField(sb, "Scan type", stream.Codecpar.FieldOrder.ToString().Replace("AV_FIELD_", ""));
 
         foreach (var kv in stream.Metadata)
             if (kv.Key != "language" && kv.Key != "title")
@@ -157,11 +157,11 @@ public static class MediaInfoBuilder
         AppendField(sb, "ID", stream.Index + 256 + " (0x" + (stream.Index + 256).ToString("X") + ")");
         AppendField(sb, "Menu ID", "1 (0x1)");
 
-        string codec = cp.CodecId.ToString();
+        string codec = cp.CodecName;
         AppendField(sb, "Format", codec);
-        AppendField(sb, "Format/Info", CodecLongName(cp.CodecId));
-        if (codec == "Ac3") AppendField(sb, "Commercial name", "Dolby Digital");
-        AppendField(sb, "Codec ID", ((int)cp.CodecId).ToString());
+        AppendField(sb, "Format/Info", cp.IsAv3a ? "Audio Vivid" : CodecLongName(cp.CodecId));
+        if (codec == "AC3") AppendField(sb, "Commercial name", "Dolby Digital");
+        AppendField(sb, "Codec ID", cp.IsAv3a ? "av3a" : ((int)cp.CodecId).ToString());
 
         AppendField(sb, "Duration", FormatDuration(stream));
 
@@ -171,21 +171,24 @@ public static class MediaInfoBuilder
             AppendField(sb, "Bit rate", cp.BitRate / 1000.0 + " kb/s");
         }
 
-        AppendField(sb, "Channel(s)", cp.ChLayout.nb_channels + " channels");
-        AppendField(sb, "Channel layout", GetChannelLayoutDescription(cp.ChLayout));
+        if (cp.ChLayout.nb_channels > 0)
+        {
+            AppendField(sb, "Channel(s)", cp.ChLayout.nb_channels + " channels");
+            AppendField(sb, "Channel layout", GetChannelLayoutDescription(cp.ChLayout));
+        }
 
         if (cp.SampleRate > 0)
             AppendField(sb, "Sampling rate", cp.SampleRate / 1000.0 + " kHz");
 
-        if (stream.AvgFrameRate.Num > 0)
+        if (cp.HasReliableCodecParameters && stream.AvgFrameRate.num > 0)
             AppendField(sb, "Frame rate", stream.AvgFrameRate.ToDouble().ToString("F3") + " FPS (1536 SPF)");
 
         AppendField(sb, "Compression mode", "Lossy");
 
-        var firstVideo = fc.Streams.FirstOrDefault(x => x.Codecpar!.CodecType == AVMediaType.Video);
-        if (firstVideo is {} && stream.StartTime != ffmpeg.AV_NOPTS_VALUE && firstVideo.StartTime != ffmpeg.AV_NOPTS_VALUE)
+        var firstVideo = fc.Streams.FirstOrDefault(x => x.Codecpar!.CodecType == AVMediaType.AVMEDIA_TYPE_VIDEO);
+        if (firstVideo is {} && stream.StartTime != FF.AV_NOPTS_VALUE && firstVideo.StartTime != FF.AV_NOPTS_VALUE)
         {
-            long delay = (stream.StartTime - firstVideo.StartTime) * 1000 / ffmpeg.AV_TIME_BASE;
+            long delay = (stream.StartTime - firstVideo.StartTime) * 1000 / FF.AV_TIME_BASE;
             if (delay != 0)
                 AppendField(sb, "Delay relative to video", delay + " ms");
         }
@@ -197,7 +200,7 @@ public static class MediaInfoBuilder
         if (stream.Metadata.TryGetValue("language", out var lang))
             AppendField(sb, "Language", lang);
 
-        if (codec == "Ac3")
+        if (codec == "AC3")
         {
             if (stream.Metadata.TryGetValue("service_type", out var st))
                 AppendField(sb, "Service kind", st);
@@ -217,7 +220,7 @@ public static class MediaInfoBuilder
     {
         AppendSection(sb, "Subtitle");
         AppendField(sb, "ID", stream.Index + 256 + " (0x" + (stream.Index + 256).ToString("X") + ")");
-        AppendField(sb, "Format", cp.CodecId.ToString());
+        AppendField(sb, "Format", cp.CodecName);
         if (stream.Metadata.TryGetValue("language", out var lang))
             AppendField(sb, "Language", lang);
     }
@@ -226,9 +229,9 @@ public static class MediaInfoBuilder
     #region ----- Generic -----
     private static void WriteGeneric(StringBuilder sb, MediaStream stream, CodecParameters cp)
     {
-        AppendSection(sb, cp.CodecType.ToString());
+        AppendSection(sb, cp.CodecType.ToString().Replace("AVMEDIA_TYPE_", ""));
         AppendField(sb, "ID", stream.Index + 256 + " (0x" + (stream.Index + 256).ToString("X") + ")");
-        AppendField(sb, "Codec", cp.CodecId.ToString());
+        AppendField(sb, "Codec", cp.CodecName);
     }
     #endregion
 
@@ -247,7 +250,7 @@ public static class MediaInfoBuilder
         if (stream->duration <= 0) return "Unknown";
     
         // 将微秒转换为秒
-        var seconds = stream->duration * ffmpeg.av_q2d(stream->time_base);
+        var seconds = stream->duration * FF.av_q2d(stream->time_base);
         var ts = TimeSpan.FromSeconds(seconds);
 
         return ts.Hours > 0
@@ -261,7 +264,7 @@ public static class MediaInfoBuilder
         {
             fixed (int* pDstNum = &dstNum, pDstDen = &dstDen)
             {
-                return ffmpeg.av_reduce(pDstNum, pDstDen, num, den, max);
+                return FF.av_reduce(pDstNum, pDstDen, num, den, max);
             }
         }
     }
@@ -272,7 +275,7 @@ public static class MediaInfoBuilder
         byte[] buf = new byte[bufSize];
         fixed (byte* pBuf = buf)
         {
-            ffmpeg.av_channel_layout_describe(&chLayout, pBuf, (ulong)bufSize);
+            FF.av_channel_layout_describe(&chLayout, pBuf, (ulong)bufSize);
         }
         int len = Array.IndexOf(buf, (byte)0);
         return Encoding.UTF8.GetString(buf, 0, len > 0 ? len : bufSize - 1);
@@ -280,15 +283,15 @@ public static class MediaInfoBuilder
 
     private static unsafe int GetBitDepth(CodecParameters cp)
     {
-        if (cp.CodecType == AVMediaType.Video)
+        if (cp.CodecType == AVMediaType.AVMEDIA_TYPE_VIDEO)
         {
-            var desc = ffmpeg.av_pix_fmt_desc_get((AVPixelFormat)cp.Format);
+            var desc = FF.av_pix_fmt_desc_get((AVPixelFormat)cp.Format);
             if (desc != null)
                 return desc->comp[0].depth;
         }
-        else if (cp.CodecType == AVMediaType.Audio)
+        else if (cp.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO)
         {
-            return ffmpeg.av_get_bits_per_sample(cp.CodecId);
+            return FF.av_get_bits_per_sample(cp.CodecId);
         }
         return cp.BitsPerRawSample;
     }
@@ -304,18 +307,18 @@ public static class MediaInfoBuilder
 
     private static string ChromaLocation(AVChromaLocation loc) => loc switch
     {
-        AVChromaLocation.Left or AVChromaLocation.Center or AVChromaLocation.Topleft => "4:2:0",
-        _ => loc.ToString()
+        AVChromaLocation.AVCHROMA_LOC_LEFT or AVChromaLocation.AVCHROMA_LOC_CENTER or AVChromaLocation.AVCHROMA_LOC_TOPLEFT => "4:2:0",
+        _ => loc.ToString().Replace("AVCHROMA_LOC_", "")
     };
 
     private static string CodecLongName(AVCodecID id) => id switch
     {
-        AVCodecID.Hevc => "High Efficiency Video Coding",
-        AVCodecID.H264 => "Advanced Video Codec",
-        AVCodecID.Ac3 => "Audio Coding 3",
-        AVCodecID.Eac3 => "Enhanced AC-3",
-        AVCodecID.Aac => "Advanced Audio Codec",
-        _ => id.ToString()
+        AVCodecID.AV_CODEC_ID_HEVC => "High Efficiency Video Coding",
+        AVCodecID.AV_CODEC_ID_H264 => "Advanced Video Codec",
+        AVCodecID.AV_CODEC_ID_AC3 => "Audio Coding 3",
+        AVCodecID.AV_CODEC_ID_EAC3 => "Enhanced AC-3",
+        AVCodecID.AV_CODEC_ID_AAC => "Advanced Audio Codec",
+        _ => CodecNames.Get(id)
     };
 
     private static long StreamSize(FormatContext fc, MediaStream stream)

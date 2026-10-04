@@ -1,0 +1,82 @@
+<Project>
+    <UsingTask TaskName="CombineThirdPartyNotices" TaskFactory="RoslynCodeTaskFactory" AssemblyFile="$(MSBuildToolsPath)/Microsoft.Build.Tasks.Core.dll">
+        <ParameterGroup>
+            <SummaryFile ParameterType="System.String" Required="true" />
+            <NoticeFiles ParameterType="Microsoft.Build.Framework.ITaskItem[]" Required="true" />
+            <OutputFile ParameterType="System.String" Required="true" />
+        </ParameterGroup>
+        <Task>
+            <Using Namespace="System" />
+            <Using Namespace="System.IO" />
+            <Using Namespace="System.Text" />
+            <Code Type="Fragment" Language="cs"><![CDATA[
+                // 构建时流式合并原文，避免一次性加载全部许可内容；应用运行时无需处理。
+                Directory.CreateDirectory(Path.GetDirectoryName(OutputFile));
+                var buffer = new char[4096];
+                foreach (var file in NoticeFiles)
+                {
+                    if (string.IsNullOrEmpty(file.GetMetadata("NoticeTitle")))
+                        file.SetMetadata("NoticeTitle", file.GetMetadata("RecursiveDir").Replace('\\', '/') + Path.GetFileName(file.ItemSpec));
+                }
+                using (var writer = new StreamWriter(OutputFile, false, new UTF8Encoding(false)))
+                {
+                    writer.NewLine = "\n";
+                    using (var reader = new StreamReader(SummaryFile, Encoding.UTF8, true))
+                    {
+                        int count;
+                        while ((count = reader.Read(buffer, 0, buffer.Length)) > 0)
+                            writer.Write(buffer, 0, count);
+                    }
+
+                    Array.Sort(NoticeFiles, (left, right) => StringComparer.Ordinal.Compare(left.GetMetadata("NoticeTitle"), right.GetMetadata("NoticeTitle")));
+                    foreach (var file in NoticeFiles)
+                    {
+                        writer.WriteLine();
+                        writer.WriteLine();
+                        writer.WriteLine("============================================================");
+                        writer.WriteLine(file.GetMetadata("NoticeTitle"));
+                        writer.WriteLine("============================================================");
+                        writer.WriteLine();
+                        using (var reader = new StreamReader(file.ItemSpec, Encoding.UTF8, true))
+                        {
+                            int count;
+                            while ((count = reader.Read(buffer, 0, buffer.Length)) > 0)
+                                writer.Write(buffer, 0, count);
+                        }
+                    }
+                }
+            ]]></Code>
+        </Task>
+    </UsingTask>
+
+    <!-- 在输出文件清单生成前合并声明，普通构建和 dotnet publish 均只复制一个文件。 -->
+    <Target Name="GenerateThirdPartyNotices" BeforeTargets="AssignTargetPaths" DependsOnTargets="ResolveFrameworkReferences">
+        <PropertyGroup>
+            <_NoticeRepositoryRoot>$(MSBuildThisFileDirectory)..</_NoticeRepositoryRoot>
+            <_CombinedNoticesFile>$(IntermediateOutputPath)THIRD_PARTY_NOTICES.txt</_CombinedNoticesFile>
+        </PropertyGroup>
+        <ItemGroup>
+            <_NoticeInput Include="$(_NoticeRepositoryRoot)/ThirdParty/**/*.txt;$(_NoticeRepositoryRoot)/ThirdParty/**/*.md" Exclude="$(_NoticeRepositoryRoot)/ThirdParty/**/*.cs.txt" />
+            <_NoticeInput Include="$(_NoticeRepositoryRoot)/LICENSE">
+                <NoticeTitle>TSCutter.GUI / FFmpegSharedLibraries — GPL v3</NoticeTitle>
+            </_NoticeInput>
+            <_NoticeRuntimePack Include="@(ResolvedRuntimePack)" Condition="'%(ResolvedRuntimePack.FrameworkName)' == 'Microsoft.NETCore.App'" />
+        </ItemGroup>
+        <Error Condition="'$(SelfContained)' == 'true' and '@(_NoticeRuntimePack)' == ''" Text="The .NET runtime pack is required to publish its license notices." />
+        <ItemGroup Condition="'$(SelfContained)' == 'true'">
+            <!-- 自包含发布取实际运行时包的原文，避免声明随 SDK 升级而过期。 -->
+            <_NoticeInput Remove="$(_NoticeRepositoryRoot)/ThirdParty/dotnet/*" />
+            <_NoticeInput Include="@(_NoticeRuntimePack->'%(PackageDirectory)/LICENSE.TXT')">
+                <NoticeTitle>dotnet/LICENSE.txt</NoticeTitle>
+            </_NoticeInput>
+            <_NoticeInput Include="@(_NoticeRuntimePack->'%(PackageDirectory)/THIRD-PARTY-NOTICES.TXT')">
+                <NoticeTitle>dotnet/THIRD-PARTY-NOTICES.txt</NoticeTitle>
+            </_NoticeInput>
+        </ItemGroup>
+        <CombineThirdPartyNotices SummaryFile="$(_NoticeRepositoryRoot)/THIRD_PARTY_NOTICES.md" NoticeFiles="@(_NoticeInput)" OutputFile="$(_CombinedNoticesFile)" />
+        <ItemGroup>
+            <None Include="$(_CombinedNoticesFile)" Link="THIRD_PARTY_NOTICES.txt" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+            <FileWrites Include="$(_CombinedNoticesFile)" />
+        </ItemGroup>
+    </Target>
+</Project>

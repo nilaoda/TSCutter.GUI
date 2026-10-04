@@ -378,7 +378,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand(CanExecute = nameof(CanEditVideo))]
+    [RelayCommand(CanExecute = nameof(CanMarkVideo))]
     private void AddClip()
     {
         RecordHistory();
@@ -418,7 +418,7 @@ public partial class MainWindowViewModel : ViewModelBase
         NotifyClipSelectionChanged();
     }
 
-    [RelayCommand(CanExecute = nameof(CanEditSelectedClip))]
+    [RelayCommand(CanExecute = nameof(CanMarkSelectedClip))]
     private void MarkClipStart()
     {
         RecordHistory();
@@ -440,7 +440,7 @@ public partial class MainWindowViewModel : ViewModelBase
         NotifyClipSelectionChanged();
     }
 
-    [RelayCommand(CanExecute = nameof(CanEditSelectedClip))]
+    [RelayCommand(CanExecute = nameof(CanMarkSelectedClip))]
     private void MarkClipEnd()
     {
         RecordHistory();
@@ -463,7 +463,7 @@ public partial class MainWindowViewModel : ViewModelBase
         NotifyClipSelectionChanged();
     }
 
-    [RelayCommand(CanExecute = nameof(CanEditVideo))]
+    [RelayCommand(CanExecute = nameof(CanMarkVideo))]
     private void MarkClipStartShortcut()
     {
         RecordHistory();
@@ -471,7 +471,7 @@ public partial class MainWindowViewModel : ViewModelBase
         MarkClipStartCore();
     }
 
-    [RelayCommand(CanExecute = nameof(CanEditVideo))]
+    [RelayCommand(CanExecute = nameof(CanMarkVideo))]
     private void MarkClipEndShortcut()
     {
         RecordHistory();
@@ -1777,6 +1777,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ApplyDecodeResult(DecodeResult decodeResult)
     {
+        AddClipCommand.NotifyCanExecuteChanged();
+        MarkClipStartCommand.NotifyCanExecuteChanged();
+        MarkClipEndCommand.NotifyCanExecuteChanged();
+        MarkClipStartShortcutCommand.NotifyCanExecuteChanged();
+        MarkClipEndShortcutCommand.NotifyCanExecuteChanged();
         DecodedFrameSourceSize = decodeResult.SourcePixelSize;
         decodedFrameRequiresSampleAspectRatioCorrection =
             decodeResult.RequiresSampleAspectRatioCorrection;
@@ -2045,6 +2050,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private bool CanEditVideo => IsVideoInitialized && IsTsFile(VideoPath);
     private bool CanEditSelectedClip => CanEditVideo && HasSelectedClip;
+    // 无可靠帧位置时仍可预览，但不能把 -1 当作剪辑边界写入项目。
+    private bool CanMarkVideo => CanEditVideo && PositionInFile >= 0;
+    private bool CanMarkSelectedClip => CanMarkVideo && HasSelectedClip;
 
     private void NotifyVideoCapabilityChanged()
     {

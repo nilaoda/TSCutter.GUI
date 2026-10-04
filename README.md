@@ -43,23 +43,11 @@ TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It comb
 - **Bounded resource usage**: Large-file tools use streaming or on-demand reads instead of loading complete media files into memory.
 
 ## FFmpeg Runtime
-Official release packages bundle the required **FFmpeg 7.1.3** shared libraries. End users do not need to install FFmpeg manually.
+Official release packages bundle the required **FFmpeg 9.0.2** shared libraries. End users do not need to install FFmpeg manually.
 
-Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries/releases/latest).
+Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries).
 
 > **macOS**: If the app is blocked by quarantine, run `xattr -dr com.apple.quarantine TSCutter.GUI.app`.
-
-<details>
-<summary>Building from source</summary>
-
-If you are building from source without the bundled runtimes, a compatible FFmpeg 7 installation is required.
-
-- **macOS**: `brew install ffmpeg@7`
-- **Linux (Ubuntu 22.04)**: `sudo add-apt-repository ppa:ubuntuhandbook1/ffmpeg7 && sudo apt update && sudo apt install ffmpeg`
-
-On macOS, the app automatically probes common Homebrew locations. If your FFmpeg 7 lives elsewhere, set `FFmpegRootPath` in `~/Library/Application Support/TSCutter.GUI/config.json` to the FFmpeg root directory or its `lib` directory.
-
-</details>
 
 ## Preview
 

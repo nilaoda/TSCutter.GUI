@@ -1,3 +1,4 @@
+using TSCutter.GUI.FFmpeg;
 using System;
 using System.Globalization;
 using System.IO;
@@ -8,9 +9,8 @@ using Avalonia.Input;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
-using Sdcb.FFmpeg.Raw;
-using Sdcb.FFmpeg.Swscales;
-using Sdcb.FFmpeg.Utils;
+using FFmpeg.AutoGen.Abstractions;
+using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using SkiaSharp;
 
 namespace TSCutter.GUI.Utils;
@@ -54,7 +54,7 @@ public static class ImageUtil
             _cachedDestinationSize = destinationSize;
         }
 
-        using Frame dest = Frame.CreateVideo(width, height, AVPixelFormat.Bgra);
+        using Frame dest = Frame.CreateVideo(width, height, AVPixelFormat.AV_PIX_FMT_BGRA);
         _cachedSws.ConvertFrame(frame, dest);
 
         var writableBitmap = new WriteableBitmap(

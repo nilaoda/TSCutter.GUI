@@ -43,23 +43,11 @@ TSCutter.GUI 是一个跨平台 MPEG-TS 剪辑与诊断工具。它在快速关�
 - **有界资源占用**：面向大文件的工具采用流式或按需读取，不会把完整媒体文件加载到内存。
 
 ## FFmpeg 运行时
-官方发布包已内置 **FFmpeg 7.1.3** 共享库，普通用户无需手动安装。
+官方发布包已内置 **FFmpeg 9.0.2** 共享库，普通用户无需手动安装。
 
-内置运行时来源：[nilaoda/FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries/releases/latest)。
+内置运行时来源：[nilaoda/FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries)。
 
 > **macOS**：若因隔离属性（quarantine）被拦截，请执行 `xattr -dr com.apple.quarantine TSCutter.GUI.app`。
-
-<details>
-<summary>从源码构建</summary>
-
-从源码构建且未内置运行时库时，需自行准备兼容的 FFmpeg 7 环境。
-
-- **macOS**：`brew install ffmpeg@7`
-- **Linux (Ubuntu 22.04)**：`sudo add-apt-repository ppa:ubuntuhandbook1/ffmpeg7 && sudo apt update && sudo apt install ffmpeg`
-
-macOS 下程序会自动探测常见的 Homebrew 路径；若 FFmpeg 7 安装在其他位置，可在 `~/Library/Application Support/TSCutter.GUI/config.json` 中设置 `FFmpegRootPath` 为 FFmpeg 根目录或其 `lib` 目录。
-
-</details>
 
 ## 界面预览
 
