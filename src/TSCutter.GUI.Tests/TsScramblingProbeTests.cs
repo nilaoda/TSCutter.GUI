@@ -7,6 +7,110 @@ namespace TSCutter.GUI.Tests;
 public class TsScramblingProbeTests
 {
     [Theory]
+    [InlineData(188, 0)]
+    [InlineData(188, 17)]
+    [InlineData(192, 4)]
+    [InlineData(204, 17)]
+    public void DetectsActualPacketLayoutAfterAPrefix(int stride, int prefix)
+    {
+        var layout = TsScramblingProbe.FindPacketLayout(CreatePackets(stride, prefix));
+        Assert.Equal(stride, layout.PacketSize);
+        Assert.Equal(prefix, layout.SyncOffset);
+    }
+
+    [Fact]
+    public void SyncBytesWithoutValidHeadersCannotEstablishLayout()
+    {
+        var data = new byte[188 * 8];
+        for (var offset = 0; offset < data.Length; offset += 188)
+            data[offset] = 0x47;
+        Assert.Equal((0, -1), TsScramblingProbe.FindPacketLayout(data));
+    }
+
+    [Fact]
+    public void DamagedFirstPacketDoesNotHideLaterValidSynchronization()
+    {
+        var data = CreatePackets(188, 0);
+        data[3] = 0x30;
+        data[4] = 184;
+        Assert.Equal((188, 188), TsScramblingProbe.FindPacketLayout(data));
+    }
+
+    [Theory]
+    [InlineData("mts", 17)]
+    [InlineData("m2ts", 65_200)]
+    [InlineData("bin", 131_073)]
+    [InlineData("mp4", 2_000_001)]
+    [InlineData("ts", TsScramblingProbe.MaximumProbeBytes - 8 * 188)]
+    public void ContentProbeIsIndependentOfSuffixAndFindsBoundedNonzeroStart(string extension, int prefix)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ts-layout-{Guid.NewGuid():N}.{extension}");
+        try
+        {
+            var data = CreatePackets(188, prefix);
+            // 前缀含伪同步字节但无合法包头，不能抢占实际起点。
+            for (var offset = 0; offset + 4 * 188 < prefix; offset += 188)
+                data[offset] = 0x47;
+            File.WriteAllBytes(path, data);
+            var probe = TsScramblingProbe.Probe(path);
+            Assert.True(probe.Is188ByteTransportStream);
+            Assert.False(probe.HasScrambledPayload);
+            Assert.Equal(prefix, probe.SyncOffset);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Theory]
+    [InlineData(192)]
+    [InlineData(204)]
+    public void TsSuffixDoesNotEnableUnsupportedPacketLayouts(int stride)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ts-layout-{Guid.NewGuid():N}.ts");
+        try
+        {
+            File.WriteAllBytes(path, CreatePackets(stride, 65_200));
+            Assert.False(TsScramblingProbe.Probe(path).Is188ByteTransportStream);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void ScrambledPacketAcrossReadBoundaryIsNotSkipped()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ts-probe-{Guid.NewGuid():N}.ts");
+        try
+        {
+            var data = new byte[188 * 400];
+            var clearPacket = CreatePackets(188, 0).AsSpan(0, 188);
+            for (var offset = 0; offset < data.Length; offset += 188)
+                clearPacket.CopyTo(data.AsSpan(offset));
+            data[188 * (TsScramblingProbe.ProbeBufferBytes / 188) + 3] = 0x90;
+            File.WriteAllBytes(path, data);
+            Assert.True(TsScramblingProbe.Probe(path).HasScrambledPayload);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void LayoutProbeDoesNotSearchBeyondItsBound()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"ts-layout-{Guid.NewGuid():N}.bin");
+        try
+        {
+            using (var output = File.Create(path))
+            {
+                output.SetLength(TsScramblingProbe.MaximumProbeBytes);
+                output.Position = output.Length;
+                output.Write(CreatePackets(188, 0));
+            }
+            var probe = TsScramblingProbe.Probe(path);
+            Assert.False(probe.Is188ByteTransportStream);
+            Assert.Equal(-1, probe.SyncOffset);
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Theory]
     [InlineData(0, 2)]
     [InlineData(4, 3)]
     [InlineData(17, 2)]

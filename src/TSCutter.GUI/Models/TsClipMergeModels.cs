@@ -14,6 +14,8 @@ internal sealed class TsClipMergeRequest
     public required string SourcePath { get; init; }
     public required string OutputPath { get; init; }
     public required IReadOnlyList<TsClipMergeRange> Ranges { get; init; }
+    public int VideoPid { get; init; } = -1;
+    public IReadOnlyList<int> AudioPids { get; init; } = [];
 }
 
 internal readonly record struct TsClipMergeProgress(

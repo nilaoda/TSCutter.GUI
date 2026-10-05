@@ -92,8 +92,15 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(SelectedClipsSummaryStr));
     }
 
-    private long PositionInFile => _videoInstance!.PositionInFile;
-    private long CurrentPts => _videoInstance!.CurrentPts;
+    private long _displayedFramePosition = -1;
+    private long _displayedFramePts = long.MinValue;
+    private long _displayedFramePts90k = long.MinValue;
+    private double _displayedFrameTime;
+    private PacketEndSignature _displayedFrameEndSignature;
+    private bool _isResolvingClipEnd;
+    private CancellationTokenSource? _clipEndCancellation;
+    private long PositionInFile => _displayedFramePosition;
+    private long CurrentPts => _displayedFramePts;
 
     [ObservableProperty]
     private ThemeModel _selectedTheme;
@@ -390,7 +397,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var newClip = new PickedClip()
         {
             InFileInfo = new FileInfo(VideoPath),
-            StartTime = CurrentTime,
+            StartTime = _displayedFrameTime,
             StartPosition = PositionInFile,
             StartPts = CurrentPts,
             EndTime = DurationMax,
@@ -427,11 +434,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void MarkClipStartCore()
     {
-        SelectedClip!.StartTime = CurrentTime;
+        SelectedClip!.StartTime = _displayedFrameTime;
         SelectedClip!.StartPts = CurrentPts;
         SelectedClip!.StartPosition = PositionInFile;
         SelectedClip!.ReplaceStartThumbnail(CreateCurrentFrameThumbnail());
-        if (SelectedClip!.EndTime <= CurrentTime)
+        if (SelectedClip!.EndTime <= _displayedFrameTime)
         {
             SelectedClip!.EndTime = DurationMax;
             SelectedClip!.EndPosition = -1;
@@ -440,27 +447,80 @@ public partial class MainWindowViewModel : ViewModelBase
         NotifyClipSelectionChanged();
     }
 
-    [RelayCommand(CanExecute = nameof(CanMarkSelectedClip))]
-    private void MarkClipEnd()
-    {
-        RecordHistory();
-        MarkClipEndCore();
-    }
+    // 并发由当前视频的扫描状态控制，更换源后不等待旧任务退出。
+    [RelayCommand(CanExecute = nameof(CanMarkSelectedClip), AllowConcurrentExecutions = true)]
+    private Task MarkClipEndAsync() => MarkClipEndCoreAsync(ensureSelectedClip: false);
 
-    private void MarkClipEndCore()
+    private async Task MarkClipEndCoreAsync(bool ensureSelectedClip)
     {
-        SelectedClip!.EndTime = CurrentTime;
-        SelectedClip!.EndPts = CurrentPts;
-        SelectedClip!.EndPosition = PositionInFile;
-        SelectedClip!.ReplaceEndThumbnail(CreateCurrentFrameThumbnail());
-        if (SelectedClip!.StartTime >= CurrentTime)
+        if (!CanMarkVideo || (!ensureSelectedClip && SelectedClip is null))
+            return;
+        // 先冻结当前显示帧。扫描期间允许导航，结果仍属于点击时的画面和片段。
+        var video = _videoInstance;
+        var path = VideoPath;
+        var clip = SelectedClip;
+        var time = _displayedFrameTime;
+        var pts = CurrentPts;
+        var position = PositionInFile;
+        var pts90k = _displayedFramePts90k;
+        var signature = _displayedFrameEndSignature;
+        var thumbnail = CreateCurrentFrameThumbnail();
+        using var cancellation = new CancellationTokenSource();
+        _clipEndCancellation = cancellation;
+        _isResolvingClipEnd = true;
+        NotifyVideoCapabilityChanged();
+        try
         {
-            SelectedClip!.StartTime = 0;
-            SelectedClip!.StartPts = 0;
-            SelectedClip!.StartPosition = 0;
-            SelectedClip!.ReplaceStartThumbnail(null);
+            var endPosition = await TsClipBoundaryResolver.ResolveEndAsync(path, position, pts90k,
+                signature, cancellation.Token);
+            if (cancellation.IsCancellationRequested || !ReferenceEquals(_clipEndCancellation, cancellation)
+                || !ReferenceEquals(video, _videoInstance) || clip is not null && !Clips.Contains(clip))
+                return;
+            // 成功定位后才记录历史和修改片段；扫描失败不会留下半个标记。
+            RecordHistory();
+            if (clip is null)
+            {
+                clip = new PickedClip { InFileInfo = new FileInfo(path) };
+                Clips.Add(clip);
+                SelectClip(clip);
+            }
+            clip.EndTime = time;
+            clip.EndPts = pts;
+            clip.EndPosition = endPosition;
+            clip.ReplaceEndThumbnail(thumbnail);
+            thumbnail = null;
+            if (clip.StartTime >= time)
+            {
+                clip.StartTime = 0;
+                clip.StartPts = 0;
+                clip.StartPosition = 0;
+                clip.ReplaceStartThumbnail(null);
+            }
+            NotifyClipSelectionChanged();
         }
-        NotifyClipSelectionChanged();
+        catch (OperationCanceledException) when (cancellation.IsCancellationRequested)
+        {
+            // 关闭或更换视频时取消尚未完成的边界扫描。
+        }
+        catch (Exception exception)
+        {
+            Console.WriteLine($"Unable to mark clip end: {exception}");
+            if (!cancellation.IsCancellationRequested && ReferenceEquals(_clipEndCancellation, cancellation)
+                && ReferenceEquals(video, _videoInstance))
+                await ShowMessageAsync(LocalizationManager.Instance.String_ClipEndBoundaryFailed,
+                    LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            thumbnail?.Dispose();
+            // 旧扫描的结束回调不能解锁或清除新视频的扫描。
+            if (ReferenceEquals(_clipEndCancellation, cancellation))
+            {
+                _clipEndCancellation = null;
+                _isResolvingClipEnd = false;
+                NotifyVideoCapabilityChanged();
+            }
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanMarkVideo))]
@@ -471,13 +531,8 @@ public partial class MainWindowViewModel : ViewModelBase
         MarkClipStartCore();
     }
 
-    [RelayCommand(CanExecute = nameof(CanMarkVideo))]
-    private void MarkClipEndShortcut()
-    {
-        RecordHistory();
-        EnsureSelectedClipCore();
-        MarkClipEndCore();
-    }
+    [RelayCommand(CanExecute = nameof(CanMarkVideo), AllowConcurrentExecutions = true)]
+    private Task MarkClipEndShortcutAsync() => MarkClipEndCoreAsync(ensureSelectedClip: true);
 
     private void EnsureSelectedClipCore()
     {
@@ -632,6 +687,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void RestoreEditorState(EditorStateSnapshot snapshot)
     {
+        // 撤销/重做已取代当前编辑，旧结尾扫描不能再写回复用的片段对象。
+        CancelClipEndScan();
         _restoringHistory = true;
         try
         {
@@ -672,6 +729,7 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             _restoringHistory = false;
+            NotifyVideoCapabilityChanged();
         }
     }
 
@@ -958,6 +1016,7 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
 
         var sourcePath = selected[0].InFileInfo.FullName;
+        var streamPids = _videoInstance!.GetMergeStreamPids();
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_MergeClips_Title,
@@ -989,6 +1048,8 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             SourcePath = sourcePath,
             OutputPath = outputPath,
+            VideoPid = streamPids.VideoPid,
+            AudioPids = streamPids.AudioPids,
             Ranges = selected.Select(clip => new TsClipMergeRange(
                 clip.StartPosition,
                 clip.EndPosition,
@@ -1189,6 +1250,8 @@ public partial class MainWindowViewModel : ViewModelBase
         : PleaseLoadTip;
     public bool IsDecoding => DecodingOpCount > 0;
 
+    partial void OnDecodingOpCountChanged(int value) => NotifyVideoCapabilityChanged();
+
     public string ZoomFactorStr => string.Format(LocalizationManager.Instance.String_ZoomFactor, $"{ZoomFactor * 100.0:0}");
 
     [RelayCommand]
@@ -1284,6 +1347,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 prepared = new VideoInstance(project.Source.Path,
                     _configService.CurrentConfig.PreferHardwareDecoding);
                 await prepared.InitVideoAsync();
+                if (project.Clips.Count > 0 && !prepared.CanBinaryClip)
+                    throw new InvalidDataException("Clips require a 188-byte TS source file.");
             }
             catch (Exception exception)
             {
@@ -1777,6 +1842,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ApplyDecodeResult(DecodeResult decodeResult)
     {
+        _displayedFramePosition = decodeResult.FramePosition;
+        _displayedFramePts = decodeResult.FramePts;
+        _displayedFramePts90k = decodeResult.FramePts90k;
+        _displayedFrameTime = decodeResult.FrameTimestamp.TotalSeconds;
+        _displayedFrameEndSignature = decodeResult.FrameEndSignature;
         AddClipCommand.NotifyCanExecuteChanged();
         MarkClipStartCommand.NotifyCanExecuteChanged();
         MarkClipEndCommand.NotifyCanExecuteChanged();
@@ -1844,8 +1914,16 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
+    private void CancelClipEndScan()
+    {
+        _clipEndCancellation?.Cancel();
+        _clipEndCancellation = null;
+        _isResolvingClipEnd = false;
+    }
+
     private void ClearVars()
     {
+        CancelClipEndScan();
         keyFrameOverviewWindow?.CloseWindow();
         keyFrameOverviewWindow = null;
         StopAcceptingScrubPreviews();
@@ -1862,6 +1940,11 @@ public partial class MainWindowViewModel : ViewModelBase
         NotifyClipSelectionChanged();
         DurationMax = 0.0;
         CurrentTime = 0.0;
+        _displayedFramePosition = -1;
+        _displayedFramePts = long.MinValue;
+        _displayedFramePts90k = long.MinValue;
+        _displayedFrameTime = 0;
+        _displayedFrameEndSignature = default;
         TimelineViewport.Reset(0, 0);
         DecodeCost = 0L;
         IsHardwareDecoding = false;
@@ -1871,8 +1954,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private async Task<bool> LoadVideoAsync(VideoInstance? prepared = null)
     {
+        // 换源从等待预览任务时就禁用标记，避免用旧画面的位置扫描新路径。
+        DecodingOpCount++;
         try
         {
+            CancelClipEndScan();
             await CompleteScrubPreviewAsync();
             ClearVars();
             SetProjectPath(null);
@@ -1923,6 +2009,10 @@ public partial class MainWindowViewModel : ViewModelBase
                 LocalizationManager.Instance.String_FailedToLoadVideo,
                 MessageBoxIcon.Error);
             return false;
+        }
+        finally
+        {
+            DecodingOpCount = Math.Max(0, DecodingOpCount - 1);
         }
     }
 
@@ -2000,14 +2090,12 @@ public partial class MainWindowViewModel : ViewModelBase
         return null;
     }
 
-    private static bool IsTsFile(string? path) =>
-        string.Equals(Path.GetExtension(path), ".ts", StringComparison.OrdinalIgnoreCase);
-
     private static bool IsProjectFile(string? path) =>
         string.Equals(Path.GetExtension(path), ".tscut", StringComparison.OrdinalIgnoreCase);
 
     public void Close()
     {
+        CancelClipEndScan();
         keyFrameOverviewWindow?.CloseWindow();
         keyFrameOverviewWindow = null;
         Task scrubWorker;
@@ -2046,12 +2134,13 @@ public partial class MainWindowViewModel : ViewModelBase
         IsHardwareDecoding = _videoInstance.IsHardwareDecoding;
     }
 
-    public bool IsPreviewOnly => IsVideoInitialized && !IsTsFile(VideoPath);
+    public bool IsPreviewOnly => IsVideoInitialized && !CanEditVideo;
 
-    private bool CanEditVideo => IsVideoInitialized && IsTsFile(VideoPath);
+    private bool CanEditVideo => _videoInstance is { Inited: true, CanBinaryClip: true };
     private bool CanEditSelectedClip => CanEditVideo && HasSelectedClip;
     // 无可靠帧位置时仍可预览，但不能把 -1 当作剪辑边界写入项目。
-    private bool CanMarkVideo => CanEditVideo && PositionInFile >= 0;
+    private bool CanMarkVideo => CanEditVideo && !IsDecoding && !_isResolvingClipEnd
+        && PositionInFile >= 0 && CurrentPts != long.MinValue;
     private bool CanMarkSelectedClip => CanMarkVideo && HasSelectedClip;
 
     private void NotifyVideoCapabilityChanged()

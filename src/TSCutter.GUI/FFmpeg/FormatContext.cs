@@ -96,6 +96,7 @@ public readonly unsafe struct MediaStream
     internal MediaStream(AVStream* raw) { this.raw = raw; Codecpar = raw->codecpar == null ? null : new CodecParameters(raw->codecpar); }
     public CodecParameters? Codecpar { get; }
     public int Index => raw == null ? 0 : raw->index;
+    public int Id => raw == null ? -1 : raw->id;
     public long Duration => raw == null ? 0 : raw->duration;
     public long StartTime => raw == null ? FF.AV_NOPTS_VALUE : raw->start_time;
     public AVRational TimeBase => raw == null ? default : raw->time_base;

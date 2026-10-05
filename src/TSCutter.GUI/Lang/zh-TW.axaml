@@ -1085,4 +1085,5 @@
     <x:String x:Key="String.TsEsExtractor.Error.DuplicateOutputPath">多條串流使用相同的輸出路徑：{0}</x:String>
     <x:String x:Key="String.TsEsExtractor.Error.OutputExists">輸出檔案已存在：{0}</x:String>
     <x:String x:Key="String.TsEsExtractor.Error.SameAsSource">輸出路徑不能是來源檔案：{0}</x:String>
+    <x:String x:Key="String.ClipEndBoundaryFailed">無法可靠定位所選結尾幀的完整邊界，片段未修改。請嘗試其他關鍵幀，或檢查檔案是否損壞。</x:String>
 </ResourceDictionary>

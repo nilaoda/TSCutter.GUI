@@ -1085,4 +1085,5 @@
     <x:String x:Key="String.TsEsExtractor.Error.DuplicateOutputPath">多条流使用了相同的输出路径：{0}</x:String>
     <x:String x:Key="String.TsEsExtractor.Error.OutputExists">输出文件已存在：{0}</x:String>
     <x:String x:Key="String.TsEsExtractor.Error.SameAsSource">输出路径不能是源文件：{0}</x:String>
+    <x:String x:Key="String.ClipEndBoundaryFailed">无法可靠定位所选结尾帧的完整边界，片段未修改。请尝试其他关键帧，或检查文件是否损坏。</x:String>
 </ResourceDictionary>

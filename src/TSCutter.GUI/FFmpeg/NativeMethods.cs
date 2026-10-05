@@ -31,6 +31,10 @@ public static unsafe partial class NativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial AVFormatContext* avformat_alloc_context();
 
+    [LibraryImport("tscutter.avformat", EntryPoint = "av_find_input_format", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial AVInputFormat* av_find_input_format(string shortName);
+
     [LibraryImport("tscutter.avformat", EntryPoint = "avformat_open_input", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int avformat_open_input(AVFormatContext** @ps, string @url, AVInputFormat* @fmt, AVDictionary** @options);

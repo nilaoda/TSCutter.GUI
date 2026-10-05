@@ -19,6 +19,8 @@ public sealed unsafe class Packet : SafeHandle
     public int Flags => Raw->flags;
     public long Pts => Raw->pts;
     public long Position => Raw->pos;
+    internal Utils.PacketEndSignature EndSignature => Raw->data == null || Raw->size < 32 ? default
+        : Utils.PacketEndSignature.Create(new ReadOnlySpan<byte>(Raw->data, Raw->size));
     internal void SetPositionToken() => Raw->opaque = (void*)FramePacketPosition.Encode(Position);
     public void Unref() => FF.av_packet_unref(Raw);
     protected override bool ReleaseHandle()

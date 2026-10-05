@@ -142,9 +142,6 @@ internal static class CutterProjectService
         if (project.Source is not null)
         {
             ValidateSourceOnce(project.Source, validatedSources);
-            if (!string.Equals(System.IO.Path.GetExtension(project.Source.Path), ".ts",
-                    StringComparison.OrdinalIgnoreCase) && project.Clips.Count > 0)
-                throw new InvalidDataException("Clips require a TS source file.");
         }
 
         foreach (var clip in project.Clips)

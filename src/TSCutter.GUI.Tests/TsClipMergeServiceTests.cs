@@ -15,6 +15,227 @@ public sealed class TsClipMergeServiceTests
     private const int MediaPid = 0x0100;
     private const long TimestampWrap = 1L << 33;
 
+    [Theory]
+    [InlineData(17)]
+    [InlineData(65_200)]
+    [InlineData(2_000_001)]
+    [InlineData(TsScramblingProbe.MaximumProbeBytes + 17)]
+    public async Task NonTsSuffixAndDamagedPrefixKeepTheRealPacketAlignment(int prefix)
+    {
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"ts-merge-prefix-{Guid.NewGuid():N}.mts");
+        var outputPath = sourcePath + ".merged.ts";
+        try
+        {
+            var packets = Enumerable.Range(0, 20)
+                .SelectMany(index => CreatePacket(index, index * 9_000L)).ToArray();
+            var source = new byte[prefix + packets.Length];
+            packets.CopyTo(source, prefix);
+            await File.WriteAllBytesAsync(sourcePath, source);
+            await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
+            {
+                SourcePath = sourcePath, OutputPath = outputPath,
+                Ranges = [new(prefix, prefix + 10 * PacketSize, 0, 1)]
+            });
+            Assert.Equal(packets[..(10 * PacketSize)], await File.ReadAllBytesAsync(outputPath));
+        }
+        finally { File.Delete(sourcePath); File.Delete(outputPath); }
+    }
+
+    [Fact]
+    public async Task MarkedRangesKeepTheirRealOffsetsAfterBytesInsertedBetweenThem()
+    {
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"ts-merge-offsets-{Guid.NewGuid():N}.ts");
+        var outputPath = sourcePath + ".merged.ts";
+        try
+        {
+            var first = Enumerable.Range(0, 10).SelectMany(index => CreatePacket(index, index * 9_000L)).ToArray();
+            var second = Enumerable.Range(20, 10).SelectMany(index => CreatePacket(index, index * 9_000L)).ToArray();
+            const int insertedBytes = 17;
+            var secondStart = first.Length + insertedBytes;
+            byte[] data = [.. first, .. new byte[insertedBytes], .. second, 0x12, 0x34];
+            await File.WriteAllBytesAsync(sourcePath, data);
+            var result = await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
+            {
+                SourcePath = sourcePath, OutputPath = outputPath,
+                Ranges = [new(PacketSize, first.Length, 0.1, 0.9), new(secondStart, -1, 2, 2.9)]
+            });
+            var output = await File.ReadAllBytesAsync(outputPath);
+            Assert.Equal(19 * PacketSize, output.Length);
+            Assert.Equal(2, result.SegmentCount);
+            Assert.Equal(first[PacketSize..], output[..(9 * PacketSize)]);
+            for (var index = 0; index < 10; index++)
+            {
+                // 时间戳和 CC 允许在合并接缝处改写，压缩载荷必须来自原来的真实偏移。
+                Assert.Equal(second.AsSpan(index * PacketSize + 26, PacketSize - 26).ToArray(),
+                    output.AsSpan((9 + index) * PacketSize + 26, PacketSize - 26).ToArray());
+            }
+        }
+        finally { File.Delete(sourcePath); File.Delete(outputPath); }
+    }
+
+    [Fact]
+    public async Task UnmarkedFileStartStillSkipsADamagedPrefix()
+    {
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"ts-merge-unmarked-{Guid.NewGuid():N}.ts");
+        var outputPath = sourcePath + ".merged.ts";
+        try
+        {
+            var packets = Enumerable.Range(0, 10).SelectMany(index => CreatePacket(index, index * 9_000L)).ToArray();
+            byte[] data = [.. new byte[17], .. packets];
+            await File.WriteAllBytesAsync(sourcePath, data);
+            await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
+            {
+                SourcePath = sourcePath, OutputPath = outputPath, Ranges = [new(0, -1, 0, 1)]
+            });
+            Assert.Equal(packets, await File.ReadAllBytesAsync(outputPath));
+        }
+        finally { File.Delete(sourcePath); File.Delete(outputPath); }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(TimestampWrap - 18_000)]
+    public async Task AudioPesSpanningPastVideoEndCannotOverlapAtTheJoin(long basePts)
+    {
+        const int audioPid = 257;
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"ts-merge-audio-{Guid.NewGuid():N}.ts");
+        var outputPath = sourcePath + ".merged.ts";
+        try
+        {
+            var packets = Enumerable.Range(0, 30).SelectMany(index =>
+            {
+                var videoPts = index < 20 ? index * 9_000L : 900_000 + (index - 20) * 9_000L;
+                var audioPts = index < 20 ? 36_000 + index * 36_000L : 880_000 + (index - 20) * 36_000L;
+                var audio = CreatePacket(index, basePts + audioPts);
+                audio[2] = audioPid & 255;
+                audio[15] = 0xBD;
+                return new[] { CreatePacket(index, basePts + videoPts), audio };
+            }).ToArray();
+            await File.WriteAllBytesAsync(sourcePath, packets.SelectMany(packet => packet).ToArray());
+            await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
+            {
+                SourcePath = sourcePath, OutputPath = outputPath, VideoPid = MediaPid, AudioPids = [audioPid],
+                Ranges = [new(0, 10 * PacketSize, 0, 0.4), new(40 * PacketSize, 50 * PacketSize, 10, 10.4)]
+            });
+            var output = await File.ReadAllBytesAsync(outputPath);
+            var previousAudio = output.AsSpan(9 * PacketSize, PacketSize);
+            var nextVideo = output.AsSpan(10 * PacketSize, PacketSize);
+            var nextAudio = output.AsSpan(11 * PacketSize, PacketSize);
+            Assert.Equal(36_000, ModuloTimestamp(ReadPts(nextAudio) - ReadPts(previousAudio)));
+            Assert.Equal(20_000, ModuloTimestamp(ReadPts(nextVideo) - ReadPts(nextAudio)));
+            Assert.True(ModuloTimestamp(ReadPts(nextVideo) - ReadPts(output.AsSpan(8 * PacketSize, PacketSize))) > 0);
+        }
+        finally { File.Delete(sourcePath); File.Delete(outputPath); }
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(TimestampWrap - 36_000)]
+    public async Task IncludedEndFrameDoesNotSharePtsWithTheNextSegment(long basePts)
+    {
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"ts-merge-inclusive-{Guid.NewGuid():N}.ts");
+        var outputPath = sourcePath + ".merged.ts";
+        try
+        {
+            await File.WriteAllBytesAsync(sourcePath, Enumerable.Range(0, 50)
+                .SelectMany(index => CreatePacket(index, basePts + index * 9_000L)).ToArray());
+            await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
+            {
+                SourcePath = sourcePath,
+                OutputPath = outputPath,
+                Ranges =
+                [
+                    new(0, 11 * PacketSize, 0, 1),
+                    new(20 * PacketSize, 31 * PacketSize, 2, 3),
+                    new(40 * PacketSize, 50 * PacketSize, 4, 4.9)
+                ]
+            });
+            var output = await File.ReadAllBytesAsync(outputPath);
+            var end = output.AsSpan(10 * PacketSize, PacketSize);
+            var next = output.AsSpan(11 * PacketSize, PacketSize);
+            Assert.Equal(9_000, ModuloTimestamp(ReadPts(next) - ReadPts(end)));
+            Assert.Equal(9_000, ModuloTimestamp(ReadPcr(next) - ReadPcr(end)));
+            // 第三段继续累计实际播放跨度，不能把第二段已应用的偏移重复计入。
+            end = output.AsSpan(21 * PacketSize, PacketSize);
+            next = output.AsSpan(22 * PacketSize, PacketSize);
+            Assert.Equal(9_000, ModuloTimestamp(ReadPts(next) - ReadPts(end)));
+            Assert.Equal(9_000, ModuloTimestamp(ReadPcr(next) - ReadPcr(end)));
+        }
+        finally { File.Delete(sourcePath); File.Delete(outputPath); }
+    }
+
+    [Fact]
+    public async Task LeadingPicturesInTheNextSegmentStartAfterTheIncludedEndFrame()
+    {
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"ts-merge-leading-{Guid.NewGuid():N}.ts");
+        var outputPath = sourcePath + ".merged.ts";
+        try
+        {
+            var packets = Enumerable.Range(0, 30)
+                .Select(index => CreatePacket(index, index * 9_000L)).ToArray();
+            long[] nextPts = [900_000, 873_000, 882_000, 891_000, 909_000, 918_000];
+            for (var index = 0; index < nextPts.Length; index++)
+                packets[20 + index] = CreatePacket(20 + index, nextPts[index]);
+            await File.WriteAllBytesAsync(sourcePath, packets.SelectMany(packet => packet).ToArray());
+            await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
+            {
+                SourcePath = sourcePath,
+                OutputPath = outputPath,
+                Ranges = [new(0, 5 * PacketSize, 0, 0.4), new(20 * PacketSize, 26 * PacketSize, 10, 10.2)]
+            });
+            var output = await File.ReadAllBytesAsync(outputPath);
+            Assert.Equal(36_000, ReadPts(output.AsSpan(4 * PacketSize, PacketSize)));
+            Assert.Equal(72_000, ReadPts(output.AsSpan(5 * PacketSize, PacketSize)));
+            Assert.Equal(45_000, ReadPts(output.AsSpan(6 * PacketSize, PacketSize)));
+            Assert.Equal(54_000, ReadPts(output.AsSpan(7 * PacketSize, PacketSize)));
+            Assert.Equal(63_000, ReadPts(output.AsSpan(8 * PacketSize, PacketSize)));
+        }
+        finally { File.Delete(sourcePath); File.Delete(outputPath); }
+    }
+
+    [Fact]
+    public async Task DecodeTimestampsAlsoRemainStrictlyAfterThePreviousSegment()
+    {
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"ts-merge-dts-{Guid.NewGuid():N}.ts");
+        var outputPath = sourcePath + ".merged.ts";
+        try
+        {
+            var packets = Enumerable.Range(0, 30)
+                .Select(index => CreatePacket(index, index * 9_000L)).ToArray();
+            for (var index = 0; index < 5; index++)
+                SetDts(packets[index], index * 9_000L);
+            for (var index = 20; index < 25; index++)
+            {
+                packets[index] = CreatePacket(index, 900_000 + (index - 20) * 9_000L);
+                SetDts(packets[index], 800_000 + (index - 20) * 9_000L);
+            }
+            await File.WriteAllBytesAsync(sourcePath, packets.SelectMany(packet => packet).ToArray());
+            await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
+            {
+                SourcePath = sourcePath,
+                OutputPath = outputPath,
+                Ranges = [new(0, 5 * PacketSize, 0, 0.4), new(20 * PacketSize, 25 * PacketSize, 10, 10.4)]
+            });
+            var output = await File.ReadAllBytesAsync(outputPath);
+            var end = output.AsSpan(4 * PacketSize, PacketSize);
+            var next = output.AsSpan(5 * PacketSize, PacketSize);
+            Assert.Equal(45_000, Utils.TsTimestampFieldCodec.ReadPesTimestamp(next[26..31]));
+            Assert.True(ReadPts(next) > ReadPts(end));
+            // 一整段采用同一偏移，原有 PTS-DTS 差不能被接缝修复改写。
+            Assert.Equal(100_000, ReadPts(next) - Utils.TsTimestampFieldCodec.ReadPesTimestamp(next[26..31]));
+        }
+        finally { File.Delete(sourcePath); File.Delete(outputPath); }
+    }
+
+    private static void SetDts(byte[] packet, long dts)
+    {
+        packet[19] = 0xC0;
+        packet[20] = 10;
+        packet[21] = (byte)((packet[21] & 15) | 0x30);
+        WriteTimestamp(packet.AsSpan(26, 5), dts);
+        packet[26] = (byte)((packet[26] & 15) | 0x10);
+    }
+
     [Fact]
     public async Task MergeMakesJoinContinuousAndPreservesInternalTransportDamage()
     {
