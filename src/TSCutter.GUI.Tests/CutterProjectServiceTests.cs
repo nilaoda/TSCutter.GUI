@@ -8,6 +8,22 @@ namespace TSCutter.GUI.Tests;
 
 public sealed class CutterProjectServiceTests
 {
+    [Theory]
+    [InlineData("mts")]
+    [InlineData("m2ts")]
+    [InlineData("bin")]
+    public void ProjectClipsAreNotRestrictedToTsSuffix(string extension)
+    {
+        using var files = new ProjectTestFiles();
+        var original = files.CreateSource();
+        var path = Path.ChangeExtension(original.Path, extension);
+        File.Move(original.Path, path);
+        var project = CreateProject(CutterProjectService.Snapshot(path));
+        var restored = CutterProjectService.Deserialize(CutterProjectService.Serialize(project));
+        Assert.Equal(path, restored.Source!.Path);
+        Assert.Equal(2, restored.Clips.Count);
+    }
+
     [Fact]
     public async Task GrowingRecordingCanBeReopenedWithItsSavedClips()
     {

@@ -1085,4 +1085,5 @@
     <x:String x:Key="String.TsEsExtractor.Error.DuplicateOutputPath">Multiple streams use the same output path: {0}</x:String>
     <x:String x:Key="String.TsEsExtractor.Error.OutputExists">The output file already exists: {0}</x:String>
     <x:String x:Key="String.TsEsExtractor.Error.SameAsSource">The output path cannot be the source file: {0}</x:String>
+    <x:String x:Key="String.ClipEndBoundaryFailed">Cannot safely locate the end of the selected frame. The clip was not changed. Try another keyframe or check whether the file is damaged.</x:String>
 </ResourceDictionary>

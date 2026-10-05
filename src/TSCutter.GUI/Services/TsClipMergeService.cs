@@ -18,8 +18,6 @@ internal sealed class TsClipMergeService
 {
     private const int PacketSize = TsStreamAnalyzer.PacketSize;
     private const int ReadPacketCount = 4096;
-    private const int SyncProbeBytes = 1024 * 1024;
-    private const int RequiredSyncPackets = 5;
 
     public async Task<TsClipMergeResult> MergeAsync(
         TsClipMergeRequest request,
@@ -40,22 +38,39 @@ internal sealed class TsClipMergeService
             sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
             PacketSize * ReadPacketCount, FileOptions.Asynchronous | FileOptions.SequentialScan);
         var sourceLength = source.Length;
-        var syncOffset = await FindSyncOffsetAsync(source, cancellationToken).ConfigureAwait(false);
-        if (syncOffset < 0)
-            throw new TsClipMergeException(TsClipMergeErrorCode.NoSync);
+        long fileStart = 0;
+        // 已标记的边界是实际文件偏移；仅未标记、从文件头开始的范围需要寻找首包。
+        if (request.Ranges.Any(item => item.StartPosition == 0))
+        {
+            fileStart = await FindSyncOffsetAsync(source, cancellationToken).ConfigureAwait(false);
+            if (fileStart < 0)
+                throw new TsClipMergeException(TsClipMergeErrorCode.NoSync);
+        }
 
-        var ranges = NormalizeRanges(request.Ranges, syncOffset, sourceLength);
+        var ranges = NormalizeRanges(request.Ranges, fileStart, sourceLength);
         if (ranges.Count == 0)
             throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
 
+        using var splitHeaderReader = new TsSplitPesHeaderReader();
+        var splitTimestampRewriter = new TsSplitPesTimestampRewriter();
         var totalBytes = ranges.Sum(item => item.EndPosition - item.StartPosition);
         var buffer = ArrayPool<byte>.Shared.Rent(PacketSize * ReadPacketCount);
         var lastPayloadContinuity = new int[8192];
+        var segmentContinuityOffsets = new int[8192];
         Array.Fill(lastPayloadContinuity, -1);
         long processedBytes = 0;
         long rewrittenPcrCount = 0;
         long rewrittenTimestampCount = 0;
         long rewrittenContinuityCount = 0;
+        var previousTimeline = new TsClipMergeTimeline();
+        previousTimeline.Reset(request.VideoPid);
+        // 只为实际音轨保留定额统计，不按全部 8192 个 PID 分配状态。
+        TsClipMergeTimeline[] audioTimelines = request.AudioPids.Count == 0 ? [] : new TsClipMergeTimeline[request.AudioPids.Count];
+        TsClipMergeTimeline[] audioHeads = request.AudioPids.Count == 0 ? [] : new TsClipMergeTimeline[request.AudioPids.Count];
+        for (var index = 0; index < audioTimelines.Length; index++)
+            audioTimelines[index].Reset(request.AudioPids[index]);
+        var previousCorrection = 0L;
+        var expectedStartTime = ranges[0].StartTimeSeconds;
 
         try
         {
@@ -67,7 +82,31 @@ internal sealed class TsClipMergeService
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var range = ranges[rangeIndex];
-                var segmentContinuityOffsets = new int[8192];
+                var correction = (long)Math.Round((expectedStartTime - range.StartTimeSeconds) * 90_000.0);
+                if (rangeIndex > 0 && previousTimeline.HasPts)
+                {
+                    var head = await ReadTimelineHeadAsync(source, range, buffer, splitHeaderReader,
+                            previousTimeline.Pid, audioTimelines, audioHeads, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (head.HasPts)
+                    {
+                        // HEVC 前导帧可能早于起点关键帧，按实际最早 PTS 接续上一段末帧。
+                        correction = previousTimeline.EndPts + previousCorrection - head.MinimumPts;
+                        if (previousTimeline.HasDts && head.HasDts)
+                            correction = LaterCorrection(correction,
+                                previousTimeline.EndDts + previousCorrection - head.MinimumDts);
+                        // 音频 PES 可能覆盖多帧并超过视频终点；同一偏移应用于全部音视频，
+                        // 既保留片段内的音画关系，也避免接缝音轨倒退或重叠。
+                        for (var index = 0; index < audioTimelines.Length; index++)
+                            if (audioTimelines[index].HasPts && audioHeads[index].HasPts)
+                                correction = LaterCorrection(correction,
+                                    audioTimelines[index].EndPts + previousCorrection - audioHeads[index].MinimumPts);
+                    }
+                }
+                var timeline = new TsClipMergeTimeline();
+                timeline.Reset(previousTimeline.Pid);
+                for (var index = 0; index < audioTimelines.Length; index++)
+                    audioTimelines[index].Reset(request.AudioPids[index]);
                 Array.Fill(segmentContinuityOffsets, int.MinValue);
                 source.Position = range.StartPosition;
                 var remaining = range.EndPosition - range.StartPosition;
@@ -82,23 +121,47 @@ internal sealed class TsClipMergeService
 
                     await source.ReadExactlyAsync(buffer.AsMemory(0, requested), cancellationToken)
                         .ConfigureAwait(false);
-                    var packets = buffer.AsSpan(0, requested);
-                    for (var offset = 0; offset < packets.Length; offset += PacketSize)
+                    var chunkStart = range.StartPosition + (range.EndPosition - range.StartPosition - remaining);
+                    for (var offset = 0; offset < requested; offset += PacketSize)
                     {
-                        var packet = packets.Slice(offset, PacketSize);
+                        TsSplitPesHeader splitHeader = default;
+                        if ((rangeIndex + 1 < ranges.Count || correction != 0) &&
+                            TsSplitPesHeaderReader.NeedsRead(buffer.AsSpan(offset, PacketSize)))
+                            splitHeader = await splitHeaderReader.ReadAsync(source, buffer, chunkStart,
+                                requested, offset, range.EndPosition, cancellationToken).ConfigureAwait(false);
+                        var packet = buffer.AsSpan(offset, PacketSize);
                         if (packet[0] != 0x47)
                             throw new TsClipMergeException(
                                 TsClipMergeErrorCode.SourceChanged,
                                 range.StartPosition + (range.EndPosition - range.StartPosition - remaining) + offset);
 
                         var transportError = (packet[1] & 0x80) != 0;
-                        if (!transportError && range.TimestampCorrection90k != 0)
+                        // 最后一段之后没有接缝；单段导出也无需统计时间戳。
+                        if (rangeIndex + 1 < ranges.Count)
                         {
+                            if (splitHeader.IsValid)
+                                ObserveSplitHeader(splitHeader, ref timeline, audioTimelines);
+                            else
+                            {
+                                timeline.Observe(packet);
+                                ObserveAudio(packet, audioTimelines);
+                            }
+                        }
+                        if (!transportError && correction != 0)
+                        {
+                            // 完整头在前读时已取得，分片在写入输出前完成改写。
+                            // 重复包使用同一头片段，不能让重复的部分仍保留旧时间戳。
+                            var continuation = splitTimestampRewriter.RewriteContinuation(packet);
+                            if (!continuation && splitHeader.IsValid)
+                            {
+                                splitTimestampRewriter.Start(packet, splitHeader, correction);
+                                rewrittenTimestampCount += splitHeader.Length == 19 ? 2 : 1;
+                            }
+                            else if (!continuation)
+                                rewrittenTimestampCount += TsTimestampFieldCodec.RewritePesTimestamps(packet, correction);
                             if (TsTimestampFieldCodec.RewritePcr(
-                                    packet, range.TimestampCorrection90k))
+                                    packet, correction))
                                 rewrittenPcrCount++;
-                            rewrittenTimestampCount += TsTimestampFieldCodec.RewritePesTimestamps(
-                                packet, range.TimestampCorrection90k);
                         }
 
                         // 每个后续片段对各 PID 只计算一次固定 CC 偏移。这样既能消除人为
@@ -117,6 +180,10 @@ internal sealed class TsClipMergeService
                         processedBytes / Math.Max(0.001, stopwatch.Elapsed.TotalSeconds),
                         stopwatch.Elapsed));
                 }
+                splitTimestampRewriter.CompleteSegment();
+                previousTimeline = timeline;
+                previousCorrection = correction;
+                expectedStartTime = range.EndTimeSeconds + correction / 90_000.0;
             }
 
             await output.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -157,25 +224,31 @@ internal sealed class TsClipMergeService
 
     private static List<NormalizedRange> NormalizeRanges(
         IReadOnlyList<TsClipMergeRange> source,
-        long syncOffset,
+        long fileStart,
         long fileLength)
     {
-        var aligned = new List<NormalizedRange>(source.Count);
+        var ranges = new List<NormalizedRange>(source.Count);
         foreach (var item in source)
         {
-            var rawEnd = item.EndPosition > 0 ? Math.Min(item.EndPosition, fileLength) : fileLength;
-            var rawStart = Math.Clamp(item.StartPosition, syncOffset, fileLength);
-            var start = AlignDown(rawStart, syncOffset);
-            var end = AlignDown(rawEnd, syncOffset);
+            var start = item.StartPosition == 0 ? fileStart : item.StartPosition;
+            if (start < 0 || start > fileLength)
+                throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
+            var end = item.EndPosition > 0 ? Math.Min(item.EndPosition, fileLength) : fileLength;
+            // EOF 可能带有不完整尾包，仅这种终点按当前片段起点截去尾部。
+            // 已标记的起止位置保持原值，不能按文件头的包相位重新取整。
+            if (end == fileLength)
+                end -= (end - start) % PacketSize;
             if (end <= start || item.EndTimeSeconds <= item.StartTimeSeconds)
                 continue;
-            aligned.Add(new NormalizedRange(
-                start, end, item.StartTimeSeconds, item.EndTimeSeconds, 0));
+            if ((end - start) % PacketSize != 0)
+                throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
+            ranges.Add(new NormalizedRange(
+                start, end, item.StartTimeSeconds, item.EndTimeSeconds));
         }
 
-        aligned.Sort(static (left, right) => left.StartPosition.CompareTo(right.StartPosition));
-        var merged = new List<NormalizedRange>(aligned.Count);
-        foreach (var item in aligned)
+        ranges.Sort(static (left, right) => left.StartPosition.CompareTo(right.StartPosition));
+        var merged = new List<NormalizedRange>(ranges.Count);
+        foreach (var item in ranges)
         {
             if (merged.Count == 0 || item.StartPosition > merged[^1].EndPosition)
             {
@@ -191,63 +264,123 @@ internal sealed class TsClipMergeService
             };
         }
 
-        if (merged.Count == 0)
-            return merged;
-
-        var outputStartTime = merged[0].StartTimeSeconds;
-        var accumulatedDuration = 0.0;
-        for (var index = 0; index < merged.Count; index++)
-        {
-            var item = merged[index];
-            var expectedStart = outputStartTime + accumulatedDuration;
-            merged[index] = item with
-            {
-                TimestampCorrection90k = (long)Math.Round(
-                    (expectedStart - item.StartTimeSeconds) * 90_000.0)
-            };
-            accumulatedDuration += item.EndTimeSeconds - item.StartTimeSeconds;
-        }
         return merged;
     }
 
-    private static long AlignDown(long value, long syncOffset)
+    private static async Task<TsClipMergeTimeline> ReadTimelineHeadAsync(
+        FileStream source, NormalizedRange range, byte[] buffer, TsSplitPesHeaderReader splitHeaderReader, int videoPid,
+        TsClipMergeTimeline[] previousAudio, TsClipMergeTimeline[] audioHeads,
+        CancellationToken cancellationToken)
     {
-        if (value <= syncOffset)
-            return syncOffset;
-        return syncOffset + (value - syncOffset) / PacketSize * PacketSize;
+        var timeline = new TsClipMergeTimeline();
+        timeline.Reset(videoPid);
+        for (var index = 0; index < audioHeads.Length; index++)
+            audioHeads[index].Reset(previousAudio[index].Pid);
+        source.Position = range.StartPosition;
+        // 只读起点及其前导帧，复用复制缓冲；异常素材最多额外读取 64 MiB。
+        var remaining = Math.Min(range.EndPosition - range.StartPosition,
+            TsClipBoundaryResolver.MaximumScanBytes);
+        while (remaining >= PacketSize)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var requested = (int)Math.Min(buffer.Length, remaining);
+            requested -= requested % PacketSize;
+            await source.ReadExactlyAsync(buffer.AsMemory(0, requested), cancellationToken)
+                .ConfigureAwait(false);
+            for (var offset = 0; offset < requested; offset += PacketSize)
+            {
+                TsSplitPesHeader splitHeader = default;
+                var chunkStart = source.Position - requested;
+                if (TsSplitPesHeaderReader.NeedsRead(buffer.AsSpan(offset, PacketSize)))
+                    splitHeader = await splitHeaderReader.ReadAsync(source, buffer, chunkStart,
+                        requested, offset, Math.Min(range.EndPosition,
+                            range.StartPosition + TsClipBoundaryResolver.MaximumScanBytes), cancellationToken).ConfigureAwait(false);
+                var packet = buffer.AsSpan(offset, PacketSize);
+                if (packet[0] != 0x47)
+                    throw new TsClipMergeException(TsClipMergeErrorCode.SourceChanged,
+                        source.Position - requested + offset);
+                if (splitHeader.IsValid)
+                    ObserveSplitHeader(splitHeader, ref timeline, audioHeads);
+                else
+                {
+                    timeline.Observe(packet);
+                    ObserveAudio(packet, audioHeads);
+                }
+                if (timeline.HasSuccessor && HasAudioHeads(previousAudio, audioHeads))
+                    return timeline;
+            }
+            remaining -= requested;
+        }
+        if (!timeline.HasSuccessor && range.EndPosition - range.StartPosition > TsClipBoundaryResolver.MaximumScanBytes)
+            throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
+        return timeline;
+    }
+
+    private static long LaterCorrection(long current, long candidate)
+    {
+        const long wrap = 1L << 33;
+        // 不同音轨在回绕两侧起步时可能相差一个完整周期，先对齐到视频的周期。
+        var difference = ((candidate - current + wrap / 2) & (wrap - 1)) - wrap / 2;
+        return current + Math.Max(0, difference);
+    }
+
+    private static void ObserveAudio(ReadOnlySpan<byte> packet, TsClipMergeTimeline[] timelines)
+    {
+        if ((packet[1] & 0x40) == 0) return;
+        var pid = ((packet[1] & 31) << 8) | packet[2];
+        for (var index = 0; index < timelines.Length; index++)
+            if (timelines[index].Pid == pid)
+                timelines[index].Observe(packet);
+    }
+
+    private static void ObserveSplitHeader(TsSplitPesHeader header, ref TsClipMergeTimeline video,
+        TsClipMergeTimeline[] audio)
+    {
+        Span<byte> bytes = stackalloc byte[19];
+        header.CopyTo(bytes);
+        var data = bytes[..header.Length];
+        video.ObserveHeader(header.Pid, data);
+        for (var index = 0; index < audio.Length; index++)
+            if (audio[index].Pid == header.Pid)
+                audio[index].ObserveHeader(header.Pid, data);
+    }
+
+    private static bool HasAudioHeads(TsClipMergeTimeline[] previous, TsClipMergeTimeline[] heads)
+    {
+        for (var index = 0; index < previous.Length; index++)
+            if (previous[index].HasPts && !heads[index].HasPts)
+                return false;
+        return true;
     }
 
     private static async Task<long> FindSyncOffsetAsync(
         FileStream source,
         CancellationToken cancellationToken)
     {
-        var requested = (int)Math.Min(
-            source.Length,
-            SyncProbeBytes + RequiredSyncPackets * PacketSize);
-        if (requested < RequiredSyncPackets * PacketSize)
-            return -1;
-
-        var buffer = ArrayPool<byte>.Shared.Rent(requested);
+        const int bufferSize = TsScramblingProbe.ProbeBufferBytes;
+        const int overlap = 204 * 4;
+        var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
         try
         {
             source.Position = 0;
-            await source.ReadExactlyAsync(buffer.AsMemory(0, requested), cancellationToken)
-                .ConfigureAwait(false);
-            var data = buffer.AsSpan(0, requested);
-            for (var offset = 0; offset + RequiredSyncPackets * PacketSize <= data.Length; offset++)
+            var carry = 0;
+            long bytesRead = 0;
+            // 与预览能力探测使用相同的有界同步搜索，并保留非零起点。
+            while (bytesRead < TsScramblingProbe.MaximumProbeBytes)
             {
-                if (data[offset] != 0x47)
-                    continue;
-                var valid = true;
-                for (var packet = 1; packet < RequiredSyncPackets; packet++)
-                {
-                    if (data[offset + packet * PacketSize] == 0x47)
-                        continue;
-                    valid = false;
+                var requested = (int)Math.Min(bufferSize - carry,
+                    TsScramblingProbe.MaximumProbeBytes - bytesRead);
+                var read = await source.ReadAtLeastAsync(buffer.AsMemory(carry, requested),
+                    requested, throwOnEndOfStream: false, cancellationToken).ConfigureAwait(false);
+                bytesRead += read;
+                var length = carry + read;
+                var layout = TsScramblingProbe.FindPacketLayout(buffer.AsSpan(0, length));
+                if (layout.PacketSize != 0)
+                    return layout.PacketSize == PacketSize ? bytesRead - length + layout.SyncOffset : -1;
+                if (read < requested)
                     break;
-                }
-                if (valid)
-                    return offset;
+                carry = Math.Min(length, overlap);
+                buffer.AsSpan(length - carry, carry).CopyTo(buffer);
             }
             return -1;
         }
@@ -319,6 +452,5 @@ internal sealed class TsClipMergeService
         long StartPosition,
         long EndPosition,
         double StartTimeSeconds,
-        double EndTimeSeconds,
-        long TimestampCorrection90k);
+        double EndTimeSeconds);
 }

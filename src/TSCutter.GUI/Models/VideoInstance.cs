@@ -41,6 +41,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         ? keyFrameGap * timeBase.num / (double)timeBase.den
         : 0;
     public bool Inited { get; private set; } = false;
+    public bool CanBinaryClip { get; private set; }
+    internal long TsSyncOffset { get; private set; } = -1;
     public bool IsHardwareDecoding { get; private set; }
     public bool IsGpuPresentation { get; private set; }
     public VideoPresentationMode PresentationMode { get; private set; } = VideoPresentationMode.SoftwareBitmap;
@@ -53,6 +55,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     private readonly HostFramePresenter hostFramePresenter = new();
     private Frame? reusableSoftwareFrame;
     private Frame? reusableDecodeFrame;
+    private (long Position, long Pts, PacketEndSignature Signature)[] keyPacketBoundaries = [];
+    private int keyPacketBoundaryCount;
+    private int nextKeyPacketBoundary;
     private List<Codec> softwareDecoders = [];
     
     private FormatContext inFc;
@@ -67,7 +72,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     private long lastSeekPts;
     private double timelineDurationSeconds;
     private long timelineDurationPts;
-    private bool suppressSearchFrameLogs;
+    private bool isSearchScan;
     
     private readonly string videoPath = filePath;
 
@@ -81,21 +86,55 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     public void InitVideo(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        if (TsScramblingProbe.HasScrambledPayload(videoPath))
+        var probedBeforeOpening = TsScramblingProbe.ShouldProbeBeforeOpening(videoPath);
+        var tsProbe = probedBeforeOpening ? TsScramblingProbe.Probe(videoPath, cancellationToken) : default;
+        if (tsProbe.HasScrambledPayload)
             throw new ScrambledTsException();
 
-        RunReadOperation(() =>
+        void OpenInput(long syncOffset = -1)
         {
-            inFc = InterruptibleInputFormatContext.Open(videoPath,
-                () => activeReadDeadline?.ShouldInterrupt == true);
-            inFc.LoadStreamInfo();
-            activeReadDeadline!.ThrowIfInterrupted();
-            return true;
-        }, cancellationToken);
+            RunReadOperation(() =>
+            {
+                inFc = InterruptibleInputFormatContext.Open(videoPath,
+                    () => activeReadDeadline?.ShouldInterrupt == true, syncOffset);
+                inFc.LoadStreamInfo();
+                activeReadDeadline!.ThrowIfInterrupted();
+                return true;
+            }, cancellationToken);
 
-        if (!inFc.Streams.Any(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_VIDEO))
-            throw new NoVideoStreamException();
+            if (!inFc.Streams.Any(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_VIDEO))
+                throw new NoVideoStreamException();
+        }
 
+        try
+        {
+            OpenInput(tsProbe.Is188ByteTransportStream && tsProbe.SyncOffset > 0 ? tsProbe.SyncOffset : -1);
+        }
+        catch (Exception exception) when (!probedBeforeOpening &&
+            exception is FFmpegException or NoVideoStreamException)
+        {
+            // 普通容器不额外扫描。自动探测失败时才检查其他后缀的损坏 TS。
+            tsProbe = TsScramblingProbe.Probe(videoPath, cancellationToken);
+            probedBeforeOpening = true;
+            if (!tsProbe.Is188ByteTransportStream)
+                throw;
+            if (tsProbe.HasScrambledPayload)
+                throw new ScrambledTsException();
+            inFc?.Dispose();
+            OpenInput(tsProbe.SyncOffset);
+        }
+
+        var isMpegTs = inFc.InputFormat?.Name == "mpegts";
+        // 其他后缀在解复用器确认 TS 后再探测，避免误扫普通容器中的 TS 相似数据。
+        if (isMpegTs && !probedBeforeOpening)
+            tsProbe = TsScramblingProbe.Probe(videoPath, cancellationToken);
+        if (isMpegTs && tsProbe.HasScrambledPayload)
+            throw new ScrambledTsException();
+        CanBinaryClip = isMpegTs && tsProbe.Is188ByteTransportStream;
+        TsSyncOffset = CanBinaryClip ? tsProbe.SyncOffset : -1;
+        // 仅可剪辑的 TS 预览需要压缩包摘要；其他格式不分配缓存、不计算摘要。
+        if (CanBinaryClip)
+            keyPacketBoundaries = new (long, long, PacketEndSignature)[16];
         inVideoStream = inFc.GetVideoStream();
         if (inVideoStream.Codecpar?.CodecId is null)
         {
@@ -368,7 +407,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
     {
         return Task.Run(() => RunReadOperation(() =>
         {
-            suppressSearchFrameLogs = true;
+            isSearchScan = true;
             try
             {
                 try
@@ -389,7 +428,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             }
             finally
             {
-                suppressSearchFrameLogs = false;
+                isSearchScan = false;
             }
         }, cancellationToken), cancellationToken);
     }
@@ -862,6 +901,38 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         return TimeSpan.FromSeconds((pts - firstFrameTimestamp) / t);
     }
     
+    internal (int VideoPid, int[] AudioPids) GetMergeStreamPids() =>
+        (inVideoStream.Id, inFc.Streams
+            .Where(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO)
+            .Select(stream => stream.Id).ToArray());
+
+    private void RememberKeyPacketBoundary(Packet packet)
+    {
+        // 有界值类型缓存用于重排序/延迟输出；反复 seek 同一包时复用已有摘要。
+        for (var index = 0; index < keyPacketBoundaryCount; index++)
+            if (keyPacketBoundaries[index].Position == packet.Position && keyPacketBoundaries[index].Pts == packet.Pts)
+                return;
+        keyPacketBoundaries[nextKeyPacketBoundary] = (packet.Position, packet.Pts, packet.EndSignature);
+        nextKeyPacketBoundary = (nextKeyPacketBoundary + 1) % keyPacketBoundaries.Length;
+        keyPacketBoundaryCount = Math.Min(keyPacketBoundaryCount + 1, keyPacketBoundaries.Length);
+    }
+
+    private PacketEndSignature FindKeyPacketBoundary(long position, long pts)
+    {
+        var matches = 0;
+        PacketEndSignature signature = default;
+        for (var index = 0; index < keyPacketBoundaryCount; index++)
+        {
+            var boundary = keyPacketBoundaries[index];
+            if (position < 0 || boundary.Position != position) continue;
+            if (boundary.Pts == pts) return boundary.Signature;
+            signature = boundary.Signature;
+            matches++;
+        }
+        // CAVS 可能修正显示 PTS；只有该位置对应唯一关键包时才接受位置匹配。
+        return matches == 1 ? signature : default;
+    }
+
     private DecodeResult? DecodePacket(
         Packet? packet,
         CancellationToken cancellationToken,
@@ -873,6 +944,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (keyPacketBoundaries.Length > 0 && !isSearchScan && packet is { Position: >= 0 } && (packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0)
+                RememberKeyPacketBoundary(packet);
             reusableDecodeFrame ??= new Frame();
             var destRef = reusableDecodeFrame;
             // 1 packet -> 0..N frame
@@ -896,13 +969,13 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                     pts = frame.BestEffortTimestamp;
                 
                 currentKeyFramePts = pts;
-                if (!suppressSearchFrameLogs)
+                if (!isSearchScan)
                     Console.WriteLine($"Current keyFrame: {pts}");
                 var pktPosition = frame.PacketPosition;
                 // 延迟输出的帧不一定属于本次输入包；来源未知时保留 -1，避免剪错位置。
                 
                 PositionInFile = pktPosition;
-                if (!suppressSearchFrameLogs)
+                if (!isSearchScan)
                     Console.WriteLine($"Current keyFrame PktPosition: {pktPosition}");
                 if (AudioMode && pktPosition == -1)
                     continue;
@@ -938,6 +1011,11 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                                 RequiresSampleAspectRatioCorrection = displayGeometry.RequiresCorrection,
                                 VideoDynamicRange = videoDynamicRange,
                                 FrameTimestamp = PtsToTimeSpan(pts),
+                                FramePts = pts,
+                                FramePts90k = pts == FF.AV_NOPTS_VALUE ? FF.AV_NOPTS_VALUE
+                                    : (long)Math.Round(pts * (double)timeBase.num * 90_000 / timeBase.den),
+                                FramePosition = pktPosition,
+                                FrameEndSignature = FindKeyPacketBoundary(pktPosition, pts),
                                 PresentationMode = PresentationMode,
                             };
                         }
@@ -1035,6 +1113,11 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
                             !AudioMode && displayGeometry.RequiresCorrection,
                         VideoDynamicRange = videoDynamicRange,
                         FrameTimestamp = PtsToTimeSpan(pts),
+                        FramePts = pts,
+                        FramePts90k = pts == FF.AV_NOPTS_VALUE ? FF.AV_NOPTS_VALUE
+                            : (long)Math.Round(pts * (double)timeBase.num * 90_000 / timeBase.den),
+                        FramePosition = pktPosition,
+                        FrameEndSignature = FindKeyPacketBoundary(pktPosition, pts),
                         PresentationMode = PresentationMode,
                     };
                 }
@@ -1058,7 +1141,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         }
         
         // If no frames were successfully processed
-        if (!receiveOnly && !suppressSearchFrameLogs)
+        if (!receiveOnly && !isSearchScan)
             Console.WriteLine("no frames were successfully processed");
         return null;
     }

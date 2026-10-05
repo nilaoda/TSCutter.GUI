@@ -15,7 +15,7 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
         interruptCallback = callback;
     }
 
-    public static FormatContext Open(string path, Func<bool> shouldInterrupt)
+    public static FormatContext Open(string path, Func<bool> shouldInterrupt, long tsSyncOffset = -1)
     {
         AVFormatContext* context = FF.avformat_alloc_context();
         if (context == null)
@@ -31,7 +31,16 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
             var result = FF.av_dict_set(&options, "scan_all_pmts", "1", 0);
             if (result < 0)
                 throw FFmpegException.FromErrorCode(result, null);
-            result = FF.avformat_open_input(&context, path, null, &options);
+            AVInputFormat* inputFormat = null;
+            if (tsSyncOffset >= 0)
+            {
+                // 已确认 188 字节布局后跳过损坏前缀；保留原文件的绝对包位置。
+                inputFormat = FF.av_find_input_format("mpegts");
+                if (inputFormat == null)
+                    throw new NotSupportedException("The runtime does not support MPEG-TS input.");
+                FFmpegException.Check(FF.av_opt_set_int(context, "skip_initial_bytes", tsSyncOffset, 0));
+            }
+            result = FF.avformat_open_input(&context, path, inputFormat, &options);
             if (result < 0)
                 throw FFmpegException.FromErrorCode(result, null);
 

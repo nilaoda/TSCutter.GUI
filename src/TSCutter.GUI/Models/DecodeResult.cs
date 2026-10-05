@@ -22,5 +22,10 @@ public class DecodeResult
     public bool RequiresSampleAspectRatioCorrection { get; init; }
     public VideoDynamicRange VideoDynamicRange { get; init; }
     public TimeSpan FrameTimestamp { get; init; }
+    // 画面和来源信息一起发布，不能在标记时读取可能已被后台预览推进的解码器状态。
+    public long FramePts { get; init; } = long.MinValue;
+    public long FramePts90k { get; init; } = long.MinValue;
+    public long FramePosition { get; init; } = -1;
+    internal TSCutter.GUI.Utils.PacketEndSignature FrameEndSignature { get; init; }
     public VideoPresentationMode PresentationMode { get; init; } = VideoPresentationMode.SoftwareBitmap;
 }
