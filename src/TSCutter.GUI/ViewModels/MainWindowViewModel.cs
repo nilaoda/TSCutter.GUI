@@ -88,6 +88,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(ZoomFactorStr));
         OnPropertyChanged(nameof(StatusInfoText));
+        OnPropertyChanged(nameof(ClipOutputText));
+        OnPropertyChanged(nameof(ClipOutputToolTip));
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
         OnPropertyChanged(nameof(SelectedClipsSummaryStr));
     }
@@ -126,6 +128,17 @@ public partial class MainWindowViewModel : ViewModelBase
     // SelectedClip 表示用于编辑起止点的活动项；IsSelected 表示参与多选合并的集合。
     private PickedClip? _clipSelectionAnchor;
     public int SelectedClipCount => Clips.Count(clip => clip.IsSelected);
+
+    // 按选中数量复用现有输出命令，让按钮的文案、可用状态和执行行为保持一致。
+    public IAsyncRelayCommand ClipOutputCommand => SelectedClipCount > 1
+        ? MergeSelectedClipsCommand
+        : SaveVideoClickCommand;
+    public string ClipOutputText => SelectedClipCount > 1
+        ? LocalizationManager.Instance.String_MergeClips_Button
+        : LocalizationManager.Instance.String_SaveClip;
+    public string ClipOutputToolTip => SelectedClipCount > 1
+        ? string.Format(LocalizationManager.Instance.String_MergeClips_ButtonTip, SelectedClipCount)
+        : LocalizationManager.Instance.String_SaveClipTip;
     public IReadOnlyList<ClipTimelineRange> SelectedClipRanges => Clips
         .Where(clip => clip.IsSelected)
         .Select(clip => new ClipTimelineRange(
@@ -134,7 +147,10 @@ public partial class MainWindowViewModel : ViewModelBase
             ReferenceEquals(clip, SelectedClip)))
         .ToArray();
 
-    public string SelectedClipEstimatedSizeStr => SelectedClip?.EstimatedSizeStr ?? string.Empty;
+    public string SelectedClipEstimatedSizeStr => SelectedClipCount > 1
+        ? LocalizationManager.Instance.String_SizePrefix
+          + CommonUtil.FormatFileSize(GetSelectedClipAggregate().Bytes)
+        : SelectedClip?.EstimatedSizeStr ?? string.Empty;
 
     public string SelectedClipsSummaryStr
     {
@@ -152,8 +168,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 : string.Format(
                     LocalizationManager.Instance.String_Clips_SelectionSummary,
                     aggregate.Count,
-                    duration,
-                    CommonUtil.FormatFileSize(aggregate.Bytes));
+                    duration);
         }
     }
 
@@ -233,6 +248,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private void NotifyClipSelectionChanged()
     {
         OnPropertyChanged(nameof(SelectedClipCount));
+        OnPropertyChanged(nameof(ClipOutputCommand));
+        OnPropertyChanged(nameof(ClipOutputText));
+        OnPropertyChanged(nameof(ClipOutputToolTip));
         OnPropertyChanged(nameof(SelectedClipRanges));
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
         OnPropertyChanged(nameof(SelectedClipsSummaryStr));
