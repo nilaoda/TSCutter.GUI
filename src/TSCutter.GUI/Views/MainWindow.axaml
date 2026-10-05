@@ -693,15 +693,15 @@
                                     &gt;&gt;&gt;
                                 </Button>
                             </StackPanel>
-                            <StackPanel Grid.Column="2" HorizontalAlignment="Right" Orientation="Horizontal"
-                                        Spacing="4"
-                                        Margin="4, 4">
-                                <StackPanel.Styles>
+                            <Grid Grid.Column="2" ColumnDefinitions="*,Auto"
+                                  ColumnSpacing="4" Margin="4, 4">
+                                <Grid.Styles>
                                     <Style Selector="Button:disabled Image">
                                         <Setter Property="Opacity" Value="0.3" />
                                     </Style>
-                                </StackPanel.Styles>
-                                <Grid Width="180"
+                                </Grid.Styles>
+                                <!-- 摘要使用剩余空间，窗口变窄时截断文本，不挤出输出按钮。 -->
+                                <Grid MaxWidth="180"
                                       Height="34"
                                       RowDefinitions="16,18"
                                       ClipToBounds="True"
@@ -722,17 +722,17 @@
                                                TextTrimming="CharacterEllipsis"
                                                TextAlignment="Right" />
                                 </Grid>
-                                <!-- Save Video Button -->
-                                <Button Command="{Binding SaveVideoClickCommand}"
+                                <!-- 单选保存、多选合并；保持精简文案，沿用原按钮的自适应宽度。 -->
+                                <Button Grid.Column="1" Command="{Binding ClipOutputCommand}"
                                         Classes="accent"
                                         VerticalContentAlignment="Center"
-                                        ToolTip.Tip="{DynamicResource String.SaveClipTip}">
+                                        ToolTip.Tip="{Binding ClipOutputToolTip}">
                                     <StackPanel Orientation="Horizontal">
                                         <Image Height="16" Source="/Assets/save.gif" />
-                                        <TextBlock VerticalAlignment="Center" Text="{DynamicResource String.SaveClip}" Margin="4,0,0,0" />
+                                        <TextBlock VerticalAlignment="Center" Text="{Binding ClipOutputText}" Margin="4,0,0,0" />
                                     </StackPanel>
                                 </Button>
-                            </StackPanel>
+                            </Grid>
                         </Grid>
                     </Grid>
                 </Grid>
