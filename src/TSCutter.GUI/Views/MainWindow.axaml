@@ -289,6 +289,42 @@
                                                       LargeIcon="/Assets/kodak_imaging-0.png"
                                                       Text="{DynamicResource String.ToolBar.SaveFrame}"
                                                       Command="{Binding SaveFrameClickCommand}" />
+                        <commonControls:ToolBarButton x:Name="CurrentFileToolsButton"
+                                                      ToolTip.Tip="{DynamicResource String.ToolBar.FileToolsTip}"
+                                                      LargeIcon="/Assets/file_tools.png"
+                                                      Text="{DynamicResource String.ToolBar.FileTools}"
+                                                      IsEnabled="{Binding CanUseCurrentFileTools}">
+                            <commonControls:ToolBarButton.Flyout>
+                                <MenuFlyout Placement="Bottom">
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsCheck}"
+                                              Command="{Binding TsCheckClickCommand}"
+                                              CommandParameter="{Binding VideoPath}" />
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsPacketViewer}"
+                                              Command="{Binding TsPacketViewerClickCommand}"
+                                              CommandParameter="{Binding VideoPath}" />
+                                    <Separator />
+                                    <MenuItem Header="{DynamicResource String.FileTools.RawCutter}"
+                                              Command="{Binding RawCutterClickCommand}"
+                                              CommandParameter="{Binding VideoPath}" />
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsFilterPid}"
+                                              Command="{Binding TsFilterClickCommand}"
+                                              CommandParameter="{Binding VideoPath}" />
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsFilterService}"
+                                              Command="{Binding TsServiceFilterClickCommand}"
+                                              CommandParameter="{Binding VideoPath}" />
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsEsExtractor}"
+                                              Command="{Binding TsEsExtractorClickCommand}"
+                                              CommandParameter="{Binding VideoPath}" />
+                                    <Separator />
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsRemux}"
+                                              Command="{Binding TsRemuxClickCommand}"
+                                              CommandParameter="{Binding VideoPath}" />
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsTimelineRepair}"
+                                              Command="{Binding TsTimelineRepairClickCommand}"
+                                              CommandParameter="{Binding VideoPath}" />
+                                </MenuFlyout>
+                            </commonControls:ToolBarButton.Flyout>
+                        </commonControls:ToolBarButton>
                         <TextBlock VerticalAlignment="Center"
                                    Text="{Binding ZoomFactorStr}" />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.MediaInfoTip}"
@@ -301,16 +337,30 @@
                         <Grid Grid.Row="0" ColumnDefinitions="*, Auto, 240">
                             <!-- 图片预览区域 -->
                             <ClassicBorderDecorator Grid.Column="0" BorderThickness="0, 2" BorderStyle="Etched">
-                                <controls:ImageViewer Name="ImageViewer"
-                                                      MaxZoomFactor="{Binding MaxZoomFactor}"
-                                                      MinZoomFactor="{Binding MinZoomFactor}"
-                                                      OffsetX="{Binding OffsetX, Mode=TwoWay}"
-                                                      OffsetY="{Binding OffsetY, Mode=TwoWay}"
-                                                      Image="{Binding DecodedBitmap}"
-                                                      GpuFrame="{Binding DecodedGpuFrame}"
-                                                      SourcePixelSize="{Binding DecodedFrameSourceSize}"
-                                                      Zoom="{Binding ZoomFactor, Mode=TwoWay}">
-                                </controls:ImageViewer>
+                                <Grid>
+                                    <controls:ImageViewer Name="ImageViewer"
+                                                          IsEnabled="{Binding IsVideoInitialized}"
+                                                          MaxZoomFactor="{Binding MaxZoomFactor}"
+                                                          MinZoomFactor="{Binding MinZoomFactor}"
+                                                          OffsetX="{Binding OffsetX, Mode=TwoWay}"
+                                                          OffsetY="{Binding OffsetY, Mode=TwoWay}"
+                                                          Image="{Binding DecodedBitmap}"
+                                                          GpuFrame="{Binding DecodedGpuFrame}"
+                                                          SourcePixelSize="{Binding DecodedFrameSourceSize}"
+                                                          Zoom="{Binding ZoomFactor, Mode=TwoWay}">
+                                    </controls:ImageViewer>
+                                    <Border IsVisible="{Binding IsToolsOnly}"
+                                            Background="{DynamicResource {x:Static commonControls:SystemColors.ControlBrushKey}}"
+                                            Padding="24">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                                      HorizontalScrollBarVisibility="Disabled">
+                                            <TextBlock Text="{Binding ToolsOnlyMessage}"
+                                                       Foreground="{DynamicResource {x:Static commonControls:SystemColors.ControlTextBrushKey}}"
+                                                       TextWrapping="Wrap" MaxWidth="480"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </ScrollViewer>
+                                    </Border>
+                                </Grid>
                             </ClassicBorderDecorator>
                             <GridSplitter Grid.Column="1" Width="3" />
                             <ClassicBorderDecorator Grid.Column="2" BorderThickness="2" BorderStyle="Sunken">
@@ -578,6 +628,7 @@
                         <!-- 时间刻度、剪辑范围、播放头、总览与缩放共用同一套坐标换算。 -->
                         <controls:TimelineControl Grid.Row="1"
                                                   Name="MainTimeline"
+                                                  IsEnabled="{Binding IsVideoInitialized}"
                                                   Focusable="True"
                                                   Height="48"
                                                   Margin="0,2"
@@ -610,7 +661,8 @@
                                                   ZoomTip="{DynamicResource String.Timeline.ZoomTip}"
                                                   ScrollTip="{DynamicResource String.Timeline.ScrollTip}" />
                         <!-- 导航等控制键的一行 -->
-                        <Grid Grid.Row="2" ColumnDefinitions="*, Auto, *" Margin="0,2,0,0">
+                        <Grid Grid.Row="2" ColumnDefinitions="*, Auto, *" Margin="0,2,0,0"
+                              IsEnabled="{Binding IsVideoInitialized}">
                             <Grid.Styles>
                                 <Style Selector="Button.LeftBtn">
                                     <Setter Property="Width" Value="30" />

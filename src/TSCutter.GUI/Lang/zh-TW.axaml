@@ -16,6 +16,11 @@
     <x:String x:Key="String.OpenTsFile">開啟 TS 檔案</x:String>
     <x:String x:Key="String.OpenVideoFile">開啟影片檔案</x:String>
     <x:String x:Key="String.VideoFiles">影片檔案</x:String>
+    <x:String x:Key="String.Status.ToolsOnly">僅工具模式</x:String>
+    <x:String x:Key="String.ToolsOnly.Title">影片預覽不可用</x:String>
+    <x:String x:Key="String.ToolsOnly.TsHint">檔案已保留，可透過工具列「工具」進行 TS 分析、檢查或提取。</x:String>
+    <x:String x:Key="String.ToolsOnly.MediaHint">檔案已保留，可查看媒體資訊。</x:String>
+    <x:String x:Key="String.VideoDecoderUnavailable">沒有可用的視訊解碼器（{0}）。</x:String>
     <x:String x:Key="String.PreviewOnly">僅預覽</x:String>
     <x:String x:Key="String.ZoomFactor">縮放: {0}%</x:String>
     <x:String x:Key="String.FindFile">尋找檔案</x:String>
@@ -24,7 +29,7 @@
     <x:String x:Key="String.FailedToLoadVideo">無法載入影片</x:String>
     <x:String x:Key="String.NoVideoStream">所選檔案不包含視訊軌。</x:String>
     <x:String x:Key="String.MediaReadTimeout">讀取視訊逾時。請嘗試定位到其他位置，或檢查檔案是否加密或損壞。</x:String>
-    <x:String x:Key="String.ScrambledTs">檔案包含加密（加擾）的 188 位元組 TS 資料封包，無法預覽，請先解密。仍可透過工具選單進行原始切割和 TS 分析。</x:String>
+    <x:String x:Key="String.ScrambledTs">檔案包含加密（加擾）的 188 位元組 TS 載荷，無法預覽。預覽前需要先解密。</x:String>
     <x:String x:Key="String.SaveYourClip">儲存片段</x:String>
     <x:String x:Key="String.Menu.File">檔案(_F)</x:String>
     <x:String x:Key="String.Menu.Edit">編輯(_E)</x:String>
@@ -98,6 +103,16 @@
     <x:String x:Key="String.ToolBar.KeyFrameOverview">總覽</x:String>
     <x:String x:Key="String.ToolBar.SaveFrameTip">儲存影格</x:String>
     <x:String x:Key="String.ToolBar.SaveFrame">截圖</x:String>
+    <x:String x:Key="String.ToolBar.FileTools">工具</x:String>
+    <x:String x:Key="String.ToolBar.FileToolsTip">使用工具處理目前的 TS 檔案</x:String>
+    <x:String x:Key="String.FileTools.TsCheck">TS 快速檢查</x:String>
+    <x:String x:Key="String.FileTools.TsPacketViewer">TS 封包檢視器</x:String>
+    <x:String x:Key="String.FileTools.RawCutter">TS 原始流截取</x:String>
+    <x:String x:Key="String.FileTools.TsFilterPid">TS 依 PID 過濾</x:String>
+    <x:String x:Key="String.FileTools.TsFilterService">TS 依節目過濾</x:String>
+    <x:String x:Key="String.FileTools.TsEsExtractor">TS ES 提取器</x:String>
+    <x:String x:Key="String.FileTools.TsRemux">TS 流編輯器</x:String>
+    <x:String x:Key="String.FileTools.TsTimelineRepair">TS 時間軸修復</x:String>
     <x:String x:Key="String.ToolBar.MediaInfoTip">顯示媒體資訊</x:String>
     <x:String x:Key="String.ToolBar.MediaInfo">資訊</x:String>
     <x:String x:Key="String.Table.OutputSize">輸出大小</x:String>

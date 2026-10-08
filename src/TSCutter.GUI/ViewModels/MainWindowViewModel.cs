@@ -49,6 +49,9 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
     private VideoInstance? _videoInstance;
+    private bool _isLoadingVideo;
+    private bool _currentFileSupportsTsTools;
+    private Exception? _previewFailure;
     private KeyFrameOverviewWindowViewModel? keyFrameOverviewWindow;
     private readonly IDialogService _dialogService;
     private readonly IConfigurationService _configService;
@@ -88,6 +91,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         OnPropertyChanged(nameof(ZoomFactorStr));
         OnPropertyChanged(nameof(StatusInfoText));
+        OnPropertyChanged(nameof(ToolsOnlyMessage));
         OnPropertyChanged(nameof(ClipOutputText));
         OnPropertyChanged(nameof(ClipOutputToolTip));
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
@@ -789,21 +793,26 @@ public partial class MainWindowViewModel : ViewModelBase
         ? ImageUtil.CreateThumbnail(bitmap)
         : null;
 
-    [RelayCommand]
-    private async Task RawCutterClickAsync()
+    // 顶部菜单不传路径，继续选择文件；工具栏传入当前路径，直接创建独立工具窗口。
+    private async Task<string?> ResolveTsToolFileAsync(string? filePath, string title)
     {
-        var settings = new OpenFileDialogSettings()
+        if (filePath is not null)
+            return CanUseCurrentFileTools && File.Exists(filePath) ? filePath : null;
+
+        var settings = new OpenFileDialogSettings
         {
-            Title = LocalizationManager.Instance.String_OpenTsFile,
-            Filters = new List<FileFilter>()
-            {
-                new(LocalizationManager.Instance.String_TsFiles, ["ts"]),
-            }
+            Title = title,
+            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
         };
         var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
-        if (!result.Any()) return;
+        return result.FirstOrDefault()?.LocalPath;
+    }
 
-        var filePath = result[0].LocalPath;
+    [RelayCommand]
+    private async Task RawCutterClickAsync(string? filePath)
+    {
+        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_OpenTsFile);
+        if (filePath is null) return;
 
         // 检查同步头
         var syncOffset = await Task.Run(() => TsUtil.FindSyncOffset(filePath));
@@ -823,87 +832,57 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task TsCheckClickAsync()
+    private async Task TsCheckClickAsync(string? filePath)
     {
-        var settings = new OpenFileDialogSettings
-        {
-            Title = LocalizationManager.Instance.String_TsCheck_OpenFile,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
-        };
-        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
-        if (!result.Any())
-            return;
+        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsCheck_OpenFile);
+        if (filePath is null) return;
 
         var dialogViewModel = _dialogService.CreateViewModel<TsCheckWindowViewModel>();
-        dialogViewModel.FilePath = result[0].LocalPath;
+        dialogViewModel.FilePath = filePath;
         _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
-    private async Task TsTimelineRepairClickAsync()
+    private async Task TsTimelineRepairClickAsync(string? filePath)
     {
-        var settings = new OpenFileDialogSettings
-        {
-            Title = LocalizationManager.Instance.String_TsTimelineRepair_OpenFile,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
-        };
-        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
-        if (!result.Any())
-            return;
+        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsTimelineRepair_OpenFile);
+        if (filePath is null) return;
 
         var dialogViewModel = _dialogService.CreateViewModel<TsTimelineRepairWindowViewModel>();
-        dialogViewModel.Initialize(result[0].LocalPath);
+        dialogViewModel.Initialize(filePath);
         _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
-    private async Task TsFilterClickAsync()
+    private async Task TsFilterClickAsync(string? filePath)
     {
-        var settings = new OpenFileDialogSettings
-        {
-            Title = LocalizationManager.Instance.String_TsFilter_OpenFile,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
-        };
-        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
-        if (!result.Any())
-            return;
+        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsFilter_OpenFile);
+        if (filePath is null) return;
 
         var dialogViewModel = _dialogService.CreateViewModel<TsFilterWindowViewModel>();
-        dialogViewModel.FilePath = result[0].LocalPath;
+        dialogViewModel.FilePath = filePath;
         _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
-    private async Task TsServiceFilterClickAsync()
+    private async Task TsServiceFilterClickAsync(string? filePath)
     {
-        var settings = new OpenFileDialogSettings
-        {
-            Title = LocalizationManager.Instance.String_TsServiceFilter_OpenFile,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
-        };
-        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
-        if (!result.Any())
-            return;
+        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsServiceFilter_OpenFile);
+        if (filePath is null) return;
 
         var dialogViewModel = _dialogService.CreateViewModel<TsServiceFilterWindowViewModel>();
-        dialogViewModel.FilePath = result[0].LocalPath;
+        dialogViewModel.FilePath = filePath;
         _dialogService.Show(null, dialogViewModel);
     }
 
     [RelayCommand]
-    private async Task TsEsExtractorClickAsync()
+    private async Task TsEsExtractorClickAsync(string? filePath)
     {
-        var settings = new OpenFileDialogSettings
-        {
-            Title = LocalizationManager.Instance.String_TsEsExtractor_OpenFile,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
-        };
-        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
-        if (!result.Any())
-            return;
+        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsEsExtractor_OpenFile);
+        if (filePath is null) return;
 
         var dialogViewModel = _dialogService.CreateViewModel<TsEsExtractorWindowViewModel>();
-        dialogViewModel.FilePath = result[0].LocalPath;
+        dialogViewModel.FilePath = filePath;
         _dialogService.Show(null, dialogViewModel);
     }
 
@@ -922,19 +901,13 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task TsPacketViewerClickAsync()
+    private async Task TsPacketViewerClickAsync(string? filePath)
     {
-        var settings = new OpenFileDialogSettings
-        {
-            Title = LocalizationManager.Instance.String_TsPacketViewer_OpenFile,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
-        };
-        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
-        if (!result.Any())
-            return;
+        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsPacketViewer_OpenFile);
+        if (filePath is null) return;
 
         var dialogViewModel = _dialogService.CreateViewModel<TsPacketViewerWindowViewModel>();
-        dialogViewModel.FilePath = result[0].LocalPath;
+        dialogViewModel.FilePath = filePath;
         _dialogService.Show(null, dialogViewModel);
     }
 
@@ -1004,19 +977,13 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private async Task TsRemuxClickAsync()
+    private async Task TsRemuxClickAsync(string? filePath)
     {
-        var settings = new OpenFileDialogSettings
-        {
-            Title = LocalizationManager.Instance.String_TsRemux_OpenFile,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
-        };
-        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
-        if (!result.Any())
-            return;
+        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsRemux_OpenFile);
+        if (filePath is null) return;
 
         var dialogViewModel = _dialogService.CreateViewModel<TsRemuxWindowViewModel>();
-        dialogViewModel.FilePath = result[0].LocalPath;
+        dialogViewModel.FilePath = filePath;
         _dialogService.Show(null, dialogViewModel);
     }
 
@@ -1120,7 +1087,7 @@ public partial class MainWindowViewModel : ViewModelBase
         };
     }
 
-    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    [RelayCommand(CanExecute = nameof(CanUseCurrentFile))]
     private async Task CloseVideoClickAsync()
     {
         if (!await ConfirmProjectReplacementAsync()) return;
@@ -1130,7 +1097,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (ExportQueue.Count == 0) MarkProjectCheckpoint();
     }
 
-    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    [RelayCommand(CanExecute = nameof(CanUseCurrentFile))]
     private async Task ShowMediaInfoClickAsync()
     {
         var dialogViewModel = _dialogService.CreateViewModel<MediainfoWindowViewModel>();
@@ -1190,7 +1157,9 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(WindowTitle), nameof(IsPreviewOnly))]
+    [NotifyPropertyChangedFor(nameof(WindowTitle), nameof(IsPreviewOnly),
+        nameof(HasCurrentFile), nameof(CanUseCurrentFile), nameof(CanUseCurrentFileTools),
+        nameof(IsToolsOnly), nameof(ToolsOnlyMessage), nameof(StatusInfoText))]
     public partial string VideoPath { get; set; }
 
     private Bitmap? decodedBitmap;
@@ -1263,7 +1232,9 @@ public partial class MainWindowViewModel : ViewModelBase
         ? LocalizationManager.Instance.String_Status_HardwareDecoding
         : LocalizationManager.Instance.String_Status_SoftwareDecoding;
 
-    public string StatusInfoText => IsVideoInitialized
+    public string StatusInfoText => IsToolsOnly
+        ? LocalizationManager.Instance.String_Status_ToolsOnly
+        : IsVideoInitialized
         ? $"{VideoInfoText}{(IsPreviewOnly ? $" | {LocalizationManager.Instance.String_PreviewOnly}" : string.Empty)} | {DecodeModeText} | {DecodeCost,3}ms"
         : PleaseLoadTip;
     public bool IsDecoding => DecodingOpCount > 0;
@@ -1906,7 +1877,7 @@ public partial class MainWindowViewModel : ViewModelBase
         await RunDecodeOperationAsync(() => DrawNextFrameCoreAsync(count));
     }
 
-    private async Task DrawNextFrameCoreAsync(int count = 1)
+    private async Task DrawNextFrameCoreAsync(int count = 1, bool propagateFailure = false)
     {
         try
         {
@@ -1921,6 +1892,7 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception e)
         {
             Console.WriteLine(e);
+            if (propagateFailure) throw;
             await ShowMessageAsync(
                 e is MediaReadTimeoutException ? LocalizationManager.Instance.String_MediaReadTimeout : e.Message,
                 LocalizationManager.Instance.String_FailedToDecode, MessageBoxIcon.Error);
@@ -1941,6 +1913,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ClearVars()
     {
+        _currentFileSupportsTsTools = false;
+        _previewFailure = null;
         CancelClipEndScan();
         keyFrameOverviewWindow?.CloseWindow();
         keyFrameOverviewWindow = null;
@@ -1972,6 +1946,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private async Task<bool> LoadVideoAsync(VideoInstance? prepared = null)
     {
+        _isLoadingVideo = true;
         // 换源从等待预览任务时就禁用标记，避免用旧画面的位置扫描新路径。
         DecodingOpCount++;
         try
@@ -2004,7 +1979,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 NotifyVideoCapabilityChanged();
 
                 // decode
-                await DrawNextFrameCoreAsync(1);
+                await DrawNextFrameCoreAsync(1, propagateFailure: true);
                 // 发送消息通知 View 执行 FitCommand
                 WeakReferenceMessenger.Default.Send(new FitMessage());
             });
@@ -2012,27 +1987,58 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception e)
         {
-            VideoPath = string.Empty;
             ClearVars();
-            _videoInstance?.Close();
+            _videoInstance?.Dispose();
+            _videoInstance = null;
             Console.WriteLine($"Failed to load video: {e}");
-            await ShowMessageAsync(
-                e is MediaReadTimeoutException
-                    ? LocalizationManager.Instance.String_MediaReadTimeout
-                    : e is ScrambledTsException
-                    ? LocalizationManager.Instance.String_ScrambledTs
-                    : e is NoVideoStreamException
-                    ? LocalizationManager.Instance.String_NoVideoStream
-                    : FFmpegNativeBootstrapper.BuildLoadFailureMessage(e),
+            // 项目导入仍要求可靠的预览与剪辑状态；普通文件打开可降级为工具模式。
+            if (prepared is null && await TryRetainFileForToolsAsync(e))
+                return true;
+
+            VideoPath = string.Empty;
+            await ShowMessageAsync(FormatPreviewFailure(e),
                 LocalizationManager.Instance.String_FailedToLoadVideo,
                 MessageBoxIcon.Error);
             return false;
         }
         finally
         {
+            _isLoadingVideo = false;
             DecodingOpCount = Math.Max(0, DecodingOpCount - 1);
+            NotifyVideoCapabilityChanged();
         }
     }
+
+    private async Task<bool> TryRetainFileForToolsAsync(Exception failure)
+    {
+        try
+        {
+            // 仅在预览失败后做有界探测，确认文件可读及 TS 工具支持的包结构。
+            var probe = await Task.Run(() => TsScramblingProbe.Probe(VideoPath));
+            if (!probe.Is188ByteTransportStream && failure is not VideoDecoderUnavailableException)
+                return false;
+
+            _currentFileSupportsTsTools = probe.Is188ByteTransportStream;
+            _previewFailure = failure;
+            NotifyVideoCapabilityChanged();
+            return true;
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+        {
+            Console.WriteLine($"Cannot retain file for tools: {exception.Message}");
+            return false;
+        }
+    }
+
+    private static string FormatPreviewFailure(Exception exception) => exception switch
+    {
+        MediaReadTimeoutException => LocalizationManager.Instance.String_MediaReadTimeout,
+        ScrambledTsException => LocalizationManager.Instance.String_ScrambledTs,
+        NoVideoStreamException => LocalizationManager.Instance.String_NoVideoStream,
+        VideoDecoderUnavailableException decoder => string.Format(
+            LocalizationManager.Instance.String_VideoDecoderUnavailable, decoder.CodecName),
+        _ => FFmpegNativeBootstrapper.BuildLoadFailureMessage(exception)
+    };
 
     private async Task RunDecodeOperationAsync(Func<Task> action)
     {
@@ -2152,6 +2158,17 @@ public partial class MainWindowViewModel : ViewModelBase
         IsHardwareDecoding = _videoInstance.IsHardwareDecoding;
     }
 
+    // 文件工具独立读取源文件，拖动预览时仍可使用；换源加载期间才需要禁用。
+    public bool HasCurrentFile => !string.IsNullOrEmpty(VideoPath);
+    public bool CanUseCurrentFile => HasCurrentFile && !_isLoadingVideo;
+    public bool CanUseCurrentFileTools => CanUseCurrentFile && (CanEditVideo || _currentFileSupportsTsTools);
+    public bool IsToolsOnly => HasCurrentFile && _previewFailure is not null;
+    public string ToolsOnlyMessage => _previewFailure is null ? string.Empty :
+        $"{LocalizationManager.Instance.String_ToolsOnly_Title}\n\n{FormatPreviewFailure(_previewFailure)}\n\n" +
+        (_currentFileSupportsTsTools
+            ? LocalizationManager.Instance.String_ToolsOnly_TsHint
+            : LocalizationManager.Instance.String_ToolsOnly_MediaHint);
+
     public bool IsPreviewOnly => IsVideoInitialized && !CanEditVideo;
 
     private bool CanEditVideo => _videoInstance is { Inited: true, CanBinaryClip: true };
@@ -2163,6 +2180,17 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void NotifyVideoCapabilityChanged()
     {
+        OnPropertyChanged(nameof(IsVideoInitialized));
+        SaveFrameClickCommand.NotifyCanExecuteChanged();
+        KeyFrameOverviewClickCommand.NotifyCanExecuteChanged();
+        ThumbnailSheetClickCommand.NotifyCanExecuteChanged();
+        FrameSearchClickCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(CanUseCurrentFile));
+        OnPropertyChanged(nameof(CanUseCurrentFileTools));
+        OnPropertyChanged(nameof(IsToolsOnly));
+        OnPropertyChanged(nameof(ToolsOnlyMessage));
+        CloseVideoClickCommand.NotifyCanExecuteChanged();
+        ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsPreviewOnly));
         OnPropertyChanged(nameof(StatusInfoText));
         AddClipCommand.NotifyCanExecuteChanged();

@@ -7,6 +7,12 @@ public class TooManyDecodeFailuresException(string message) : Exception(message)
 public sealed class NoVideoStreamException()
     : Exception("The input file does not contain a video stream.");
 
+public sealed class VideoDecoderUnavailableException(string codecName)
+    : Exception($"No usable video decoder is available for {codecName}.")
+{
+    public string CodecName { get; } = codecName.Replace("AV_CODEC_ID_", string.Empty, StringComparison.Ordinal);
+}
+
 public sealed class ScrambledTsException()
     : Exception("The input contains scrambled TS payload. Decrypt it before opening it for video preview.");
 

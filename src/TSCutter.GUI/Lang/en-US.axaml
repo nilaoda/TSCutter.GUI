@@ -16,6 +16,11 @@
     <x:String x:Key="String.OpenTsFile">Open TS file</x:String>
     <x:String x:Key="String.OpenVideoFile">Open video file</x:String>
     <x:String x:Key="String.VideoFiles">Video files</x:String>
+    <x:String x:Key="String.Status.ToolsOnly">Tools only</x:String>
+    <x:String x:Key="String.ToolsOnly.Title">Video preview is unavailable</x:String>
+    <x:String x:Key="String.ToolsOnly.TsHint">The file remains open. Use the toolbar tools to analyze, inspect, or extract its TS data.</x:String>
+    <x:String x:Key="String.ToolsOnly.MediaHint">The file remains open. You can view its media information.</x:String>
+    <x:String x:Key="String.VideoDecoderUnavailable">No usable video decoder is available for {0}.</x:String>
     <x:String x:Key="String.PreviewOnly">Preview only</x:String>
     <x:String x:Key="String.ZoomFactor">Scale: {0}%</x:String>
     <x:String x:Key="String.FindFile">Find File</x:String>
@@ -24,7 +29,7 @@
     <x:String x:Key="String.FailedToLoadVideo">Failed to load video</x:String>
     <x:String x:Key="String.NoVideoStream">The selected file does not contain a video track.</x:String>
     <x:String x:Key="String.MediaReadTimeout">Reading the video timed out. Try seeking to another position or check whether the file is encrypted or damaged.</x:String>
-    <x:String x:Key="String.ScrambledTs">The file contains encrypted (scrambled) 188-byte TS packets and cannot be previewed. Decrypt it first. Raw cutting and TS analysis remain available from the tools menu.</x:String>
+    <x:String x:Key="String.ScrambledTs">The file contains encrypted (scrambled) 188-byte TS payload and cannot be previewed. Decrypt it to enable preview.</x:String>
     <x:String x:Key="String.SaveYourClip">Save Your Clip</x:String>
     <x:String x:Key="String.Menu.File">_File</x:String>
     <x:String x:Key="String.Menu.Edit">_Edit</x:String>
@@ -98,6 +103,16 @@
     <x:String x:Key="String.ToolBar.KeyFrameOverview">Overview</x:String>
     <x:String x:Key="String.ToolBar.SaveFrameTip">Save Frame</x:String>
     <x:String x:Key="String.ToolBar.SaveFrame">Capture</x:String>
+    <x:String x:Key="String.ToolBar.FileTools">Tools</x:String>
+    <x:String x:Key="String.ToolBar.FileToolsTip">Use tools on the current TS file</x:String>
+    <x:String x:Key="String.FileTools.TsCheck">TS Quick Check</x:String>
+    <x:String x:Key="String.FileTools.TsPacketViewer">TS Packet Viewer</x:String>
+    <x:String x:Key="String.FileTools.RawCutter">TS Raw Stream Cutter</x:String>
+    <x:String x:Key="String.FileTools.TsFilterPid">TS Filter by PID</x:String>
+    <x:String x:Key="String.FileTools.TsFilterService">TS Filter by Service</x:String>
+    <x:String x:Key="String.FileTools.TsEsExtractor">TS ES Extractor</x:String>
+    <x:String x:Key="String.FileTools.TsRemux">TS Stream Editor</x:String>
+    <x:String x:Key="String.FileTools.TsTimelineRepair">TS Timeline Repair</x:String>
     <x:String x:Key="String.ToolBar.MediaInfoTip">Show Media Info</x:String>
     <x:String x:Key="String.ToolBar.MediaInfo">Info</x:String>
     <x:String x:Key="String.Table.OutputSize">Output Size</x:String>
