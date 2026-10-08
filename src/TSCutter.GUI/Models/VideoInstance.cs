@@ -151,7 +151,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             .ToList();
         if (softwareDecoders.Count == 0)
         {
-            throw new Exception("Cant find decoder!");
+            throw new VideoDecoderUnavailableException(inVideoStream.Codecpar.CodecId.ToString());
         }
 
         foreach (var decoder in softwareDecoders)
@@ -168,7 +168,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
             decoderOpened = TryOpenSoftwareDecoder();
 
         if (!decoderOpened)
-            throw new Exception("Cant open decoder!");
+            throw new VideoDecoderUnavailableException(inVideoStream.Codecpar.CodecId.ToString());
 
         Console.WriteLine($"GPU presentation: {(gpuFramePresenter.Capabilities.IsAvailable ? "available" : "fallback to bitmap")} - "
             + gpuFramePresenter.Capabilities.UnavailableReason);
