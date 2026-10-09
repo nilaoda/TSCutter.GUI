@@ -35,6 +35,7 @@ public partial class App : Application
         SplatRegistrations.Register<OutputWindowViewModel>();
         SplatRegistrations.Register<RawCutterWindowViewModel>();
         SplatRegistrations.Register<TsCheckWindowViewModel>();
+        SplatRegistrations.Register<TsBatchCheckWindowViewModel>();
         SplatRegistrations.Register<TsTimelineRepairWindowViewModel>();
         SplatRegistrations.Register<TsFilterWindowViewModel>();
         SplatRegistrations.Register<TsServiceFilterWindowViewModel>();

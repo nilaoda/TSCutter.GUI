@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia.Controls;
@@ -56,7 +55,7 @@ public partial class TsBinaryMergeWindow : ClassicWindow
 
     private void Files_OnDragOver(object? sender, DragEventArgs eventArgs)
     {
-        eventArgs.DragEffects = GetDroppedPaths(eventArgs).Any(IsSupportedDroppedPath)
+        eventArgs.DragEffects = GetDroppedPaths(eventArgs).Any(TsFileDropHelper.IsSupportedPath)
             ? DragDropEffects.Copy
             : DragDropEffects.None;
         eventArgs.Handled = true;
@@ -70,7 +69,7 @@ public partial class TsBinaryMergeWindow : ClassicWindow
             return;
 
         // 文件夹只枚举第一层，且放到后台执行，避免大量分片或网络目录阻塞界面。
-        var files = await Task.Run(() => ExpandDroppedTsFiles(paths));
+        var files = await Task.Run(() => TsFileDropHelper.ExpandPaths(paths));
         if (files.Length > 0)
             await viewModel.AddFilesAsync(files);
     }
@@ -83,41 +82,6 @@ public partial class TsBinaryMergeWindow : ClassicWindow
             .Select(item => item.Path.LocalPath)
             .ToArray() ?? [];
     }
-
-    private static bool IsSupportedDroppedPath(string path) =>
-        Directory.Exists(path) || IsTsFile(path);
-
-    private static string[] ExpandDroppedTsFiles(IReadOnlyList<string> paths)
-    {
-        var files = new List<string>();
-        foreach (var path in paths)
-        {
-            if (IsTsFile(path))
-            {
-                files.Add(path);
-                continue;
-            }
-            if (!Directory.Exists(path))
-                continue;
-            try
-            {
-                files.AddRange(Directory.EnumerateFiles(path)
-                    .Where(HasTsExtension)
-                    .OrderBy(item => Path.GetFileName(item) ?? string.Empty, NaturalStringComparer.Instance)
-                    .ThenBy(item => item, NaturalStringComparer.Instance));
-            }
-            catch
-            {
-                // 单个目录无法枚举时跳过，其余拖入内容仍可继续处理。
-            }
-        }
-        return files.ToArray();
-    }
-
-    private static bool IsTsFile(string path) => File.Exists(path) && HasTsExtension(path);
-
-    private static bool HasTsExtension(string path) =>
-        string.Equals(Path.GetExtension(path), ".ts", StringComparison.OrdinalIgnoreCase);
 
     private void OnClosing(object? sender, WindowClosingEventArgs eventArgs)
     {

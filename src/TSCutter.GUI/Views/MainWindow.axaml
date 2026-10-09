@@ -152,8 +152,12 @@
                                   Command="{Binding FrameSearchClickCommand}" />
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.ToolGroupAnalyze}">
-                            <MenuItem Header="{DynamicResource String.Menu.TsCheck}"
-                                      Command="{Binding TsCheckClickCommand}" />
+                            <MenuItem Header="{DynamicResource String.Menu.TsCheck}">
+                                <MenuItem Header="{DynamicResource String.Menu.TsCheck.Single}"
+                                          Command="{Binding TsCheckClickCommand}" />
+                                <MenuItem Header="{DynamicResource String.Menu.TsCheck.Batch}"
+                                          Command="{Binding TsBatchCheckClickCommand}" />
+                            </MenuItem>
                             <MenuItem Header="{DynamicResource String.Menu.TsPacketViewer}"
                                       Command="{Binding TsPacketViewerClickCommand}" />
                         </MenuItem>

@@ -1,0 +1,125 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:TSCutter.GUI.ViewModels"
+        xmlns:models="clr-namespace:TSCutter.GUI.Models"
+        xmlns:commonControls="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        x:Class="TSCutter.GUI.Views.TsBatchCheckWindow"
+        x:DataType="vm:TsBatchCheckWindowViewModel"
+        Title="{Binding WindowTitle}"
+        Width="1100" Height="620" MinWidth="850" MinHeight="460"
+        WindowStartupLocation="CenterScreen" DragDrop.AllowDrop="True">
+    <Window.Styles>
+        <Style Selector="TextBlock.passVerdict">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusSuccessForegroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.warningVerdict">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.errorVerdict">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
+        </Style>
+        <Style Selector="DataGridRow:selected TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
+        </Style>
+    </Window.Styles>
+    <Grid Margin="12" RowDefinitions="Auto,Auto,*,Auto,Auto,Auto" RowSpacing="8">
+        <Grid ColumnDefinitions="Auto,Auto,Auto,*,Auto,Auto" ColumnSpacing="7">
+            <Button Content="{DynamicResource String.TsBinaryMerge.AddFiles}" Command="{Binding AddFilesCommand}" MinWidth="90" />
+            <Button Grid.Column="1" Content="{DynamicResource String.TsBinaryMerge.Remove}" Command="{Binding RemoveFilesCommand}" MinWidth="80" />
+            <Button Grid.Column="2" Content="{DynamicResource String.TsBatchCheck.Recheck}"
+                    ToolTip.Tip="{DynamicResource String.TsBatchCheck.RecheckHint}"
+                    Command="{Binding RecheckSelectedCommand}" MinWidth="90" />
+            <CheckBox Grid.Column="4" Content="{DynamicResource String.TsBatchCheck.OnlyIssues}"
+                      ToolTip.Tip="{DynamicResource String.TsBatchCheck.OnlyIssuesHint}"
+                      IsChecked="{Binding OnlyIssues, Mode=TwoWay}" Margin="0,0,8,0" />
+            <Button Grid.Column="5" Content="{DynamicResource String.TsBinaryMerge.Clear}" Command="{Binding ClearCommand}" MinWidth="70" />
+        </Grid>
+        <ClassicBorderDecorator Grid.Row="1" BorderStyle="Etched" BorderThickness="1" Padding="8">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="12">
+                <CheckBox Content="{DynamicResource String.TsBatchCheck.SaveLogs}"
+                          IsChecked="{Binding SaveLogs, Mode=TwoWay}" IsEnabled="{Binding !IsScanning}" />
+                <CheckBox Grid.Column="1" Content="{DynamicResource String.TsBatchCheck.BesideSource}"
+                          IsChecked="{Binding SaveBesideSource, Mode=TwoWay}"
+                          IsEnabled="{Binding !IsScanning}" IsVisible="{Binding SaveLogs}" />
+                <TextBox Grid.Column="2" Text="{Binding OutputFolder, Mode=TwoWay}"
+                         Watermark="{DynamicResource String.TsBatchCheck.SelectFolder}"
+                         IsVisible="{Binding UseCustomFolder}" IsEnabled="{Binding CanBrowseFolder}" />
+                <Button Grid.Column="3" Content="{DynamicResource String.TsBinaryMerge.Browse}"
+                        Command="{Binding BrowseFolderCommand}" IsVisible="{Binding UseCustomFolder}" MinWidth="75" />
+            </Grid>
+        </ClassicBorderDecorator>
+        <!-- 与二进制合并页一致，由 DataGrid 自己滚动并虚拟化行。 -->
+        <Grid Grid.Row="2">
+            <DataGrid x:Name="FileGrid" ItemsSource="{Binding VisibleFiles}"
+                      AutoGenerateColumns="False" IsReadOnly="True" RowHeight="28"
+                      GridLinesVisibility="All" SelectionMode="Extended"
+                      CanUserSortColumns="False" CanUserResizeColumns="True"
+                      HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Visible"
+                      SelectionChanged="FileGrid_OnSelectionChanged" DoubleTapped="FileGrid_OnDoubleTapped">
+                <DataGrid.Columns>
+                    <DataGridTemplateColumn Header="{DynamicResource String.TsBinaryMerge.Column.File}" Width="*" MinWidth="190">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="models:TsBatchCheckFileItem">
+                                <TextBlock Text="{Binding FileName}" TextTrimming="CharacterEllipsis" Margin="4,0" VerticalAlignment="Center" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="{DynamicResource String.TsBinaryMerge.Column.Size}" Binding="{Binding FileSizeText}" Width="95" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsBinaryMerge.Column.Status}" Binding="{Binding StatusText}" Width="100" />
+                    <DataGridTemplateColumn Header="{DynamicResource String.TsBatchCheck.Column.Progress}" Width="125">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="models:TsBatchCheckFileItem">
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6" Margin="4,0">
+                                    <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}" Height="12" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Percent, StringFormat={}{0:0}%}" TextAlignment="Right" VerticalAlignment="Center" />
+                                </Grid>
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTemplateColumn Header="{DynamicResource String.TsCheck.Report.Verdict}" Width="115">
+                        <DataGridTemplateColumn.CellTemplate>
+                            <DataTemplate x:DataType="models:TsBatchCheckFileItem">
+                                <TextBlock Text="{Binding VerdictText}" Classes.passVerdict="{Binding IsPass}"
+                                           Classes.warningVerdict="{Binding IsWarning}" Classes.errorVerdict="{Binding IsError}"
+                                           Margin="4,0" VerticalAlignment="Center" />
+                            </DataTemplate>
+                        </DataGridTemplateColumn.CellTemplate>
+                    </DataGridTemplateColumn>
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Errors}" Binding="{Binding ErrorCount}" Width="65" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Warnings}" Binding="{Binding WarningCount}" Width="65" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Report.Elapsed}" Binding="{Binding ElapsedText}" Width="120" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsBatchCheck.LogFile}" Binding="{Binding LogStatusText}" Width="95" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <TextBlock Text="{DynamicResource String.TsBatchCheck.DropHint}" IsVisible="{Binding IsEmpty}"
+                       IsHitTestVisible="False" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextAlignment="Center" Opacity="0.7" />
+            <TextBlock Text="{DynamicResource String.TsBatchCheck.NoVisibleIssues}" IsVisible="{Binding HasNoVisibleIssues}"
+                       IsHitTestVisible="False" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       TextAlignment="Center" Opacity="0.7" />
+        </Grid>
+        <StackPanel Grid.Row="3" Spacing="3" IsVisible="{Binding ShowDetails}">
+            <TextBlock Text="{Binding SelectedPath}" TextTrimming="CharacterEllipsis" IsVisible="{Binding HasSelectedFile}" />
+            <TextBlock Text="{Binding SelectedDetail}" TextWrapping="Wrap" IsVisible="{Binding HasSelectedDetail}" />
+            <TextBlock Text="{Binding OperationMessage}" TextWrapping="Wrap" IsVisible="{Binding HasOperationMessage}" />
+        </StackPanel>
+        <Grid Grid.Row="4" RowDefinitions="Auto,Auto,Auto" RowSpacing="5">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <TextBlock Text="{Binding SummaryText}" />
+                <TextBlock Grid.Column="1" Text="{Binding SpeedText}" IsVisible="{Binding IsScanning}" />
+            </Grid>
+            <Grid Grid.Row="1" ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                <ProgressBar Minimum="0" Maximum="100" Value="{Binding Percent}" Height="18" />
+                <TextBlock Grid.Column="1" Text="{Binding Percent, StringFormat={}{0:0.0}%}" VerticalAlignment="Center" />
+            </Grid>
+            <TextBlock Grid.Row="2" Text="{Binding StatusText}" TextWrapping="Wrap" />
+        </Grid>
+        <Grid Grid.Row="5" ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+            <Button Content="{DynamicResource String.TsBatchCheck.ViewResult}" Command="{Binding ViewResultCommand}" MinWidth="90" />
+            <Button Grid.Column="1" Content="{DynamicResource String.TsBatchCheck.Export}" Command="{Binding ExportSummaryCommand}" MinWidth="100" />
+            <Button Grid.Column="3" Content="{DynamicResource String.TsBatchCheck.Start}" Command="{Binding StartCommand}" MinWidth="100" />
+            <Button Grid.Column="4" Content="{DynamicResource String.TsBatchCheck.Stop}" Command="{Binding StopCommand}" MinWidth="80" />
+            <Button Grid.Column="5" Content="{DynamicResource String.TsBatchCheck.Close}" Click="Close_OnClick" MinWidth="80" />
+        </Grid>
+    </Grid>
+</Window>
