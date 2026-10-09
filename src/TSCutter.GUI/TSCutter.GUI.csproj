@@ -1,9 +1,9 @@
 <Project Sdk="Microsoft.NET.Sdk">
     <PropertyGroup>
         <AssemblyName>TSCutterGUI</AssemblyName>
-        <Version>0.1.1</Version>
+        <Version>0.1.2</Version>
         <!-- Refresh BuildDate when updating Version. -->
-        <BuildDate>2026-10-05</BuildDate>
+        <BuildDate>2026-10-09</BuildDate>
         <ReleaseStage>Beta</ReleaseStage>
         <ReleaseTag>v$(Version)</ReleaseTag>
         <OutputType>WinExe</OutputType>
