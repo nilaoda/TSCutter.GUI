@@ -108,6 +108,13 @@ public readonly unsafe struct MediaStream
 
 public readonly unsafe struct MediaProgram(AVProgram* raw)
 {
+    public int Id => raw->id;
+    public bool ContainsStream(int index)
+    {
+        for (var i = 0; i < raw->nb_stream_indexes; i++)
+            if (raw->stream_index[i] == index) return true;
+        return false;
+    }
     public int PmtPid => raw->pmt_pid;
     public long StartTime => raw->start_time;
     public long EndTime => raw->end_time;
