@@ -15,6 +15,7 @@ public static unsafe partial class NativeMethods
     public const int AV_TIME_BASE = 1_000_000;
     public const int AVERROR_EXIT = -1414092869;
     public const int AVERROR_EOF = -541478725;
+    public const int AVERROR_INVALIDDATA = -1094995529;
     public const int AVERROR_OPTION_NOT_FOUND = -1414549496;
     // EAGAIN 来自平台 errno；macOS 为 35，Windows/Linux 为 11。
     public static int AVERROR_EAGAIN => OperatingSystem.IsMacOS() ? -35 : -11;
@@ -178,6 +179,10 @@ public static unsafe partial class NativeMethods
     [LibraryImport("tscutter.avutil", EntryPoint = "av_channel_layout_describe", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int av_channel_layout_describe(AVChannelLayout* @channel_layout, byte* @buf, ulong @buf_size);
+
+    [LibraryImport("tscutter.avcodec", EntryPoint = "avcodec_profile_name")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial byte* avcodec_profile_name(AVCodecID codecId, int profile);
 
     [LibraryImport("tscutter.avutil", EntryPoint = "av_pix_fmt_desc_get", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
