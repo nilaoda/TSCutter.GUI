@@ -843,6 +843,13 @@ public partial class MainWindowViewModel : ViewModelBase
     }
 
     [RelayCommand]
+    private void TsBatchCheckClick()
+    {
+        var dialogViewModel = _dialogService.CreateViewModel<TsBatchCheckWindowViewModel>();
+        _dialogService.Show(null, dialogViewModel);
+    }
+
+    [RelayCommand]
     private async Task TsTimelineRepairClickAsync(string? filePath)
     {
         filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsTimelineRepair_OpenFile);

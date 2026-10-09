@@ -18,7 +18,7 @@ public partial class TsCheckWindow : ClassicWindow
 
     private void OnLoaded(object? sender, EventArgs eventArgs)
     {
-        if (DataContext is TsCheckWindowViewModel viewModel && viewModel.StartCommand.CanExecute(null))
+        if (DataContext is TsCheckWindowViewModel { HasResult: false } viewModel && viewModel.StartCommand.CanExecute(null))
             viewModel.StartCommand.Execute(null);
     }
 

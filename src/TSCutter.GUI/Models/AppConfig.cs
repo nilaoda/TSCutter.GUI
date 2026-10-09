@@ -22,6 +22,7 @@ public class AppConfig
     public ThemeVariantMode ThemeVariantMode { get; set; } = ThemeVariantMode.Automatic;
     public bool AutoDetectLanguage { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;
+    public bool TsBatchCheckSaveLogs { get; set; }
     public bool PreferHardwareDecoding
     {
         get => IsHardwareDecodingSupported && _preferHardwareDecoding;

@@ -212,7 +212,8 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
             : _text.Strings.String_TsCheck_Timeline_RepairCandidateNotice
         : _text.Strings.String_TsCheck_Timeline_NoRepairCandidateNotice;
     public string FileName => Path.GetFileName(FilePath);
-    public string FileSizeText => File.Exists(FilePath) ? CommonUtil.FormatFileSize(new FileInfo(FilePath).Length) : "-";
+    public string FileSizeText => _result is not null ? CommonUtil.FormatFileSize(_result.FileSize)
+        : File.Exists(FilePath) ? CommonUtil.FormatFileSize(new FileInfo(FilePath).Length) : "-";
 
     [RelayCommand(CanExecute = nameof(CanStart))]
     private async Task StartAsync()
@@ -263,28 +264,7 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
 
             // 扫描结束后立即使排队中的旧进度回调失效，最终 UI 统一从完整结果重建。
             _scanGeneration++;
-            _result = result;
-            Percent = result.FileSize > 0 ? result.BytesScanned * 100.0 / result.FileSize : 0;
-            ProgressText = $"{CommonUtil.FormatFileSize(result.BytesScanned)} / {CommonUtil.FormatFileSize(result.FileSize)}";
-            PacketCountText = result.PacketCount.ToString("N0");
-            SpeedText = $"{CommonUtil.FormatFileSize(result.BytesScanned / Math.Max(0.001, result.Elapsed.TotalSeconds))}/s";
-            ElapsedText = result.Elapsed.ToString(@"hh\:mm\:ss\.fff");
-            RebuildEvents();
-            RebuildPidSummaries();
-            TimelineBuckets = result.Timeline.ToArray();
-            TimelineEvents = result.Events.ToArray();
-            HasEstimatedTimeline = result.TimelineUsesEstimatedClock;
-            HasTimelineRepairCandidate = result.TimelineHasRepairCandidate;
-            RebuildTimelineStreams();
-            ErrorCount = _result.ErrorCount;
-            WarningCount = _result.WarningCount;
-            Verdict = _result.Verdict;
-            VerdictText = _text.FormatVerdict(_result);
-            UpdateBroadcastTime();
-            StatusText = _result.WasCancelled
-                ? _text.Strings.String_TsCheck_Status_Cancelled
-                : _text.Strings.String_TsCheck_Status_Completed;
-            HasResult = true;
+            ApplyResult(result);
         }
         catch (Exception exception)
         {
@@ -301,6 +281,41 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
             CancelCommand.NotifyCanExecuteChanged();
             ExportCommand.NotifyCanExecuteChanged();
         }
+    }
+
+    public void Initialize(TsCheckResult result)
+    {
+        FilePath = result.FilePath;
+        ApplyResult(result);
+        OnPropertyChanged(nameof(WindowTitle));
+        OnPropertyChanged(nameof(FileName));
+    }
+
+    private void ApplyResult(TsCheckResult result)
+    {
+        _result = result;
+        OnPropertyChanged(nameof(FileSizeText));
+        Percent = result.FileSize > 0 ? result.BytesScanned * 100.0 / result.FileSize : 0;
+        ProgressText = $"{CommonUtil.FormatFileSize(result.BytesScanned)} / {CommonUtil.FormatFileSize(result.FileSize)}";
+        PacketCountText = result.PacketCount.ToString("N0");
+        SpeedText = $"{CommonUtil.FormatFileSize(result.BytesScanned / Math.Max(0.001, result.Elapsed.TotalSeconds))}/s";
+        ElapsedText = result.Elapsed.ToString(@"hh\:mm\:ss\.fff");
+        RebuildEvents();
+        RebuildPidSummaries();
+        TimelineBuckets = result.Timeline.ToArray();
+        TimelineEvents = result.Events.ToArray();
+        HasEstimatedTimeline = result.TimelineUsesEstimatedClock;
+        HasTimelineRepairCandidate = result.TimelineHasRepairCandidate;
+        RebuildTimelineStreams();
+        ErrorCount = _result.ErrorCount;
+        WarningCount = _result.WarningCount;
+        Verdict = _result.Verdict;
+        VerdictText = _text.FormatVerdict(_result);
+        UpdateBroadcastTime();
+        StatusText = _result.WasCancelled
+            ? _text.Strings.String_TsCheck_Status_Cancelled
+            : _text.Strings.String_TsCheck_Status_Completed;
+        HasResult = true;
     }
 
     private void UpdateProgress(TsCheckProgress progress)
