@@ -15,6 +15,7 @@
         x:Class="TSCutter.GUI.Views.MainWindow"
         x:DataType="vm:MainWindowViewModel"
         x:Name="CutterMainWindow"
+        DragDrop.AllowDrop="True"
         Focusable="True"
         Closing="Window_OnClosing"
         Icon="/Assets/logo.ico"
@@ -76,7 +77,7 @@
         </NativeMenu>
     </NativeMenu.Menu>
 
-    <Grid x:Name="DropSurface" DragDrop.AllowDrop="True" RowDefinitions="Auto, *">
+    <Grid x:Name="DropSurface" RowDefinitions="Auto, *">
         <Grid.Resources>
             <ResourceDictionary>
                 <ResourceDictionary.ThemeDictionaries>
@@ -208,7 +209,7 @@
         <!-- DropMask -->
         <Grid Grid.Row="1" ZIndex="2"
               IsVisible="False"
-              DragDrop.AllowDrop="True"
+              IsHitTestVisible="False"
               x:Name="DropMask">
             <Border Background="{DynamicResource MaskBackgroundBrush}" Opacity="0.78" />
             <ClassicBorderDecorator BorderThickness="2" BorderStyle="Raised"
