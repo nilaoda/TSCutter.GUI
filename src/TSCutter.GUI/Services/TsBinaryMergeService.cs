@@ -9,6 +9,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Win32.SafeHandles;
 using TSCutter.GUI.Models;
+using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.Services;
 
@@ -172,11 +173,8 @@ internal sealed class TsBinaryMergeService
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var snapshot = snapshots[sourceIndex];
-                    await using var source = new FileStream(
+                    await using var source = MediaFileUtil.OpenRead(
                         snapshot.FilePath,
-                        FileMode.Open,
-                        FileAccess.Read,
-                        FileShare.Read,
                         buffer.Length,
                         FileOptions.Asynchronous | FileOptions.SequentialScan);
                     await ValidateOpenStreamAsync(source, snapshot.FilePath, cancellationToken)
@@ -284,18 +282,12 @@ internal sealed class TsBinaryMergeService
         var compareBuffer = ArrayPool<byte>.Shared.Rent(AnchorBytes);
         try
         {
-            await using var previousStream = new FileStream(
+            await using var previousStream = MediaFileUtil.OpenRead(
                 previous.FilePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
                 scanBuffer.Length,
                 FileOptions.Asynchronous | FileOptions.RandomAccess);
-            await using var currentStream = new FileStream(
+            await using var currentStream = MediaFileUtil.OpenRead(
                 current.FilePath,
-                FileMode.Open,
-                FileAccess.Read,
-                FileShare.Read,
                 scanBuffer.Length,
                 FileOptions.Asynchronous | FileOptions.RandomAccess);
 
@@ -428,11 +420,11 @@ internal sealed class TsBinaryMergeService
         var compareBuffer = ArrayPool<byte>.Shared.Rent(AnchorBytes);
         try
         {
-            await using var previousStream = new FileStream(
-                previous.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            await using var previousStream = MediaFileUtil.OpenRead(
+                previous.FilePath,
                 scanBuffer.Length, FileOptions.Asynchronous | FileOptions.RandomAccess);
-            await using var currentStream = new FileStream(
-                current.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            await using var currentStream = MediaFileUtil.OpenRead(
+                current.FilePath,
                 scanBuffer.Length, FileOptions.Asynchronous | FileOptions.RandomAccess);
             await ReadExactlyAtAsync(currentStream.SafeFileHandle,
                 anchorBuffer.AsMemory(0, AnchorBytes), probeOffset, cancellationToken)
@@ -665,11 +657,8 @@ internal sealed class TsBinaryMergeService
                 TsBinaryMergeErrorCode.InvalidPacketStructure,
                 fullPath);
 
-        await using var stream = new FileStream(
+        await using var stream = MediaFileUtil.OpenRead(
             fullPath,
-            FileMode.Open,
-            FileAccess.Read,
-            FileShare.Read,
             RequiredSyncPackets * PacketSize,
             FileOptions.Asynchronous | FileOptions.RandomAccess);
         await ValidateOpenStreamAsync(stream, fullPath, cancellationToken).ConfigureAwait(false);

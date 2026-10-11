@@ -29,7 +29,7 @@ public static class TsUtil
     /// </summary>
     public static long FindSyncOffset(string filePath, long maxSearchBytes = 5 * 1024 * 1024)
     {
-        using var fs = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read);
+        using var fs = MediaFileUtil.OpenRead(filePath);
         var maxScan = Math.Min(maxSearchBytes, fs.Length);
 
         for (long i = 0; i < maxScan; i++)

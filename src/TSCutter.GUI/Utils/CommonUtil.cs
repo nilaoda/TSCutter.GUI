@@ -59,7 +59,7 @@ public static partial class CommonUtil
         var bytesRead = 0;
         var totalBytesRead = 0L;
 
-        await using var sourceStream = new FileStream(startFile.FullName, FileMode.Open, FileAccess.Read, FileShare.Read);
+        await using var sourceStream = MediaFileUtil.OpenRead(startFile.FullName);
         await using var destinationStream = new FileStream(destinationFile, FileMode.Create, FileAccess.Write);
 
         sourceStream.Seek(start, SeekOrigin.Begin);
