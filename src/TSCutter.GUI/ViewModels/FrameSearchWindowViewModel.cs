@@ -25,6 +25,8 @@ public sealed partial class FrameSearchWindowViewModel : ViewModelBase, IModalDi
     private TaskCompletionSource? resumeSearch;
     private bool started;
 
+    public PreviewStreamSelection? StreamSelection { get; set; }
+
     public event Action? RequestClose;
     public bool? DialogResult { get; private set; }
     public TimeSpan? SelectedTime { get; private set; }
@@ -74,7 +76,7 @@ public sealed partial class FrameSearchWindowViewModel : ViewModelBase, IModalDi
             using var stream = new MemoryStream(Template!.Jpeg, writable: false);
             ReferenceImage = new Bitmap(stream);
             await service.SearchAsync(FilePath, Template!.Jpeg, StartTime, ReceiveMatchAsync,
-                PauseAfterMatchAsync, progress, cancellation.Token);
+                PauseAfterMatchAsync, progress, cancellation.Token, StreamSelection);
             if (cancellation.IsCancellationRequested) return;
             StatusText = Matches.Count == 0
                 ? LocalizationManager.Instance.String_FrameSearch_NoResults

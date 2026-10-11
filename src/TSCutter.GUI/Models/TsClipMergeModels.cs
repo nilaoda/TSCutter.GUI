@@ -15,6 +15,7 @@ internal sealed class TsClipMergeRequest
     public required string OutputPath { get; init; }
     public required IReadOnlyList<TsClipMergeRange> Ranges { get; init; }
     public int VideoPid { get; init; } = -1;
+    public int? ProgramId { get; init; }
     public IReadOnlyList<int> AudioPids { get; init; } = [];
 }
 

@@ -1137,4 +1137,15 @@
     <x:String x:Key="String.TsBatchCheck.RecheckHint">Immediately rescan the selected files.</x:String>
     <x:String x:Key="String.TsBatchCheck.Status.Stopped">Stopped. Click Start checking to continue; cancelled files restart from the beginning.</x:String>
     <x:String x:Key="String.TsBatchCheck.Status.Completed">Checking finished. Select a file to view its result or recheck it.</x:String>
+    <x:String x:Key="String.PreviewTrack.Program">Program</x:String>
+    <x:String x:Key="String.PreviewTrack.Video">Video</x:String>
+    <x:String x:Key="String.PreviewTrack.Audio">Audio: </x:String>
+    <x:String x:Key="String.PreviewTrack.ProgramFallback">Program {0}</x:String>
+    <x:String x:Key="String.PreviewTrack.AllStreams">Unassigned streams</x:String>
+    <x:String x:Key="String.PreviewTrack.NoAudio">None</x:String>
+    <x:String x:Key="String.PreviewTrack.ExportCurrentProgramOnly">Export current program only</x:String>
+    <x:String x:Key="String.PreviewTrack.ExportTip">When unchecked, all programs within the clip range are preserved. When checked, keep all tracks of the current program and rebuild its program tables. Applies to saving, merging, and newly queued clips.</x:String>
+    <x:String x:Key="String.PreviewTrack.ClearClipsConfirm">Switching the preview track will clear the current clips and undo history. Queued exports are preserved. Continue?</x:String>
+    <x:String x:Key="String.PreviewTrack.SwitchFailed">Failed to switch preview track</x:String>
+    <x:String x:Key="String.PreviewTrack.SizeAfterExport">Determined after export</x:String>
 </ResourceDictionary>

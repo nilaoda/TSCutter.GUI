@@ -9,6 +9,8 @@ public partial class ExportQueueItem : ObservableObject
 {
     public long QueueItemId { get; init; }
 
+    public int? ProgramId { get; init; }
+
     public string SourceFilePath { get; init; } = "";
 
     public string OutputFilePath { get; init; } = "";
@@ -38,6 +40,9 @@ public partial class ExportQueueItem : ObservableObject
     };
 
     public string OutputFileName => Path.GetFileName(OutputFilePath);
+    public string SourceDisplayName => ProgramId is { } programId
+        ? $"{SourceFileName} · {string.Format(LocalizationManager.Instance.String_PreviewTrack_ProgramFallback, programId)}"
+        : SourceFileName;
 
     public string StartBoundaryTimeStr => $"[ {CommonUtil.FormatSeconds(StartTimeSeconds)}";
 
@@ -46,12 +51,14 @@ public partial class ExportQueueItem : ObservableObject
         : $"{CommonUtil.FormatSeconds(EndTimeSeconds)} ]";
 
     public string EstimatedSizeStr => LocalizationManager.Instance.String_SizePrefix
-        + CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes));
+        + (ProgramId is null ? CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes))
+            : LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport);
 
     public string? OutputFilePathStr => OutputFilePath;
 
     public void RefreshLocalizedText()
     {
+        OnPropertyChanged(nameof(SourceDisplayName));
         OnPropertyChanged(nameof(EstimatedSizeStr));
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(EndBoundaryTimeStr));

@@ -1137,4 +1137,15 @@
     <x:String x:Key="String.TsBatchCheck.RecheckHint">立即重新檢查選取的檔案。</x:String>
     <x:String x:Key="String.TsBatchCheck.Status.Stopped">已停止。點擊「開始檢查」繼續，已取消的檔案將從頭重新檢查。</x:String>
     <x:String x:Key="String.TsBatchCheck.Status.Completed">檢查已結束，選取檔案可查看結果或重新檢查。</x:String>
+    <x:String x:Key="String.PreviewTrack.Program">節目</x:String>
+    <x:String x:Key="String.PreviewTrack.Video">影片</x:String>
+    <x:String x:Key="String.PreviewTrack.Audio">音訊：</x:String>
+    <x:String x:Key="String.PreviewTrack.ProgramFallback">節目 {0}</x:String>
+    <x:String x:Key="String.PreviewTrack.AllStreams">未歸屬節目</x:String>
+    <x:String x:Key="String.PreviewTrack.NoAudio">無</x:String>
+    <x:String x:Key="String.PreviewTrack.ExportCurrentProgramOnly">僅匯出目前節目</x:String>
+    <x:String x:Key="String.PreviewTrack.ExportTip">不勾選時保留剪輯範圍內的全部節目。勾選時保留目前節目的全部軌道並重建節目表。適用於儲存、合併和新加入佇列的剪輯。</x:String>
+    <x:String x:Key="String.PreviewTrack.ClearClipsConfirm">切換預覽軌道將清空目前剪輯和復原歷史，已加入佇列的匯出工作會保留。是否繼續？</x:String>
+    <x:String x:Key="String.PreviewTrack.SwitchFailed">切換預覽軌道失敗</x:String>
+    <x:String x:Key="String.PreviewTrack.SizeAfterExport">匯出後確定</x:String>
 </ResourceDictionary>

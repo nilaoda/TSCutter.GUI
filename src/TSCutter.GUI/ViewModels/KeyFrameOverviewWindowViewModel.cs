@@ -57,6 +57,8 @@ public sealed partial class KeyFrameOverviewWindowViewModel : ViewModelBase,
         App.LocalizationService.LanguageChanged += OnLanguageChanged;
     }
 
+    public PreviewStreamSelection? StreamSelection { get; set; }
+
     public event EventHandler? RequestClose;
 
     [ObservableProperty]
@@ -100,7 +102,7 @@ public sealed partial class KeyFrameOverviewWindowViewModel : ViewModelBase,
         {
             keyFrames = await service.OpenAsync(
                 FilePath,
-                cancellation.Token).ConfigureAwait(true);
+                cancellation.Token, StreamSelection).ConfigureAwait(true);
             RebuildTiles();
             worker = ProcessQueueAsync(cancellation.Token);
             StatusText = string.Format(

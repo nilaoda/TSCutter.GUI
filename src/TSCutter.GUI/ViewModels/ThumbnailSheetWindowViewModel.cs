@@ -462,6 +462,8 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
 
     public bool? DialogResult { get; private set; }
 
+    public PreviewStreamSelection? StreamSelection { get; set; }
+
     public event Action? RequestClose;
 
     private ThumbnailSheetLayout CurrentLayout => ThumbnailSheetComposer.CalculateLayout(
@@ -495,7 +497,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
 
             StatusText = LocalizationManager.Instance.String_ThumbnailSheet_Status_LoadingInfo;
             info = await Task.Run(
-                () => ThumbnailSheetInfoBuilder.Build(filePath),
+                () => ThumbnailSheetInfoBuilder.Build(filePath, StreamSelection),
                 cts.Token).ConfigureAwait(true);
             cts.Token.ThrowIfCancellationRequested();
 
@@ -507,7 +509,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             }
 
             StatusText = LocalizationManager.Instance.String_ThumbnailSheet_Status_Opening;
-            await service.OpenAsync(filePath, cts.Token).ConfigureAwait(true);
+            await service.OpenAsync(filePath, cts.Token, StreamSelection).ConfigureAwait(true);
             cts.Token.ThrowIfCancellationRequested();
 
             await RebuildAsync().ConfigureAwait(true);

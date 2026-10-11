@@ -2,6 +2,7 @@ using TSCutter.GUI.FFmpeg;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using FFmpeg.AutoGen.Abstractions;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Models;
@@ -15,17 +16,21 @@ namespace TSCutter.GUI.Utils;
 /// </summary>
 public static class ThumbnailSheetInfoBuilder
 {
-    public static ThumbnailSheetInfo Build(string filePath)
+    public static ThumbnailSheetInfo Build(string filePath, PreviewStreamSelection? streamSelection = null)
     {
         var fi = new FileInfo(filePath);
         using var fc = FormatContext.OpenInputUrl(filePath);
         fc.LoadStreamInfo();
 
         // MediaStream 是值类型，这里用索引标记是否找到，避免默认值带来的误判。
-        var videoIndex = -1;
+        var selectedVideo = streamSelection is null ? (MediaStream?)null : PreviewStreamUtil.ResolveVideo(fc, streamSelection);
+        bool Included(MediaStream stream) => streamSelection?.ProgramId is not { } programId ||
+            fc.Programs.Any(program => program.Id == programId && program.ContainsStream(stream.Index));
+        var videoIndex = selectedVideo?.Index ?? -1;
         var audioIndex = -1;
         for (var i = 0; i < fc.Streams.Count; i++)
         {
+            if (!Included(fc.Streams[i])) continue;
             var type = fc.Streams[i].Codecpar!.CodecType;
             if (type == AVMediaType.AVMEDIA_TYPE_VIDEO && videoIndex < 0)
                 videoIndex = i;
@@ -48,7 +53,10 @@ public static class ThumbnailSheetInfoBuilder
         var duration = ResolveDuration(hasVideo ? videoStream : default, hasVideo, fc.Duration);
         var videoBitRate = hasVideo ? videoStream.Codecpar!.BitRate : 0;
         var videoBitRateEstimated = false;
-        if (hasVideo && videoBitRate <= 0 && fc.BitRate > 0)
+        // 多节目或多视频流无法可靠地将容器总码率归属于当前视频。
+        if (hasVideo && videoBitRate <= 0 && fc.BitRate > 0 && fc.Programs.Count <= 1 &&
+            fc.Streams.Count(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_VIDEO &&
+                                      !stream.IsAttachedPicture) == 1)
         {
             var remainingBitRate = fc.BitRate;
             for (var i = 0; i < fc.Streams.Count; i++)
@@ -76,6 +84,7 @@ public static class ThumbnailSheetInfoBuilder
         var subtitleTracks = new List<ThumbnailSheetTrackInfo>();
         for (var i = 0; i < fc.Streams.Count; i++)
         {
+            if (!Included(fc.Streams[i])) continue;
             var codecParameters = fc.Streams[i].Codecpar!;
             if (!IsDisplayableStreamType(codecParameters.CodecType))
                 continue;

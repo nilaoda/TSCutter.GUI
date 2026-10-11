@@ -72,16 +72,24 @@ internal sealed class TsClipMergeService
         var previousCorrection = 0L;
         var expectedStartTime = ranges[0].StartTimeSeconds;
 
+        var outputCreated = false;
         try
         {
-            await using var output = new FileStream(
+            await using var programOutput = request.ProgramId is { } programId
+                ? await TsProgramClipExportService.OpenWriterAsync(sourcePath, outputPath, programId, cancellationToken)
+                    .ConfigureAwait(false)
+                : null;
+            await using var output = programOutput is null ? new FileStream(
                 outputPath, FileMode.Create, FileAccess.Write, FileShare.None,
-                buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan) : null;
+            outputCreated = true;
+            programOutput?.WriteInitialTables();
 
             for (var rangeIndex = 0; rangeIndex < ranges.Count; rangeIndex++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var range = ranges[rangeIndex];
+                programOutput?.BeginSegment();
                 var correction = (long)Math.Round((expectedStartTime - range.StartTimeSeconds) * 90_000.0);
                 if (rangeIndex > 0 && previousTimeline.HasPts)
                 {
@@ -170,8 +178,14 @@ internal sealed class TsClipMergeService
                             packet, rangeIndex, segmentContinuityOffsets, lastPayloadContinuity);
                     }
 
-                    await output.WriteAsync(buffer.AsMemory(0, requested), cancellationToken)
-                        .ConfigureAwait(false);
+                    if (programOutput is null)
+                        await output!.WriteAsync(buffer.AsMemory(0, requested), cancellationToken).ConfigureAwait(false);
+                    else
+                    {
+                        for (var offset = 0; offset < requested; offset += PacketSize)
+                            programOutput.WriteFilteredPacket(buffer.AsSpan(offset, PacketSize), chunkStart + offset);
+                        await programOutput.FlushIfNeededAsync(cancellationToken).ConfigureAwait(false);
+                    }
                     remaining -= requested;
                     processedBytes += requested;
                     progress?.Report(new TsClipMergeProgress(
@@ -186,7 +200,10 @@ internal sealed class TsClipMergeService
                 expectedStartTime = range.EndTimeSeconds + correction / 90_000.0;
             }
 
-            await output.FlushAsync(cancellationToken).ConfigureAwait(false);
+            if (programOutput is null)
+                await output!.FlushAsync(cancellationToken).ConfigureAwait(false);
+            else
+                await programOutput.CompleteAsync(cancellationToken).ConfigureAwait(false);
             if (source.Length != sourceLength)
                 throw new TsClipMergeException(TsClipMergeErrorCode.SourceChanged);
 
@@ -198,7 +215,7 @@ internal sealed class TsClipMergeService
             return new TsClipMergeResult
             {
                 OutputPath = outputPath,
-                OutputBytes = totalBytes,
+                OutputBytes = programOutput?.BytesWritten ?? totalBytes,
                 SegmentCount = ranges.Count,
                 RewrittenPcrCount = rewrittenPcrCount,
                 RewrittenTimestampCount = rewrittenTimestampCount,
@@ -208,12 +225,12 @@ internal sealed class TsClipMergeService
         }
         catch (EndOfStreamException)
         {
-            TryDelete(outputPath);
+            if (outputCreated) TryDelete(outputPath);
             throw new TsClipMergeException(TsClipMergeErrorCode.SourceChanged);
         }
         catch
         {
-            TryDelete(outputPath);
+            if (outputCreated) TryDelete(outputPath);
             throw;
         }
         finally

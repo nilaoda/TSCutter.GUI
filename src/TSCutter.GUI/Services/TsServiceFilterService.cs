@@ -231,12 +231,15 @@ public sealed class TsServiceFilterService
         }
     }
 
-    private sealed class OutputContext : IAsyncDisposable
+    internal sealed class OutputContext : IAsyncDisposable
     {
         private readonly FileStream _stream;
         private readonly byte[] _buffer;
         private readonly int[] _psiContinuity = new int[8192];
         private bool _disposed;
+        private readonly PsiAssembler _eitAssembler = new();
+        private bool _awaitEitStart = true;
+        private int _transportStreamId;
 
         private OutputContext(int serviceId, string path, FileStream stream, byte[] buffer)
         {
@@ -258,7 +261,7 @@ public sealed class TsServiceFilterService
         public static OutputContext Create(
             TsServiceFilterOutput output,
             TsCheckResult catalog,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken, bool overwrite = false)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var program = catalog.Programs[output.ServiceId];
@@ -273,10 +276,10 @@ public sealed class TsServiceFilterService
             {
                 // CreateNew 与界面预检查共同避免静默覆盖；即使检查后文件才出现也会安全失败。
                 stream = new FileStream(
-                    output.OutputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+                    output.OutputPath, overwrite ? FileMode.Create : FileMode.CreateNew, FileAccess.Write, FileShare.None,
                     OutputBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
             }
-            catch (IOException) when (File.Exists(output.OutputPath))
+            catch (IOException) when (!overwrite && File.Exists(output.OutputPath))
             {
                 throw new TsFilterException(TsFilterErrorCode.OutputExists, System.IO.Path.GetFileName(output.OutputPath));
             }
@@ -292,7 +295,10 @@ public sealed class TsServiceFilterService
                 TryDelete(output.OutputPath);
                 throw;
             }
-            var context = new OutputContext(output.ServiceId, output.OutputPath, stream, buffer);
+            var context = new OutputContext(output.ServiceId, output.OutputPath, stream, buffer)
+            {
+                _transportStreamId = catalog.TransportStreamId
+            };
             context.RoutedPids.UnionWith(selectedPids);
             if (program.PcrPid >= 0)
                 context.RoutedPids.Add(program.PcrPid);
@@ -305,6 +311,54 @@ public sealed class TsServiceFilterService
             context.StaticSections[program.PmtPid] = pmt;
             context.StaticSections[0x0011] = sdt;
             return context;
+        }
+
+        public void WriteInitialTables()
+        {
+            foreach (var (pid, section) in StaticSections)
+                WriteSection(pid, section);
+        }
+
+        public void BeginSegment()
+        {
+            // 非连续剪辑不能沿用上一段尚未完成的 EIT section。
+            _eitAssembler.Reset();
+            _awaitEitStart = true;
+        }
+
+        public void WriteFilteredPacket(ReadOnlySpan<byte> packet, long fileOffset)
+        {
+            if (packet.Length != PacketSize || packet[0] != 0x47)
+                throw new TsFilterException(TsFilterErrorCode.SyncLost, fileOffset);
+            var pid = ((packet[1] & 0x1F) << 8) | packet[2];
+            var payloadStart = (packet[1] & 0x40) != 0;
+            if (pid == 0x0012)
+            {
+                if (_awaitEitStart && !payloadStart)
+                    return;
+                if (TryGetPayload(packet, out var payload))
+                {
+                    _awaitEitStart = false;
+                    _eitAssembler.Push(payload, payloadStart, section =>
+                    {
+                        if (section.Length >= 18 && TsPsiSectionBuilder.HasValidCrc(section) &&
+                            (section[0] == 0x4E || section[0] is >= 0x50 and <= 0x5F) &&
+                            ((section[8] << 8) | section[9]) == _transportStreamId &&
+                            ((section[3] << 8) | section[4]) == ServiceId)
+                            WriteSection(0x0012, section);
+                    });
+                }
+                return;
+            }
+            if (!RoutedPids.Contains(pid))
+                return;
+            if (StaticSections.TryGetValue(pid, out var table))
+            {
+                if (payloadStart)
+                    WriteSection(pid, table);
+            }
+            else
+                WritePacket(packet);
         }
 
         public void WritePacket(ReadOnlySpan<byte> packet)
@@ -458,7 +512,7 @@ public sealed class TsServiceFilterService
             }
         }
 
-        private void Reset()
+        public void Reset()
         {
             _length = 0;
             _expectedLength = 0;
