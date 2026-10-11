@@ -23,6 +23,7 @@ public class AppConfig
     public bool AutoDetectLanguage { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;
     public bool TsBatchCheckSaveLogs { get; set; }
+    public bool ExportCurrentProgramOnly { get; set; }
     public bool PreferHardwareDecoding
     {
         get => IsHardwareDecodingSupported && _preferHardwareDecoding;

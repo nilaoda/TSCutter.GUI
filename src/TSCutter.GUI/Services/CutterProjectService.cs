@@ -122,7 +122,10 @@ internal static class CutterProjectService
 
     public static void Validate(CutterProject project)
     {
-        if (project.Version != 1)
+        if (project.PreviewSelection is { } selection &&
+            (project.Source is null || selection.StreamIndex < 0))
+            throw new InvalidDataException("The saved preview track is invalid.");
+        if (project.Version is not (1 or 2))
             throw new InvalidDataException($"Unsupported project version: {project.Version}.");
         if (project.Clips is null || project.Queue is null ||
             project.Clips.Count > MaximumItems || project.Queue.Count > MaximumItems)
@@ -160,7 +163,7 @@ internal static class CutterProjectService
             OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         foreach (var item in project.Queue)
         {
-            if (item is null || item.Source is null)
+            if (item is null || item.Source is null || item.ProgramId is < 1 or > 65535)
                 throw new InvalidDataException("A queued export is invalid.");
             ValidateSourceOnce(item.Source, validatedSources);
             if (!(item.EndPosition == -1 && item.EndTime == -1

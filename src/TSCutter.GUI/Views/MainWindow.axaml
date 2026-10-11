@@ -342,8 +342,59 @@
                         <Grid Grid.Row="0" ColumnDefinitions="*, Auto, 240">
                             <!-- 图片预览区域 -->
                             <ClassicBorderDecorator Grid.Column="0" BorderThickness="0, 2" BorderStyle="Etched">
-                                <Grid>
-                                    <controls:ImageViewer Name="ImageViewer"
+                                <Grid RowDefinitions="Auto,*">
+                                    <StackPanel Grid.Row="0" Margin="6,4"
+                                                IsVisible="{Binding ShowPreviewTrackSelector}">
+                                        <WrapPanel>
+                                            <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="6" Margin="0,0,12,4"
+                                                  IsVisible="{Binding HasPreviewPrograms}">
+                                                <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                                           Text="{DynamicResource String.PreviewTrack.Program}" />
+                                                <ComboBox Grid.Column="1" MinWidth="80" MaxWidth="220"
+                                                          HorizontalAlignment="Left"
+                                                          IsEnabled="{Binding CanSelectPreviewProgram}"
+                                                          ItemsSource="{Binding PreviewPrograms}"
+                                                          ToolTip.Tip="{Binding SelectedPreviewProgram.DisplayText}"
+                                                          SelectedItem="{Binding SelectedPreviewProgram, Mode=TwoWay}">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="models:PreviewProgramOption">
+                                                            <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" />
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="6" Margin="0,0,0,4">
+                                                <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                                           Text="{DynamicResource String.PreviewTrack.Video}" />
+                                                <ComboBox Grid.Column="1" MinWidth="100" MaxWidth="300"
+                                                          HorizontalAlignment="Left"
+                                                          IsEnabled="{Binding CanSelectPreviewVideo}"
+                                                          ItemsSource="{Binding PreviewVideoTracks}"
+                                                          ToolTip.Tip="{Binding SelectedPreviewVideoTrack.DisplayText}"
+                                                          SelectedItem="{Binding SelectedPreviewVideoTrack, Mode=TwoWay}">
+                                                    <ComboBox.ItemTemplate>
+                                                        <DataTemplate x:DataType="models:PreviewVideoTrackOption">
+                                                            <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" />
+                                                        </DataTemplate>
+                                                    </ComboBox.ItemTemplate>
+                                                </ComboBox>
+                                            </Grid>
+                                        </WrapPanel>
+                                        <WrapPanel>
+                                            <TextBlock Margin="0,0,16,0" MaxWidth="300" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip.Tip="{Binding SelectedPreviewProgram.AudioDescription}">
+                                                <Run Text="{DynamicResource String.PreviewTrack.Audio}" />
+                                                <Run Text="{Binding SelectedPreviewProgram.AudioDescription}" />
+                                            </TextBlock>
+                                            <CheckBox IsVisible="{Binding ShowProgramExportChoice}"
+                                                      IsEnabled="{Binding CanChooseProgramExport}"
+                                                      IsChecked="{Binding ExportCurrentProgramOnly, Mode=TwoWay}"
+                                                      Content="{DynamicResource String.PreviewTrack.ExportCurrentProgramOnly}"
+                                                      ToolTip.Tip="{DynamicResource String.PreviewTrack.ExportTip}" />
+                                        </WrapPanel>
+                                    </StackPanel>
+                                    <controls:ImageViewer Grid.Row="1" Name="ImageViewer"
                                                           IsEnabled="{Binding IsVideoInitialized}"
                                                           MaxZoomFactor="{Binding MaxZoomFactor}"
                                                           MinZoomFactor="{Binding MinZoomFactor}"
@@ -354,7 +405,7 @@
                                                           SourcePixelSize="{Binding DecodedFrameSourceSize}"
                                                           Zoom="{Binding ZoomFactor, Mode=TwoWay}">
                                     </controls:ImageViewer>
-                                    <Border IsVisible="{Binding IsToolsOnly}"
+                                    <Border Grid.Row="1" IsVisible="{Binding IsToolsOnly}"
                                             Background="{DynamicResource {x:Static commonControls:SystemColors.ControlBrushKey}}"
                                             Padding="24">
                                         <ScrollViewer VerticalScrollBarVisibility="Auto"
@@ -497,6 +548,11 @@
                                                                             <Grid Grid.Row="3" Grid.ColumnSpan="3"
                                                                                   ColumnDefinitions="Auto,*" Margin="0,2,0,0">
                                                                                 <TextBlock Text="{Binding EstimatedSizeStr}"
+                                                                                           IsVisible="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).ShowRawClipSizeEstimate}"
+                                                                                           VerticalAlignment="Center"
+                                                                                           Margin="0,0,8,0" />
+                                                                                <TextBlock Text="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).FilteredClipSizeStr}"
+                                                                                           IsVisible="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).IsProgramExportFiltered}"
                                                                                            VerticalAlignment="Center"
                                                                                            Margin="0,0,8,0" />
                                                                                 <Button Grid.Column="1"
@@ -587,7 +643,7 @@
                                                                         <Grid ColumnDefinitions="*,Auto">
                                                                         <StackPanel Grid.Column="0" Margin="4" Spacing="2">
                                                                             <!-- Header: Source filename -->
-                                                                            <TextBlock Text="{Binding SourceFileName}"
+                                                                            <TextBlock Text="{Binding SourceDisplayName}"
                                                                                        TextTrimming="CharacterEllipsis"
                                                                                        FontWeight="Bold"
                                                                                        FontSize="12" />

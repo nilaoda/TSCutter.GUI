@@ -15,7 +15,8 @@ using static TSCutter.GUI.Utils.CommonUtil;
 
 namespace TSCutter.GUI.Models;
 
-public class VideoInstance(string filePath, bool enableHardwareDecoding = false) : IDisposable
+public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
+    PreviewStreamSelection? streamSelection = null) : IDisposable
 {
     private static readonly HashSet<string> HardwareTags = new() 
     { 
@@ -42,6 +43,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         : 0;
     public bool Inited { get; private set; } = false;
     public bool CanBinaryClip { get; private set; }
+    public IReadOnlyList<PreviewProgramOption> PreviewPrograms { get; private set; } = [];
+    public PreviewStreamSelection? StreamSelection { get; private set; }
+    public int ProgramCount { get; private set; }
     internal long TsSyncOffset { get; private set; } = -1;
     public bool IsHardwareDecoding { get; private set; }
     public bool IsGpuPresentation { get; private set; }
@@ -135,7 +139,10 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         // 仅可剪辑的 TS 预览需要压缩包摘要；其他格式不分配缓存、不计算摘要。
         if (CanBinaryClip)
             keyPacketBoundaries = new (long, long, PacketEndSignature)[16];
-        inVideoStream = inFc.GetVideoStream();
+        ProgramCount = inFc.Programs.Count;
+        PreviewPrograms = PreviewStreamUtil.CreateOptions(inFc);
+        inVideoStream = PreviewStreamUtil.ResolveVideo(inFc, streamSelection);
+        StreamSelection = PreviewStreamUtil.GetSelection(inFc, inVideoStream, streamSelection);
         if (inVideoStream.Codecpar?.CodecId is null)
         {
             throw new Exception("Read Failed!");
@@ -901,10 +908,12 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false)
         return TimeSpan.FromSeconds((pts - firstFrameTimestamp) / t);
     }
     
-    internal (int VideoPid, int[] AudioPids) GetMergeStreamPids() =>
+    internal (int VideoPid, int[] AudioPids) GetMergeStreamPids(bool selectedProgramOnly = false) =>
         (inVideoStream.Id, inFc.Streams
-            .Where(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO)
-            .Select(stream => stream.Id).ToArray());
+            .Where(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO &&
+                (!selectedProgramOnly || StreamSelection?.ProgramId is not { } programId ||
+                 inFc.Programs.Any(program => program.Id == programId && program.ContainsStream(stream.Index))))
+            .Select(stream => stream.Id).Distinct().ToArray());
 
     private void RememberKeyPacketBoundary(Packet packet)
     {

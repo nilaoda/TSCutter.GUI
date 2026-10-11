@@ -1137,4 +1137,15 @@
     <x:String x:Key="String.TsBatchCheck.RecheckHint">立即重新检测选中的文件。</x:String>
     <x:String x:Key="String.TsBatchCheck.Status.Stopped">已停止。点击“开始检查”继续，已取消的文件将从头重新检测。</x:String>
     <x:String x:Key="String.TsBatchCheck.Status.Completed">检查已结束，选中文件可查看结果或重新检查。</x:String>
+    <x:String x:Key="String.PreviewTrack.Program">节目</x:String>
+    <x:String x:Key="String.PreviewTrack.Video">视频</x:String>
+    <x:String x:Key="String.PreviewTrack.Audio">音频：</x:String>
+    <x:String x:Key="String.PreviewTrack.ProgramFallback">节目 {0}</x:String>
+    <x:String x:Key="String.PreviewTrack.AllStreams">未归属节目</x:String>
+    <x:String x:Key="String.PreviewTrack.NoAudio">无</x:String>
+    <x:String x:Key="String.PreviewTrack.ExportCurrentProgramOnly">仅导出当前节目</x:String>
+    <x:String x:Key="String.PreviewTrack.ExportTip">不勾选时保留剪辑范围内的全部节目。勾选时保留当前节目的全部轨道并重建节目表。适用于保存、合并和新加入队列的剪辑。</x:String>
+    <x:String x:Key="String.PreviewTrack.ClearClipsConfirm">切换预览轨道将清空当前剪辑和撤销历史，已加入队列的导出任务会保留。是否继续？</x:String>
+    <x:String x:Key="String.PreviewTrack.SwitchFailed">切换预览轨道失败</x:String>
+    <x:String x:Key="String.PreviewTrack.SizeAfterExport">导出后确定</x:String>
 </ResourceDictionary>

@@ -72,6 +72,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _dialogService = dialogService;
         _configService = configService;
+        _exportCurrentProgramOnly = configService.CurrentConfig.ExportCurrentProgramOnly;
         ExportQueue.CollectionChanged += (_, _) => NotifyQueueChanged();
         // 构造菜单项
         BuildThemeMenuItems();
@@ -84,6 +85,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private void OnLanguageChanged()
     {
         // 集合项的计算属性不会随资源字典自动刷新，需要逐项通知界面重新取值。
+        foreach (var program in PreviewPrograms)
+            program.RefreshLocalizedText();
         foreach (var clip in Clips)
             clip.RefreshLocalizedText();
         foreach (var item in ExportQueue)
@@ -92,6 +95,7 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ZoomFactorStr));
         OnPropertyChanged(nameof(StatusInfoText));
         OnPropertyChanged(nameof(ToolsOnlyMessage));
+        OnPropertyChanged(nameof(FilteredClipSizeStr));
         OnPropertyChanged(nameof(ClipOutputText));
         OnPropertyChanged(nameof(ClipOutputToolTip));
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
@@ -151,7 +155,9 @@ public partial class MainWindowViewModel : ViewModelBase
             ReferenceEquals(clip, SelectedClip)))
         .ToArray();
 
-    public string SelectedClipEstimatedSizeStr => SelectedClipCount > 1
+    public string SelectedClipEstimatedSizeStr => IsProgramExportFiltered && (SelectedClip is not null || SelectedClipCount > 1)
+        ? FilteredClipSizeStr
+        : SelectedClipCount > 1
         ? LocalizationManager.Instance.String_SizePrefix
           + CommonUtil.FormatFileSize(GetSelectedClipAggregate().Bytes)
         : SelectedClip?.EstimatedSizeStr ?? string.Empty;
@@ -918,12 +924,13 @@ public partial class MainWindowViewModel : ViewModelBase
         _dialogService.Show(null, dialogViewModel);
     }
 
-    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    [RelayCommand(CanExecute = nameof(CanUsePreview))]
     private async Task KeyFrameOverviewClickAsync()
     {
         keyFrameOverviewWindow?.CloseWindow();
         var dialogViewModel = _dialogService.CreateViewModel<KeyFrameOverviewWindowViewModel>();
         dialogViewModel.FilePath = VideoPath;
+        dialogViewModel.StreamSelection = _activePreviewSelection;
         keyFrameOverviewWindow = dialogViewModel;
         try
         {
@@ -939,15 +946,16 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    [RelayCommand(CanExecute = nameof(CanUsePreview))]
     private async Task ThumbnailSheetClickAsync()
     {
         var dialogViewModel = _dialogService.CreateViewModel<ThumbnailSheetWindowViewModel>();
         dialogViewModel.FilePath = VideoPath;
+        dialogViewModel.StreamSelection = _activePreviewSelection;
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
 
-    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    [RelayCommand(CanExecute = nameof(CanUsePreview))]
     private async Task FrameSearchClickAsync()
     {
         var manager = _dialogService.CreateViewModel<FrameTemplateManagerWindowViewModel>();
@@ -959,6 +967,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var search = _dialogService.CreateViewModel<FrameSearchWindowViewModel>();
         search.FilePath = VideoPath;
+        search.StreamSelection = _activePreviewSelection;
         search.Template = template;
         search.StartTime = manager.SearchFromCurrent
             ? TimeSpan.FromSeconds(manager.CurrentTimeSeconds) : TimeSpan.Zero;
@@ -1008,7 +1017,8 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
 
         var sourcePath = selected[0].InFileInfo.FullName;
-        var streamPids = _videoInstance!.GetMergeStreamPids();
+        var programId = SelectedOutputProgramId;
+        var streamPids = _videoInstance!.GetMergeStreamPids(programId is not null);
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_MergeClips_Title,
@@ -1040,6 +1050,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             SourcePath = sourcePath,
             OutputPath = outputPath,
+            ProgramId = programId,
             VideoPid = streamPids.VideoPid,
             AudioPids = streamPids.AudioPids,
             Ranges = selected.Select(clip => new TsClipMergeRange(
@@ -1080,6 +1091,21 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private static string FormatMergeError(Exception exception)
     {
+        if (exception is TsFilterException filterException)
+        {
+            var strings = LocalizationManager.Instance;
+            var format = filterException.Code switch
+            {
+                TsFilterErrorCode.SameFile => strings.String_TsFilter_Error_SameFile,
+                TsFilterErrorCode.SyncLost => strings.String_TsFilter_Error_SyncLost,
+                TsFilterErrorCode.PatTooLarge => strings.String_TsFilter_Error_PatTooLarge,
+                TsFilterErrorCode.PmtTooLarge => strings.String_TsFilter_Error_PmtTooLarge,
+                TsFilterErrorCode.SdtTooLarge => strings.String_TsServiceFilter_Error_SdtTooLarge,
+                TsFilterErrorCode.MissingProgram => strings.String_TsServiceFilter_Error_MissingProgram,
+                _ => null
+            };
+            return format is null ? filterException.Message : string.Format(format, filterException.Arguments);
+        }
         if (exception is not TsClipMergeException mergeException)
             return exception.Message;
         return mergeException.Code switch
@@ -1112,7 +1138,7 @@ public partial class MainWindowViewModel : ViewModelBase
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
     
-    [RelayCommand(CanExecute = nameof(IsVideoInitialized))]
+    [RelayCommand(CanExecute = nameof(CanUsePreview))]
     private async Task SaveFrameClickAsync()
     {
         if (DecodedBitmap is null) return;
@@ -1278,7 +1304,7 @@ public partial class MainWindowViewModel : ViewModelBase
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
     
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanLoadVideo))]
     private async Task LoadVideoClickAsync()
     {
         var settings = new OpenFileDialogSettings()
@@ -1296,7 +1322,7 @@ public partial class MainWindowViewModel : ViewModelBase
         await OpenVideoPathAsync(result[0].LocalPath);
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(CanLoadVideo))]
     private async Task OpenProjectAsync()
     {
         var settings = new OpenFileDialogSettings
@@ -1313,6 +1339,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private async Task OpenProjectPathAsync(string projectPath)
     {
+        if (_isLoadingVideo) return;
         CutterProject project;
         try
         {
@@ -1327,6 +1354,7 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
 
+        if (_isLoadingVideo) return;
         if (HasUnsavedProjectChanges)
         {
             if (!await ConfirmProjectReplacementAsync()) return;
@@ -1335,13 +1363,16 @@ public partial class MainWindowViewModel : ViewModelBase
                  !await ShowConfirmAsync(LocalizationManager.Instance.String_Project_ReplaceConfirm))
             return;
 
+        if (_isLoadingVideo) return;
         if (project.Source is not null)
         {
             VideoInstance? prepared = null;
+            _isLoadingVideo = true;
+            NotifyVideoCapabilityChanged();
             try
             {
                 prepared = new VideoInstance(project.Source.Path,
-                    _configService.CurrentConfig.PreferHardwareDecoding);
+                    _configService.CurrentConfig.PreferHardwareDecoding, project.PreviewSelection);
                 await prepared.InitVideoAsync();
                 if (project.Clips.Count > 0 && !prepared.CanBinaryClip)
                     throw new InvalidDataException("Clips require a 188-byte TS source file.");
@@ -1354,6 +1385,11 @@ public partial class MainWindowViewModel : ViewModelBase
                         FormatProjectError(exception)),
                     LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
                 return;
+            }
+            finally
+            {
+                _isLoadingVideo = false;
+                NotifyVideoCapabilityChanged();
             }
             VideoPath = project.Source.Path;
             if (!await LoadVideoAsync(prepared))
@@ -1377,7 +1413,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanSaveProject))]
     private async Task SaveProjectAsAsync() => await SaveProjectCoreAsync(saveAs: true);
 
-    private bool CanSaveProject => IsVideoInitialized || ExportQueue.Count > 0;
+    private bool CanSaveProject => !_isLoadingVideo && (IsVideoInitialized || ExportQueue.Count > 0);
 
     private async Task<bool> SaveProjectCoreAsync(bool saveAs)
     {
@@ -1433,6 +1469,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private CutterProject CaptureProject(bool includeThumbnails) => new()
     {
         Source = IsVideoInitialized ? new ProjectSource { Path = VideoPath } : null,
+        PreviewSelection = IsVideoInitialized ? _activePreviewSelection : null,
+        ExportCurrentProgramOnly = ExportCurrentProgramOnly,
         Clips = Clips.Select(clip => new ProjectClip
         {
             StartTime = clip.StartTime,
@@ -1451,6 +1489,7 @@ public partial class MainWindowViewModel : ViewModelBase
         Queue = ExportQueue.Select(item => new ProjectQueueItem
         {
             Source = new ProjectSource { Path = item.SourceFilePath },
+            ProgramId = item.ProgramId,
             OutputFilePath = item.OutputFilePath,
             StartTime = item.StartTimeSeconds,
             EndTime = item.EndTimeSeconds,
@@ -1489,7 +1528,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private async Task OpenVideoPathAsync(string path)
     {
-        if (!await ConfirmProjectReplacementAsync()) return;
+        if (_isLoadingVideo) return;
+        if (!await ConfirmProjectReplacementAsync() || _isLoadingVideo) return;
         VideoPath = path;
         if (await LoadVideoAsync() && ExportQueue.Count == 0)
             MarkProjectCheckpoint();
@@ -1497,6 +1537,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private async Task RestoreProjectAsync(CutterProject project)
     {
+        ExportCurrentProgramOnly = project.ExportCurrentProgramOnly;
         var currentSourceLength = project.Source is null ? 0 : new FileInfo(project.Source.Path).Length;
         foreach (var saved in project.Clips)
         {
@@ -1532,6 +1573,7 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 QueueItemId = Interlocked.Increment(ref _queueIdCounter),
                 SourceFilePath = saved.Source.Path,
+                ProgramId = saved.ProgramId,
                 SourceFileName = Path.GetFileName(saved.Source.Path),
                 OutputFilePath = saved.OutputFilePath,
                 StartTimeSeconds = saved.StartTime,
@@ -1656,6 +1698,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         lock (_scrubPreviewSync)
         {
+            if (_isLoadingVideo)
+                return;
             _scrubPreviewGeneration++;
             _acceptScrubPreviews = true;
             _pendingScrubPreview = null;
@@ -1668,7 +1712,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var startWorker = false;
         lock (_scrubPreviewSync)
         {
-            if (!_acceptScrubPreviews || !IsVideoInitialized)
+            if (_isLoadingVideo || !_acceptScrubPreviews || !IsVideoInitialized)
                 return;
 
             _pendingScrubPreview = new ScrubPreviewRequest(
@@ -1920,6 +1964,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ClearVars()
     {
+        SetPreviewTrackChoices([], null);
         _currentFileSupportsTsTools = false;
         _previewFailure = null;
         CancelClipEndScan();
@@ -1970,6 +2015,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     _configService.CurrentConfig.PreferHardwareDecoding);
                 if (prepared is null)
                     await _videoInstance.InitVideoAsync();
+                SetPreviewTrackChoices(_videoInstance.PreviewPrograms, _videoInstance.StreamSelection);
                 UpdateDecodeMode();
                 VideoInfoText = _videoInstance.GetVideoInfoText();
                 DurationMax = _videoInstance.GetVideoDurationInSeconds();
@@ -1994,13 +2040,18 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         catch (Exception e)
         {
+            var failedPrograms = _videoInstance?.PreviewPrograms ?? [];
+            var failedSelection = _videoInstance?.StreamSelection;
             ClearVars();
             _videoInstance?.Dispose();
             _videoInstance = null;
             Console.WriteLine($"Failed to load video: {e}");
             // 项目导入仍要求可靠的预览与剪辑状态；普通文件打开可降级为工具模式。
             if (prepared is null && await TryRetainFileForToolsAsync(e))
+            {
+                SetPreviewTrackChoices(failedPrograms, failedSelection);
                 return true;
+            }
 
             VideoPath = string.Empty;
             await ShowMessageAsync(FormatPreviewFailure(e),
@@ -2107,7 +2158,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private string? CheckDropFilePath(DragEventArgs? e, bool requireExistingFile)
     {
-        if (e is null) return null;
+        if (e is null || _isLoadingVideo) return null;
         if (!e.Data.Contains(DataFormats.Files)) return null;
 
         var fileNames = e.Data.GetFiles()?.ToArray();
@@ -2126,6 +2177,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public void Close()
     {
+        _previewSelectionCancellation?.Cancel();
+        SetPreviewTrackChoices([], null);
         CancelClipEndScan();
         keyFrameOverviewWindow?.CloseWindow();
         keyFrameOverviewWindow = null;
@@ -2178,7 +2231,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool IsPreviewOnly => IsVideoInitialized && !CanEditVideo;
 
-    private bool CanEditVideo => _videoInstance is { Inited: true, CanBinaryClip: true };
+    private bool CanEditVideo => !_isLoadingVideo && _videoInstance is { Inited: true, CanBinaryClip: true };
     private bool CanEditSelectedClip => CanEditVideo && HasSelectedClip;
     // 无可靠帧位置时仍可预览，但不能把 -1 当作剪辑边界写入项目。
     private bool CanMarkVideo => CanEditVideo && !IsDecoding && !_isResolvingClipEnd
@@ -2187,6 +2240,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void NotifyVideoCapabilityChanged()
     {
+        NotifyPreviewTrackChoicesChanged();
         OnPropertyChanged(nameof(IsVideoInitialized));
         SaveFrameClickCommand.NotifyCanExecuteChanged();
         KeyFrameOverviewClickCommand.NotifyCanExecuteChanged();
@@ -2248,14 +2302,18 @@ public partial class MainWindowViewModel : ViewModelBase
         dialogViewModel.StartPosition = SelectedClip!.StartPosition;
         dialogViewModel.EndPosition = SelectedClip!.EndPosition;
         dialogViewModel.OutputPath = result!.Path!.LocalPath;
+        dialogViewModel.ProgramId = SelectedOutputProgramId;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
+        if (dialogViewModel.ProgramId is not null)
+            ForgetMissingClipOutput(SelectedClip!, dialogViewModel.OutputPath);
         if (dialogViewModel.Exception is not null)
         {
-            await ShowMessageAsync(dialogViewModel.Exception.Message, LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
+            await ShowMessageAsync(FormatMergeError(dialogViewModel.Exception), LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
             Console.WriteLine(dialogViewModel.Exception);
             return;
         }
-        SelectedClip!.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
+        if (dialogViewModel.DialogResult == true && File.Exists(dialogViewModel.OutputPath))
+            SelectedClip!.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
     }
 
     [RelayCommand(CanExecute = nameof(CanExportAll))]
@@ -2270,7 +2328,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             var fileName = GenerateClipFileName(clip);
             var destPath = Path.Combine(sourceDir, fileName);
-            tasks.Add(new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition));
+            tasks.Add(new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition, SelectedOutputProgramId));
             clip.ExportStatus = ClipExportStatus.Pending;
         }
 
@@ -2279,17 +2337,36 @@ public partial class MainWindowViewModel : ViewModelBase
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
 
         var completedSet = dialogViewModel.CompletedTaskIndices.ToHashSet();
+        var failedSet = dialogViewModel.FailedTaskIndices.ToHashSet();
         for (int i = 0; i < Clips.Count; i++)
         {
+            if (tasks[i].ProgramId is not null)
+                ForgetMissingClipOutput(Clips[i], tasks[i].DestinationPath);
             if (completedSet.Contains(i))
             {
                 Clips[i].ExportStatus = ClipExportStatus.Done;
                 Clips[i].OutputFileInfo = new FileInfo(tasks[i].DestinationPath);
             }
+            else if (failedSet.Contains(i))
+            {
+                Clips[i].ExportStatus = ClipExportStatus.Failed;
+            }
             else if (Clips[i].ExportStatus == ClipExportStatus.Exporting)
             {
                 Clips[i].ExportStatus = ClipExportStatus.Cancelled;
             }
+        }
+        if (dialogViewModel.Exception is { } exception)
+            await ShowMessageAsync(FormatMergeError(exception), LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
+    }
+
+    private static void ForgetMissingClipOutput(PickedClip clip, string outputPath)
+    {
+        if (clip.OutputFileInfo is { } previous && PathsEqual(previous.FullName, outputPath) &&
+            !File.Exists(outputPath))
+        {
+            clip.OutputFileInfo = null;
+            clip.ExportStatus = ClipExportStatus.Pending;
         }
     }
 
@@ -2353,6 +2430,7 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             QueueItemId = Interlocked.Increment(ref _queueIdCounter),
             SourceFilePath = SelectedClip!.InFileInfo.FullName,
+            ProgramId = SelectedOutputProgramId,
             OutputFilePath = outputPath,
             StartPosition = SelectedClip!.StartPosition,
             EndPosition = SelectedClip!.EndPosition,
@@ -2423,7 +2501,7 @@ public partial class MainWindowViewModel : ViewModelBase
         if (!await ShowConfirmAsync(confirmMsg)) return;
 
         var tasks = ExportQueue.Select(item =>
-            new BatchTask(item.SourceFilePath, item.OutputFilePath, item.StartPosition, item.EndPosition)
+            new BatchTask(item.SourceFilePath, item.OutputFilePath, item.StartPosition, item.EndPosition, item.ProgramId)
         ).ToList();
 
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
@@ -2432,13 +2510,17 @@ public partial class MainWindowViewModel : ViewModelBase
 
         // 更新导出队列中的状态为已完成
         var completedSet = dialogViewModel.CompletedTaskIndices.ToHashSet();
-        var remaining = new List<ExportQueueItem>();
+        var failedSet = dialogViewModel.FailedTaskIndices.ToHashSet();
         for (int i = 0; i < ExportQueue.Count; i++)
         {
             var item = ExportQueue[i];
             if (completedSet.Contains(i))
             {
                 item.Status = ClipExportStatus.Done;
+            }
+            else if (failedSet.Contains(i))
+            {
+                item.Status = ClipExportStatus.Failed;
             }
         }
         // 从导出队列中移除已完成项
@@ -2451,6 +2533,8 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ExportQueueCount));
         ClearQueueCommand.NotifyCanExecuteChanged();
         BatchExportQueueCommand.NotifyCanExecuteChanged();
+        if (dialogViewModel.Exception is { } exception)
+            await ShowMessageAsync(FormatMergeError(exception), LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
     }
     
     private void BuildThemeMenuItems()

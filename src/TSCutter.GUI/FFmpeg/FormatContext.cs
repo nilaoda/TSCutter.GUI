@@ -97,6 +97,7 @@ public readonly unsafe struct MediaStream
     public CodecParameters? Codecpar { get; }
     public int Index => raw == null ? 0 : raw->index;
     public int Id => raw == null ? -1 : raw->id;
+    public bool IsAttachedPicture => raw != null && (raw->disposition & (1 << 10)) != 0; // AV_DISPOSITION_ATTACHED_PIC
     public long Duration => raw == null ? 0 : raw->duration;
     public long StartTime => raw == null ? FF.AV_NOPTS_VALUE : raw->start_time;
     public AVRational TimeBase => raw == null ? default : raw->time_base;

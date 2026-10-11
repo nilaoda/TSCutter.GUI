@@ -13,7 +13,7 @@ using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.ViewModels;
 
-public record BatchTask(string SourcePath, string DestinationPath, long StartPosition, long EndPosition);
+public record BatchTask(string SourcePath, string DestinationPath, long StartPosition, long EndPosition, int? ProgramId = null);
 
 public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
@@ -52,6 +52,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     public string SpeedStr => $"{CommonUtil.FormatFileSize(Speed)}/s";
     public string RemainingTimeStr => FormatRemainingTime(RemainingSeconds);
 
+    public int? ProgramId { get; set; }
     public string? SourceFilePath { get; set; }
     public long StartPosition { get; set; }
     public long EndPosition { get; set; }
@@ -61,6 +62,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private readonly List<BatchTask> _tasks = [];
     private TsClipMergeRequest? _mergeRequest;
     public List<int> CompletedTaskIndices { get; } = [];
+    public List<int> FailedTaskIndices { get; } = [];
     private CancellationTokenSource _cts = new();
     private DateTime _lastUpdateTime;
     private DateTime _startTime;
@@ -150,14 +152,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _totalBytes = EndPosition > 0 ? EndPosition - StartPosition : new FileInfo(SourceFilePath!).Length - StartPosition;
             _startTime = DateTime.Now;
             _lastUpdateTime = _startTime;
-            await CommonUtil.CopyFileAsync(new FileInfo(SourceFilePath!), OutputPath!, StartPosition, EndPosition,
-                (percent, bytesCopied) =>
-                {
-                    Percent = percent;
-                    _bytesCopied += bytesCopied;
-                    UpdateSpeed();
-                    UpdateRemainingTime();
-                }, _cts.Token);
+            await CopyClipAsync(new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId));
             RemainingSeconds = 0;
             DialogResult = true;
             RequestClose?.Invoke();
@@ -165,6 +160,11 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         catch (OperationCanceledException)
         {
             Console.WriteLine("File copy was canceled.");
+            if (ProgramId is not null)
+            {
+                DialogResult = false;
+                RequestClose?.Invoke();
+            }
         }
         catch (Exception e)
         {
@@ -172,6 +172,30 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             DialogResult = false;
             RequestClose?.Invoke();
         }
+    }
+
+    private Task CopyClipAsync(BatchTask task)
+    {
+        if (task.ProgramId is { } programId)
+        {
+            var progress = new Progress<TsFilterProgress>(value =>
+            {
+                Percent = value.Percent;
+                Speed = value.BytesPerSecond;
+                RemainingSeconds = value.BytesPerSecond > 0
+                    ? Math.Max(0, value.FileSize - value.BytesProcessed) / value.BytesPerSecond : 0;
+            });
+            return new TsProgramClipExportService().ExportAsync(task.SourcePath, task.DestinationPath,
+                task.StartPosition, task.EndPosition, programId, progress, _cts.Token);
+        }
+        return CommonUtil.CopyFileAsync(new FileInfo(task.SourcePath), task.DestinationPath,
+            task.StartPosition, task.EndPosition, (percent, bytesCopied) =>
+            {
+                Percent = percent;
+                _bytesCopied += bytesCopied;
+                UpdateSpeed();
+                UpdateRemainingTime();
+            }, _cts.Token);
     }
 
     private async Task RunBatchAsync()
@@ -198,15 +222,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 _lastUpdateTime = _startTime;
                 _bytesCopied = 0;
 
-                await CommonUtil.CopyFileAsync(new FileInfo(task.SourcePath), task.DestinationPath,
-                    task.StartPosition, task.EndPosition,
-                    (percent, bytesCopied) =>
-                    {
-                        Percent = percent;
-                        _bytesCopied += bytesCopied;
-                        UpdateSpeed();
-                        UpdateRemainingTime();
-                    }, _cts.Token);
+                await CopyClipAsync(task);
                 CompletedTaskIndices.Add(i);
             }
             catch (OperationCanceledException)
@@ -215,6 +231,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             }
             catch (Exception e)
             {
+                FailedTaskIndices.Add(i);
+                Exception ??= e;
                 Console.Error.WriteLine($"Task failed: {e.Message}");
             }
         }
@@ -260,9 +278,9 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _batchCancelled = true;
             _cts.Cancel();
         }
-        else if (IsMergeMode)
+        else if (IsMergeMode || ProgramId is not null)
         {
-            // 合并服务会在取消后删除半成品；等待清理完成再关闭窗口，避免主界面误报成功。
+            // 过滤和合并服务在取消后删除半成品；等待清理完成再关闭窗口，避免误报成功。
             _cts.Cancel();
         }
         else
@@ -275,7 +293,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     
     public void OnClosing(CancelEventArgs e)
     {
-        if (IsMergeMode && DialogResult is null)
+        if ((IsMergeMode || ProgramId is not null || _tasks.Exists(task => task.ProgramId is not null)) &&
+            DialogResult is null)
             e.Cancel = true;
         CancelOutput();
     }

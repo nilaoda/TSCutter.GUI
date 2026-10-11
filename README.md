@@ -16,6 +16,7 @@ TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It comb
 - **Zoomable timeline**: Continuously zoom, pan, or return to a full-file overview for accurate navigation in long recordings.
 - **Multiple clip management**: Create and edit several clip ranges, view their positions on the timeline, and compare duration and estimated size.
 - **Editing projects**: Save the current source, clip ranges, timeline view, and cross-file export queue in a `.tscut` file for later editing. Projects can reopen recordings that have grown since saving.
+- **Program and video track selection**: Switch previews in files with multiple programs or video tracks. Keyframe overviews, thumbnail sheets, and frame searches follow the selected track. Multi-program TS exports can preserve all programs or keep only the current program. Ordinary files with one program and one video track show no selectors.
 - **Flexible output**: Save one clip immediately, add clips to a batch export queue, or merge multiple selected clips into one TS file.
 - **Lossless media copy**: Preserve the original encoded audio and video without transcoding.
 - **Frame capture and media information**: Save or copy the current preview frame and inspect the opened file's stream information.
@@ -66,6 +67,8 @@ Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilao
 3. Navigate or zoom the timeline, add a clip, and mark its start and end points.
 4. Save the current clip, add it to the export queue, or select multiple clips and merge them.
 5. Use the File menu to save a `.tscut` project and reopen it later to restore clips and queued exports. A growing source is accepted when verification of its saved portion succeeds.
+
+Files with multiple programs or video tracks show selectors above the preview. After confirmation, switching tracks clears current clips and undo history; queued tasks retain their original program choice. “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks. New projects use version 2 and older projects remain readable; older app versions cannot open new projects.
 
 ### Independent TS tools
 
