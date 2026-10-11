@@ -104,8 +104,8 @@ public sealed class TsStreamAnalyzer
 
         try
         {
-            await using var stream = new FileStream(
-                filePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            await using var stream = MediaFileUtil.OpenRead(
+                filePath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
 
             while (true)

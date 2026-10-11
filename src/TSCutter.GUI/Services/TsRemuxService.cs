@@ -331,8 +331,8 @@ public sealed class TsRemuxService
 
         try
         {
-            await using var input = new FileStream(
-                sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            await using var input = MediaFileUtil.OpenRead(
+                sourcePath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
             var output = new FileStream(
                 outputPath, FileMode.Create, FileAccess.Write, FileShare.None,

@@ -28,7 +28,7 @@ internal static class TsScramblingProbe
         string path, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        using var input = File.OpenRead(path);
+        using var input = MediaFileUtil.OpenRead(path);
         var buffer = ArrayPool<byte>.Shared.Rent(ProbeBufferBytes);
         try
         {

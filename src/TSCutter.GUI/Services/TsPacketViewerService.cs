@@ -39,8 +39,8 @@ internal sealed class TsPacketViewerService : IAsyncDisposable
 
         var fileSize = new FileInfo(fullPath).Length;
         cancellationToken.ThrowIfCancellationRequested();
-        _stream = new FileStream(
-            fullPath, FileMode.Open, FileAccess.Read, FileShare.Read,
+        _stream = MediaFileUtil.OpenRead(
+            fullPath,
             1024 * 1024, FileOptions.Asynchronous | FileOptions.RandomAccess);
         _session = new TsPacketViewerSession
         {

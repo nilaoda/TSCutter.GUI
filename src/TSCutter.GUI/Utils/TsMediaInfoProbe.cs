@@ -21,7 +21,7 @@ internal sealed class TsMediaInfoProbe
 
     public static TsMediaInfoProbe? Read(string path)
     {
-        using var file = File.OpenRead(path);
+        using var file = MediaFileUtil.OpenRead(path);
         var buffer = ArrayPool<byte>.Shared.Rent(64 * 1024);
         try
         {

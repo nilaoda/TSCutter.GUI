@@ -183,8 +183,8 @@ public sealed class TsStreamFilterService
 
         try
         {
-            await using var input = new FileStream(
-                sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            await using var input = MediaFileUtil.OpenRead(
+                sourcePath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
             await using var output = new FileStream(
                 outputPath, FileMode.Create, FileAccess.Write, FileShare.None,
@@ -282,8 +282,8 @@ public sealed class TsStreamFilterService
 
                     if (!donorStreams.TryGetValue(insertion.SourcePath, out var donor))
                     {
-                        donor = new FileStream(
-                            insertion.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                        donor = MediaFileUtil.OpenRead(
+                            insertion.SourcePath,
                             PacketSize * 256, FileOptions.Asynchronous | FileOptions.RandomAccess);
                         donorStreams[insertion.SourcePath] = donor;
                     }
@@ -345,8 +345,8 @@ public sealed class TsStreamFilterService
                 {
                     if (!donorStreams.TryGetValue(insertion.SourcePath, out var donor))
                     {
-                        donor = new FileStream(
-                            insertion.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                        donor = MediaFileUtil.OpenRead(
+                            insertion.SourcePath,
                             ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
                         donorStreams[insertion.SourcePath] = donor;
                     }
@@ -432,8 +432,8 @@ public sealed class TsStreamFilterService
             {
                 if (!donorStreams.TryGetValue(replacement.SourcePath, out var donor))
                 {
-                    donor = new FileStream(
-                        replacement.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                    donor = MediaFileUtil.OpenRead(
+                        replacement.SourcePath,
                         PacketSize * 256, FileOptions.Asynchronous | FileOptions.RandomAccess);
                     donorStreams[replacement.SourcePath] = donor;
                 }
@@ -477,8 +477,8 @@ public sealed class TsStreamFilterService
             {
                 if (!donorStreams.TryGetValue(replacement.SourcePath, out var donor))
                 {
-                    donor = new FileStream(
-                        replacement.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                    donor = MediaFileUtil.OpenRead(
+                        replacement.SourcePath,
                         PacketSize * 256, FileOptions.Asynchronous | FileOptions.RandomAccess);
                     donorStreams[replacement.SourcePath] = donor;
                 }
@@ -525,8 +525,8 @@ public sealed class TsStreamFilterService
                 {
                     if (!donorStreams.TryGetValue(group.SourcePath, out var donor))
                     {
-                        donor = new FileStream(
-                            group.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+                        donor = MediaFileUtil.OpenRead(
+                            group.SourcePath,
                             ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
                         donorStreams[group.SourcePath] = donor;
                     }

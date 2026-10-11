@@ -49,8 +49,8 @@ public sealed class TsEsExtractorService
                 statesByPid[output.Pid] = state;
             }
 
-            await using var input = new FileStream(
-                inputPath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            await using var input = MediaFileUtil.OpenRead(
+                inputPath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
             if (syncOffset > 0)
                 input.Position = syncOffset;

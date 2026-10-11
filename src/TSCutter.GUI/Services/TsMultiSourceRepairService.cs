@@ -360,8 +360,8 @@ public sealed class TsMultiSourceRepairService
         var buffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize);
         try
         {
-            await using var stream = new FileStream(
-                donor.FilePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            await using var stream = MediaFileUtil.OpenRead(
+                donor.FilePath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
             // 视频前后锚点可能早于或晚于同时间的音频 PES。只扩展一个固定的小窗口，
             // 让各轨道分别落到自己的 PES 边界，同时仍避免重新扫描整份辅助文件。
@@ -1885,8 +1885,8 @@ public sealed class TsMultiSourceRepairService
         var ptsWrapOffset90k = 0L;
         try
         {
-            await using var stream = new FileStream(
-                job.SourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            await using var stream = MediaFileUtil.OpenRead(
+                job.SourcePath,
                 ParallelReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
             stream.Position = job.StartOffset;
             while (position < job.EndOffset)
@@ -1977,8 +1977,8 @@ public sealed class TsMultiSourceRepairService
         var bytesProcessed = Math.Max(0, syncOffset);
         try
         {
-            await using var stream = new FileStream(
-                path, FileMode.Open, FileAccess.Read, FileShare.Read,
+            await using var stream = MediaFileUtil.OpenRead(
+                path,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
             stream.Position = bytesProcessed;
             while (true)

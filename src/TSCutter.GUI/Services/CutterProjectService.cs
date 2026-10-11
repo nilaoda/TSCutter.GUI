@@ -216,8 +216,8 @@ internal static class CutterProjectService
     {
         const int chunkSize = 8192;
         const int sampleCount = 32;
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
-            FileShare.ReadWrite | FileShare.Delete, chunkSize, FileOptions.RandomAccess);
+        using var stream = MediaFileUtil.OpenRead(path, chunkSize,
+            FileOptions.RandomAccess, allowConcurrentWrite: true);
         if (stream.Length < prefixLength)
             throw new InvalidDataException($"A project source file has shrunk: {path}");
         using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);

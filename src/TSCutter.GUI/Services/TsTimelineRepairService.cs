@@ -112,8 +112,8 @@ public sealed class TsTimelineRepairService
         var buffered = 0;
         try
         {
-            await using var input = new FileStream(
-                sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            await using var input = MediaFileUtil.OpenRead(
+                sourcePath,
                 buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan);
             await using var output = new FileStream(
                 targetPath, FileMode.Create, FileAccess.Write, FileShare.None,
@@ -336,8 +336,8 @@ public sealed class TsTimelineRepairService
         long packetIndex = 0;
         try
         {
-            await using var stream = new FileStream(
-                filePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            await using var stream = MediaFileUtil.OpenRead(
+                filePath,
                 buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan);
             stream.Position = Math.Max(0, syncOffset);
             while (true)

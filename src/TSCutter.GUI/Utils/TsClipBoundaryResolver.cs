@@ -30,8 +30,8 @@ internal static class TsClipBoundaryResolver
         cancellationToken.ThrowIfCancellationRequested();
         if (!signature.IsValid)
             throw new InvalidDataException("The selected frame has no compressed packet boundary.");
-        await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read,
-            FileShare.ReadWrite, 1, FileOptions.Asynchronous | FileOptions.SequentialScan);
+        await using var stream = MediaFileUtil.OpenRead(path, 1,
+            FileOptions.Asynchronous | FileOptions.SequentialScan, allowConcurrentWrite: true);
         return await ResolveEndCoreAsync(stream, framePosition, framePts90k, signature,
             cancellationToken, TimeProvider.System).ConfigureAwait(false);
     }

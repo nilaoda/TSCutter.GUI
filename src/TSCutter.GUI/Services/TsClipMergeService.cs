@@ -34,8 +34,8 @@ internal sealed class TsClipMergeService
             throw new TsClipMergeException(TsClipMergeErrorCode.SourceChanged);
 
         var stopwatch = Stopwatch.StartNew();
-        await using var source = new FileStream(
-            sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+        await using var source = MediaFileUtil.OpenRead(
+            sourcePath,
             PacketSize * ReadPacketCount, FileOptions.Asynchronous | FileOptions.SequentialScan);
         var sourceLength = source.Length;
         long fileStart = 0;

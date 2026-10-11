@@ -60,8 +60,8 @@ public sealed class TsServiceFilterService
                     (routes[pid] ??= []).Add(context);
             }
 
-            await using var input = new FileStream(
-                sourcePath, FileMode.Open, FileAccess.Read, FileShare.Read,
+            await using var input = MediaFileUtil.OpenRead(
+                sourcePath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
             input.Position = Math.Max(0, catalog.SyncOffset);
 
