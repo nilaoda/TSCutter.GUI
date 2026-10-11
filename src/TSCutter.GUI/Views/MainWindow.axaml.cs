@@ -45,14 +45,15 @@ public partial class MainWindow : ClassicWindow
         };
         Activated += MainWindow_OnActivated;
         Deactivated += (_, _) => HideDropMask();
-        DropMask.PointerPressed += (_, _) => HideDropMask();
-        DropSurface.AddHandler(DragDrop.DragEnterEvent, DropSurface_OnDragActive,
+        AddHandler(PointerPressedEvent, (_, _) => HideDropMask(),
+            RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(DragDrop.DragEnterEvent, DropSurface_OnDragActive,
             RoutingStrategies.Bubble, handledEventsToo: true);
-        DropSurface.AddHandler(DragDrop.DragOverEvent, DropSurface_OnDragActive,
+        AddHandler(DragDrop.DragOverEvent, DropSurface_OnDragActive,
             RoutingStrategies.Bubble, handledEventsToo: true);
-        DropSurface.AddHandler(DragDrop.DragLeaveEvent, DropSurface_OnDragLeave,
+        AddHandler(DragDrop.DragLeaveEvent, DropSurface_OnDragLeave,
             RoutingStrategies.Bubble, handledEventsToo: true);
-        DropSurface.AddHandler(DragDrop.DropEvent, DropSurface_OnDrop,
+        AddHandler(DragDrop.DropEvent, DropSurface_OnDrop,
             RoutingStrategies.Bubble, handledEventsToo: true);
         _dropMaskWatchdog.Tick += (_, _) =>
         {
@@ -77,8 +78,8 @@ public partial class MainWindow : ClassicWindow
 
     private void DropSurface_OnDragLeave(object? sender, DragEventArgs e)
     {
-        if (!DropSurface.Bounds.Contains(e.GetPosition(DropSurface)))
-            HideDropMask();
+        // 拖入遮挡窗口时，离开事件的坐标仍可能位于本窗口范围内。
+        HideDropMask();
     }
 
     private void DropSurface_OnDrop(object? sender, DragEventArgs e)
