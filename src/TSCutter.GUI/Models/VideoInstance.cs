@@ -182,6 +182,21 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
 
         var (firstPts, gap) = ReadKeyFramePacketPts(cancellationToken);
         firstFrameTimestamp = firstPts;
+        var isFlv = inFc.InputFormat?.Name is "flv" or "live_flv";
+        if (isFlv && inVideoStream.Duration <= 0)
+        {
+            var endTimestamp = RunReadOperation(
+                () => FlvTimestampUtil.TryReadFinalTimestamp(videoPath, () => activeReadDeadline!.ThrowIfInterrupted()),
+                cancellationToken);
+            // 直播 FLV 可能缺失时长，或将末尾绝对 DTS 当成时长；截断尾部也会导致时长未知。
+            // 仅补足未知值或修正与尾部时间戳吻合的值，保留已有真实时长。
+            if (endTimestamp is { } end && (inFc.Duration <= 0 || inFc.Duration == end * 1000) && firstFrameTimestamp >= 0 &&
+                timeBase.num == 1 && timeBase.den == 1000 && end > firstFrameTimestamp)
+            {
+                timelineDurationPts = end - firstFrameTimestamp;
+                timelineDurationSeconds = timelineDurationPts / 1000.0;
+            }
+        }
         maxPts = timelineDurationPts + firstFrameTimestamp;
         keyFrameGap = gap;
         Console.WriteLine($"keyFrameGap: {keyFrameGap}");
@@ -385,6 +400,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
 
     public void Seek(long pts, AVSEEK_FLAG flag = 0)
     {
+        // FLV 预览及 EOF 解码重试均从目标之前的关键帧开始，避免向前 seek 找不到帧。
+        if (flag == 0 && inFc.InputFormat?.Name is "flv" or "live_flv")
+            flag = AVSEEK_FLAG.Backward;
         // if (lastSeekPts == pts)
         //     return;
         Console.WriteLine($"lastSeekPts: {lastSeekPts}, targetPts: {pts}, flag: {flag}");
