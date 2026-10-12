@@ -115,7 +115,7 @@
                     <NumericUpDown Value="{Binding StartOffset, Mode=TwoWay}"
                                    Minimum="{Binding SyncOffset}"
                                    Maximum="{Binding OffsetMax}"
-                                   Increment="188"
+                                   Increment="{Binding PacketSize}"
                                    ParsingNumberStyle="Integer" />
                 </StackPanel>
                 <StackPanel Grid.Column="1"
@@ -125,7 +125,7 @@
                     <NumericUpDown Value="{Binding EndOffset, Mode=TwoWay}"
                                    Minimum="{Binding SyncOffset}"
                                    Maximum="{Binding OffsetMax}"
-                                   Increment="188"
+                                   Increment="{Binding PacketSize}"
                                    ParsingNumberStyle="Integer" />
                 </StackPanel>
             </Grid>

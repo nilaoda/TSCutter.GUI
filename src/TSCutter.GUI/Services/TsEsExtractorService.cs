@@ -25,11 +25,15 @@ public sealed class TsEsExtractorService
         CancellationToken cancellationToken = default)
     {
         ValidatePaths(inputPath, outputs);
+        var layout = await Task.Run(() => TsPacketLayout.Detect(inputPath, cancellationToken, Math.Max(0, syncOffset)), cancellationToken).ConfigureAwait(false);
+        layout.RequireSupported();
+        if (layout.IsM2ts)
+            syncOffset = layout.PacketOffset;
 
         var statesByPid = new TrackState?[0x2000];
         var states = new TrackState[outputs.Count];
         var createdPaths = new List<string>(outputs.Count);
-        var buffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize + PacketSize);
+        var buffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize + layout.PacketSize * TsPacketLayout.SyncProbePacketCount);
         var stopwatch = Stopwatch.StartNew();
         var lastProgressTicks = 0L;
         var bytesProcessed = Math.Max(0, syncOffset);
@@ -67,7 +71,7 @@ public sealed class TsEsExtractorService
 
                 var consumed = ProcessBuffer(
                     buffer.AsSpan(0, buffered), statesByPid, states,
-                    ref syncLossBytes, cancellationToken);
+                    ref syncLossBytes, cancellationToken, layout);
                 bytesProcessed += consumed;
                 buffered -= consumed;
                 if (buffered > 0)
@@ -151,24 +155,25 @@ public sealed class TsEsExtractorService
         TrackState?[] statesByPid,
         TrackState[] states,
         ref long syncLossBytes,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, TsPacketLayout layout)
     {
+        var stride = layout.PacketSize;
         var position = 0;
         var packetCounter = 0;
-        while (position + PacketSize <= data.Length)
+        while (position + stride <= data.Length)
         {
             if ((packetCounter++ & 0x3FFF) == 0)
                 cancellationToken.ThrowIfCancellationRequested();
 
-            if (data[position] != TsUtil.TsSyncByte)
+            if (data[position + layout.PrefixSize] != TsUtil.TsSyncByte)
             {
                 // 字节失步后所有已选 PID 的半截 PES 都不再可靠，恢复同步前不能继续拼接 ES。
                 foreach (var state in states)
                     state?.DiscardForSyncLoss();
-                var resync = TsUtil.FindPacketSync(data[position..]);
+                var resync = layout.FindPacketSync(data[position..]);
                 if (resync < 0)
                 {
-                    var discard = Math.Max(0, data.Length - position - PacketSize * 3);
+                    var discard = Math.Max(0, data.Length - position - stride * 4);
                     syncLossBytes += discard;
                     position += discard;
                     break;
@@ -178,10 +183,10 @@ public sealed class TsEsExtractorService
                 continue;
             }
 
-            var packet = data.Slice(position, PacketSize);
+            var packet = layout.GetPacketBody(data, position);
             var info = TsPacketParser.Parse(packet);
             statesByPid[info.Pid]?.ProcessPacket(packet, info);
-            position += PacketSize;
+            position += stride;
         }
         return position;
     }

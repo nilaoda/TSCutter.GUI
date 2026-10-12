@@ -11,7 +11,6 @@ namespace TSCutter.GUI.Services;
 
 internal sealed class TsPacketViewerService : IAsyncDisposable
 {
-    private const int PacketSize = TsUtil.TsPacketSize;
     private const long MaxProbeBytes = 64L * 1024 * 1024;
     private const int SearchChunkPackets = 65_536;
     private FileStream? _stream;
@@ -35,7 +34,7 @@ internal sealed class TsPacketViewerService : IAsyncDisposable
                 Features = TsStreamAnalyzeFeatures.None
             }).ConfigureAwait(false);
         if (catalog.PacketCount == 0)
-            throw new InvalidDataException("No valid 188-byte TS packet sequence was found.");
+            throw new InvalidDataException("No valid TS packet sequence was found.");
 
         var fileSize = new FileInfo(fullPath).Length;
         cancellationToken.ThrowIfCancellationRequested();
@@ -47,7 +46,8 @@ internal sealed class TsPacketViewerService : IAsyncDisposable
             FilePath = fullPath,
             FileSize = fileSize,
             SyncOffset = catalog.SyncOffset,
-            TotalPackets = Math.Max(0, (fileSize - catalog.SyncOffset) / PacketSize),
+            PacketSize = catalog.PacketSize,
+            TotalPackets = Math.Max(0, (fileSize - catalog.SyncOffset) / catalog.PacketSize),
             Catalog = catalog
         };
         return _session;
@@ -65,20 +65,20 @@ internal sealed class TsPacketViewerService : IAsyncDisposable
             return [];
 
         // 只读取当前窗口，不为整份文件建立逐包对象；超大文件的内存占用因此保持固定。
-        var bytes = new byte[packetCount * PacketSize];
-        var fileOffset = session.SyncOffset + startPacket * PacketSize;
+        var bytes = new byte[packetCount * session.PacketSize];
+        var fileOffset = session.SyncOffset + startPacket * session.PacketSize;
         var read = await ReadAtMostAsync(bytes, fileOffset, cancellationToken).ConfigureAwait(false);
-        var completePackets = read / PacketSize;
+        var completePackets = read / session.PacketSize;
         var rows = new List<TsPacketData>(completePackets);
         for (var index = 0; index < completePackets; index++)
         {
-            var packet = bytes.AsSpan(index * PacketSize, PacketSize);
+            var packet = session.PacketLayout.GetPacketBody(bytes.AsSpan(), index * session.PacketSize);
             var info = TsPacketParser.Parse(packet);
             rows.Add(new TsPacketData
             {
                 PacketIndex = startPacket + index,
-                FileOffset = fileOffset + index * PacketSize,
-                Data = packet.ToArray(),
+                FileOffset = fileOffset + index * session.PacketSize,
+                Data = bytes.AsSpan(index * session.PacketSize, session.PacketSize).ToArray(),
                 Info = info,
                 TimestampText = FormatTimestamps(packet)
             });
@@ -93,7 +93,7 @@ internal sealed class TsPacketViewerService : IAsyncDisposable
         CancellationToken cancellationToken = default)
     {
         var session = EnsureOpen();
-        var buffer = ArrayPool<byte>.Shared.Rent(SearchChunkPackets * PacketSize);
+        var buffer = ArrayPool<byte>.Shared.Rent(SearchChunkPackets * session.PacketSize);
         try
         {
             // 同 PID 导航只复用一个分块缓冲，不保存全文件 PID 索引，也不随文件长度增加托管分配。
@@ -137,15 +137,15 @@ internal sealed class TsPacketViewerService : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         var session = EnsureOpen();
-        var bytes = buffer.AsMemory(0, packetCount * PacketSize);
-        var fileOffset = session.SyncOffset + startPacket * PacketSize;
+        var bytes = buffer.AsMemory(0, packetCount * session.PacketSize);
+        var fileOffset = session.SyncOffset + startPacket * session.PacketSize;
         var read = await ReadAtMostAsync(bytes, fileOffset, cancellationToken).ConfigureAwait(false);
-        var completePackets = read / PacketSize;
+        var completePackets = read / session.PacketSize;
         if (reverse)
         {
             for (var index = completePackets - 1; index >= 0; index--)
             {
-                if (TsPacketParser.TryParse(bytes.Span.Slice(index * PacketSize, PacketSize), out var info) &&
+                if (TsPacketParser.TryParse(session.PacketLayout.GetPacketBody(bytes.Span, index * session.PacketSize), out var info) &&
                     info.Pid == pid)
                     return startPacket + index;
             }
@@ -154,7 +154,7 @@ internal sealed class TsPacketViewerService : IAsyncDisposable
         {
             for (var index = 0; index < completePackets; index++)
             {
-                if (TsPacketParser.TryParse(bytes.Span.Slice(index * PacketSize, PacketSize), out var info) &&
+                if (TsPacketParser.TryParse(session.PacketLayout.GetPacketBody(bytes.Span, index * session.PacketSize), out var info) &&
                     info.Pid == pid)
                     return startPacket + index;
             }

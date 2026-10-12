@@ -29,7 +29,7 @@
     <x:String x:Key="String.FailedToLoadVideo">無法載入影片</x:String>
     <x:String x:Key="String.NoVideoStream">所選檔案不包含視訊軌。</x:String>
     <x:String x:Key="String.MediaReadTimeout">讀取視訊逾時。請嘗試定位到其他位置，或檢查檔案是否加密或損壞。</x:String>
-    <x:String x:Key="String.ScrambledTs">檔案包含加密（加擾）的 188 位元組 TS 載荷，無法預覽。預覽前需要先解密。</x:String>
+    <x:String x:Key="String.ScrambledTs">檔案包含加密（加擾）的 TS 載荷，無法預覽。預覽前需要先解密。</x:String>
     <x:String x:Key="String.SaveYourClip">儲存片段</x:String>
     <x:String x:Key="String.Menu.File">檔案(_F)</x:String>
     <x:String x:Key="String.Menu.Edit">編輯(_E)</x:String>
@@ -210,7 +210,7 @@
     <x:String x:Key="String.MergeClips.Title">合併選取的剪輯</x:String>
     <x:String x:Key="String.MergeClips.Completed">合併完成！&#10;&#10;輸出檔案：{0}</x:String>
     <x:String x:Key="String.MergeClips.OutputMatchesSource">輸出檔案不能覆蓋來源檔案。</x:String>
-    <x:String x:Key="String.MergeClips.NoSync">沒有找到有效的 188 位元組 TS 封包結構。</x:String>
+    <x:String x:Key="String.MergeClips.NoSync">沒有找到有效的 TS 封包結構。</x:String>
     <x:String x:Key="String.MergeClips.InvalidRange">選取的剪輯範圍無效或沒有可輸出的資料。</x:String>
     <x:String x:Key="String.MergeClips.SourceChanged">來源檔案在處理期間發生變更或無法繼續讀取。</x:String>
     <x:String x:Key="String.Clips.SelectionSummary">{0} 個剪輯 / {1}</x:String>
@@ -612,7 +612,7 @@
     <x:String x:Key="String.TsCheck.Type.MissingTimestamp">PTS 缺失</x:String>
     <x:String x:Key="String.TsCheck.Type.InvalidPacketHeader">TS 包頭無效</x:String>
     <x:String x:Key="String.TsCheck.Type.Unknown">未知事件</x:String>
-    <x:String x:Key="String.TsCheck.Message.NoSync">未找到連續有效的 188 位元組 TS 包。</x:String>
+    <x:String x:Key="String.TsCheck.Message.NoSync">未找到連續有效的 TS 包。</x:String>
     <x:String x:Key="String.TsCheck.Message.TrailingBytes">檔案末尾有 {0} 位元組不屬於完整 TS 包。</x:String>
     <x:String x:Key="String.TsCheck.Message.SyncRecovered">TS 包對齊遺失，跳過 {0} 位元組後恢復同步。</x:String>
     <x:String x:Key="String.TsCheck.Message.TransportError">偵測到 transport_error_indicator 標記。</x:String>
@@ -844,14 +844,14 @@
     <x:String x:Key="String.TsPacketViewer.Fields">封包欄位</x:String>
     <x:String x:Key="String.TsPacketViewer.StandardFieldNames">標準欄位名稱</x:String>
     <x:String x:Key="String.TsPacketViewer.StandardFieldNamesHint">欄位名稱與列舉值使用固定的底線形式，不隨介面語言變化。</x:String>
-    <x:String x:Key="String.TsPacketViewer.Hex">188 位元組封包資料</x:String>
+    <x:String x:Key="String.TsPacketViewer.Hex">封包資料</x:String>
     <x:String x:Key="String.TsPacketViewer.SelectedSummary">封包 {0} · PID {1}（{2}）· 偏移 {3}</x:String>
     <x:String x:Key="String.TsPacketViewer.InvalidPacket">無效封包 · {0}</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.Ready">就緒</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.Opening">正在讀取串流資訊...</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.Searching">正在尋找...</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.PidNotFound">找不到更多相同 PID 的封包。</x:String>
-    <x:String x:Key="String.TsPacketViewer.Status.NoSync">找不到連續有效的 188 位元組 TS 封包。</x:String>
+    <x:String x:Key="String.TsPacketViewer.Status.NoSync">找不到連續有效的 TS 封包。</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.InvalidPacket">請輸入檔案範圍內的封包編號。</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.InvalidOffset">請輸入 TS 資料範圍內的十進位偏移或以 0x 開頭的十六進位偏移。</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.Failed">無法讀取檔案：{0}</x:String>
@@ -1148,4 +1148,10 @@
     <x:String x:Key="String.PreviewTrack.ClearClipsConfirm">切換預覽軌道將清空目前剪輯和復原歷史，已加入佇列的匯出工作會保留。是否繼續？</x:String>
     <x:String x:Key="String.PreviewTrack.SwitchFailed">切換預覽軌道失敗</x:String>
     <x:String x:Key="String.PreviewTrack.SizeAfterExport">匯出後確定</x:String>
+    <x:String x:Key="String.TsLayout.NoSync">未找到有效的 TS 封包結構。</x:String>
+    <x:String x:Key="String.TsLayout.Unsupported">不支援 {0} 位元組 TS 封包；目前僅支援 188 位元組 TS 和 192 位元組 M2TS。</x:String>
+    <x:String x:Key="String.TsLayout.StandardOnly">此工具暫不支援 {0} 位元組 TS 封包，目前僅支援 188 位元組 TS。</x:String>
+    <x:String x:Key="String.TsPacketViewer.Field.M2tsHeader">M2TS 附加標頭</x:String>
+    <x:String x:Key="String.TsPacketViewer.Field.CopyPermission">複製許可標誌</x:String>
+    <x:String x:Key="String.TsPacketViewer.Field.ArrivalTimestamp">到達時間戳</x:String>
 </ResourceDictionary>

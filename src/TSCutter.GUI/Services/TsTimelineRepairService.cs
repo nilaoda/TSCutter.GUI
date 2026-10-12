@@ -27,6 +27,8 @@ public sealed class TsTimelineRepairService
         CancellationToken cancellationToken = default)
     {
         var fullPath = Path.GetFullPath(filePath);
+        var layout = await Task.Run(() => TsPacketLayout.Detect(fullPath, cancellationToken, Math.Max(0, existingCheckResult?.SyncOffset ?? 0)), cancellationToken).ConfigureAwait(false);
+        if (layout.PacketSize != 0) layout.RequireSupported(standardOnly: true);
         var fileSize = new FileInfo(fullPath).Length;
         var stopwatch = Stopwatch.StartNew();
         var checkResult = existingCheckResult;
@@ -54,6 +56,7 @@ public sealed class TsTimelineRepairService
         if (finalCheckResult.SyncOffset < 0)
             throw new TsTimelineRepairException(TsTimelineRepairErrorCode.NoSync);
 
+        finalCheckResult.PacketLayout.RequireSupported(standardOnly: true);
         var samples = await CollectPcrSamplesAsync(
             fullPath, finalCheckResult.SyncOffset, fileSize, performsBaseAnalysis,
             stopwatch, progress, cancellationToken)
@@ -69,6 +72,7 @@ public sealed class TsTimelineRepairService
         IReadOnlyDictionary<int, List<PcrSample>> samples)
     {
         var fullPath = Path.GetFullPath(filePath);
+        checkResult.PacketLayout.RequireSupported(standardOnly: true);
         var analysis = new TsTimelineRepairAnalysis
         {
             FilePath = fullPath,
@@ -92,6 +96,8 @@ public sealed class TsTimelineRepairService
         CancellationToken cancellationToken = default)
     {
         var sourcePath = Path.GetFullPath(analysis.FilePath);
+        var sourceLayout = await Task.Run(() => TsPacketLayout.Detect(sourcePath, cancellationToken, Math.Max(0, analysis.CheckResult.SyncOffset)), cancellationToken).ConfigureAwait(false);
+        sourceLayout.RequireSupported(standardOnly: true);
         var targetPath = Path.GetFullPath(outputPath);
         if (sourcePath.Equals(targetPath, PathComparison))
             throw new TsTimelineRepairException(TsTimelineRepairErrorCode.OutputMatchesSource);

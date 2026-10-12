@@ -111,7 +111,7 @@ public partial class TsPacketViewerWindowViewModel : ViewModelBase, IModalDialog
         var settings = new OpenFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_TsPacketViewer_OpenFile,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
+            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts", "m2ts", "mts", "m2t", "mpegts"])]
         };
         var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
         if (result.Any())
@@ -145,7 +145,7 @@ public partial class TsPacketViewerWindowViewModel : ViewModelBase, IModalDialog
         }
         var packetIndex = Math.Min(
             _session.TotalPackets - 1,
-            (offset - _session.SyncOffset) / TsUtil.TsPacketSize);
+            (offset - _session.SyncOffset) / _session.PacketSize);
         await LoadAroundAsync(packetIndex).ConfigureAwait(true);
     }
 
@@ -354,7 +354,11 @@ public partial class TsPacketViewerWindowViewModel : ViewModelBase, IModalDialog
                     var expected = (previous.Info.ContinuityCounter + 1) & 0x0F;
                     if (info.ContinuityCounter == previous.Info.ContinuityCounter)
                     {
-                        severity = packet.Data.AsSpan(4).SequenceEqual(previous.Data.AsSpan(4))
+                        var body = TsPacketLayout.FromPacketOffset(packet.Data.Length, packet.FileOffset)
+                            .GetPacketBody(packet.Data.AsSpan());
+                        var previousBody = TsPacketLayout.FromPacketOffset(previous.Data.Length, previous.FileOffset)
+                            .GetPacketBody(previous.Data.AsSpan());
+                        severity = body[4..].SequenceEqual(previousBody[4..])
                             ? TsCheckSeverity.Warning
                             : TsCheckSeverity.Error;
                         updateBaseline = false;
@@ -493,6 +497,9 @@ public partial class TsPacketViewerWindowViewModel : ViewModelBase, IModalDialog
 
     private static string GetStandardFieldName(TsPacketFieldKind kind) => kind switch
     {
+        TsPacketFieldKind.M2tsHeader => "m2ts_header",
+        TsPacketFieldKind.CopyPermissionIndicator => "copy_permission_indicator",
+        TsPacketFieldKind.ArrivalTimestamp => "arrival_time_stamp",
         TsPacketFieldKind.Header => "ts_header",
         TsPacketFieldKind.SyncByte => "sync_byte",
         TsPacketFieldKind.TransportErrorIndicator => "transport_error_indicator",
@@ -533,6 +540,9 @@ public partial class TsPacketViewerWindowViewModel : ViewModelBase, IModalDialog
         var strings = LocalizationManager.Instance;
         return kind switch
         {
+            TsPacketFieldKind.M2tsHeader => strings.String_TsPacketViewer_Field_M2tsHeader,
+            TsPacketFieldKind.CopyPermissionIndicator => strings.String_TsPacketViewer_Field_CopyPermission,
+            TsPacketFieldKind.ArrivalTimestamp => strings.String_TsPacketViewer_Field_ArrivalTimestamp,
             TsPacketFieldKind.Header => strings.String_TsPacketViewer_Field_Header,
             TsPacketFieldKind.SyncByte => strings.String_TsPacketViewer_Field_SyncByte,
             TsPacketFieldKind.TransportErrorIndicator => strings.String_TsPacketViewer_Field_Tei,

@@ -25,6 +25,11 @@ public sealed class TsServiceFilterService
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(outputs);
+        var layout = await Task.Run(() => TsPacketLayout.Detect(sourcePath, cancellationToken, Math.Max(0, catalog.SyncOffset)), cancellationToken).ConfigureAwait(false);
+        layout.RequireSupported();
+        var stride = layout.PacketSize;
+        if (catalog.PacketSize != stride)
+            throw new TsFilterException(TsFilterErrorCode.SyncLost, layout.PacketOffset);
         if (outputs.Count == 0)
             throw new ArgumentException("At least one service output is required.", nameof(outputs));
 
@@ -44,10 +49,10 @@ public sealed class TsServiceFilterService
         var contexts = new List<OutputContext>(outputs.Count);
         var routes = new List<OutputContext>?[8192];
         var stopwatch = Stopwatch.StartNew();
-        var inputBuffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize + PacketSize);
+        var inputBuffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize + stride);
         var eitAssembler = new PsiAssembler();
         var buffered = 0;
-        var bytesProcessed = Math.Max(0, catalog.SyncOffset);
+        var bytesProcessed = layout.PacketOffset;
         var lastProgressTicks = 0L;
 
         try
@@ -63,7 +68,7 @@ public sealed class TsServiceFilterService
             await using var input = MediaFileUtil.OpenRead(
                 sourcePath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            input.Position = Math.Max(0, catalog.SyncOffset);
+            input.Position = layout.PacketOffset;
 
             while (true)
             {
@@ -74,15 +79,17 @@ public sealed class TsServiceFilterService
                     break;
 
                 buffered += read;
-                var completeLength = buffered / PacketSize * PacketSize;
-                for (var offset = 0; offset < completeLength; offset += PacketSize)
+                var completeLength = buffered / stride * stride;
+                for (var offset = 0; offset < completeLength; offset += stride)
                 {
                     if ((offset & 0x3FFFF) == 0)
                         cancellationToken.ThrowIfCancellationRequested();
-                    var packet = inputBuffer.AsSpan(offset, PacketSize);
+                    var packet = layout.GetPacketBody(inputBuffer.AsSpan(), offset);
                     if (packet[0] != 0x47)
                         throw new TsFilterException(TsFilterErrorCode.SyncLost, bytesProcessed + offset);
 
+                    foreach (var context in contexts)
+                        context.SetSourcePacket(inputBuffer.AsSpan(offset, stride));
                     var pid = ((packet[1] & 0x1F) << 8) | packet[2];
                     var payloadStart = (packet[1] & 0x40) != 0;
                     if (pid == 0x0012)
@@ -240,13 +247,18 @@ public sealed class TsServiceFilterService
         private readonly PsiAssembler _eitAssembler = new();
         private bool _awaitEitStart = true;
         private int _transportStreamId;
+        private readonly TsPacketLayout _layout;
+        private uint _arrivalHeader;
+        private bool _initialTablesPending;
+        private int PrefixSize => _layout.PrefixSize;
 
-        private OutputContext(int serviceId, string path, FileStream stream, byte[] buffer)
+        private OutputContext(int serviceId, string path, FileStream stream, byte[] buffer, TsPacketLayout layout)
         {
             ServiceId = serviceId;
             Path = path;
             _stream = stream;
             _buffer = buffer;
+            _layout = layout;
             Array.Fill(_psiContinuity, -1);
         }
 
@@ -264,6 +276,8 @@ public sealed class TsServiceFilterService
             CancellationToken cancellationToken, bool overwrite = false)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            catalog.PacketLayout
+                .RequireSupported();
             var program = catalog.Programs[output.ServiceId];
             var selectedPids = program.StreamDefinitions.Keys.ToHashSet();
             var pat = TsStreamFilterService.BuildPatSection(catalog, [output.ServiceId]);
@@ -295,7 +309,7 @@ public sealed class TsServiceFilterService
                 TryDelete(output.OutputPath);
                 throw;
             }
-            var context = new OutputContext(output.ServiceId, output.OutputPath, stream, buffer)
+            var context = new OutputContext(output.ServiceId, output.OutputPath, stream, buffer, catalog.PacketLayout)
             {
                 _transportStreamId = catalog.TransportStreamId
             };
@@ -315,6 +329,17 @@ public sealed class TsServiceFilterService
 
         public void WriteInitialTables()
         {
+            // M2TS 表包借用首个源包的到达头，避免在文件开头注入不连续的零时间戳。
+            if (_layout.IsM2ts)
+            {
+                _initialTablesPending = true;
+                return;
+            }
+            WriteTables();
+        }
+
+        private void WriteTables()
+        {
             foreach (var (pid, section) in StaticSections)
                 WriteSection(pid, section);
         }
@@ -326,8 +351,23 @@ public sealed class TsServiceFilterService
             _awaitEitStart = true;
         }
 
+        public void SetSourcePacket(ReadOnlySpan<byte> packet)
+        {
+            if (_layout.IsM2ts)
+                _arrivalHeader = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(packet[..PrefixSize]);
+            if (_initialTablesPending)
+            {
+                _initialTablesPending = false;
+                WriteTables();
+            }
+        }
+
         public void WriteFilteredPacket(ReadOnlySpan<byte> packet, long fileOffset)
         {
+            if (packet.Length != _layout.PacketSize)
+                throw new TsFilterException(TsFilterErrorCode.SyncLost, fileOffset);
+            SetSourcePacket(packet);
+            packet = _layout.GetPacketBody(packet);
             if (packet.Length != PacketSize || packet[0] != 0x47)
                 throw new TsFilterException(TsFilterErrorCode.SyncLost, fileOffset);
             var pid = ((packet[1] & 0x1F) << 8) | packet[2];
@@ -363,9 +403,10 @@ public sealed class TsServiceFilterService
 
         public void WritePacket(ReadOnlySpan<byte> packet)
         {
-            EnsureSpace(PacketSize);
-            packet.CopyTo(_buffer.AsSpan(BufferedLength));
-            BufferedLength += PacketSize;
+            EnsureSpace(_layout.PacketSize);
+            WriteArrivalHeader();
+            packet.CopyTo(_buffer.AsSpan(BufferedLength + PrefixSize));
+            BufferedLength += _layout.PacketSize;
             PacketsWritten++;
         }
 
@@ -377,8 +418,9 @@ public sealed class TsServiceFilterService
                 _psiContinuity[pid] = 0;
             while (sectionOffset < section.Length)
             {
-                EnsureSpace(PacketSize);
-                var packet = _buffer.AsSpan(BufferedLength, PacketSize);
+                EnsureSpace(_layout.PacketSize);
+                WriteArrivalHeader();
+                var packet = _layout.GetPacketBody(_buffer.AsSpan(), BufferedLength);
                 packet.Fill(0xFF);
                 packet[0] = 0x47;
                 packet[1] = (byte)((firstPacket ? 0x40 : 0) | ((pid >> 8) & 0x1F));
@@ -391,10 +433,16 @@ public sealed class TsServiceFilterService
                 var copyLength = Math.Min(PacketSize - payloadOffset, section.Length - sectionOffset);
                 section.Slice(sectionOffset, copyLength).CopyTo(packet[payloadOffset..]);
                 sectionOffset += copyLength;
-                BufferedLength += PacketSize;
+                BufferedLength += _layout.PacketSize;
                 PacketsWritten++;
                 firstPacket = false;
             }
+        }
+
+        private void WriteArrivalHeader()
+        {
+            if (_layout.IsM2ts)
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(_buffer.AsSpan(BufferedLength, PrefixSize), _arrivalHeader);
         }
 
         private void EnsureSpace(int length)
@@ -416,7 +464,7 @@ public sealed class TsServiceFilterService
 
         public async ValueTask FlushIfNeededAsync(CancellationToken cancellationToken)
         {
-            if (BufferedLength < _buffer.Length - PacketSize * 32)
+            if (BufferedLength < _buffer.Length - _layout.PacketSize * 32)
                 return;
             await FlushAsync(cancellationToken).ConfigureAwait(false);
         }

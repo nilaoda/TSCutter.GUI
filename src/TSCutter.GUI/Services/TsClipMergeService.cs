@@ -1,5 +1,6 @@
 using System;
 using System.Buffers;
+using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
@@ -38,23 +39,21 @@ internal sealed class TsClipMergeService
             sourcePath,
             PacketSize * ReadPacketCount, FileOptions.Asynchronous | FileOptions.SequentialScan);
         var sourceLength = source.Length;
-        long fileStart = 0;
-        // 已标记的边界是实际文件偏移；仅未标记、从文件头开始的范围需要寻找首包。
-        if (request.Ranges.Any(item => item.StartPosition == 0))
-        {
-            fileStart = await FindSyncOffsetAsync(source, cancellationToken).ConfigureAwait(false);
-            if (fileStart < 0)
-                throw new TsClipMergeException(TsClipMergeErrorCode.NoSync);
-        }
-
-        var ranges = NormalizeRanges(request.Ranges, fileStart, sourceLength);
+        // 已标记区间从其真实起点探测，保留损坏长前缀及非零包相位的支持。
+        var probeStart = request.Ranges.Count == 0 ? 0 : Math.Max(0, request.Ranges.Min(item => item.StartPosition));
+        var layout = await Task.Run(() => TsPacketLayout.Detect(source, cancellationToken, probeStart), cancellationToken).ConfigureAwait(false);
+        if (layout.PacketSize == 0)
+            throw new TsClipMergeException(TsClipMergeErrorCode.NoSync);
+        layout.RequireSupported();
+        var stride = layout.PacketSize;
+        var ranges = NormalizeRanges(request.Ranges, sourceLength, layout);
         if (ranges.Count == 0)
             throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
 
         using var splitHeaderReader = new TsSplitPesHeaderReader();
         var splitTimestampRewriter = new TsSplitPesTimestampRewriter();
         var totalBytes = ranges.Sum(item => item.EndPosition - item.StartPosition);
-        var buffer = ArrayPool<byte>.Shared.Rent(PacketSize * ReadPacketCount);
+        var buffer = ArrayPool<byte>.Shared.Rent(stride * ReadPacketCount);
         var lastPayloadContinuity = new int[8192];
         var segmentContinuityOffsets = new int[8192];
         Array.Fill(lastPayloadContinuity, -1);
@@ -72,6 +71,8 @@ internal sealed class TsClipMergeService
         var previousCorrection = 0L;
         var expectedStartTime = ranges[0].StartTimeSeconds;
 
+        uint lastArrivalTimestamp = 0;
+        var hasArrivalTimestamp = false;
         var outputCreated = false;
         try
         {
@@ -94,7 +95,7 @@ internal sealed class TsClipMergeService
                 if (rangeIndex > 0 && previousTimeline.HasPts)
                 {
                     var head = await ReadTimelineHeadAsync(source, range, buffer, splitHeaderReader,
-                            previousTimeline.Pid, audioTimelines, audioHeads, cancellationToken)
+                            previousTimeline.Pid, audioTimelines, audioHeads, cancellationToken, layout)
                         .ConfigureAwait(false);
                     if (head.HasPts)
                     {
@@ -118,26 +119,28 @@ internal sealed class TsClipMergeService
                 Array.Fill(segmentContinuityOffsets, int.MinValue);
                 source.Position = range.StartPosition;
                 var remaining = range.EndPosition - range.StartPosition;
+                long arrivalCorrection = 0;
+                var firstArrival = true;
 
                 while (remaining > 0)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
                     var requested = (int)Math.Min(buffer.Length, remaining);
-                    requested -= requested % PacketSize;
+                    requested -= requested % stride;
                     if (requested <= 0)
                         throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
 
                     await source.ReadExactlyAsync(buffer.AsMemory(0, requested), cancellationToken)
                         .ConfigureAwait(false);
                     var chunkStart = range.StartPosition + (range.EndPosition - range.StartPosition - remaining);
-                    for (var offset = 0; offset < requested; offset += PacketSize)
+                    for (var offset = 0; offset < requested; offset += stride)
                     {
                         TsSplitPesHeader splitHeader = default;
                         if ((rangeIndex + 1 < ranges.Count || correction != 0) &&
-                            TsSplitPesHeaderReader.NeedsRead(buffer.AsSpan(offset, PacketSize)))
+                            TsSplitPesHeaderReader.NeedsRead(layout.GetPacketBody(buffer.AsSpan(), offset)))
                             splitHeader = await splitHeaderReader.ReadAsync(source, buffer, chunkStart,
-                                requested, offset, range.EndPosition, cancellationToken).ConfigureAwait(false);
-                        var packet = buffer.AsSpan(offset, PacketSize);
+                                requested, offset, range.EndPosition, cancellationToken, layout).ConfigureAwait(false);
+                        var packet = layout.GetPacketBody(buffer.AsSpan(), offset);
                         if (packet[0] != 0x47)
                             throw new TsClipMergeException(
                                 TsClipMergeErrorCode.SourceChanged,
@@ -176,14 +179,27 @@ internal sealed class TsClipMergeService
                         // 剪切产生的接缝跳号，又会完整保留片段内部原有的跳号、重复包和 TEI。
                         rewrittenContinuityCount += RewriteContinuity(
                             packet, rangeIndex, segmentContinuityOffsets, lastPayloadContinuity);
+                        if (layout.IsM2ts)
+                        {
+                            var header = buffer.AsSpan(offset, layout.PrefixSize);
+                            var arrival = BinaryPrimitives.ReadUInt32BigEndian(header);
+                            const uint mask = (1u << 30) - 1;
+                            // 后续片段的 ATS 接续上一包，并保留片段内间隔、30 位回绕和复制许可位。
+                            if (firstArrival && hasArrivalTimestamp)
+                                arrivalCorrection = (long)lastArrivalTimestamp + 1 - (arrival & mask);
+                            firstArrival = false;
+                            lastArrivalTimestamp = (uint)((arrival & mask) + arrivalCorrection) & mask;
+                            BinaryPrimitives.WriteUInt32BigEndian(header, (arrival & ~mask) | lastArrivalTimestamp);
+                            hasArrivalTimestamp = true;
+                        }
                     }
 
                     if (programOutput is null)
                         await output!.WriteAsync(buffer.AsMemory(0, requested), cancellationToken).ConfigureAwait(false);
                     else
                     {
-                        for (var offset = 0; offset < requested; offset += PacketSize)
-                            programOutput.WriteFilteredPacket(buffer.AsSpan(offset, PacketSize), chunkStart + offset);
+                        for (var offset = 0; offset < requested; offset += stride)
+                            programOutput.WriteFilteredPacket(buffer.AsSpan(offset, stride), chunkStart + offset);
                         await programOutput.FlushIfNeededAsync(cancellationToken).ConfigureAwait(false);
                     }
                     remaining -= requested;
@@ -241,23 +257,24 @@ internal sealed class TsClipMergeService
 
     private static List<NormalizedRange> NormalizeRanges(
         IReadOnlyList<TsClipMergeRange> source,
-        long fileStart,
-        long fileLength)
+        long fileLength, TsPacketLayout layout)
     {
+        var fileStart = layout.PacketOffset;
+        var stride = layout.PacketSize;
         var ranges = new List<NormalizedRange>(source.Count);
         foreach (var item in source)
         {
             var start = item.StartPosition == 0 ? fileStart : item.StartPosition;
-            if (start < 0 || start > fileLength)
+            if (start < 0 || start > fileLength || layout.IsM2ts && !layout.IsAligned(start))
                 throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
             var end = item.EndPosition > 0 ? Math.Min(item.EndPosition, fileLength) : fileLength;
             // EOF 可能带有不完整尾包，仅这种终点按当前片段起点截去尾部。
             // 已标记的起止位置保持原值，不能按文件头的包相位重新取整。
             if (end == fileLength)
-                end -= (end - start) % PacketSize;
+                end -= (end - start) % stride;
             if (end <= start || item.EndTimeSeconds <= item.StartTimeSeconds)
                 continue;
-            if ((end - start) % PacketSize != 0)
+            if ((end - start) % stride != 0)
                 throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
             ranges.Add(new NormalizedRange(
                 start, end, item.StartTimeSeconds, item.EndTimeSeconds));
@@ -287,8 +304,9 @@ internal sealed class TsClipMergeService
     private static async Task<TsClipMergeTimeline> ReadTimelineHeadAsync(
         FileStream source, NormalizedRange range, byte[] buffer, TsSplitPesHeaderReader splitHeaderReader, int videoPid,
         TsClipMergeTimeline[] previousAudio, TsClipMergeTimeline[] audioHeads,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, TsPacketLayout layout)
     {
+        var stride = layout.PacketSize;
         var timeline = new TsClipMergeTimeline();
         timeline.Reset(videoPid);
         for (var index = 0; index < audioHeads.Length; index++)
@@ -297,22 +315,22 @@ internal sealed class TsClipMergeService
         // 只读起点及其前导帧，复用复制缓冲；异常素材最多额外读取 64 MiB。
         var remaining = Math.Min(range.EndPosition - range.StartPosition,
             TsClipBoundaryResolver.MaximumScanBytes);
-        while (remaining >= PacketSize)
+        while (remaining >= stride)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var requested = (int)Math.Min(buffer.Length, remaining);
-            requested -= requested % PacketSize;
+            requested -= requested % stride;
             await source.ReadExactlyAsync(buffer.AsMemory(0, requested), cancellationToken)
                 .ConfigureAwait(false);
-            for (var offset = 0; offset < requested; offset += PacketSize)
+            for (var offset = 0; offset < requested; offset += stride)
             {
                 TsSplitPesHeader splitHeader = default;
                 var chunkStart = source.Position - requested;
-                if (TsSplitPesHeaderReader.NeedsRead(buffer.AsSpan(offset, PacketSize)))
+                if (TsSplitPesHeaderReader.NeedsRead(layout.GetPacketBody(buffer.AsSpan(), offset)))
                     splitHeader = await splitHeaderReader.ReadAsync(source, buffer, chunkStart,
                         requested, offset, Math.Min(range.EndPosition,
-                            range.StartPosition + TsClipBoundaryResolver.MaximumScanBytes), cancellationToken).ConfigureAwait(false);
-                var packet = buffer.AsSpan(offset, PacketSize);
+                            range.StartPosition + TsClipBoundaryResolver.MaximumScanBytes), cancellationToken, layout).ConfigureAwait(false);
+                var packet = layout.GetPacketBody(buffer.AsSpan(), offset);
                 if (packet[0] != 0x47)
                     throw new TsClipMergeException(TsClipMergeErrorCode.SourceChanged,
                         source.Position - requested + offset);
@@ -368,43 +386,6 @@ internal sealed class TsClipMergeService
             if (previous[index].HasPts && !heads[index].HasPts)
                 return false;
         return true;
-    }
-
-    private static async Task<long> FindSyncOffsetAsync(
-        FileStream source,
-        CancellationToken cancellationToken)
-    {
-        const int bufferSize = TsScramblingProbe.ProbeBufferBytes;
-        const int overlap = 204 * 4;
-        var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
-        try
-        {
-            source.Position = 0;
-            var carry = 0;
-            long bytesRead = 0;
-            // 与预览能力探测使用相同的有界同步搜索，并保留非零起点。
-            while (bytesRead < TsScramblingProbe.MaximumProbeBytes)
-            {
-                var requested = (int)Math.Min(bufferSize - carry,
-                    TsScramblingProbe.MaximumProbeBytes - bytesRead);
-                var read = await source.ReadAtLeastAsync(buffer.AsMemory(carry, requested),
-                    requested, throwOnEndOfStream: false, cancellationToken).ConfigureAwait(false);
-                bytesRead += read;
-                var length = carry + read;
-                var layout = TsScramblingProbe.FindPacketLayout(buffer.AsSpan(0, length));
-                if (layout.PacketSize != 0)
-                    return layout.PacketSize == PacketSize ? bytesRead - length + layout.SyncOffset : -1;
-                if (read < requested)
-                    break;
-                carry = Math.Min(length, overlap);
-                buffer.AsSpan(length - carry, carry).CopyTo(buffer);
-            }
-            return -1;
-        }
-        finally
-        {
-            ArrayPool<byte>.Shared.Return(buffer);
-        }
     }
 
     private static int RewriteContinuity(

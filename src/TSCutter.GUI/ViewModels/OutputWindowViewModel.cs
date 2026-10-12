@@ -174,6 +174,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         }
     }
 
+    public bool IsRawByteRange { get; set; }
+
     private Task CopyClipAsync(BatchTask task)
     {
         if (task.ProgramId is { } programId)
@@ -188,8 +190,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             return new TsProgramClipExportService().ExportAsync(task.SourcePath, task.DestinationPath,
                 task.StartPosition, task.EndPosition, programId, progress, _cts.Token);
         }
-        return CommonUtil.CopyFileAsync(new FileInfo(task.SourcePath), task.DestinationPath,
-            task.StartPosition, task.EndPosition, (percent, bytesCopied) =>
+        return CopySourceRangeAsync(task,
+            (percent, bytesCopied) =>
             {
                 Percent = percent;
                 _bytesCopied += bytesCopied;
@@ -197,6 +199,13 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 UpdateRemainingTime();
             }, _cts.Token);
     }
+
+    private Task CopySourceRangeAsync(BatchTask task, Action<double, long> progress, CancellationToken token) =>
+        IsRawByteRange
+            ? CommonUtil.CopyFileAsync(new FileInfo(task.SourcePath), task.DestinationPath,
+                task.StartPosition, task.EndPosition, progress, token)
+            : TsClipCopyService.CopyAsync(task.SourcePath, task.DestinationPath,
+                task.StartPosition, task.EndPosition, progress, token);
 
     private async Task RunBatchAsync()
     {

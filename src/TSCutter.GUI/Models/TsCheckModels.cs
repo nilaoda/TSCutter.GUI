@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.Models;
 
@@ -182,6 +183,8 @@ public sealed class TsCheckResult
     public int TransportStreamId { get; set; } = 1;
     public byte PatVersion { get; set; }
     public long SyncOffset { get; set; }
+    public int PacketSize { get; set; } = TsUtil.TsPacketSize;
+    public TsPacketLayout PacketLayout => TsPacketLayout.FromPacketOffset(PacketSize, SyncOffset);
     public long PacketCount { get; set; }
     public long BytesScanned { get; set; }
     public TimeSpan Elapsed { get; set; }

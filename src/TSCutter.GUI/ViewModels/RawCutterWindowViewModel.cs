@@ -21,6 +21,8 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
     public partial bool? DialogResult { get; set; }
 
     private readonly IDialogService _dialogService;
+    public int PacketSize { get; private set; } = TsUtil.TsPacketSize;
+    private string _extension = "ts";
     private bool _isOutputting; // 防止输出命令重入
     private CancellationTokenSource? _statusCts; // 状态消息自动消失计时
     private bool _syncingSlider; // 防止滑块与输入框循环同步
@@ -121,7 +123,7 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
             if (IsPacketMode)
             {
                 var packet = Math.Min(OffsetToPacketIndex(v), EndPacket);
-                v = TsUtil.PacketToOffset(packet, SyncOffset);
+                v = TsUtil.PacketToOffset(packet, SyncOffset, PacketSize);
                 _syncingSlider = true;
                 StartPacket = packet;
                 StartOffset = v;
@@ -132,7 +134,7 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
             if (v > SliderEnd) v = (long)SliderEnd;
             _syncingSlider = true;
             StartOffset = v;
-            StartPacket = Math.Max(0, (v - SyncOffset) / TsUtil.TsPacketSize);
+            StartPacket = Math.Max(0, (v - SyncOffset) / PacketSize);
             _syncingSlider = false;
         }
     }
@@ -163,7 +165,7 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
             if (v < SliderStart) v = (long)SliderStart;
             _syncingSlider = true;
             EndOffset = v;
-            EndPacket = Math.Min((v - SyncOffset) / TsUtil.TsPacketSize, Math.Max(0, TotalPackets - 1));
+            EndPacket = Math.Min((v - SyncOffset) / PacketSize, Math.Max(0, TotalPackets - 1));
             _syncingSlider = false;
         }
     }
@@ -223,8 +225,13 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
         var fileInfo = new FileInfo(filePath);
         FileSize = fileInfo.Length;
 
-        SyncOffset = TsUtil.FindSyncOffset(filePath);
-        TotalPackets = TsUtil.CountPackets(filePath, SyncOffset);
+        var layout = TsPacketLayout.Detect(filePath);
+        layout.RequireSupported();
+        PacketSize = layout.PacketSize;
+        _extension = layout.Extension;
+        SyncOffset = layout.PacketOffset;
+        TotalPackets = Math.Max(0, (FileSize - SyncOffset) / PacketSize);
+        OnPropertyChanged(nameof(PacketSize));
 
         var lastPacket = Math.Max(0, TotalPackets - 1);
         var startPacket = Math.Clamp(initialRange?.StartPacket ?? 0, 0, lastPacket);
@@ -235,7 +242,7 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
         IsPacketMode = true;
         StartPacket = startPacket;
         EndPacket = endPacket;
-        StartOffset = TsUtil.PacketToOffset(startPacket, SyncOffset);
+        StartOffset = TsUtil.PacketToOffset(startPacket, SyncOffset, PacketSize);
         EndOffset = PacketEndOffset(endPacket);
         _syncingSlider = false;
     }
@@ -244,7 +251,7 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
     {
         if (value < 0 || _syncingSlider) return;
         _syncingSlider = true;
-        StartOffset = TsUtil.PacketToOffset(value, SyncOffset);
+        StartOffset = TsUtil.PacketToOffset(value, SyncOffset, PacketSize);
         _syncingSlider = false;
     }
 
@@ -252,7 +259,7 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
     {
         if (value < 0 || _syncingSlider) return;
         _syncingSlider = true;
-        EndOffset = Math.Min(TsUtil.PacketToOffset(value + 1, SyncOffset) - 1, FileSize - 1);
+        EndOffset = Math.Min(TsUtil.PacketToOffset(value + 1, SyncOffset, PacketSize) - 1, FileSize - 1);
         _syncingSlider = false;
     }
 
@@ -266,7 +273,7 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
             _syncingSlider = true;
             StartPacket = startPacket;
             EndPacket = endPacket;
-            StartOffset = TsUtil.PacketToOffset(startPacket, SyncOffset);
+            StartOffset = TsUtil.PacketToOffset(startPacket, SyncOffset, PacketSize);
             EndOffset = PacketEndOffset(endPacket);
             _syncingSlider = false;
         }
@@ -282,14 +289,14 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
     private long OffsetToPacketIndex(long offset)
     {
         return Math.Clamp(
-            (offset - SyncOffset) / TsUtil.TsPacketSize,
+            (offset - SyncOffset) / PacketSize,
             0,
             Math.Max(0, TotalPackets - 1));
     }
 
     private long PacketEndOffset(long packetIndex)
     {
-        return Math.Min(TsUtil.PacketToOffset(packetIndex + 1, SyncOffset) - 1, FileSize - 1);
+        return Math.Min(TsUtil.PacketToOffset(packetIndex + 1, SyncOffset, PacketSize) - 1, FileSize - 1);
     }
 
     [RelayCommand]
@@ -325,10 +332,10 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
                     "TSCutter", MessageBoxIcon.Warning);
                 return;
             }
-            startPos = TsUtil.PacketToOffset(StartPacket, SyncOffset);
+            startPos = TsUtil.PacketToOffset(StartPacket, SyncOffset, PacketSize);
             // CopyFileAsync interprets its end position as exclusive.  The next packet
-            // boundary therefore includes all 188 bytes of EndPacket.
-            endPos = Math.Min(TsUtil.PacketToOffset(EndPacket + 1, SyncOffset), FileSize);
+            // boundary therefore includes all bytes of EndPacket.
+            endPos = Math.Min(TsUtil.PacketToOffset(EndPacket + 1, SyncOffset, PacketSize), FileSize);
             defaultNameSuffix = $"{StartPacket}-{EndPacket}";
         }
         else
@@ -347,20 +354,21 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
             return;
         }
 
-        var defaultName = Path.GetFileNameWithoutExtension(FilePath) + $"_{defaultNameSuffix}.ts";
+        var defaultName = Path.GetFileNameWithoutExtension(FilePath) + $"_{defaultNameSuffix}.{_extension}";
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_RawCutter_Title,
             SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(FilePath)!),
             SuggestedFileName = defaultName,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])],
-            DefaultExtension = "ts"
+            Filters = [new(LocalizationManager.Instance.String_TsFiles, [_extension])],
+            DefaultExtension = _extension
         };
 
         var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
         if (result is null) return;
 
         var outputVm = _dialogService.CreateViewModel<OutputWindowViewModel>();
+        outputVm.IsRawByteRange = true;
         outputVm.SourceFilePath = FilePath;
         outputVm.StartPosition = startPos;
         outputVm.EndPosition = endPos;

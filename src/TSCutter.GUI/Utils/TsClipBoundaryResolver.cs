@@ -13,7 +13,6 @@ namespace TSCutter.GUI.Utils;
 internal static class TsClipBoundaryResolver
 {
     private const int PacketSize = TsUtil.TsPacketSize;
-    private const int BufferSize = PacketSize * 512;
     internal const long MaximumScanBytes = 64L * 1024 * 1024;
     private const long TimestampWrap = 1L << 33;
     private static readonly TimeSpan MaximumScanTime = TimeSpan.FromSeconds(1);
@@ -32,47 +31,55 @@ internal static class TsClipBoundaryResolver
             throw new InvalidDataException("The selected frame has no compressed packet boundary.");
         await using var stream = MediaFileUtil.OpenRead(path, 1,
             FileOptions.Asynchronous | FileOptions.SequentialScan, allowConcurrentWrite: true);
+        var layout = TsPacketLayout.Detect(stream, cancellationToken, framePosition);
+        layout.RequireSupported();
         return await ResolveEndCoreAsync(stream, framePosition, framePts90k, signature,
-            cancellationToken, TimeProvider.System).ConfigureAwait(false);
+            cancellationToken, TimeProvider.System, layout).ConfigureAwait(false);
     }
 
     // 输入流由调用方持有；测试可模拟慢速读取，验证读取等待不会消耗扫描预算。
     internal static async Task<long> ResolveEndCoreAsync(Stream stream, long framePosition,
-        long framePts90k, PacketEndSignature signature, CancellationToken token, TimeProvider timeProvider)
+        long framePts90k, PacketEndSignature signature, CancellationToken token, TimeProvider timeProvider, TsPacketLayout? packetLayout = null)
     {
         token.ThrowIfCancellationRequested();
         if (!signature.IsValid)
             throw new InvalidDataException("The selected frame has no compressed packet boundary.");
+        var layout = packetLayout ?? new TsPacketLayout(PacketSize, 0);
+        layout.RequireSupported();
+        var stride = layout.PacketSize;
+        var readBufferSize = stride * 512;
         var length = stream.Length;
-        if (framePosition < 0 || framePosition > length - PacketSize || framePts90k == long.MinValue)
+        if (framePosition < 0 || framePosition > length - stride || framePts90k == long.MinValue)
             throw new InvalidDataException("The selected frame has no valid TS boundary.");
+        if (layout.IsM2ts && !layout.IsAligned(framePosition))
+            throw new InvalidDataException("The selected frame is not aligned to a transport packet.");
         stream.Position = framePosition;
         // 一次租用扫描缓冲、跨包 PES 头和上一包副本，不按包分配对象。
-        var buffer = ArrayPool<byte>.Shared.Rent(BufferSize + 19 + PacketSize + 32 + 215);
+        var buffer = ArrayPool<byte>.Shared.Rent(readBufferSize + 19 + PacketSize + 32 + 215);
         try
         {
             using var matcher = new PacketContentMatcher(signature);
             var scanner = new PesScanner(framePts90k, matcher);
-            var patternOffset = BufferSize + 19 + PacketSize;
+            var patternOffset = readBufferSize + 19 + PacketSize;
             signature.WriteTo(buffer.AsSpan(patternOffset, 32));
             var position = framePosition;
             var scanEnd = framePosition + Math.Min(length - framePosition, MaximumScanBytes);
             var elapsedScan = TimeSpan.Zero;
-            while (position <= scanEnd - PacketSize)
+            while (position <= scanEnd - stride)
             {
                 token.ThrowIfCancellationRequested();
-                var count = (int)Math.Min(BufferSize, scanEnd - position);
-                count -= count % PacketSize;
+                var count = (int)Math.Min(readBufferSize, scanEnd - position);
+                count -= count % stride;
                 await stream.ReadExactlyAsync(buffer.AsMemory(0, count), token).ConfigureAwait(false);
                 token.ThrowIfCancellationRequested();
                 // 只累计缓冲内解析和摘要校验的耗时，打开文件和等待读取均不计时。
                 // 每个缓冲检查一次，无需为每个 TS 包读时钟或创建计时器。
                 var scanStarted = timeProvider.GetTimestamp();
                 var resolvedEnd = -1L;
-                for (var offset = 0; offset < count; offset += PacketSize)
+                for (var offset = 0; offset < count; offset += stride)
                 {
-                    resolvedEnd = scanner.Process(buffer.AsSpan(offset, PacketSize), position + offset,
-                        buffer.AsSpan(BufferSize, 19), buffer.AsSpan(BufferSize + 19, PacketSize),
+                    resolvedEnd = scanner.Process(layout.GetPacketBody(buffer.AsSpan(), offset), position + offset,
+                        buffer.AsSpan(readBufferSize, 19), buffer.AsSpan(readBufferSize + 19, PacketSize),
                         buffer.AsSpan(patternOffset, 32),
                         buffer.AsSpan(patternOffset + 32, 215));
                     if (resolvedEnd >= 0)
@@ -89,7 +96,7 @@ internal static class TsClipBoundaryResolver
             if (scanEnd < length || !scanner.HasCompleteHeader)
                 throw new InvalidDataException("Cannot safely locate the end of the selected frame.");
             // 最后一个 PES 没有后继包；固定为本次读取时的 EOF，不跟随增长中的录制文件。
-            return length;
+            return framePosition + (length - framePosition) / stride * stride;
         }
         finally
         {
@@ -114,7 +121,7 @@ internal static class TsClipBoundaryResolver
             Span<byte> previousPacket, ReadOnlySpan<byte> prefix, Span<byte> combined)
         {
             if (packet[0] != TsUtil.TsSyncByte)
-                throw new InvalidDataException("The selected range is not aligned to 188-byte TS packets.");
+                throw new InvalidDataException("The selected range is not aligned to TS packets.");
             var packetPid = ((packet[1] & 0x1F) << 8) | packet[2];
             var startsPes = (packet[1] & 0x40) != 0;
             if (pid < 0)

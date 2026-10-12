@@ -41,6 +41,8 @@ public sealed class TsStreamAnalyzer
     private long _lastProgressTicks;
     private long _packetIndex;
     private long _syncOffset = -1;
+    private TsPacketLayout _packetLayout = TsPacketLayout.FromPacketOffset(PacketSize, 0);
+    private int PacketStride => _packetLayout.PacketSize;
     private long _pendingSyncLossOffset = -1;
     private long _pendingSyncLossBytes;
     private long _lastKnownClock90k = long.MinValue;
@@ -97,9 +99,10 @@ public sealed class TsStreamAnalyzer
         TsStreamAnalyzeOptions? options = null)
     {
         Reset(filePath, progress, options);
+        _packetLayout = TsPacketLayout.FromPacketOffset(PacketSize, 0);
         var readBufferSize = _options.InventoryOnly ? PacketSize * 8_192 : ReadBufferSize;
         // 使用池化大缓冲区减少系统调用和大对象堆分配；额外空间用于保留跨 ReadAsync 的残余包。
-        var buffer = ArrayPool<byte>.Shared.Rent(readBufferSize + PacketSize * 4);
+        var buffer = ArrayPool<byte>.Shared.Rent(readBufferSize + TsPacketLayout.SyncProbeOverlapBytes);
         var buffered = 0;
 
         try
@@ -114,7 +117,15 @@ public sealed class TsStreamAnalyzer
                 var read = await stream.ReadAsync(buffer.AsMemory(buffered, readBufferSize), cancellationToken)
                     .ConfigureAwait(false);
                 if (read == 0)
+                {
+                    if (_syncOffset < 0 && buffered > 0)
+                    {
+                        var consumedTail = ProcessBuffer(buffer.AsSpan(0, buffered),
+                            stream.Position - buffered, cancellationToken, isFinal: true);
+                        buffered -= consumedTail;
+                    }
                     break;
+                }
 
                 buffered += read;
                 var consumed = ProcessBuffer(buffer.AsSpan(0, buffered), stream.Position - buffered, cancellationToken);
@@ -127,12 +138,14 @@ public sealed class TsStreamAnalyzer
 
                 _result.BytesScanned = _syncOffset < 0
                     ? Math.Min(stream.Position, _result.FileSize)
-                    : Math.Min(_result.FileSize, _syncOffset + _packetIndex * PacketSize);
+                    : Math.Min(_result.FileSize, _syncOffset + _packetIndex * PacketStride);
                 ReportProgress(null, force: false);
                 if (_stopRequested || _result.BytesScanned >= _options.MaxBytes)
                     break;
             }
 
+            if (_options.InventoryOnly && _syncOffset < 0)
+                throw new InvalidDataException(LocalizationManager.Instance.String_TsLayout_NoSync);
             if (!_options.InventoryOnly && _syncOffset < 0)
             {
                 AddEvent(TsCheckSeverity.Error, TsCheckEventType.SyncLoss, -1, 0, 0,
@@ -227,36 +240,42 @@ public sealed class TsStreamAnalyzer
             _psiAssemblers[TsDvbTimeTableParser.Pid] = new TsPsiSectionAssembler();
     }
 
-    private int ProcessBuffer(ReadOnlySpan<byte> data, long absoluteOffset, CancellationToken cancellationToken)
+    private int ProcessBuffer(ReadOnlySpan<byte> data, long absoluteOffset, CancellationToken cancellationToken, bool isFinal = false)
     {
         var position = 0;
         if (_syncOffset < 0)
         {
-            var found = TsUtil.FindPacketSync(data);
-            if (found < 0)
-                return Math.Max(0, data.Length - PacketSize * 3);
-
-            _syncOffset = absoluteOffset + found;
+            var found = TsPacketLayout.FindLayout(data, validateHeaders: false);
+            if (found.PacketSize == 0 && isFinal)
+                found = TsPacketLayout.FindShortLayout(data);
+            if (found.PacketSize == 0)
+                return Math.Max(0, data.Length - TsPacketLayout.SyncProbeOverlapBytes);
+            var layout = new TsPacketLayout(found.PacketSize, absoluteOffset + found.SyncOffset);
+            layout.RequireSupported();
+            _packetLayout = layout;
+            position = found.SyncOffset - _packetLayout.PrefixSize;
+            if (position < 0) position += PacketStride;
+            _syncOffset = absoluteOffset + position;
             _result.SyncOffset = _syncOffset;
-            position = found;
+            _result.PacketSize = PacketStride;
         }
 
         var packetCounter = 0;
-        while (position + PacketSize <= data.Length)
+        while (position + PacketStride <= data.Length)
         {
             if ((packetCounter++ & 0x3FFF) == 0)
                 cancellationToken.ThrowIfCancellationRequested();
 
-            if (data[position] != 0x47)
+            if (data[position + _packetLayout.PrefixSize] != 0x47)
             {
                 // TS 失步后无法确认各 PID 当前 PES 中间丢了多少数据，先放弃半成品，避免恢复后重复报长度错误。
                 DiscardPendingPes();
                 // 中途失步时在当前缓冲区内重新寻找连续同步点，恢复后继续保持单遍扫描。
-                var resync = TsUtil.FindPacketSync(data[position..]);
+                var resync = _packetLayout.FindPacketSync(data[position..]);
                 if (resync < 0)
                 {
-                    // 最后 3 个包暂留给下一次读取拼接，其余损坏字节可立即丢弃，防止残余缓冲无限增长。
-                    var discard = Math.Max(0, data.Length - position - PacketSize * 3);
+                    // 保留足够的同步窗口给下一次读取拼接，其余损坏字节可立即丢弃，防止残余缓冲无限增长。
+                    var discard = Math.Max(0, data.Length - position - PacketStride * 4);
                     if (discard > 0)
                     {
                         if (_pendingSyncLossOffset < 0)
@@ -277,12 +296,12 @@ public sealed class TsStreamAnalyzer
                 continue;
             }
 
-            ProcessPacket(data.Slice(position, PacketSize), absoluteOffset + position);
-            position += PacketSize;
+            ProcessPacket(_packetLayout.GetPacketBody(data, position), absoluteOffset + position);
+            position += PacketStride;
             _packetIndex++;
             if (_options.InventoryOnly && HasCompleteCatalog() &&
                 _packetIndex - _lastCatalogChangePacket >= _options.StablePacketCount &&
-                _packetIndex * PacketSize >= _options.MinimumBytes)
+                _packetIndex * PacketStride >= _options.MinimumBytes)
             {
                 _stopRequested = true;
                 break;
@@ -1426,7 +1445,7 @@ public sealed class TsStreamAnalyzer
             return;
 
         _lastProgressTicks = elapsedTicks;
-        var bytesScanned = _syncOffset < 0 ? 0 : Math.Min(_result.FileSize, _syncOffset + _packetIndex * PacketSize);
+        var bytesScanned = _syncOffset < 0 ? 0 : Math.Min(_result.FileSize, _syncOffset + _packetIndex * PacketStride);
         _result.BytesScanned = bytesScanned;
         var progressEvent = newEvent ?? _pendingProgressEvent;
         _pendingProgressEvent = null;

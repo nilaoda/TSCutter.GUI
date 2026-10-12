@@ -144,6 +144,7 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
 
     private void BuildServiceRows(TsCheckResult result)
     {
+        var extension = "." + result.PacketLayout.Extension;
         var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var sourceName = Path.GetFileNameWithoutExtension(FilePath);
         var serviceIds = result.Programs.Keys.Concat(result.Services.Keys).Distinct().OrderBy(item => item);
@@ -160,7 +161,7 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
                 fileStem = $"{sourceName}_Service_{serviceId}";
             var uniqueStem = fileStem;
             var suffix = 2;
-            while (!usedNames.Add(uniqueStem + ".ts"))
+            while (!usedNames.Add(uniqueStem + extension))
                 uniqueStem = $"{fileStem}_{suffix++}";
 
             var trackSummary = canExtract
@@ -183,7 +184,7 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
                 PmtPidText = program is null ? "-" : $"0x{program.PmtPid:X4}",
                 TrackSummary = trackSummary,
                 CanExtract = canExtract,
-                OutputFileName = uniqueStem + ".ts"
+                OutputFileName = uniqueStem + extension
             };
             row.SelectionChanged += OnSelectionChanged;
             Services.Add(row);
@@ -326,6 +327,7 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
             return false;
         }
 
+        var extension = "." + (_catalog?.PacketLayout.Extension ?? "ts");
         var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var row in Services.Where(item => item.IsSelected))
         {
@@ -337,8 +339,8 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
                 error = string.Format(LocalizationManager.Instance.String_TsServiceFilter_Error_FileName, row.ServiceName);
                 return false;
             }
-            if (!string.Equals(Path.GetExtension(fileName), ".ts", StringComparison.OrdinalIgnoreCase))
-                fileName += ".ts";
+            if (!string.Equals(Path.GetExtension(fileName), extension, StringComparison.OrdinalIgnoreCase))
+                fileName += extension;
             var outputPath = Path.GetFullPath(Path.Combine(OutputFolder, fileName));
             if (!paths.Add(outputPath))
             {

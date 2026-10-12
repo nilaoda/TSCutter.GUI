@@ -800,18 +800,37 @@ public partial class MainWindowViewModel : ViewModelBase
         : null;
 
     // 顶部菜单不传路径，继续选择文件；工具栏传入当前路径，直接创建独立工具窗口。
-    private async Task<string?> ResolveTsToolFileAsync(string? filePath, string title)
+    private async Task<string?> ResolveTsToolFileAsync(string? filePath, string title, bool standardOnly = false)
     {
         if (filePath is not null)
-            return CanUseCurrentFileTools && File.Exists(filePath) ? filePath : null;
-
-        var settings = new OpenFileDialogSettings
         {
-            Title = title,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
-        };
-        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
-        return result.FirstOrDefault()?.LocalPath;
+            if (!CanUseCurrentFileTools || !File.Exists(filePath))
+                return null;
+        }
+        else
+        {
+            var settings = new OpenFileDialogSettings
+            {
+                Title = title,
+                Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts", "m2ts", "mts", "m2t", "mpegts"])]
+            };
+            var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+            filePath = result.FirstOrDefault()?.LocalPath;
+        }
+        if (standardOnly && filePath is not null)
+        {
+            try
+            {
+                var layout = await Task.Run(() => TsPacketLayout.Detect(filePath));
+                if (layout.PacketSize != 0) layout.RequireSupported(standardOnly: true);
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
+            {
+                await ShowMessageAsync(exception.Message, LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
+                return null;
+            }
+        }
+        return filePath;
     }
 
     [RelayCommand]
@@ -820,13 +839,14 @@ public partial class MainWindowViewModel : ViewModelBase
         filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_OpenTsFile);
         if (filePath is null) return;
 
-        // 检查同步头
-        var syncOffset = await Task.Run(() => TsUtil.FindSyncOffset(filePath));
-        if (syncOffset < 0)
+        try
         {
-            await ShowMessageAsync(
-                LocalizationManager.Instance.String_RawCutter_NoSyncFound,
-                "TSCutter", MessageBoxIcon.Error);
+            var layout = await Task.Run(() => TsPacketLayout.Detect(filePath));
+            layout.RequireSupported();
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
+        {
+            await ShowMessageAsync(exception.Message, "TSCutter", MessageBoxIcon.Error);
             return;
         }
 
@@ -858,7 +878,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task TsTimelineRepairClickAsync(string? filePath)
     {
-        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsTimelineRepair_OpenFile);
+        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsTimelineRepair_OpenFile, standardOnly: true);
         if (filePath is null) return;
 
         var dialogViewModel = _dialogService.CreateViewModel<TsTimelineRepairWindowViewModel>();
@@ -869,7 +889,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task TsFilterClickAsync(string? filePath)
     {
-        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsFilter_OpenFile);
+        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsFilter_OpenFile, standardOnly: true);
         if (filePath is null) return;
 
         var dialogViewModel = _dialogService.CreateViewModel<TsFilterWindowViewModel>();
@@ -995,7 +1015,7 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand]
     private async Task TsRemuxClickAsync(string? filePath)
     {
-        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsRemux_OpenFile);
+        filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_TsRemux_OpenFile, standardOnly: true);
         if (filePath is null) return;
 
         var dialogViewModel = _dialogService.CreateViewModel<TsRemuxWindowViewModel>();
@@ -1024,13 +1044,13 @@ public partial class MainWindowViewModel : ViewModelBase
             Title = LocalizationManager.Instance.String_MergeClips_Title,
             SuggestedStartLocation = new DesktopDialogStorageFolder(
                 Path.GetDirectoryName(sourcePath)!),
-            SuggestedFileName = Path.GetFileNameWithoutExtension(sourcePath) + "_merged.ts",
+            SuggestedFileName = Path.GetFileNameWithoutExtension(sourcePath) + "_merged." + ClipExtension,
             Filters =
             [
-                new(LocalizationManager.Instance.String_TsFiles, ["ts"]),
+                new(LocalizationManager.Instance.String_TsFiles, [ClipExtension]),
                 new(LocalizationManager.Instance.String_AllFiles, "*")
             ],
-            DefaultExtension = "ts"
+            DefaultExtension = ClipExtension
         };
         var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
         if (result?.Path is null)
@@ -1375,7 +1395,7 @@ public partial class MainWindowViewModel : ViewModelBase
                     _configService.CurrentConfig.PreferHardwareDecoding, project.PreviewSelection);
                 await prepared.InitVideoAsync();
                 if (project.Clips.Count > 0 && !prepared.CanBinaryClip)
-                    throw new InvalidDataException("Clips require a 188-byte TS source file.");
+                    throw new InvalidDataException("Clips require a 188-byte TS or 192-byte M2TS source file.");
             }
             catch (Exception exception)
             {
@@ -2071,12 +2091,14 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         try
         {
+            if (failure is NotSupportedException)
+                return false;
             // 仅在预览失败后做有界探测，确认文件可读及 TS 工具支持的包结构。
             var probe = await Task.Run(() => TsScramblingProbe.Probe(VideoPath));
-            if (!probe.Is188ByteTransportStream && failure is not VideoDecoderUnavailableException)
+            if (!probe.IsSupportedTransportStream && failure is not VideoDecoderUnavailableException)
                 return false;
 
-            _currentFileSupportsTsTools = probe.Is188ByteTransportStream;
+            _currentFileSupportsTsTools = probe.IsSupportedTransportStream;
             _previewFailure = failure;
             NotifyVideoCapabilityChanged();
             return true;
@@ -2090,6 +2112,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private static string FormatPreviewFailure(Exception exception) => exception switch
     {
+        NotSupportedException => exception.Message,
         MediaReadTimeoutException => LocalizationManager.Instance.String_MediaReadTimeout,
         ScrambledTsException => LocalizationManager.Instance.String_ScrambledTs,
         NoVideoStreamException => LocalizationManager.Instance.String_NoVideoStream,
@@ -2281,7 +2304,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task SaveVideoAsync()
     {
         var defaultName = Path.GetFileNameWithoutExtension(SelectedClip!.InFileInfo.FullName)
-            + $"_({CommonUtil.FormatSeconds(SelectedClip!.StartTime, true)}-{CommonUtil.FormatSeconds(SelectedClip!.EndTime, true)}).ts";
+            + $"_({CommonUtil.FormatSeconds(SelectedClip!.StartTime, true)}-{CommonUtil.FormatSeconds(SelectedClip!.EndTime, true)}).{ClipExtension}";
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_SaveYourClip,
@@ -2289,10 +2312,10 @@ public partial class MainWindowViewModel : ViewModelBase
             SuggestedFileName = defaultName,
             Filters = new List<FileFilter>()
             {
-                new(LocalizationManager.Instance.String_TsFiles, new[] { "ts" }),
+                new(LocalizationManager.Instance.String_TsFiles, new[] { ClipExtension }),
                 new(LocalizationManager.Instance.String_AllFiles, "*")
             },
-            DefaultExtension = "ts"
+            DefaultExtension = ClipExtension
         };
         var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
         if (result is null) return;
@@ -2370,10 +2393,28 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private static string GenerateClipFileName(PickedClip clip)
+    private string ClipExtension => _videoInstance?.ClipExtension ?? "ts";
+
+    private async Task<string> GetClipExtensionAsync(string sourcePath)
+    {
+        if (PathsEqual(sourcePath, VideoPath))
+            return ClipExtension;
+        try
+        {
+            return await Task.Run(() => TsPacketLayout.Detect(sourcePath).Extension);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            // 队列源文件可能暂时不可读；命名提示不应阻止当前文件加入队列。
+            return Path.GetExtension(sourcePath).Equals(".m2ts", StringComparison.OrdinalIgnoreCase) ||
+                   Path.GetExtension(sourcePath).Equals(".mts", StringComparison.OrdinalIgnoreCase) ? "m2ts" : "ts";
+        }
+    }
+
+    private string GenerateClipFileName(PickedClip clip)
     {
         var sourceName = Path.GetFileNameWithoutExtension(clip.InFileInfo.FullName);
-        return $"{sourceName}_clip{clip.ClipID}_({CommonUtil.FormatSeconds(clip.StartTime, true)}-{CommonUtil.FormatSeconds(clip.EndTime, true)}).ts";
+        return $"{sourceName}_clip{clip.ClipID}_({CommonUtil.FormatSeconds(clip.StartTime, true)}-{CommonUtil.FormatSeconds(clip.EndTime, true)}).{ClipExtension}";
     }
 
     // ---- 导出队列 ----
@@ -2381,20 +2422,29 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanEditSelectedClip))]
     private async Task AddToQueueAsync()
     {
-        var sourceDirectory = Path.GetDirectoryName(SelectedClip!.InFileInfo.FullName)!;
-        var generatedName = GenerateQueueFileName(
-            SelectedClip!.InFileInfo.FullName, SelectedClip!.StartTime, SelectedClip!.EndTime);
+        var clip = SelectedClip!;
+        var extension = ClipExtension;
+        var programId = SelectedOutputProgramId;
+        var sourceDirectory = Path.GetDirectoryName(clip.InFileInfo.FullName)!;
+        var generatedName = await GenerateQueueFileNameAsync(
+            clip.InFileInfo.FullName, clip.StartTime, clip.EndTime);
         var previousItem = ExportQueue.LastOrDefault();
         // 只有上一项确实偏离系统默认名称时，才把它当作用户的手工命名参照；如果用户
         // 始终沿用默认名称，则每个源文件继续独立生成文件名，仅记住输出目录。
         var suggestedName = previousItem is not null && previousItem.EndTimeSeconds >= 0 && !FileNamesEqual(
             previousItem.OutputFileName,
-            GenerateQueueFileName(
+            await GenerateQueueFileNameAsync(
                 previousItem.SourceFilePath,
                 previousItem.StartTimeSeconds,
                 previousItem.EndTimeSeconds))
             ? previousItem.OutputFileName
             : generatedName;
+        if (!ReferenceEquals(SelectedClip, clip) || !CanEditSelectedClip) return;
+        var previousExtension = Path.GetExtension(suggestedName);
+        if (previousExtension.Equals(".ts", StringComparison.OrdinalIgnoreCase) ||
+            previousExtension.Equals(".m2ts", StringComparison.OrdinalIgnoreCase) ||
+            previousExtension.Equals(".mts", StringComparison.OrdinalIgnoreCase))
+            suggestedName = Path.ChangeExtension(suggestedName, extension);
         var suggestedDirectory = !string.IsNullOrWhiteSpace(_lastQueueOutputDirectory) &&
                                  Directory.Exists(_lastQueueOutputDirectory)
             ? _lastQueueOutputDirectory
@@ -2406,13 +2456,13 @@ public partial class MainWindowViewModel : ViewModelBase
             SuggestedFileName = suggestedName,
             Filters = new List<FileFilter>()
             {
-                new(LocalizationManager.Instance.String_TsFiles, new[] { "ts" }),
+                new(LocalizationManager.Instance.String_TsFiles, new[] { extension }),
                 new(LocalizationManager.Instance.String_AllFiles, "*")
             },
-            DefaultExtension = "ts"
+            DefaultExtension = extension
         };
         var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
-        if (result?.Path is null) return;
+        if (result?.Path is null || !ReferenceEquals(SelectedClip, clip) || !CanEditSelectedClip) return;
 
         var outputPath = result.Path.LocalPath;
         if (ExportQueue.Any(item => PathsEqual(item.OutputFilePath, outputPath)))
@@ -2429,17 +2479,17 @@ public partial class MainWindowViewModel : ViewModelBase
         var item = new ExportQueueItem
         {
             QueueItemId = Interlocked.Increment(ref _queueIdCounter),
-            SourceFilePath = SelectedClip!.InFileInfo.FullName,
-            ProgramId = SelectedOutputProgramId,
+            SourceFilePath = clip.InFileInfo.FullName,
+            ProgramId = programId,
             OutputFilePath = outputPath,
-            StartPosition = SelectedClip!.StartPosition,
-            EndPosition = SelectedClip!.EndPosition,
-            SourceFileName = Path.GetFileName(SelectedClip!.InFileInfo.FullName),
-            StartTimeSeconds = SelectedClip!.StartTime,
-            EndTimeSeconds = SelectedClip!.EndTime,
+            StartPosition = clip.StartPosition,
+            EndPosition = clip.EndPosition,
+            SourceFileName = Path.GetFileName(clip.InFileInfo.FullName),
+            StartTimeSeconds = clip.StartTime,
+            EndTimeSeconds = clip.EndTime,
             EstimatedBytes = Math.Max(0,
-                (SelectedClip!.EndPosition > 0 ? SelectedClip!.EndPosition : SelectedClip!.InFileInfo.Length)
-                - SelectedClip!.StartPosition),
+                (clip.EndPosition > 0 ? clip.EndPosition : clip.InFileInfo.Length)
+                - clip.StartPosition),
         };
         ExportQueue.Add(item);
         _lastQueueOutputDirectory = Path.GetDirectoryName(outputPath);
@@ -2475,12 +2525,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private bool HasExportQueueItems => ExportQueue.Count > 0;
 
-    private static string GenerateQueueFileName(
+    private async Task<string> GenerateQueueFileNameAsync(
         string sourceFilePath,
         double startTimeSeconds,
         double endTimeSeconds) =>
         Path.GetFileNameWithoutExtension(sourceFilePath) +
-        $"_({CommonUtil.FormatSeconds(startTimeSeconds, true)}-{CommonUtil.FormatSeconds(endTimeSeconds, true)}).ts";
+        $"_({CommonUtil.FormatSeconds(startTimeSeconds, true)}-{CommonUtil.FormatSeconds(endTimeSeconds, true)}).{await GetClipExtensionAsync(sourceFilePath)}";
 
     private static bool FileNamesEqual(string left, string right) => string.Equals(
         left, right,

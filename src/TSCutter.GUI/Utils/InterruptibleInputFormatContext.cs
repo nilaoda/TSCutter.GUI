@@ -34,7 +34,7 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
             AVInputFormat* inputFormat = null;
             if (tsSyncOffset >= 0)
             {
-                // 已确认 188 字节布局后跳过损坏前缀；保留原文件的绝对包位置。
+                // 已确认 TS 布局后跳过损坏前缀；保留原文件的绝对包位置。
                 inputFormat = FF.av_find_input_format("mpegts");
                 if (inputFormat == null)
                     throw new NotSupportedException("The runtime does not support MPEG-TS input.");
