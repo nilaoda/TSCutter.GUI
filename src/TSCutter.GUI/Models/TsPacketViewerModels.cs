@@ -46,7 +46,10 @@ public enum TsPacketFieldKind
     Dts,
     PointerField,
     TableId,
-    SectionLength
+    SectionLength,
+    M2tsHeader,
+    CopyPermissionIndicator,
+    ArrivalTimestamp
 }
 
 internal enum TsPacketFieldValueKind
@@ -111,6 +114,9 @@ internal sealed class TsPacketViewerSession
     public required string FilePath { get; init; }
     public required long FileSize { get; init; }
     public required long SyncOffset { get; init; }
+    public int PacketSize { get; init; } = TsUtil.TsPacketSize;
+    public TsPacketLayout PacketLayout => TsPacketLayout.FromPacketOffset(PacketSize, SyncOffset);
+    public int PrefixSize => PacketLayout.PrefixSize;
     public required long TotalPackets { get; init; }
     public required TsCheckResult Catalog { get; init; }
 }
@@ -150,7 +156,7 @@ internal sealed class TsPacketFieldDefinition
     public required TsPacketFieldKind Kind { get; init; }
     public string Value { get; init; } = string.Empty;
     public TsPacketFieldValueKind ValueKind { get; init; }
-    public required int StartByte { get; init; }
+    public required int StartByte { get; set; }
     public required int ByteLength { get; init; }
     public int? HighBit { get; init; }
     public int? LowBit { get; init; }

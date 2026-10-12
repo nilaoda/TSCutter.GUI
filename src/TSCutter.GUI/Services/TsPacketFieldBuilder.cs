@@ -12,6 +12,28 @@ internal static class TsPacketFieldBuilder
         TsPacketInfo info,
         bool parsePsiPayload = false)
     {
+        var layout = TsPacketLayout.FromPacketOffset(packet.Length, 0);
+        if (layout.IsM2ts)
+        {
+            var arrival = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(packet[..layout.PrefixSize]);
+            var prefix = Group(TsPacketFieldKind.M2tsHeader, 0, layout.PrefixSize);
+            prefix.Children.Add(new TsPacketFieldDefinition
+            {
+                Kind = TsPacketFieldKind.CopyPermissionIndicator,
+                Value = (arrival >> 30).ToString(),
+                StartByte = 0, ByteLength = layout.PrefixSize, HighBit = 31, LowBit = 30
+            });
+            prefix.Children.Add(new TsPacketFieldDefinition
+            {
+                Kind = TsPacketFieldKind.ArrivalTimestamp,
+                Value = (arrival & 0x3FFFFFFF).ToString(),
+                StartByte = 0, ByteLength = layout.PrefixSize, HighBit = 29, LowBit = 0
+            });
+            var fields = Build(layout.GetPacketBody(packet), info, parsePsiPayload);
+            foreach (var field in fields)
+                ShiftField(field, layout.PrefixSize);
+            return [prefix, .. fields];
+        }
         if (packet.Length != TsUtil.TsPacketSize)
             return [];
 
@@ -54,6 +76,13 @@ internal static class TsPacketFieldBuilder
         if (info.HasPayload)
             roots.Add(BuildPayload(packet, info, parsePsiPayload));
         return roots.ToArray();
+    }
+
+    private static void ShiftField(TsPacketFieldDefinition field, int prefixSize)
+    {
+        field.StartByte += prefixSize;
+        foreach (var child in field.Children)
+            ShiftField(child, prefixSize);
     }
 
     private static TsPacketFieldDefinition BuildAdaptation(ReadOnlySpan<byte> packet, TsPacketInfo info)

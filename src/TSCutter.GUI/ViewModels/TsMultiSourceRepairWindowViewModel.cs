@@ -215,7 +215,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         {
             Title = _text.Strings.String_TsRepair_OpenFiles,
             AllowMultiple = true,
-            Filters = [new(_text.Strings.String_TsFiles, ["ts"])]
+            Filters = [new(_text.Strings.String_TsFiles, ["ts", "m2ts", "mts", "m2t", "mpegts"])]
         };
         var selected = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
         var changed = false;

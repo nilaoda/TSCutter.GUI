@@ -97,6 +97,8 @@ public sealed class TsMultiSourceRepairService
             var normalizedPath = Path.GetFullPath(path);
             var analyzer = new TsStreamAnalyzer();
             // 多源工具只需先探测节目目录；详细事件、码率时间轴和完整指纹均由后续按需扫描负责。
+            var sourceLayout = await Task.Run(() => TsPacketLayout.Detect(path, cancellationToken), cancellationToken).ConfigureAwait(false);
+            if (sourceLayout.PacketSize != 0) sourceLayout.RequireSupported(standardOnly: true);
             var catalog = await Task.Run(() => analyzer.AnalyzeAsync(
                 normalizedPath, cancellationToken: cancellationToken,
                 options: new TsStreamAnalyzeOptions
@@ -105,6 +107,7 @@ public sealed class TsMultiSourceRepairService
                     MaxBytes = 256L * 1024 * 1024,
                     Features = TsStreamAnalyzeFeatures.None
                 }), cancellationToken).ConfigureAwait(false);
+            catalog.PacketLayout.RequireSupported(standardOnly: true);
             sources.Add(new TsRepairSourceAnalysis
             {
                 FilePath = normalizedPath,

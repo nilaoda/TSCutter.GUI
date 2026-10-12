@@ -21,6 +21,7 @@ public sealed class TsRemuxService
     internal TsRemuxPlan BuildPlan(TsCheckResult catalog, TsRemuxConfiguration configuration)
     {
         ArgumentNullException.ThrowIfNull(catalog);
+        catalog.PacketLayout.RequireSupported(standardOnly: true);
         ArgumentNullException.ThrowIfNull(configuration);
         var selectedServices = configuration.Services.ToArray();
         if (selectedServices.Length == 0)
@@ -292,6 +293,8 @@ public sealed class TsRemuxService
     {
         if (string.Equals(Path.GetFullPath(sourcePath), Path.GetFullPath(outputPath), StringComparison.OrdinalIgnoreCase))
             throw new TsRemuxException(TsRemuxErrorCode.SameFile);
+        var sourceLayout = await Task.Run(() => TsPacketLayout.Detect(sourcePath, cancellationToken, Math.Max(0, catalog.SyncOffset)), cancellationToken).ConfigureAwait(false);
+        sourceLayout.RequireSupported(standardOnly: true);
         var plan = BuildPlan(catalog, configuration);
         return await RemuxCoreAsync(sourcePath, outputPath, plan, progress, cancellationToken)
             .ConfigureAwait(false);

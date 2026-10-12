@@ -23,7 +23,7 @@ public sealed class TsCheckReportBuilder(TsCheckTextFormatter text)
         AppendSection(builder, strings.String_TsCheck_Report_Summary);
         AppendField(builder, strings.String_TsCheck_Report_Verdict, text.FormatVerdict(result));
         AppendField(builder, strings.String_TsCheck_Report_PacketSize,
-            string.Format(strings.String_TsCheck_Report_Bytes, TsStreamAnalyzer.PacketSize));
+            string.Format(strings.String_TsCheck_Report_Bytes, result.PacketSize));
         AppendField(builder, strings.String_TsCheck_Report_SyncOffset, result.SyncOffset.ToString("N0"));
         AppendField(builder, strings.String_TsCheck_Report_Packets, result.PacketCount.ToString("N0"));
         AppendField(builder, strings.String_TsCheck_Report_Errors, result.ErrorCount.ToString("N0"));

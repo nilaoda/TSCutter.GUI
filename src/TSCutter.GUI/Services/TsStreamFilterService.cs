@@ -120,6 +120,8 @@ public sealed class TsStreamFilterService
         if (Path.GetFullPath(sourcePath) == Path.GetFullPath(outputPath))
             throw new TsFilterException(TsFilterErrorCode.SameFile);
 
+        var sourceLayout = await Task.Run(() => TsPacketLayout.Detect(sourcePath, cancellationToken, Math.Max(0, catalog.SyncOffset)), cancellationToken).ConfigureAwait(false);
+        sourceLayout.RequireSupported(standardOnly: true);
         var inputBuffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize + PacketSize);
         var outputBuffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize + PacketSize * 16);
         var stopwatch = Stopwatch.StartNew();

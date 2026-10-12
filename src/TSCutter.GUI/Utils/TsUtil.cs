@@ -8,16 +8,17 @@ public static class TsUtil
     public const int TsPacketSize = 188;
     public const byte TsSyncByte = 0x47;
 
-    internal static int FindPacketSync(ReadOnlySpan<byte> data)
+    internal static int FindPacketSync(ReadOnlySpan<byte> data, int stride = TsPacketSize, int prefixSize = 0)
     {
-        var limit = data.Length - TsPacketSize * 3;
+        var limit = data.Length - stride * 3 - prefixSize;
         for (var index = 0; index < limit; index++)
         {
-            if (data[index] == TsSyncByte &&
-                data[index + TsPacketSize] == TsSyncByte &&
-                data[index + TsPacketSize * 2] == TsSyncByte &&
-                data[index + TsPacketSize * 3] == TsSyncByte)
-                return index;
+            var sync = index + prefixSize;
+            if (data[sync] == TsSyncByte &&
+                data[sync + stride] == TsSyncByte &&
+                data[sync + stride * 2] == TsSyncByte &&
+                data[sync + stride * 3] == TsSyncByte)
+                return TsPacketLayout.PreferPacketSync(data, sync, stride) - prefixSize;
         }
         return -1;
     }
@@ -72,8 +73,8 @@ public static class TsUtil
     /// <summary>
     /// Converts a packet index to byte offset in the file.
     /// </summary>
-    public static long PacketToOffset(long packetIndex, long syncOffset)
+    public static long PacketToOffset(long packetIndex, long syncOffset, int packetSize = TsPacketSize)
     {
-        return syncOffset + packetIndex * TsPacketSize;
+        return syncOffset + packetIndex * packetSize;
     }
 }

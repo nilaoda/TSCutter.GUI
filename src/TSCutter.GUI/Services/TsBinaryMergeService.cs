@@ -652,6 +652,8 @@ internal sealed class TsBinaryMergeService
         var info = new FileInfo(fullPath);
         if (!info.Exists)
             throw new TsBinaryMergeException(TsBinaryMergeErrorCode.SourceMissing, fullPath);
+        var layout = await Task.Run(() => TsPacketLayout.Detect(fullPath, cancellationToken), cancellationToken).ConfigureAwait(false);
+        if (layout.PacketSize != 0) layout.RequireSupported(standardOnly: true);
         if (info.Length < RequiredSyncPackets * PacketSize || info.Length % PacketSize != 0)
             throw new TsBinaryMergeException(
                 TsBinaryMergeErrorCode.InvalidPacketStructure,
@@ -673,6 +675,8 @@ internal sealed class TsBinaryMergeService
         string sourcePath,
         CancellationToken cancellationToken)
     {
+        var layout = await Task.Run(() => TsPacketLayout.Detect(stream, cancellationToken), cancellationToken).ConfigureAwait(false);
+        if (layout.PacketSize != 0) layout.RequireSupported(standardOnly: true);
         if (stream.Length < RequiredSyncPackets * PacketSize || stream.Length % PacketSize != 0)
             throw new TsBinaryMergeException(
                 TsBinaryMergeErrorCode.InvalidPacketStructure,
@@ -710,6 +714,8 @@ internal sealed class TsBinaryMergeService
             var info = new FileInfo(path);
             if (!info.Exists)
                 throw new TsBinaryMergeException(TsBinaryMergeErrorCode.SourceMissing, path);
+            var layout = TsPacketLayout.Detect(path);
+            if (layout.PacketSize != 0) layout.RequireSupported(standardOnly: true);
             if (info.Length < RequiredSyncPackets * PacketSize || info.Length % PacketSize != 0)
                 throw new TsBinaryMergeException(
                     TsBinaryMergeErrorCode.InvalidPacketStructure,

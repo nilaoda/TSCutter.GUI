@@ -47,6 +47,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
     public PreviewStreamSelection? StreamSelection { get; private set; }
     public int ProgramCount { get; private set; }
     internal long TsSyncOffset { get; private set; } = -1;
+    internal TsPacketLayout PacketLayout { get; private set; }
+    internal string ClipExtension => PacketLayout.Extension;
     public bool IsHardwareDecoding { get; private set; }
     public bool IsGpuPresentation { get; private set; }
     public VideoPresentationMode PresentationMode { get; private set; } = VideoPresentationMode.SoftwareBitmap;
@@ -92,6 +94,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
         cancellationToken.ThrowIfCancellationRequested();
         var probedBeforeOpening = TsScramblingProbe.ShouldProbeBeforeOpening(videoPath);
         var tsProbe = probedBeforeOpening ? TsScramblingProbe.Probe(videoPath, cancellationToken) : default;
+        if (tsProbe.Layout.PacketSize != 0)
+            tsProbe.Layout.RequireSupported();
         if (tsProbe.HasScrambledPayload)
             throw new ScrambledTsException();
 
@@ -112,7 +116,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
 
         try
         {
-            OpenInput(tsProbe.Is188ByteTransportStream && tsProbe.SyncOffset > 0 ? tsProbe.SyncOffset : -1);
+            OpenInput(tsProbe.IsSupportedTransportStream && tsProbe.Layout.PacketOffset > 0 ? tsProbe.Layout.PacketOffset : -1);
         }
         catch (Exception exception) when (!probedBeforeOpening &&
             exception is FFmpegException or NoVideoStreamException)
@@ -120,12 +124,14 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
             // 普通容器不额外扫描。自动探测失败时才检查其他后缀的损坏 TS。
             tsProbe = TsScramblingProbe.Probe(videoPath, cancellationToken);
             probedBeforeOpening = true;
-            if (!tsProbe.Is188ByteTransportStream)
+            if (tsProbe.Layout.PacketSize != 0)
+                tsProbe.Layout.RequireSupported();
+            if (!tsProbe.IsSupportedTransportStream)
                 throw;
             if (tsProbe.HasScrambledPayload)
                 throw new ScrambledTsException();
             inFc?.Dispose();
-            OpenInput(tsProbe.SyncOffset);
+            OpenInput(tsProbe.Layout.PacketOffset);
         }
 
         var isMpegTs = inFc.InputFormat?.Name == "mpegts";
@@ -134,8 +140,11 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
             tsProbe = TsScramblingProbe.Probe(videoPath, cancellationToken);
         if (isMpegTs && tsProbe.HasScrambledPayload)
             throw new ScrambledTsException();
-        CanBinaryClip = isMpegTs && tsProbe.Is188ByteTransportStream;
-        TsSyncOffset = CanBinaryClip ? tsProbe.SyncOffset : -1;
+        CanBinaryClip = isMpegTs && tsProbe.IsSupportedTransportStream;
+        PacketLayout = tsProbe.Layout;
+        if (isMpegTs)
+            PacketLayout.RequireSupported();
+        TsSyncOffset = CanBinaryClip ? PacketLayout.PacketOffset : -1;
         // 仅可剪辑的 TS 预览需要压缩包摘要；其他格式不分配缓存、不计算摘要。
         if (CanBinaryClip)
             keyPacketBoundaries = new (long, long, PacketEndSignature)[16];
@@ -1001,7 +1010,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                 var pktPosition = frame.PacketPosition;
                 // 延迟输出的帧不一定属于本次输入包；来源未知时保留 -1，避免剪错位置。
                 
-                PositionInFile = pktPosition;
+                PositionInFile = CanBinaryClip && PacketLayout.IsM2ts && pktPosition >= 0 ? PacketLayout.AlignPosition(pktPosition) : pktPosition;
                 if (!isSearchScan)
                     Console.WriteLine($"Current keyFrame PktPosition: {pktPosition}");
                 if (AudioMode && pktPosition == -1)
@@ -1041,7 +1050,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                                 FramePts = pts,
                                 FramePts90k = pts == FF.AV_NOPTS_VALUE ? FF.AV_NOPTS_VALUE
                                     : (long)Math.Round(pts * (double)timeBase.num * 90_000 / timeBase.den),
-                                FramePosition = pktPosition,
+                                FramePosition = PositionInFile,
                                 FrameEndSignature = FindKeyPacketBoundary(pktPosition, pts),
                                 PresentationMode = PresentationMode,
                             };
@@ -1143,7 +1152,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                         FramePts = pts,
                         FramePts90k = pts == FF.AV_NOPTS_VALUE ? FF.AV_NOPTS_VALUE
                             : (long)Math.Round(pts * (double)timeBase.num * 90_000 / timeBase.den),
-                        FramePosition = pktPosition,
+                        FramePosition = PositionInFile,
                         FrameEndSignature = FindKeyPacketBoundary(pktPosition, pts),
                         PresentationMode = PresentationMode,
                     };

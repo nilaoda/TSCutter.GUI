@@ -29,7 +29,7 @@
     <x:String x:Key="String.FailedToLoadVideo">Failed to load video</x:String>
     <x:String x:Key="String.NoVideoStream">The selected file does not contain a video track.</x:String>
     <x:String x:Key="String.MediaReadTimeout">Reading the video timed out. Try seeking to another position or check whether the file is encrypted or damaged.</x:String>
-    <x:String x:Key="String.ScrambledTs">The file contains encrypted (scrambled) 188-byte TS payload and cannot be previewed. Decrypt it to enable preview.</x:String>
+    <x:String x:Key="String.ScrambledTs">The file contains encrypted (scrambled) TS payload and cannot be previewed. Decrypt it to enable preview.</x:String>
     <x:String x:Key="String.SaveYourClip">Save Your Clip</x:String>
     <x:String x:Key="String.Menu.File">_File</x:String>
     <x:String x:Key="String.Menu.Edit">_Edit</x:String>
@@ -210,7 +210,7 @@
     <x:String x:Key="String.MergeClips.Title">Merge Selected Clips</x:String>
     <x:String x:Key="String.MergeClips.Completed">Merge completed.&#10;&#10;Output: {0}</x:String>
     <x:String x:Key="String.MergeClips.OutputMatchesSource">The output file cannot overwrite the source file.</x:String>
-    <x:String x:Key="String.MergeClips.NoSync">No valid 188-byte TS packet structure was found.</x:String>
+    <x:String x:Key="String.MergeClips.NoSync">No valid TS packet structure was found.</x:String>
     <x:String x:Key="String.MergeClips.InvalidRange">The selected clip ranges are invalid or contain no output data.</x:String>
     <x:String x:Key="String.MergeClips.SourceChanged">The source file changed during processing or could not be read.</x:String>
     <x:String x:Key="String.Clips.SelectionSummary">{0} clips / {1}</x:String>
@@ -612,7 +612,7 @@
     <x:String x:Key="String.TsCheck.Type.MissingTimestamp">Missing PTS</x:String>
     <x:String x:Key="String.TsCheck.Type.InvalidPacketHeader">Invalid TS packet header</x:String>
     <x:String x:Key="String.TsCheck.Type.Unknown">Unknown event</x:String>
-    <x:String x:Key="String.TsCheck.Message.NoSync">No sequence of valid 188-byte TS packets was found.</x:String>
+    <x:String x:Key="String.TsCheck.Message.NoSync">No sequence of valid TS packets was found.</x:String>
     <x:String x:Key="String.TsCheck.Message.TrailingBytes">The file ends with {0} byte(s) outside a complete TS packet.</x:String>
     <x:String x:Key="String.TsCheck.Message.SyncRecovered">Lost TS packet alignment; skipped {0} byte(s) before synchronization recovered.</x:String>
     <x:String x:Key="String.TsCheck.Message.TransportError">transport_error_indicator is set.</x:String>
@@ -844,14 +844,14 @@
     <x:String x:Key="String.TsPacketViewer.Fields">Packet fields</x:String>
     <x:String x:Key="String.TsPacketViewer.StandardFieldNames">Standard field names</x:String>
     <x:String x:Key="String.TsPacketViewer.StandardFieldNamesHint">Show field names and enum values in fixed snake_case independent of the interface language.</x:String>
-    <x:String x:Key="String.TsPacketViewer.Hex">188-byte packet data</x:String>
+    <x:String x:Key="String.TsPacketViewer.Hex">Packet data</x:String>
     <x:String x:Key="String.TsPacketViewer.SelectedSummary">Packet {0} · PID {1} ({2}) · Offset {3}</x:String>
     <x:String x:Key="String.TsPacketViewer.InvalidPacket">Invalid packet · {0}</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.Ready">Ready</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.Opening">Reading stream information...</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.Searching">Searching...</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.PidNotFound">No more packets with this PID were found.</x:String>
-    <x:String x:Key="String.TsPacketViewer.Status.NoSync">No valid sequence of 188-byte TS packets was found.</x:String>
+    <x:String x:Key="String.TsPacketViewer.Status.NoSync">No valid sequence of TS packets was found.</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.InvalidPacket">Enter a packet number within the file range.</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.InvalidOffset">Enter a decimal or 0x-prefixed hexadecimal offset within the TS data.</x:String>
     <x:String x:Key="String.TsPacketViewer.Status.Failed">Unable to read the file: {0}</x:String>
@@ -1148,4 +1148,10 @@
     <x:String x:Key="String.PreviewTrack.ClearClipsConfirm">Switching the preview track will clear the current clips and undo history. Queued exports are preserved. Continue?</x:String>
     <x:String x:Key="String.PreviewTrack.SwitchFailed">Failed to switch preview track</x:String>
     <x:String x:Key="String.PreviewTrack.SizeAfterExport">Determined after export</x:String>
+    <x:String x:Key="String.TsLayout.NoSync">No valid TS packet layout was found.</x:String>
+    <x:String x:Key="String.TsLayout.Unsupported">Unsupported {0}-byte TS packets. Only 188-byte TS and 192-byte M2TS are supported.</x:String>
+    <x:String x:Key="String.TsLayout.StandardOnly">This tool currently supports only 188-byte TS packets; {0}-byte packets are not supported.</x:String>
+    <x:String x:Key="String.TsPacketViewer.Field.M2tsHeader">M2TS header</x:String>
+    <x:String x:Key="String.TsPacketViewer.Field.CopyPermission">Copy permission indicator</x:String>
+    <x:String x:Key="String.TsPacketViewer.Field.ArrivalTimestamp">Arrival timestamp</x:String>
 </ResourceDictionary>

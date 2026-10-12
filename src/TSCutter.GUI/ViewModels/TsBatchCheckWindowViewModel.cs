@@ -158,7 +158,7 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
         {
             Title = LocalizationManager.Instance.String_TsBatchCheck_Title,
             AllowMultiple = true,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
+            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts", "m2ts", "mts", "m2t", "mpegts"])]
         });
         await AddFilesAsync(selected.Select(item => item.LocalPath));
     }

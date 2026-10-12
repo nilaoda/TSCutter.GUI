@@ -32,7 +32,7 @@ internal sealed class TsMediaInfoProbe
             {
                 var start = file.Position;
                 var length = file.ReadAtLeast(buffer.AsSpan(0, 64 * 1024), 64 * 1024, false);
-                var layout = TsScramblingProbe.FindPacketLayout(buffer.AsSpan(0, length));
+                var layout = TsPacketLayout.FindLayout(buffer.AsSpan(0, length));
                 if (layout.PacketSize != 0)
                 {
                     sync = start + layout.SyncOffset;
@@ -40,7 +40,7 @@ internal sealed class TsMediaInfoProbe
                     break;
                 }
                 if (length < 64 * 1024) break;
-                file.Position -= 204 * 4;
+                file.Position -= TsPacketLayout.SyncProbeOverlapBytes;
             }
             if (sync < 0) return null;
             var result = new TsMediaInfoProbe();

@@ -57,7 +57,6 @@ internal struct TsSplitPesHeader
 internal sealed class TsSplitPesHeaderReader : IDisposable
 {
     private const int PacketSize = TsUtil.TsPacketSize;
-    private const int PeekBufferSize = PacketSize * 348;
     private byte[]? peekBuffer;
 
     public static bool NeedsRead(ReadOnlySpan<byte> packet)
@@ -72,16 +71,19 @@ internal sealed class TsSplitPesHeaderReader : IDisposable
     }
 
     public async ValueTask<TsSplitPesHeader> ReadAsync(FileStream source, byte[] copyBuffer,
-        long chunkStart, int chunkLength, int packetOffset, long rangeEnd, CancellationToken token)
+        long chunkStart, int chunkLength, int packetOffset, long rangeEnd, CancellationToken token,
+        TsPacketLayout? packetLayout = null)
     {
+        var layout = packetLayout ?? TsPacketLayout.FromPacketOffset(PacketSize, 0);
+        var stride = layout.PacketSize;
         var packetPosition = chunkStart + packetOffset;
         var scanEnd = Math.Min(rangeEnd,
             packetPosition + Math.Min(long.MaxValue - packetPosition, TsClipBoundaryResolver.MaximumScanBytes));
-        var state = new ReadState(copyBuffer.AsSpan(packetOffset, PacketSize));
+        var state = new ReadState(layout.GetPacketBody(copyBuffer.AsSpan(), packetOffset));
         var buffer = copyBuffer;
         var bufferStart = chunkStart;
         var bufferLength = chunkLength;
-        var offset = packetOffset + PacketSize;
+        var offset = packetOffset + stride;
         var savedPosition = source.Position;
         var didRead = false;
         var started = Stopwatch.GetTimestamp();
@@ -91,29 +93,29 @@ internal sealed class TsSplitPesHeaderReader : IDisposable
             {
                 token.ThrowIfCancellationRequested();
                 var position = bufferStart + offset;
-                if (position > scanEnd - PacketSize)
+                if (position > scanEnd - stride)
                 {
                     if (state.Header.HasTimestampHeader)
                         throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
                     state.Header.Invalidate();
                     break;
                 }
-                if (offset + PacketSize > bufferLength)
+                if (offset + stride > bufferLength)
                 {
                     if (Stopwatch.GetElapsedTime(started) > TimeSpan.FromSeconds(30))
                         throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
-                    peekBuffer ??= ArrayPool<byte>.Shared.Rent(PeekBufferSize);
+                    peekBuffer ??= ArrayPool<byte>.Shared.Rent(TsPacketLayout.M2tsPacketSize * 348);
                     buffer = peekBuffer;
                     bufferStart = position;
-                    bufferLength = (int)Math.Min(PeekBufferSize, scanEnd - position);
-                    bufferLength -= bufferLength % PacketSize;
+                    bufferLength = (int)Math.Min(stride * 348, scanEnd - position);
+                    bufferLength -= bufferLength % stride;
                     source.Position = position;
                     didRead = true;
                     await source.ReadExactlyAsync(buffer.AsMemory(0, bufferLength), token).ConfigureAwait(false);
                     offset = 0;
                 }
-                state.Append(buffer.AsSpan(offset, PacketSize), position);
-                offset += PacketSize;
+                state.Append(layout.GetPacketBody(buffer.AsSpan(), offset), position);
+                offset += stride;
             }
             return state.Header;
         }

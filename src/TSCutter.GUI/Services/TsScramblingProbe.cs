@@ -24,7 +24,14 @@ internal static class TsScramblingProbe
     public static bool HasScrambledPayload(string path) =>
         ShouldProbeBeforeOpening(path) && Probe(path).HasScrambledPayload;
 
-    internal static (bool Is188ByteTransportStream, bool HasScrambledPayload, long SyncOffset) Probe(
+    internal readonly record struct ProbeResult(TsPacketLayout Layout, bool HasScrambledPayload)
+    {
+        public bool Is188ByteTransportStream => Layout.PacketSize == 188;
+        public bool IsSupportedTransportStream => Layout.IsSupported;
+        public long SyncOffset => Layout.SyncOffset;
+    }
+
+    internal static ProbeResult Probe(
         string path, CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -36,6 +43,8 @@ internal static class TsScramblingProbe
                 ProbeBufferBytes, throwOnEndOfStream: false);
             var bytesRead = length;
             long syncOffset = -1;
+            var packetSize = 0;
+            long nextSyncOffset = -1;
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -44,21 +53,40 @@ internal static class TsScramblingProbe
                 if (syncOffset < 0)
                 {
                     var layout = FindPacketLayout(data);
-                    if (layout.PacketSize != 0 && layout.PacketSize != TsUtil.TsPacketSize)
-                        return (false, false, -1);
-                    if (layout.PacketSize == TsUtil.TsPacketSize)
+                    if (layout.PacketSize == 0 && length < ProbeBufferBytes)
+                        layout = TsPacketLayout.FindShortLayout(data);
+                    if (layout.PacketSize != 0)
                     {
                         syncOffset = bytesRead - length + layout.SyncOffset;
+                        packetSize = layout.PacketSize;
+                        nextSyncOffset = syncOffset;
                         data = data[layout.SyncOffset..];
                     }
                 }
-                if (syncOffset >= 0 && HasScrambledPayload(data))
-                    return (true, true, syncOffset);
+                if (syncOffset >= 0)
+                {
+                    // 每个缓冲的起点可能落在包中间，按绝对偏移恢复同步相位。
+                    var first = (int)((nextSyncOffset - (bytesRead - data.Length)) % packetSize);
+                    if (first < 0) first += packetSize;
+                    for (var offset = first; offset + TsUtil.TsPacketSize <= data.Length; offset += packetSize)
+                    {
+                        if (data[offset] != TsUtil.TsSyncByte)
+                        {
+                            var resync = TsUtil.FindPacketSync(data[offset..], packetSize);
+                            if (resync < 0) break;
+                            offset += resync;
+                        }
+                        nextSyncOffset = bytesRead - data.Length + offset + packetSize;
+                        var info = TsPacketParser.Parse(data.Slice(offset, TsUtil.TsPacketSize));
+                        if (info.IsValid && info.Pid != 0x1fff && info.HasPayload && info.ScramblingControl >= 2)
+                            return new(new(packetSize, syncOffset), true);
+                    }
+                }
                 if (length < ProbeBufferBytes || bytesRead >= MaximumProbeBytes)
-                    return (syncOffset >= 0, false, syncOffset);
+                    return new(new(packetSize, syncOffset), false);
 
                 // 保留最大包步长的同步窗口，也覆盖跨块的加扰包。
-                const int overlap = 204 * 4;
+                const int overlap = TsPacketLayout.SyncProbeOverlapBytes;
                 buffer.AsSpan(length - overlap, overlap).CopyTo(buffer);
                 var requested = Math.Min(ProbeBufferBytes - overlap, MaximumProbeBytes - bytesRead);
                 var read = input.ReadAtLeast(buffer.AsSpan(overlap, requested),
@@ -73,32 +101,8 @@ internal static class TsScramblingProbe
         }
     }
 
-    internal static (int PacketSize, int SyncOffset) FindPacketLayout(ReadOnlySpan<byte> data)
-    {
-        ReadOnlySpan<int> packetSizes = [188, 192, 204];
-        for (var offset = 0; offset + TsUtil.TsPacketSize * 4 <= data.Length; offset++)
-        {
-            if (data[offset] != TsUtil.TsSyncByte)
-                continue;
-            foreach (var size in packetSizes)
-            {
-                if (offset + size * 3 + TsUtil.TsPacketSize > data.Length)
-                    continue;
-                var valid = true;
-                for (var index = 0; index < 4; index++)
-                {
-                    if (!TsPacketParser.Parse(data.Slice(offset + size * index, TsUtil.TsPacketSize)).IsValid)
-                    {
-                        valid = false;
-                        break;
-                    }
-                }
-                if (valid)
-                    return (size, offset);
-            }
-        }
-        return (0, -1);
-    }
+    internal static (int PacketSize, int SyncOffset) FindPacketLayout(ReadOnlySpan<byte> data, bool validateHeaders = true) =>
+        TsPacketLayout.FindLayout(data, validateHeaders);
 
     internal static bool HasScrambledPayload(ReadOnlySpan<byte> data)
     {

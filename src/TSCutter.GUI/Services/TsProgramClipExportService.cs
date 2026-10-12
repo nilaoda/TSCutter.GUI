@@ -47,17 +47,20 @@ internal sealed class TsProgramClipExportService
             FileOptions.Asynchronous | FileOptions.SequentialScan);
         var probe = await Task.Run(() => TsScramblingProbe.Probe(sourcePath, cancellationToken),
             cancellationToken).ConfigureAwait(false);
-        var sync = probe.SyncOffset;
-        if (!probe.Is188ByteTransportStream)
+        var layout = probe.Layout;
+        layout.RequireSupported();
+        var stride = layout.PacketSize;
+        var sync = layout.PacketOffset;
+        if (!probe.IsSupportedTransportStream)
             throw new TsFilterException(TsFilterErrorCode.SyncLost, 0);
         var sourceLength = source.Length;
         var start = startPosition == 0 ? sync : startPosition;
-        var end = endPosition < 0 ? sourceLength - (sourceLength - sync) % PacketSize : endPosition;
+        var end = endPosition < 0 ? sourceLength - (sourceLength - sync) % stride : endPosition;
         if (start < sync || end <= start || end > sourceLength ||
-            (start - sync) % PacketSize != 0 || (end - sync) % PacketSize != 0)
+            (start - sync) % stride != 0 || (end - sync) % stride != 0)
             throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
 
-        var buffer = ArrayPool<byte>.Shared.Rent(BufferSize);
+        var buffer = ArrayPool<byte>.Shared.Rent(stride * 4096);
         var stopwatch = Stopwatch.StartNew();
         TsServiceFilterService.OutputContext? output = null;
         try
@@ -70,10 +73,10 @@ internal sealed class TsProgramClipExportService
             while (processed < total)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var requested = (int)Math.Min(BufferSize, total - processed);
+                var requested = (int)Math.Min(stride * 4096, total - processed);
                 await source.ReadExactlyAsync(buffer.AsMemory(0, requested), cancellationToken).ConfigureAwait(false);
-                for (var offset = 0; offset < requested; offset += PacketSize)
-                    output.WriteFilteredPacket(buffer.AsSpan(offset, PacketSize), start + processed + offset);
+                for (var offset = 0; offset < requested; offset += stride)
+                    output.WriteFilteredPacket(buffer.AsSpan(offset, stride), start + processed + offset);
                 await output.FlushIfNeededAsync(cancellationToken).ConfigureAwait(false);
                 processed += requested;
                 progress?.Report(new TsFilterProgress(processed, total,

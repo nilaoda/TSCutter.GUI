@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using TSCutter.GUI.Services;
 
 namespace TSCutter.GUI.Utils;
 
@@ -11,7 +12,7 @@ internal static class TsFileDropHelper
         ? StringComparer.Ordinal : StringComparer.OrdinalIgnoreCase;
 
     public static bool HasTsExtension(string path) =>
-        string.Equals(Path.GetExtension(path), ".ts", StringComparison.OrdinalIgnoreCase);
+        TsScramblingProbe.ShouldProbeBeforeOpening(path);
 
     public static bool IsSupportedPath(string path) =>
         Directory.Exists(path) || File.Exists(path) && HasTsExtension(path);

@@ -152,7 +152,7 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
         {
             Title = LocalizationManager.Instance.String_TsBinaryMerge_AddFilesTitle,
             AllowMultiple = true,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])]
+            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts", "m2ts", "mts", "m2t", "mpegts"])]
         };
         var selected = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
         await AddFilesAsync(selected.Select(item => item.LocalPath));
