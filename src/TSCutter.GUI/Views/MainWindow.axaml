@@ -400,6 +400,7 @@
                                                           MinZoomFactor="{Binding MinZoomFactor}"
                                                           OffsetX="{Binding OffsetX, Mode=TwoWay}"
                                                           OffsetY="{Binding OffsetY, Mode=TwoWay}"
+                                                          ShowNavigator="{Binding ViewerPreferences.ShowImageNavigator}"
                                                           Image="{Binding DecodedBitmap}"
                                                           GpuFrame="{Binding DecodedGpuFrame}"
                                                           SourcePixelSize="{Binding DecodedFrameSourceSize}"

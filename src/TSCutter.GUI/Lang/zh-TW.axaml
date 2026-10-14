@@ -169,6 +169,8 @@
     <x:String x:Key="String.Settings.CurrentLightTheme">目前淺色佈景主題</x:String>
     <x:String x:Key="String.Settings.CurrentDarkTheme">目前深色佈景主題</x:String>
     <x:String x:Key="String.Settings.AutoCheckForUpdates">程式啟動後自動檢查更新</x:String>
+    <x:String x:Key="String.Settings.ShowImageNavigator">顯示影像導覽小地圖</x:String>
+    <x:String x:Key="String.Settings.ShowImageNavigatorTip">畫面超出可視區域時顯示導覽縮圖，可點擊或拖曳定位。</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecoding">優先使用硬體解碼</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecodingTip">Windows 和 macOS 在裝置支援時可用；不支援的編碼會自動使用軟體解碼。</x:String>
     <x:String x:Key="String.Status.HardwareDecoding">HW</x:String>

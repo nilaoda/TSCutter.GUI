@@ -88,4 +88,51 @@ public sealed class ImageViewerTests
 
         Assert.Equal(expected, result, 6);
     }
+
+    [Fact]
+    public void NavigatorIsHiddenWhenFullImageFitsOrViewerIsTooSmall()
+    {
+        Assert.Null(ImageViewer.CalculateNavigatorLayout(new Size(800, 600), new Rect(0, 75, 800, 450)));
+        Assert.Null(ImageViewer.CalculateNavigatorLayout(new Size(80, 60), new Rect(-10, -10, 160, 120)));
+    }
+
+    [Fact]
+    public void NavigatorMapsVisibleAreaAndPreservesDisplayAspectRatio()
+    {
+        var layout = ImageViewer.CalculateNavigatorLayout(new Size(800, 600), new Rect(-400, -150, 1600, 900))!.Value;
+
+        Assert.Equal(120, layout.Image.Width);
+        Assert.Equal(67.5, layout.Image.Height);
+        Assert.Equal(new Rect(layout.Image.X + 30, layout.Image.Y + 11.25, 60, 45), layout.Viewport);
+        Assert.Equal(12, 800 - layout.Bounds.Right);
+        Assert.Equal(12, 600 - layout.Bounds.Bottom);
+    }
+
+    [Fact]
+    public void NavigatorRemainsAvailableToRecoverAnOffscreenImage()
+    {
+        var layout = ImageViewer.CalculateNavigatorLayout(new Size(800, 600), new Rect(900, 700, 1600, 900));
+
+        Assert.NotNull(layout);
+        Assert.Equal(default, layout.Value.Viewport);
+    }
+
+    [Theory]
+    [InlineData(0.5, 0.5, -400, -150)]
+    [InlineData(-1, -1, 0, 0)]
+    [InlineData(2, 2, -800, -300)]
+    public void NavigatorNavigationCentersTargetAndClampsAtImageEdges(double x, double y, double offsetX, double offsetY)
+    {
+        var offset = ImageViewer.CalculateNavigatorOffset(new Point(x, y), new Size(800, 600), new Size(1600, 900));
+
+        Assert.Equal(new Point(offsetX, offsetY), offset);
+    }
+
+    [Fact]
+    public void NavigatorKeepsTheUncroppedAxisCentered()
+    {
+        var offset = ImageViewer.CalculateNavigatorOffset(new Point(0, 1), new Size(800, 600), new Size(1600, 450));
+
+        Assert.Equal(new Point(0, 75), offset);
+    }
 }

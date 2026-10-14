@@ -91,6 +91,8 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
         App.LocalizationService.LanguageChanged += OnLanguageChanged;
     }
 
+    public AppConfig ViewerPreferences => configService.CurrentConfig;
+
     internal static ThumbnailSheetPreferences NormalizePreferences(ThumbnailSheetPreferences? preferences)
     {
         preferences ??= new ThumbnailSheetPreferences();

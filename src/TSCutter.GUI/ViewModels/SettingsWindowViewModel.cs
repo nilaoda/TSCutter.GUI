@@ -22,6 +22,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     [ObservableProperty]
     private bool _autoCheckForUpdates;
     [ObservableProperty]
+    private bool _showImageNavigator;
+    [ObservableProperty]
     private bool _preferHardwareDecoding;
     [ObservableProperty]
     private ThemeModel _selectedTheme;
@@ -44,6 +46,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _locService = localizationService;
         AutoDetectLanguage = _configService.CurrentConfig.AutoDetectLanguage;
         AutoCheckForUpdates = _configService.CurrentConfig.AutoCheckForUpdates;
+        ShowImageNavigator = _configService.CurrentConfig.ShowImageNavigator;
         PreferHardwareDecoding = _configService.CurrentConfig.PreferHardwareDecoding;
         SelectedTheme = _configService.CurrentConfig.ThemeModel;
         SelectedDarkTheme = _configService.CurrentConfig.DarkThemeModel;
@@ -80,6 +83,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         // 更新配置
         _configService.CurrentConfig.AutoDetectLanguage = AutoDetectLanguage;
         _configService.CurrentConfig.AutoCheckForUpdates = AutoCheckForUpdates;
+        _configService.CurrentConfig.ShowImageNavigator = ShowImageNavigator;
         _configService.CurrentConfig.PreferHardwareDecoding = PreferHardwareDecoding;
         _configService.CurrentConfig.ThemeVariantMode = SelectedThemeVariantMode;
 
