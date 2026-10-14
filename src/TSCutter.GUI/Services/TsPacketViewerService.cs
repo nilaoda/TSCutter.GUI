@@ -16,7 +16,12 @@ internal sealed class TsPacketViewerService : IAsyncDisposable
     private FileStream? _stream;
     private TsPacketViewerSession? _session;
 
-    public async Task<TsPacketViewerSession> OpenAsync(
+    public Task<TsPacketViewerSession> OpenAsync(
+        string filePath,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => OpenCoreAsync(filePath, cancellationToken), cancellationToken);
+
+    private async Task<TsPacketViewerSession> OpenCoreAsync(
         string filePath,
         CancellationToken cancellationToken = default)
     {
@@ -53,7 +58,13 @@ internal sealed class TsPacketViewerService : IAsyncDisposable
         return _session;
     }
 
-    public async Task<IReadOnlyList<TsPacketData>> ReadWindowAsync(
+    public Task<IReadOnlyList<TsPacketData>> ReadWindowAsync(
+        long startPacket,
+        int packetCount,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => ReadWindowCoreAsync(startPacket, packetCount, cancellationToken), cancellationToken);
+
+    private async Task<IReadOnlyList<TsPacketData>> ReadWindowCoreAsync(
         long startPacket,
         int packetCount,
         CancellationToken cancellationToken = default)
@@ -86,7 +97,14 @@ internal sealed class TsPacketViewerService : IAsyncDisposable
         return rows;
     }
 
-    public async Task<long?> FindSamePidAsync(
+    public Task<long?> FindSamePidAsync(
+        long currentPacket,
+        int pid,
+        bool forward,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => FindSamePidCoreAsync(currentPacket, pid, forward, cancellationToken), cancellationToken);
+
+    private async Task<long?> FindSamePidCoreAsync(
         long currentPacket,
         int pid,
         bool forward,

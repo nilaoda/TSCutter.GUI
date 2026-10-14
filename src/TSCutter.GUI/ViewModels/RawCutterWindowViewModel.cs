@@ -214,19 +214,19 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
     /// Initializes the view model with the given TS file path.
     /// Must be called before displaying the window.
     /// </summary>
-    public void Initialize(string filePath)
-    {
-        Initialize(filePath, null);
-    }
+    public Task InitializeAsync(string filePath) => InitializeAsync(filePath, null);
 
-    internal void Initialize(string filePath, TsPacketRange? initialRange)
+    internal async Task InitializeAsync(string filePath, TsPacketRange? initialRange)
     {
+        var (fileSize, layout) = await Task.Run(() =>
+        {
+            var size = new FileInfo(filePath).Length;
+            var detected = TsPacketLayout.Detect(filePath);
+            detected.RequireSupported();
+            return (size, detected);
+        });
         FilePath = filePath;
-        var fileInfo = new FileInfo(filePath);
-        FileSize = fileInfo.Length;
-
-        var layout = TsPacketLayout.Detect(filePath);
-        layout.RequireSupported();
+        FileSize = fileSize;
         PacketSize = layout.PacketSize;
         _extension = layout.Extension;
         SyncOffset = layout.PacketOffset;

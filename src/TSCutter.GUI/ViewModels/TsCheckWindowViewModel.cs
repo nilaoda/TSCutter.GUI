@@ -500,7 +500,7 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
     }
 
     [RelayCommand(CanExecute = nameof(CanLocateSelectedEvent))]
-    private void OpenSelectedInRawCutter()
+    private async Task OpenSelectedInRawCutterAsync()
     {
         var result = _result;
         var item = SelectedEventRow?.Item;
@@ -509,8 +509,22 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
 
         var range = TsAnomalyNavigationUtil.CalculateSampleRange(result, item);
         var viewModel = _dialogService.CreateViewModel<RawCutterWindowViewModel>();
-        viewModel.Initialize(FilePath, range);
-        _dialogService.Show(null, viewModel);
+        try
+        {
+            await viewModel.InitializeAsync(FilePath, range);
+            if (_isClosing)
+            {
+                viewModel.OnClosed();
+                return;
+            }
+            _dialogService.Show(null, viewModel);
+        }
+        catch (Exception exception)
+        {
+            viewModel.OnClosed();
+            if (!_isClosing)
+                StatusText = string.Format(_text.Strings.String_TsCheck_Status_Failed, exception.Message);
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanCopySelectedLocation))]

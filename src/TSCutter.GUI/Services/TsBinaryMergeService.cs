@@ -126,7 +126,9 @@ internal sealed class TsBinaryMergeService
         if (fullSourcePaths.Any(path => PathsEqual(path, fullOutputPath)))
             throw new TsBinaryMergeException(TsBinaryMergeErrorCode.OutputMatchesSource);
 
-        var snapshots = SnapshotSources(fullSourcePaths);
+        // 包结构探测会逐个打开源文件；大量分片时必须先让出界面线程。
+        var snapshots = await Task.Run(() => SnapshotSources(fullSourcePaths, progress, cancellationToken),
+            cancellationToken).ConfigureAwait(false);
         if (analysis is not null)
         {
             ValidateAnalysis(analysis, snapshots);
@@ -706,15 +708,28 @@ internal sealed class TsBinaryMergeService
     }
 
     private static List<TsBinaryMergeSourceSnapshot> SnapshotSources(
-        IReadOnlyList<string> sourcePaths)
+        IReadOnlyList<string> sourcePaths,
+        IProgress<TsBinaryMergeProgress>? progress,
+        CancellationToken cancellationToken)
     {
         var snapshots = new List<TsBinaryMergeSourceSnapshot>(sourcePaths.Count);
-        foreach (var path in sourcePaths)
+        var lastProgressTimestamp = Stopwatch.GetTimestamp();
+        for (var index = 0; index < sourcePaths.Count; index++)
         {
+            var now = Stopwatch.GetTimestamp();
+            if (progress is not null && (index == 0 || index == sourcePaths.Count - 1 ||
+                Stopwatch.GetElapsedTime(lastProgressTimestamp, now) >= TimeSpan.FromMilliseconds(100)))
+            {
+                lastProgressTimestamp = now;
+                progress.Report(new TsBinaryMergeProgress(
+                    TsBinaryMergeProgressPhase.Validating, index, sourcePaths.Count, 0, 0, 0, 0));
+            }
+            cancellationToken.ThrowIfCancellationRequested();
+            var path = sourcePaths[index];
             var info = new FileInfo(path);
             if (!info.Exists)
                 throw new TsBinaryMergeException(TsBinaryMergeErrorCode.SourceMissing, path);
-            var layout = TsPacketLayout.Detect(path);
+            var layout = TsPacketLayout.Detect(path, cancellationToken);
             if (layout.PacketSize != 0) layout.RequireSupported(standardOnly: true);
             if (info.Length < RequiredSyncPackets * PacketSize || info.Length % PacketSize != 0)
                 throw new TsBinaryMergeException(

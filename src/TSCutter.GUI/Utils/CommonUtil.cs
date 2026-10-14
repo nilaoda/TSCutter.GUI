@@ -48,8 +48,12 @@ public static partial class CommonUtil
         return false;
     }
 
-    public static async Task CopyFileAsync(FileInfo startFile, string destinationFile, long start = 0, long end = -1, Action<double, long>? progress = null, CancellationToken cancellationToken = default)
+    public static Task CopyFileAsync(FileInfo startFile, string destinationFile, long start = 0, long end = -1, Action<double, long>? progress = null, CancellationToken cancellationToken = default) =>
+        Task.Run(() => CopyFileCoreAsync(startFile, destinationFile, start, end, progress, cancellationToken), cancellationToken);
+
+    private static async Task CopyFileCoreAsync(FileInfo startFile, string destinationFile, long start, long end, Action<double, long>? progress, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (end < 0 || end < start)
             end = startFile.Length;
 
@@ -60,6 +64,7 @@ public static partial class CommonUtil
         var totalBytesRead = 0L;
 
         await using var sourceStream = MediaFileUtil.OpenRead(startFile.FullName);
+        cancellationToken.ThrowIfCancellationRequested();
         await using var destinationStream = new FileStream(destinationFile, FileMode.Create, FileAccess.Write);
 
         sourceStream.Seek(start, SeekOrigin.Begin);
@@ -82,7 +87,7 @@ public static partial class CommonUtil
         }
 
         // Final progress report (100%)
-        progress?.Invoke(100, bytesRead);
+        progress?.Invoke(100, 0);
     }
     
     public static string FormatFileSize(double fileSize)

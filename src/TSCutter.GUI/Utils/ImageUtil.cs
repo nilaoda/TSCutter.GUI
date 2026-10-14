@@ -299,10 +299,14 @@ public static class ImageUtil
 
             if (!isPng)
             {
-                using var jpgStream = new MemoryStream();
-                SaveAsJpeg(bitmap, jpgStream);
+                var jpeg = await Task.Run(() =>
+                {
+                    using var jpgStream = new MemoryStream();
+                    SaveAsJpeg(bitmap, jpgStream);
+                    return jpgStream.ToArray();
+                });
                 var jpgItem = new DataTransferItem();
-                jpgItem.Set(DataFormat.CreateBytesPlatformFormat("public.jpeg"), jpgStream.ToArray());
+                jpgItem.Set(DataFormat.CreateBytesPlatformFormat("public.jpeg"), jpeg);
                 dt.Add(jpgItem);
             }
 
