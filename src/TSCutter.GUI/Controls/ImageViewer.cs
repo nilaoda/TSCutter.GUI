@@ -273,7 +273,7 @@ public class ImageViewer : Control
         AddHandler(PointerReleasedEvent, OnPointerReleased, RoutingStrategies.Tunnel);
         AddHandler(PointerMovedEvent, OnPointerMoved, RoutingStrategies.Tunnel);
         AddHandler(PointerWheelChangedEvent, OnPointerWheelChanged, RoutingStrategies.Tunnel);
-        Application.Current!.ActualThemeVariantChanged += (sender, e) =>
+        ActualThemeVariantChanged += (sender, e) =>
         {
             // Re-Render after theme changed
             InvalidateVisual();
