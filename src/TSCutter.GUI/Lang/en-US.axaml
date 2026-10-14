@@ -169,6 +169,8 @@
     <x:String x:Key="String.Settings.CurrentLightTheme">Light theme</x:String>
     <x:String x:Key="String.Settings.CurrentDarkTheme">Dark theme</x:String>
     <x:String x:Key="String.Settings.AutoCheckForUpdates">Auto check for updates after app started</x:String>
+    <x:String x:Key="String.Settings.ShowImageNavigator">Show image navigator</x:String>
+    <x:String x:Key="String.Settings.ShowImageNavigatorTip">Show a navigation thumbnail when the image extends beyond the view. Click or drag to move the visible area.</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecoding">Prefer hardware decoding</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecodingTip">Available on Windows and macOS when a compatible device is present. Unsupported codecs automatically use software decoding.</x:String>
     <x:String x:Key="String.Status.HardwareDecoding">HW</x:String>

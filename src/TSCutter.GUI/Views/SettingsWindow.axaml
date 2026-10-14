@@ -120,6 +120,9 @@
                     </HeaderedContentControl>
                     <CheckBox IsChecked="{Binding AutoCheckForUpdates}"
                               Content="{DynamicResource String.Settings.AutoCheckForUpdates}" />
+                    <CheckBox IsChecked="{Binding ShowImageNavigator}"
+                              Content="{DynamicResource String.Settings.ShowImageNavigator}"
+                              ToolTip.Tip="{DynamicResource String.Settings.ShowImageNavigatorTip}" />
                     <CheckBox IsChecked="{Binding PreferHardwareDecoding}"
                               IsEnabled="{Binding IsHardwareDecodingAvailable}"
                               Content="{DynamicResource String.Settings.PreferHardwareDecoding}"

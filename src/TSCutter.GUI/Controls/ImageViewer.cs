@@ -4,6 +4,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.Immutable;
 using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
 using CommunityToolkit.Mvvm.Input;
@@ -28,6 +29,7 @@ public class ImageViewer : Control
             ZoomProperty,
             OffsetXProperty,
             OffsetYProperty,
+            ShowNavigatorProperty,
             UseHighQualityInterpolationProperty);
     }
 
@@ -53,6 +55,9 @@ public class ImageViewer : Control
 
     public static readonly StyledProperty<bool> UseHighQualityInterpolationProperty =
         AvaloniaProperty.Register<ImageViewer, bool>(nameof(UseHighQualityInterpolation));
+
+    public static readonly StyledProperty<bool> ShowNavigatorProperty =
+        AvaloniaProperty.Register<ImageViewer, bool>(nameof(ShowNavigator), true);
 
     /// <summary>
     /// When true, the image automatically scales to fit the control bounds when the control is resized.
@@ -122,6 +127,12 @@ public class ImageViewer : Control
         set => SetValue(UseHighQualityInterpolationProperty, value);
     }
 
+    public bool ShowNavigator
+    {
+        get => GetValue(ShowNavigatorProperty);
+        set => SetValue(ShowNavigatorProperty, value);
+    }
+
     public bool AutoFit
     {
         get => GetValue(AutoFitProperty);
@@ -180,6 +191,9 @@ public class ImageViewer : Control
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
+
+        if ((!ShowNavigator && _isNavigatorDragging) || (Image is null && GpuFrame is null))
+            StopDragging();
 
         var sourceChanged = change.Property == ImageProperty || change.Property == GpuFrameProperty;
         var geometryChanged = sourceChanged || change.Property == SourcePixelSizeProperty;
@@ -247,6 +261,10 @@ public class ImageViewer : Control
 
     private Point _lastDragPoint;
     private bool _isDragging;
+    private bool _isNavigatorDragging;
+    private bool _navigatorMoved;
+    private Vector _navigatorDragOffset;
+    private IPointer? _dragPointer;
     private DateTime _lastZoomTime = DateTime.Now;
     private const int ZoomIntervalMs = 16; // 60 FPS
     public ImageViewer()
@@ -264,26 +282,63 @@ public class ImageViewer : Control
 
     private void OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (Image is null && GpuFrame is null) return;
-        
-        _lastDragPoint = e.GetPosition(this);
-        _isDragging = true;
+        if ((Image is null && GpuFrame is null) || _dragPointer is not null) return;
+
+        var point = e.GetPosition(this);
+        var navigator = GetNavigatorLayout();
+        if (navigator is { } layout && layout.Bounds.Contains(point))
+        {
+            if (!e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
+                return;
+            _isNavigatorDragging = true;
+            _navigatorMoved = false;
+            _lastDragPoint = point;
+            _navigatorDragOffset = layout.Viewport.Contains(point)
+                ? point - layout.Viewport.Center
+                : default;
+            if (!layout.Viewport.Contains(point))
+                NavigateTo(point, layout);
+        }
+        else
+        {
+            _lastDragPoint = point;
+            _isDragging = true;
+        }
+        _dragPointer = e.Pointer;
+        e.Pointer.Capture(this);
         e.Handled = true;
     }
 
     private void OnPointerReleased(object? sender, PointerReleasedEventArgs e)
     {
-        if (Image is null && GpuFrame is null) return;
-
-        _isDragging = false;
+        if (!ReferenceEquals(_dragPointer, e.Pointer)) return;
+        if (_isNavigatorDragging && !_navigatorMoved && GetNavigatorLayout() is { } layout &&
+            layout.Bounds.Contains(e.GetPosition(this)))
+            NavigateTo(e.GetPosition(this), layout);
+        StopDragging();
         e.Handled = true;
     }
 
     private void OnPointerMoved(object? sender, PointerEventArgs e)
     {
-        if ((Image is null && GpuFrame is null) || !_isDragging) return;
-        
+        if ((Image is null && GpuFrame is null) || !ReferenceEquals(_dragPointer, e.Pointer)) return;
+
         var currentPoint = e.GetPosition(this);
+        if (_isNavigatorDragging)
+        {
+            if (GetNavigatorLayout() is { } layout)
+            {
+                var delta = currentPoint - _lastDragPoint;
+                _navigatorMoved |= delta.X * delta.X + delta.Y * delta.Y > 9;
+                if (_navigatorMoved)
+                    NavigateTo(currentPoint - _navigatorDragOffset, layout);
+            }
+            else
+                StopDragging();
+            e.Handled = true;
+            return;
+        }
+        if (!_isDragging) return;
         OffsetX += currentPoint.X - _lastDragPoint.X;
         OffsetY += currentPoint.Y - _lastDragPoint.Y;
         _lastDragPoint = currentPoint;
@@ -298,6 +353,8 @@ public class ImageViewer : Control
         
         var zoomDelta = e.Delta.Y > 0 ? 1.1 : 0.9;
         var zoomCenter = e.GetPosition(this);
+        if (GetNavigatorLayout() is { } layout && layout.Bounds.Contains(zoomCenter))
+            zoomCenter = new Point(Bounds.Width / 2, Bounds.Height / 2);
 
         var newZoom = CalculateNextZoom(Zoom, zoomDelta, MinZoomFactor, MaxZoomFactor);
         if (Math.Abs(newZoom - Zoom) < double.Epsilon) return;
@@ -313,6 +370,92 @@ public class ImageViewer : Control
         InvalidateVisual();
         _lastZoomTime = DateTime.Now;
         e.Handled = true;
+    }
+
+    protected override void OnPointerCaptureLost(PointerCaptureLostEventArgs e)
+    {
+        base.OnPointerCaptureLost(e);
+        StopDragging();
+    }
+
+    private void StopDragging()
+    {
+        var pointer = _dragPointer;
+        _dragPointer = null;
+        _isDragging = false;
+        _isNavigatorDragging = false;
+        if (pointer?.Captured == this)
+            pointer.Capture(null);
+    }
+
+    private Rect GetImageDestinationRect()
+    {
+        var scalingFactor = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
+        var contentSize = GetContentPixelSize(
+            Image?.PixelSize ?? GpuFrame?.PixelSize ?? default, SourcePixelSize);
+        return new Rect(OffsetX, OffsetY,
+            contentSize.Width * Zoom / scalingFactor, contentSize.Height * Zoom / scalingFactor);
+    }
+
+    private NavigatorLayout? GetNavigatorLayout() => ShowNavigator && Image is not null && GpuFrame is null
+        ? CalculateNavigatorLayout(Bounds.Size, GetImageDestinationRect())
+        : null;
+
+    private void NavigateTo(Point point, NavigatorLayout layout)
+    {
+        var position = new Point(
+            (point.X - layout.Image.X) / layout.Image.Width,
+            (point.Y - layout.Image.Y) / layout.Image.Height);
+        var offset = CalculateNavigatorOffset(position, Bounds.Size, GetImageDestinationRect().Size);
+        AutoFit = false;
+        OffsetX = offset.X;
+        OffsetY = offset.Y;
+    }
+
+    internal readonly record struct NavigatorLayout(Rect Bounds, Rect Image, Rect Viewport);
+
+    internal static NavigatorLayout? CalculateNavigatorLayout(Size viewportSize, Rect destination)
+    {
+        const double margin = 12;
+        const double padding = 5;
+        const double tolerance = 0.5;
+        if (viewportSize.Width <= 0 || viewportSize.Height <= 0 ||
+            destination.Width <= 0 || destination.Height <= 0 ||
+            !double.IsFinite(destination.X) || !double.IsFinite(destination.Y) ||
+            !double.IsFinite(destination.Width) || !double.IsFinite(destination.Height))
+            return null;
+        if (destination.X >= -tolerance && destination.Y >= -tolerance &&
+            destination.Right <= viewportSize.Width + tolerance &&
+            destination.Bottom <= viewportSize.Height + tolerance)
+            return null;
+
+        var maximumWidth = Math.Min(120, viewportSize.Width / 4);
+        var maximumHeight = Math.Min(80, viewportSize.Height / 4);
+        if (maximumWidth < 40 || maximumHeight < 30)
+            return null;
+        var scale = Math.Min(maximumWidth / destination.Width, maximumHeight / destination.Height);
+        var size = new Size(destination.Width * scale, destination.Height * scale);
+        var image = new Rect(viewportSize.Width - margin - padding - size.Width,
+            viewportSize.Height - margin - padding - size.Height, size.Width, size.Height);
+        var visible = new Rect(viewportSize).Intersect(destination);
+        var viewport = visible is { Width: > 0, Height: > 0 }
+            ? new Rect(image.X + (visible.X - destination.X) * scale,
+                image.Y + (visible.Y - destination.Y) * scale,
+                visible.Width * scale, visible.Height * scale)
+            : default;
+        return new NavigatorLayout(image.Inflate(padding), image, viewport);
+    }
+
+    internal static Point CalculateNavigatorOffset(Point position, Size viewport, Size image)
+    {
+        // 小地图导航保持画面覆盖窗口；未放大的轴仍居中，避免产生额外留白。
+        return new Point(
+            image.Width <= viewport.Width ? (viewport.Width - image.Width) / 2 :
+                Math.Clamp(viewport.Width / 2 - Math.Clamp(position.X, 0, 1) * image.Width,
+                    viewport.Width - image.Width, 0),
+            image.Height <= viewport.Height ? (viewport.Height - image.Height) / 2 :
+                Math.Clamp(viewport.Height / 2 - Math.Clamp(position.Y, 0, 1) * image.Height,
+                    viewport.Height - image.Height, 0));
     }
 
     internal static double CalculateNextZoom(double zoom, double zoomDelta, double minimum, double maximum)
@@ -339,28 +482,17 @@ public class ImageViewer : Control
         
         if (Image is null && GpuFrame is null) return;
 
-        // Need calc with current System Scaling
-            var scalingFactor = TopLevel.GetTopLevel(this)?.RenderScaling ?? 1.0;
-        var contentSize = GetContentPixelSize(
-            Image?.PixelSize ?? GpuFrame?.PixelSize ?? default,
-            SourcePixelSize);
-        var imgWidth = contentSize.Width * Zoom / scalingFactor;
-        var imgHeight = contentSize.Height * Zoom / scalingFactor;
-
-        if (imgWidth <= 0 || imgHeight <= 0)
+        var destRect = GetImageDestinationRect();
+        if (destRect.Width <= 0 || destRect.Height <= 0)
             return;
-
-        // Define the destination rectangle where the image will be drawn
-        var destRect = new Rect(OffsetX, OffsetY, imgWidth, imgHeight);
 
         // Get the bounds of the ImageViewer control
         var viewerBounds = new Rect(0, 0, Bounds.Width, Bounds.Height);
         var visibleRect = viewerBounds.Intersect(destRect);
 
-        if (visibleRect is not { Width: > 0, Height: > 0 }) return;
-        
         if (GpuFrame is not null)
         {
+            if (visibleRect is not { Width: > 0, Height: > 0 }) return;
             // The native visual owns the GPU image; only its viewport changes
             // while the user zooms, pans, or resizes the control.
             if (!GpuFrame.TryAttach(this))
@@ -372,23 +504,48 @@ public class ImageViewer : Control
         if (Image is null)
             return;
 
-        // Define the source rectangle based on the visible area
-        var srcRect = MapVisibleRectToBitmap(visibleRect, destRect, Image.PixelSize);
-
-        if (UseHighQualityInterpolation)
+        if (visibleRect is { Width: > 0, Height: > 0 })
         {
-            using (dc.PushRenderOptions(new RenderOptions
-                   {
-                       BitmapInterpolationMode = BitmapInterpolationMode.HighQuality
-                   }))
+            var srcRect = MapVisibleRectToBitmap(visibleRect, destRect, Image.PixelSize);
+            if (UseHighQualityInterpolation)
             {
-                dc.DrawImage(Image, srcRect, visibleRect);
+                using (dc.PushRenderOptions(new RenderOptions
+                       {
+                           BitmapInterpolationMode = BitmapInterpolationMode.HighQuality
+                       }))
+                {
+                    dc.DrawImage(Image, srcRect, visibleRect);
+                }
             }
+            else
+                dc.DrawImage(Image, srcRect, visibleRect);
         }
-        else
+        if (GetNavigatorLayout() is { } layout)
+            RenderNavigator(dc, layout);
+    }
+
+    private static readonly IBrush NavigatorBackground = new ImmutableSolidColorBrush(Color.FromArgb(220, 24, 24, 24));
+    private static readonly IBrush NavigatorMask = new ImmutableSolidColorBrush(Color.FromArgb(110, 0, 0, 0));
+    private static readonly IPen NavigatorBorder = new ImmutablePen(new ImmutableSolidColorBrush(Colors.Gray), 1);
+    private static readonly IPen NavigatorViewportBorder = new ImmutablePen(new ImmutableSolidColorBrush(Color.Parse("#8CCBFF")), 1.5);
+
+    private void RenderNavigator(DrawingContext dc, NavigatorLayout layout)
+    {
+        dc.DrawRectangle(NavigatorBackground, NavigatorBorder, layout.Bounds, 4, 4);
+        // 复用当前位图，平移与缩放只更新坐标，不生成或缓存新的缩略图。
+        dc.DrawImage(Image!, new Rect(0, 0, Image!.PixelSize.Width, Image.PixelSize.Height), layout.Image);
+        if (layout.Viewport is not { Width: > 0, Height: > 0 })
         {
-            dc.DrawImage(Image, srcRect, visibleRect);
+            dc.FillRectangle(NavigatorMask, layout.Image);
+            return;
         }
+        var image = layout.Image;
+        var viewport = layout.Viewport;
+        dc.FillRectangle(NavigatorMask, new Rect(image.X, image.Y, image.Width, Math.Max(0, viewport.Y - image.Y)));
+        dc.FillRectangle(NavigatorMask, new Rect(image.X, viewport.Bottom, image.Width, Math.Max(0, image.Bottom - viewport.Bottom)));
+        dc.FillRectangle(NavigatorMask, new Rect(image.X, viewport.Y, Math.Max(0, viewport.X - image.X), viewport.Height));
+        dc.FillRectangle(NavigatorMask, new Rect(viewport.Right, viewport.Y, Math.Max(0, image.Right - viewport.Right), viewport.Height));
+        dc.DrawRectangle(null, NavigatorViewportBorder, viewport);
     }
 
     internal static PixelSize GetContentPixelSize(PixelSize bitmapSize, PixelSize sourceSize) =>

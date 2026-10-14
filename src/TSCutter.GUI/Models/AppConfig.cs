@@ -1,11 +1,13 @@
 using System;
 using System.Linq;
 using System.Text.Json.Serialization;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace TSCutter.GUI.Models;
 
-public class AppConfig
+public class AppConfig : ObservableObject
 {
+    private bool _showImageNavigator = true;
     private bool _preferHardwareDecoding = IsHardwareDecodingSupported;
 
     // 系统当前是否处于深色模式
@@ -22,6 +24,11 @@ public class AppConfig
     public ThemeVariantMode ThemeVariantMode { get; set; } = ThemeVariantMode.Automatic;
     public bool AutoDetectLanguage { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;
+    public bool ShowImageNavigator
+    {
+        get => _showImageNavigator;
+        set => SetProperty(ref _showImageNavigator, value);
+    }
     public bool TsBatchCheckSaveLogs { get; set; }
     public bool ExportCurrentProgramOnly { get; set; }
     public bool PreferHardwareDecoding

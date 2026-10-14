@@ -132,6 +132,7 @@
                 Background="#FF1A1B1E">
             <controls:ImageViewer x:Name="PreviewImageViewer"
                                   Image="{Binding PreviewImage}"
+                                  ShowNavigator="{Binding ViewerPreferences.ShowImageNavigator}"
                                   Zoom="{Binding PreviewZoom, Mode=TwoWay}"
                                   MinZoomFactor="0.01"
                                   MaxZoomFactor="4"

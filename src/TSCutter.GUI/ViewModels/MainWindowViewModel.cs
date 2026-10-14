@@ -1258,6 +1258,8 @@ public partial class MainWindowViewModel : ViewModelBase
     [ObservableProperty]
     public partial double OffsetY { get; set; } = 0;
 
+    public AppConfig ViewerPreferences => _configService.CurrentConfig;
+
     public double MaxZoomFactor => 3.0;
     public double MinZoomFactor => 0.1;
 
