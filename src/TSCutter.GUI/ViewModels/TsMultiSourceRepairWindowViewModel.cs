@@ -397,8 +397,8 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
                 SpeedText = $"{CommonUtil.FormatFileSize(value.BytesPerSecond)}/s";
                 UpdateAnalysisStatus(value);
             });
-            await _repairService.MatchLargeGapsAsync(
-                analysis, progress, cancellationTokenSource.Token);
+            await Task.Run(() => _repairService.MatchLargeGapsAsync(
+                analysis, progress, cancellationTokenSource.Token), cancellationTokenSource.Token);
             if (_isClosing)
                 return;
             IsLargeGapMatchingCompleted = true;

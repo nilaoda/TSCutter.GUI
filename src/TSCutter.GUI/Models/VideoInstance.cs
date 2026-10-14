@@ -57,7 +57,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
     private bool hardwareDecoderOpened;
     private bool useFullPacketDecoding;
     private readonly bool preferHardwareDecoding = enableHardwareDecoding && AppConfig.IsHardwareDecodingSupported;
-    private readonly IGpuFramePresenter gpuFramePresenter = GpuFramePresenterFactory.CreateDefault();
+    private readonly Lazy<IGpuFramePresenter> gpuFramePresenter = new(GpuFramePresenterFactory.CreateDefault);
     private readonly HostFramePresenter hostFramePresenter = new();
     private Frame? reusableSoftwareFrame;
     private Frame? reusableDecodeFrame;
@@ -186,8 +186,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
         if (!decoderOpened)
             throw new VideoDecoderUnavailableException(inVideoStream.Codecpar.CodecId.ToString());
 
-        Console.WriteLine($"GPU presentation: {(gpuFramePresenter.Capabilities.IsAvailable ? "available" : "fallback to bitmap")} - "
-            + gpuFramePresenter.Capabilities.UnavailableReason);
+        Console.WriteLine($"GPU presentation: {(gpuFramePresenter.Value.Capabilities.IsAvailable ? "available" : "fallback to bitmap")} - "
+            + gpuFramePresenter.Value.Capabilities.UnavailableReason);
 
         var (firstPts, gap) = ReadKeyFramePacketPts(cancellationToken);
         firstFrameTimestamp = firstPts;
@@ -920,7 +920,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
     public void Dispose()
     {
         Close();
-        gpuFramePresenter.Dispose();
+        if (gpuFramePresenter.IsValueCreated)
+            gpuFramePresenter.Value.Dispose();
     }
 
     private long TimeSpanToPts(TimeSpan timeSpan)
@@ -1034,7 +1035,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                     try
                     {
                         cancellationToken.ThrowIfCancellationRequested();
-                        if (gpuFramePresenter.TryPresent(frame, out var gpuFrame) && gpuFrame != null)
+                        if (gpuFramePresenter.Value.TryPresent(frame, out var gpuFrame) && gpuFrame != null)
                         {
                             IsHardwareDecoding = true;
                             IsGpuPresentation = true;

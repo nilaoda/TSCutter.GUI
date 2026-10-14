@@ -276,6 +276,44 @@ public sealed class TsBinaryMergeServiceTests
         }
     }
 
+    [Fact]
+    public async Task CancellationDuringValidationPreservesExistingOutput()
+    {
+        var directory = CreateTemporaryDirectory();
+        try
+        {
+            var firstPath = Path.Combine(directory, "first.ts");
+            var missingPath = Path.Combine(directory, "missing.ts");
+            var outputPath = Path.Combine(directory, "merged.ts");
+            await File.WriteAllBytesAsync(firstPath, CreatePackets(0, 5));
+            byte[] originalOutput = [1, 2, 3];
+            await File.WriteAllBytesAsync(outputPath, originalOutput);
+            using var cancellation = new CancellationTokenSource();
+            var progress = new CancelDuringValidation(cancellation);
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                new TsBinaryMergeService().MergeAsync(
+                    [firstPath, missingPath], outputPath, null, false, progress, cancellation.Token));
+
+            Assert.Equal(originalOutput, await File.ReadAllBytesAsync(outputPath));
+            Assert.Equal(2, Directory.GetFiles(directory).Length);
+        }
+        finally
+        {
+            Directory.Delete(directory, true);
+        }
+    }
+
+    private sealed class CancelDuringValidation(CancellationTokenSource cancellation)
+        : IProgress<TsBinaryMergeProgress>
+    {
+        public void Report(TsBinaryMergeProgress value)
+        {
+            if (value.Phase == TsBinaryMergeProgressPhase.Validating && value.CurrentSourceIndex == 1)
+                cancellation.Cancel();
+        }
+    }
+
     [Theory]
     [InlineData("1.ts", "2.ts", -1)]
     [InlineData("2.ts", "10.ts", -1)]

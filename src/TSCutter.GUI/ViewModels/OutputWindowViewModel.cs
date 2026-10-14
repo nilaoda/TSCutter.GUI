@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.ComponentModel;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -69,6 +70,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private long _bytesCopied = 0;
     private long _totalBytes;
     private bool _batchCancelled;
+    private int _copyGeneration;
 
     public OutputWindowViewModel()
     {
@@ -123,8 +125,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                     ? Math.Max(0, value.TotalBytes - value.BytesProcessed) / value.BytesPerSecond
                     : 0;
             });
-            await new TsClipMergeService().MergeAsync(
-                request, progress, _cts.Token).ConfigureAwait(true);
+            await Task.Run(() => new TsClipMergeService().MergeAsync(
+                request, progress, _cts.Token), _cts.Token).ConfigureAwait(true);
             Percent = 100;
             RemainingSeconds = 0;
             DialogResult = true;
@@ -153,6 +155,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _startTime = DateTime.Now;
             _lastUpdateTime = _startTime;
             await CopyClipAsync(new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId));
+            Percent = 100;
             RemainingSeconds = 0;
             DialogResult = true;
             RequestClose?.Invoke();
@@ -178,34 +181,51 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     private Task CopyClipAsync(BatchTask task)
     {
+        var generation = ++_copyGeneration;
         if (task.ProgramId is { } programId)
         {
             var progress = new Progress<TsFilterProgress>(value =>
             {
+                if (DialogResult is not null || generation != _copyGeneration) return;
                 Percent = value.Percent;
                 Speed = value.BytesPerSecond;
                 RemainingSeconds = value.BytesPerSecond > 0
                     ? Math.Max(0, value.FileSize - value.BytesProcessed) / value.BytesPerSecond : 0;
             });
-            return new TsProgramClipExportService().ExportAsync(task.SourcePath, task.DestinationPath,
-                task.StartPosition, task.EndPosition, programId, progress, _cts.Token);
+            return Task.Run(() => new TsProgramClipExportService().ExportAsync(task.SourcePath, task.DestinationPath,
+                task.StartPosition, task.EndPosition, programId, progress, _cts.Token), _cts.Token);
         }
-        return CopySourceRangeAsync(task,
-            (percent, bytesCopied) =>
-            {
-                Percent = percent;
-                _bytesCopied += bytesCopied;
-                UpdateSpeed();
-                UpdateRemainingTime();
-            }, _cts.Token);
+        // 复制回调来自后台；只将限频后的进度送回创建 Progress 的界面线程。
+        IProgress<(double Percent, long Bytes)> progressUpdates = new Progress<(double Percent, long Bytes)>(value =>
+        {
+            if (DialogResult is not null || generation != _copyGeneration) return;
+            Percent = value.Percent;
+            _bytesCopied += value.Bytes;
+            UpdateSpeed();
+            UpdateRemainingTime();
+        });
+        var lastReport = Stopwatch.GetTimestamp();
+        long pendingBytes = 0;
+        return CopySourceRangeAsync(task, (percent, bytesCopied) =>
+        {
+            pendingBytes += bytesCopied;
+            var now = Stopwatch.GetTimestamp();
+            if (percent < 100 && Stopwatch.GetElapsedTime(lastReport, now) < TimeSpan.FromMilliseconds(100))
+                return;
+            progressUpdates.Report((percent, pendingBytes));
+            pendingBytes = 0;
+            lastReport = now;
+        }, _cts.Token);
     }
 
-    private Task CopySourceRangeAsync(BatchTask task, Action<double, long> progress, CancellationToken token) =>
-        IsRawByteRange
+    private Task CopySourceRangeAsync(BatchTask task, Action<double, long> progress, CancellationToken token)
+    {
+        return IsRawByteRange
             ? CommonUtil.CopyFileAsync(new FileInfo(task.SourcePath), task.DestinationPath,
                 task.StartPosition, task.EndPosition, progress, token)
             : TsClipCopyService.CopyAsync(task.SourcePath, task.DestinationPath,
                 task.StartPosition, task.EndPosition, progress, token);
+    }
 
     private async Task RunBatchAsync()
     {

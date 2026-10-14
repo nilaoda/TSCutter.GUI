@@ -839,19 +839,18 @@ public partial class MainWindowViewModel : ViewModelBase
         filePath = await ResolveTsToolFileAsync(filePath, LocalizationManager.Instance.String_OpenTsFile);
         if (filePath is null) return;
 
+        var dialogViewModel = _dialogService.CreateViewModel<RawCutterWindowViewModel>();
         try
         {
-            var layout = await Task.Run(() => TsPacketLayout.Detect(filePath));
-            layout.RequireSupported();
+            await dialogViewModel.InitializeAsync(filePath);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or NotSupportedException)
         {
+            dialogViewModel.OnClosed();
             await ShowMessageAsync(exception.Message, "TSCutter", MessageBoxIcon.Error);
             return;
         }
 
-        var dialogViewModel = _dialogService.CreateViewModel<RawCutterWindowViewModel>();
-        dialogViewModel.Initialize(filePath);
         // 工具窗口需要与主窗口自由切换前后层级，因此不设置 Owner；文件选择框等
         // 真正的对话框仍继续以主窗口为 Owner。
         _dialogService.Show(null, dialogViewModel);
@@ -1186,25 +1185,36 @@ public partial class MainWindowViewModel : ViewModelBase
             var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
             if (result is null) return;
 
-            using var correctedBitmap = ImageUtil.CreateSampleAspectRatioCorrectedBitmap(
-                DecodedBitmap,
-                DecodedFrameSourceSize,
-                decodedFrameRequiresSampleAspectRatioCorrection);
-            var bitmapToSave = correctedBitmap ?? DecodedBitmap;
-            using var stream = File.Create(result!.Path!.LocalPath);
-            if (isPng)
-                bitmapToSave.Save(stream);
-            else
-                ImageUtil.SaveAsJpeg(bitmapToSave, stream);
+            var source = DecodedBitmap;
+            if (source is null) return;
+            // 保存期间预览可能切换或归还帧租约，先复制像素以固定本次截图。
+            using var snapshot = ImageUtil.CreateThumbnail(source, source.PixelSize.Width, source.PixelSize.Height);
+            var sourceSize = DecodedFrameSourceSize;
+            var correctAspectRatio = decodedFrameRequiresSampleAspectRatioCorrection;
+            var outputPath = result!.Path!.LocalPath;
+            await Task.Run(() =>
+            {
+                using var correctedBitmap = ImageUtil.CreateSampleAspectRatioCorrectedBitmap(
+                    snapshot, sourceSize, correctAspectRatio);
+                var bitmapToSave = correctedBitmap ?? snapshot;
+                using var stream = File.Create(outputPath);
+                if (isPng)
+                    bitmapToSave.Save(stream);
+                else
+                    ImageUtil.SaveAsJpeg(bitmapToSave, stream);
+            });
         }
         else
         {
-            using var correctedBitmap = ImageUtil.CreateSampleAspectRatioCorrectedBitmap(
-                DecodedBitmap,
-                DecodedFrameSourceSize,
-                decodedFrameRequiresSampleAspectRatioCorrection);
+            var source = DecodedBitmap;
+            if (source is null) return;
+            using var snapshot = ImageUtil.CreateThumbnail(source, source.PixelSize.Width, source.PixelSize.Height);
+            var sourceSize = DecodedFrameSourceSize;
+            var correctAspectRatio = decodedFrameRequiresSampleAspectRatioCorrection;
+            using var correctedBitmap = await Task.Run(() => ImageUtil.CreateSampleAspectRatioCorrectedBitmap(
+                snapshot, sourceSize, correctAspectRatio));
             await ImageUtil.CopyBitmapToClipboardAsync(
-                correctedBitmap ?? DecodedBitmap,
+                correctedBitmap ?? snapshot,
                 captureVm.IsPngFormat);
         }
     }
@@ -1460,8 +1470,30 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             var project = CaptureProject(includeThumbnails: true);
             var savedState = CutterProjectService.Serialize(CaptureProject(includeThumbnails: false));
-            await Task.Run(() => CutterProjectService.PopulateSources(project));
-            await CutterProjectService.SaveAsync(path, project);
+            var thumbnails = new Bitmap?[project.Clips.Count * 2];
+            try
+            {
+                for (var index = 0; index < Clips.Count; index++)
+                {
+                    var clip = Clips[index];
+                    thumbnails[index * 2] = CopyProjectThumbnail(clip.StartThumbnail);
+                    thumbnails[index * 2 + 1] = CopyProjectThumbnail(clip.EndThumbnail);
+                }
+                await Task.Run(() =>
+                {
+                    for (var index = 0; index < project.Clips.Count; index++)
+                    {
+                        project.Clips[index].StartThumbnailJpeg = EncodeProjectThumbnail(thumbnails[index * 2]);
+                        project.Clips[index].EndThumbnailJpeg = EncodeProjectThumbnail(thumbnails[index * 2 + 1]);
+                    }
+                    CutterProjectService.PopulateSources(project);
+                });
+                await CutterProjectService.SaveAsync(path, project);
+            }
+            finally
+            {
+                foreach (var thumbnail in thumbnails) thumbnail?.Dispose();
+            }
             SetProjectPath(path);
             _savedProjectState = savedState;
             return true;
@@ -1500,8 +1532,6 @@ public partial class MainWindowViewModel : ViewModelBase
             StartPosition = clip.StartPosition,
             EndPosition = clip.EndPosition,
             IsSelected = clip.IsSelected,
-            StartThumbnailJpeg = includeThumbnails ? EncodeProjectThumbnail(clip.StartThumbnail) : null,
-            EndThumbnailJpeg = includeThumbnails ? EncodeProjectThumbnail(clip.EndThumbnail) : null,
             OutputFilePath = clip.OutputFileInfo?.FullName,
             WasExported = clip.ExportStatus == ClipExportStatus.Done &&
                           clip.OutputFileInfo?.Exists == true
@@ -1640,6 +1670,9 @@ public partial class MainWindowViewModel : ViewModelBase
             LocalizationManager.Instance.String_Project_Invalid,
         _ => exception.Message
     };
+
+    private static Bitmap? CopyProjectThumbnail(Bitmap? bitmap) => bitmap is null ? null :
+        ImageUtil.CreateThumbnail(bitmap, bitmap.PixelSize.Width, bitmap.PixelSize.Height);
 
     private static byte[]? EncodeProjectThumbnail(Bitmap? bitmap)
     {

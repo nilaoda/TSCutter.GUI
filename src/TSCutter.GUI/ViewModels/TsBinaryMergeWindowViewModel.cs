@@ -405,7 +405,8 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
         var cancellation = BeginOperation();
         var generation = ++_generation;
         Percent = 0;
-        StatusText = LocalizationManager.Instance.String_TsBinaryMerge_Status_Writing;
+        StatusText = string.Format(LocalizationManager.Instance.String_TsBinaryMerge_Status_Validating,
+            1, Files.Count);
         try
         {
             var progress = new Progress<TsBinaryMergeProgress>(value =>
