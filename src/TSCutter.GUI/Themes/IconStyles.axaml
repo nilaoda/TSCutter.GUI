@@ -1,0 +1,51 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:classic="clr-namespace:Classic.Avalonia.Theme;assembly=Classic.Avalonia.Theme"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        xmlns:local="using:TSCutter.GUI.Themes">
+    <Styles.Resources>
+        <StreamGeometry x:Key="DesktopToolbarDownArrowGeometry">M0,0 H5 L2.5,3 Z</StreamGeometry>
+    </Styles.Resources>
+    <!-- 使用连续斜边代替像素阶梯，保持下拉箭头原有尺寸与布局。 -->
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme:not(.luna) common|ToolBarButton /template/ Path#PART_FlyoutArrow">
+        <Setter Property="Data" Value="{StaticResource DesktopToolbarDownArrowGeometry}" />
+    </Style>
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme Image.theme-icon">
+        <Setter Property="(local:ThemeRenderOptions.EdgeMode)" Value="Antialias" />
+    </Style>
+    <!-- 保留工具栏原有的布局部件和交互，只替换新主题的图标绘制。 -->
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme common|ToolBarButton.themed-icon">
+        <Setter Property="Template">
+            <ControlTemplate>
+                <classic:ClassicBorderDecorator Name="PART_Border" BorderThickness="1"
+                                               Background="{TemplateBinding Background}">
+                    <StackPanel Name="PART_Layout" Margin="{TemplateBinding Padding}">
+                        <Border Name="PART_IconWrapper">
+                            <StackPanel Name="PART_IconLayout" Orientation="Horizontal" HorizontalAlignment="Center">
+                                <Image Name="ThemedIcon" Width="24" Height="24" Stretch="Uniform"
+                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       RenderOptions.EdgeMode="Antialias"
+                                       Source="{TemplateBinding (local:ThemeIcons.Source)}" />
+                                <Path Name="PART_FlyoutArrow" Fill="{TemplateBinding Foreground}"
+                                      HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      Data="{StaticResource ToolBarButtonDownArrowGeometry}" />
+                            </StackPanel>
+                        </Border>
+                        <AccessText Name="PART_Text" Text="{TemplateBinding Text}"
+                                    VerticalAlignment="Center" TextAlignment="Center" />
+                    </StackPanel>
+                </classic:ClassicBorderDecorator>
+            </ControlTemplate>
+        </Setter>
+        <Style Selector="^[Size=Small] /template/ Image#ThemedIcon">
+            <Setter Property="Width" Value="16" />
+            <Setter Property="Height" Value="16" />
+        </Style>
+        <Style Selector="^[Size=Large][TextPlacement=Down] /template/ AccessText#PART_Text">
+            <Setter Property="Margin" Value="1,1,1,0" />
+        </Style>
+        <Style Selector="^:disabled /template/ Image#ThemedIcon">
+            <Setter Property="Opacity" Value="0.38" />
+        </Style>
+    </Style>
+</Styles>

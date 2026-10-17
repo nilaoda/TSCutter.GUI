@@ -42,7 +42,7 @@ Lossless clipping supports 188-byte TS and 192-byte M2TS based on the actual pac
 
 - **Multi-platform support**: Available for Windows, Linux, and macOS.
 - **Multilingual interface**: English, Simplified Chinese, and Traditional Chinese.
-- **Light and dark themes**: Theme-aware classic desktop interface.
+- **Desktop themes**: Windows Classic, XP, 7, 8, 10, and 11 styles, with independent light and dark palettes and automatic switching.
 - **Independent tool windows**: Open multiple tools or scans at the same time for comparison.
 - **Bounded resource usage**: Large-file tools use streaming or on-demand reads instead of loading complete media files into memory.
 
@@ -60,6 +60,21 @@ Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilao
   <source media="(prefers-color-scheme: light)" srcset="img/light_en.png">
   <img alt="TSCutter.GUI preview" src="img/light_en.png">
 </picture>
+
+### Desktop themes
+
+Six Windows-inspired theme families are available on Windows, Linux, and macOS, with light and dark palettes.
+
+<a href="docs/THEMES.md">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="img/themes/overview-dark.png">
+    <img alt="Settings previews for Windows Classic, XP, 7, 8, 10, and 11 themes" src="img/themes/overview-light.png">
+  </picture>
+</a>
+
+Use **View → Theme** to switch families. In **Tools → Settings**, choose light and dark palettes independently and select **Auto detect** to follow the system appearance. XP offers Luna Blue, Silver, and Olive Green; Classic includes additional color schemes.
+
+[Browse the theme gallery →](docs/THEMES.md)
 
 ## Usage
 

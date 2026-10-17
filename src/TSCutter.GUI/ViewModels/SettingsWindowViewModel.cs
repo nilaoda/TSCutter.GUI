@@ -36,8 +36,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
 
     public bool IsLanguageEnable => !AutoDetectLanguage;
     public bool IsHardwareDecodingAvailable => AppConfig.IsHardwareDecodingSupported;
-    public List<ThemeModel> Themes => ThemeModel.AllThemes;
-    public List<ThemeModel> DarkThemes => ThemeModel.AllDarkThemes;
+    public IReadOnlyList<ThemePickerItem> ThemeOptions { get; } = ThemePickerItem.Create(ThemeModel.AllThemes);
+    public IReadOnlyList<ThemePickerItem> DarkThemeOptions { get; } = ThemePickerItem.Create(ThemeModel.AllDarkThemes);
     public List<SupportedLang> Languages => _locService.SupportedLanguages;
 
     public SettingsWindowViewModel(IConfigurationService configurationService, ILocalizationService localizationService)
@@ -86,6 +86,9 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.CurrentConfig.ShowImageNavigator = ShowImageNavigator;
         _configService.CurrentConfig.PreferHardwareDecoding = PreferHardwareDecoding;
         _configService.CurrentConfig.ThemeVariantMode = SelectedThemeVariantMode;
+        // 两套配色都需保存，即使其中一套当前未启用。
+        _configService.CurrentConfig.ThemeName = SelectedTheme.Name;
+        _configService.CurrentConfig.DarkThemeName = SelectedDarkTheme.Name;
 
         // 应用主题
         switch (SelectedThemeVariantMode)

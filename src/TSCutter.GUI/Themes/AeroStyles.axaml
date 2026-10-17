@@ -1,0 +1,296 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:classic="clr-namespace:Classic.Avalonia.Theme;assembly=Classic.Avalonia.Theme"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        xmlns:primitives="using:Avalonia.Controls.Primitives"
+        xmlns:local="using:TSCutter.GUI.Themes"
+        xmlns:chrome="clr-namespace:Avalonia.Controls.Chrome;assembly=Avalonia.Controls">
+    <Styles.Resources>
+        <ControlTemplate x:Key="AeroTitleTemplate" TargetType="TemplatedControl">
+            <Panel>
+                <Border Name="PART_GradientBar" IsHitTestVisible="False" />
+                <DockPanel Margin="2,0,2,0" ClipToBounds="True">
+                    <local:DesktopCaptionButtons Name="PART_CaptionButtons" DockPanel.Dock="Right" />
+                    <local:DesktopWindowIcon IsVisible="{Binding $parent[Window].Icon, Converter={x:Static ObjectConverters.IsNotNull}}"
+                                             Icon="{Binding $parent[Window].Icon}"
+                                             SmallIcon="{Binding (classic:ClassicWindow.SmallIcon), RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=Window}}"
+                                             Width="16" Height="16" VerticalAlignment="Center" IsHitTestVisible="False" />
+                    <Grid VerticalAlignment="Center" IsHitTestVisible="False">
+                        <!-- 衬光沿字形轻柔扩散，避免整段标题出现明显的色块；上层文字保持清晰。 -->
+                        <Border Name="AeroTitleGlowLayer" IsVisible="False" HorizontalAlignment="Left" Effect="blur(2)">
+                            <TextBlock Name="AeroTitleGlow" AutomationProperties.AccessibilityView="Raw"
+                                       Text="{Binding #AeroTitle.Text}"
+                                       FontFamily="{DynamicResource {x:Static common:NonClientMetrics.CaptionFontKey}}"
+                                       FontSize="{DynamicResource {x:Static common:NonClientMetrics.CaptionFontSizeKey}}"
+                                       FontWeight="Bold" TextTrimming="CharacterEllipsis"
+                                       Foreground="{DynamicResource AeroTitleGlowBrush}">
+                                <TextBlock.Effect>
+                                    <DropShadowEffect Color="{DynamicResource AeroTitleGlowColor}" BlurRadius="6"
+                                                      OffsetX="0" OffsetY="0" Opacity="0.9" />
+                                </TextBlock.Effect>
+                            </TextBlock>
+                        </Border>
+                        <TextBlock Name="AeroTitle" Text="{Binding $parent[Window].Title}" TextTrimming="CharacterEllipsis" HorizontalAlignment="Left"
+                                   FontFamily="{DynamicResource {x:Static common:NonClientMetrics.CaptionFontKey}}"
+                                   FontSize="{DynamicResource {x:Static common:NonClientMetrics.CaptionFontSizeKey}}"
+                                   FontWeight="Bold" Foreground="{DynamicResource {x:Static common:SystemColors.ActiveCaptionTextBrushKey}}" />
+                    </Grid>
+                </DockPanel>
+            </Panel>
+        </ControlTemplate>
+        <ControlTemplate x:Key="AeroCaptionButtonTemplate" TargetType="Button">
+            <Border Name="AeroCaptionBorder" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1"
+                    CornerRadius="{TemplateBinding CornerRadius}" RenderOptions.EdgeMode="Unspecified">
+                <Border Name="AeroCaptionHighlight" BorderBrush="{DynamicResource AeroCaptionHighlightBrush}" BorderThickness="1" CornerRadius="0">
+                    <ContentPresenter Name="PART_ContentPresenter" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      TextElement.Foreground="{TemplateBinding Foreground}" />
+                </Border>
+            </Border>
+        </ControlTemplate>
+        <!-- 独立绘制标题图标，避免原模板的局部坐标、边距和拉伸压掉描边。 -->
+        <DataTemplate x:Key="AeroMinimizeGlyph">
+            <Path Width="12" Height="5" Margin="0,5,0,0" Stretch="None"
+                  Data="M0.5,0.5 H11.5 V4.5 H0.5 Z"
+                  Fill="White" Stroke="{DynamicResource AeroCaptionGlyphOutlineBrush}" StrokeThickness="1" />
+        </DataTemplate>
+        <DataTemplate x:Key="AeroMaximizeGlyph">
+            <Path Width="12" Height="10" Margin="0" Stretch="None"
+                  Data="F0 M0.5,0.5 H11.5 V9.5 H0.5 Z M3.5,3.5 H8.5 V6.5 H3.5 Z"
+                  Fill="White" Stroke="{DynamicResource AeroCaptionGlyphOutlineBrush}" StrokeThickness="1" />
+        </DataTemplate>
+        <DataTemplate x:Key="AeroRestoreGlyph">
+            <Path Width="12" Height="12" Margin="0" Stretch="None"
+                  Data="F0 M3.5,0.5 H11.5 V8.5 H8.5 V11.5 H0.5 V3.5 H3.5 Z M5.5,2.5 V3.5 H8.5 V6.5 H9.5 V2.5 Z M2.5,6.5 H6.5 V9.5 H2.5 Z"
+                  Fill="White" Stroke="{DynamicResource AeroCaptionGlyphOutlineBrush}" StrokeThickness="1" />
+        </DataTemplate>
+        <DataTemplate x:Key="AeroCloseGlyph">
+            <Path Width="11" Height="11" Margin="0" Stretch="None"
+                  Data="M0.5,0.5 H2.5 L5.5,3.5 L8.5,0.5 H10.5 V2.5 L7.5,5.5 L10.5,8.5 V10.5 H8.5 L5.5,7.5 L2.5,10.5 H0.5 V8.5 L3.5,5.5 L0.5,2.5 Z"
+                  Fill="White" Stroke="{DynamicResource AeroCaptionGlyphOutlineBrush}" StrokeThickness="1" StrokeJoin="Round" />
+        </DataTemplate>
+    </Styles.Resources>
+    <Style Selector=":is(classic|ClassicWindow).aero">
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl)">
+            <Setter Property="Template" Value="{StaticResource AeroTitleTemplate}" />
+        </Style>
+        <Style Selector="^[IsActive=False] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ TextBlock#AeroTitle">
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.InactiveCaptionTextBrushKey}}" />
+        </Style>
+        <!-- 侧框渐变与标题栏保持同一高度和起点，玻璃及不透明回退共用。 -->
+        <Style Selector="^ /template/ classic|ClassicBorderDecorator#Bd">
+            <Setter Property="(local:DesktopWindowChrome.CaptionHeight)" Value="{DynamicResource {x:Static common:SystemParameters.WindowCaptionHeightKey}}" />
+        </Style>
+        <!-- 优先请求真正的背景模糊；系统或渲染后端不支持时保留原有渐变。 -->
+        <Setter Property="TransparencyLevelHint" Value="Blur,AcrylicBlur,Transparent" />
+        <!-- 原模板的大图标文字使用负上边距，改为正常间距，避免“1:1”等文字贴进图标。 -->
+        <Style Selector="^ common|ToolBarButton[Size=Large][TextPlacement=Down] /template/ AccessText#PART_Text">
+            <Setter Property="Margin" Value="1,2,1,1" />
+        </Style>
+        <!-- 竖向滚动块的高光横跨宽度，与横向滚动块使用不同的渐变方向。 -->
+        <Style Selector="^ ScrollBar:vertical /template/ primitives|Track primitives|Thumb /template/ Border#DesktopThumb">
+            <Setter Property="Background" Value="{DynamicResource AeroVerticalScrollBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar:vertical /template/ primitives|Track primitives|Thumb:pointerover /template/ Border#DesktopThumb">
+            <Setter Property="Background" Value="{DynamicResource AeroVerticalScrollHoverBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ primitives|Track primitives|Thumb:pressed /template/ Border#DesktopThumb">
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollPressedBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar:disabled /template/ primitives|Track primitives|Thumb /template/ Border#DesktopThumb">
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBackgroundBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:indeterminate /template/ Path#CheckMarkPath">
+            <Setter Property="Data" Value="M0,0 L7,0 L7,7 L0,7 Z" />
+        </Style>
+        <!-- 标题按钮连成一组并贴紧顶部，沿用 Classic 原有窗口操作。 -->
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button">
+            <Setter Property="Template" Value="{StaticResource AeroCaptionButtonTemplate}" />
+            <Setter Property="Width" Value="27" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Margin" Value="-1,0,0,0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <!-- 首个按钮不向左重叠，避免最左侧边线落在标题按钮容器外被裁掉。 -->
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_MinimizeButton, ^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_FullScreenButton">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_MinimizeButton">
+            <Setter Property="CornerRadius" Value="0,0,0,3" />
+            <Setter Property="ContentTemplate" Value="{StaticResource AeroMinimizeGlyph}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton">
+            <Setter Property="ContentTemplate" Value="{StaticResource AeroCloseGlyph}" />
+            <Setter Property="Width" Value="46" />
+            <Setter Property="CornerRadius" Value="0,0,3,0" />
+        </Style>
+        <!-- 失焦时关闭按钮与普通标题按钮同色，悬停和按下仍使用对应反馈。 -->
+        <Style Selector="^[IsActive=False] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton:not(:pointerover):not(:pressed)">
+            <Setter Property="Background" Value="{DynamicResource DesktopCaptionButtonBrush}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_RestoreButton">
+            <Setter Property="ContentTemplate" Value="{StaticResource AeroMaximizeGlyph}" />
+        </Style>
+        <Style Selector="^[WindowState=Maximized] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_RestoreButton">
+            <Setter Property="ContentTemplate" Value="{StaticResource AeroRestoreGlyph}" />
+        </Style>
+        <!-- 内高光比外边框少一像素圆角，避免两条圆弧交错。 -->
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_MinimizeButton /template/ Border#AeroCaptionHighlight">
+            <Setter Property="CornerRadius" Value="0,0,0,2" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton /template/ Border#AeroCaptionHighlight">
+            <Setter Property="CornerRadius" Value="0,0,2,0" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AeroCaptionHoverBrush}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AeroCloseHoverBrush}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton:pointerover /template/ Border#AeroCaptionBorder">
+            <Setter Property="BoxShadow" Value="0 0 7 1 #90E84A29" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button:pressed">
+            <Setter Property="Background" Value="{DynamicResource AeroCaptionPressedBrush}" />
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton:pressed">
+            <Setter Property="Background" Value="{DynamicResource AeroClosePressedBrush}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button:disabled">
+            <Setter Property="Opacity" Value="0.35" />
+        </Style>
+        <!-- Aero 普通按钮使用银灰渐变，悬停变蓝，焦点保留清晰的内描边。 -->
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):pointerover, ^ RepeatButton:not(.desktop-template-button):pointerover, ^ ToggleButton:not(.desktop-template-button):pointerover">
+            <Setter Property="Background" Value="{DynamicResource AeroButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopHoverAccentBrush}" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):pressed, ^ RepeatButton:not(.desktop-template-button):pressed, ^ ToggleButton:not(.desktop-template-button):pressed, ^ ToggleButton:not(.desktop-template-button):checked">
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonPressedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource AeroButtonPressedBorderBrush}" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):disabled, ^ RepeatButton:not(.desktop-template-button):disabled, ^ ToggleButton:not(.desktop-template-button):disabled">
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ TabItem:selected /template/ Border#DesktopTabHighlight, ^ TabItem:pointerover /template/ Border#DesktopTabHighlight">
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="^ TabItem:pointerover:not(:selected):not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource AeroButtonHoverBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ primitives|Track primitives|Thumb /template/ StackPanel#DesktopGrip">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="^ ComboBox:pressed /template/ ToggleButton#toggle /template/ classic|ClassicBorderDecorator, ^ ComboBox[IsDropDownOpen=True] /template/ ToggleButton#toggle /template/ classic|ClassicBorderDecorator">
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonPressedBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:pointerover /template/ classic|ClassicBorderDecorator#CheckMark">
+            <Setter Property="Background" Value="{DynamicResource AeroButtonHoverBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:pressed /template/ classic|ClassicBorderDecorator#CheckMark">
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonPressedBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:disabled /template/ classic|ClassicBorderDecorator#CheckMark">
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBackgroundBrush}" />
+        </Style>
+        <!-- 连续渐变的进度填充复用原模板部件和不确定进度动画。 -->
+        <Style Selector="^ ProgressBar">
+            <Setter Property="Foreground" Value="{DynamicResource AeroProgressBrush}" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="TemplateRoot" Background="{TemplateBinding Background}" CornerRadius="2"
+                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                        <LayoutTransformControl Name="PART_LayoutTransformControl">
+                            <DockPanel Name="PART_Track" Margin="1" ClipToBounds="True" LastChildFill="False">
+                                <Border Name="PART_Indicator" ClipToBounds="True" CornerRadius="1"
+                                        Background="{TemplateBinding Foreground}" />
+                            </DockPanel>
+                        </LayoutTransformControl>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <!-- 表格沿用原来的排序、选择和列宽调整，只替换外框与表头。 -->
+        <Style Selector="^ DataGrid">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+        </Style>
+        <Style Selector="^ DataGridColumnHeader">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="4,3" />
+            <Setter Property="Background" Value="{DynamicResource AeroDataGridHeaderBrush}" />
+        </Style>
+        <Style Selector="^ DataGridColumnHeader:pointerover">
+            <Setter Property="Background" Value="{DynamicResource AeroButtonHoverBrush}" />
+        </Style>
+        <Style Selector="^ DataGridColumnHeader:pressed">
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonPressedBrush}" />
+        </Style>
+        <Style Selector="^ DataGridColumnHeader /template/ classic|ClassicBorderDecorator#HeaderBorder">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopGroupBorderBrush}" />
+        </Style>
+        <Style Selector="^ Border#DropPanelTitle">
+            <Setter Property="Padding" Value="8,4" />
+        </Style>
+    </Style>
+    <!-- 系统负责模糊窗口背后的内容，应用只绘制透明染色与反光，主体内容保持不透明。 -->
+    <Style Selector=":is(classic|ClassicWindow).aero.aero-glass">
+        <!-- 仅玻璃标题需要衬光；不透明回退沿用普通标题绘制。 -->
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ Border#AeroTitleGlowLayer">
+            <Setter Property="IsVisible" Value="True" />
+        </Style>
+        <!-- 整窗底色与内容容器不绘制背景，避免遮住系统模糊或占用标题栏拖动区。 -->
+        <Style Selector="^ /template/ Panel > Border:not(#PART_TransparencyFallback)">
+            <Setter Property="Background" Value="{x:Null}" />
+        </Style>
+        <!-- 标题装饰本来就不接收鼠标命中，染色不会影响拖动和双击最大化。 -->
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ Border#PART_GradientBar">
+            <Setter Property="Background" Value="{DynamicResource AeroGlassInactiveSurfaceBrush}" />
+        </Style>
+        <Style Selector="^[IsActive=True] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ Border#PART_GradientBar">
+            <Setter Property="Background" Value="{DynamicResource AeroGlassSurfaceBrush}" />
+        </Style>
+        <Style Selector="^ /template/ classic|ClassicBorderDecorator#Bd">
+            <Setter Property="(local:DesktopWindowChrome.FramePalette)" Value="{DynamicResource AeroGlassInactiveFramePalette}" />
+        </Style>
+        <Style Selector="^[IsActive=True] /template/ classic|ClassicBorderDecorator#Bd">
+            <Setter Property="(local:DesktopWindowChrome.FramePalette)" Value="{DynamicResource AeroGlassActiveFramePalette}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button:not(#PART_CloseButton):not(:pointerover):not(:pressed)">
+            <Setter Property="Background" Value="{DynamicResource AeroGlassCaptionButtonBrush}" />
+        </Style>
+        <Style Selector="^[IsActive=False] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton:not(:pointerover):not(:pressed)">
+            <Setter Property="Background" Value="{DynamicResource AeroGlassCaptionButtonBrush}" />
+        </Style>
+    </Style>
+    <!-- 菜单使用浅蓝选中块与深色文字，区别于 Luna 的实色选中块。 -->
+    <Style Selector="MenuItem.aero /template/ Border#root">
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="CornerRadius" Value="2" />
+    </Style>
+    <Style Selector="MenuItem.aero:selected /template/ Border#root">
+        <Setter Property="Background" Value="{DynamicResource AeroMenuSelectionBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopToolbarBorderBrush}" />
+    </Style>
+    <Style Selector="MenuItem.aero:selected /template/ ContentPresenter#PART_HeaderPresenter, MenuItem.aero:selected /template/ TextBlock#PART_InputGestureText">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource {x:Static common:SystemColors.MenuTextBrushKey}}" />
+    </Style>
+    <Style Selector="MenuItem.aero:selected /template/ Path#rightArrow">
+        <Setter Property="Fill" Value="{DynamicResource {x:Static common:SystemColors.MenuTextBrushKey}}" />
+    </Style>
+    <Style Selector="ContextMenu.aero /template/ classic|ClassicBorderDecorator, MenuFlyoutPresenter.aero /template/ classic|ClassicBorderDecorator#LayoutRoot, MenuItem.aero /template/ classic|ClassicBorderDecorator:not(#PART_IconBorder):not(#ClassicBorder)">
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="MenuItem.aero:disabled /template/ ContentPresenter#PART_HeaderPresenter, MenuItem.aero:disabled /template/ TextBlock#PART_InputGestureText">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+    </Style>
+    <Style Selector="MenuItem.aero:disabled /template/ Path#rightArrow">
+        <Setter Property="Fill" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+    </Style>
+</Styles>

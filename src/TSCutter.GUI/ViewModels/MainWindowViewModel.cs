@@ -78,8 +78,7 @@ public partial class MainWindowViewModel : ViewModelBase
         BuildThemeMenuItems();
         // 计算型本地化文本不会随资源字典自动刷新，语言切换后需主动通知界面重新取值。
         App.LocalizationService.LanguageChanged += OnLanguageChanged;
-        Application.Current!.ActualThemeVariantChanged += (_, __)
-            => Task.Delay(100).ConfigureAwait(true).GetAwaiter().OnCompleted(BuildThemeMenuItems);
+        Application.Current!.ActualThemeVariantChanged += (_, _) => UpdateThemeMenuChecks();
     }
 
     private void OnLanguageChanged()
@@ -112,19 +111,6 @@ public partial class MainWindowViewModel : ViewModelBase
     private long PositionInFile => _displayedFramePosition;
     private long CurrentPts => _displayedFramePts;
 
-    [ObservableProperty]
-    private ThemeModel _selectedTheme;
-
-    partial void OnSelectedThemeChanged(ThemeModel value)
-    {
-        if (value != null)
-        {
-            // 切换主题
-            _configService.ApplyTheme(value.Name);
-            _configService.Save();
-        }
-    }
-    
     [ObservableProperty]
     private ObservableCollection<MenuItem> _themeMenuItems = new();
 
@@ -2625,17 +2611,45 @@ public partial class MainWindowViewModel : ViewModelBase
     private void BuildThemeMenuItems()
     {
         ThemeMenuItems.Clear();
-        foreach (var theme in ThemeModel.AllThemes.Concat(ThemeModel.AllDarkThemes))
+        foreach (var themeName in new[] { "Classic", "Luna Blue", "Windows 7 Aero", "Windows 8", "Windows 10", "Windows 11" })
         {
-            var menuItem = new MenuItem()
+            var lightTheme = ThemeModel.AllThemes.Single(theme => theme.Name == themeName);
+            var darkTheme = ThemeModel.AllDarkThemes.Single(theme => theme.Family == lightTheme.Family);
+            var menuItem = new MenuItem
             {
-                Header = theme.Name,
-                ToggleType = MenuItemToggleType.Radio,
-                IsChecked = Application.Current!.ActualThemeVariant == theme.Variant
+                Header = lightTheme.Family,
+                ToggleType = MenuItemToggleType.Radio
             };
-            menuItem.Click += (r, s) => SelectedTheme = theme;
+            menuItem.Click += (_, _) => ApplyThemePreset(lightTheme, darkTheme);
             ThemeMenuItems.Add(menuItem);
         }
+        UpdateThemeMenuChecks();
+    }
+
+    private void ApplyThemePreset(ThemeModel lightTheme, ThemeModel darkTheme)
+    {
+        // 同时保存该系列的明暗配色，保留用户当前的明暗模式。
+        var config = _configService.CurrentConfig;
+        config.ThemeName = lightTheme.Name;
+        config.DarkThemeName = darkTheme.Name;
+        var theme = config.ThemeVariantMode switch
+        {
+            ThemeVariantMode.Automatic when AppConfig.IsSystemDarkMode => darkTheme,
+            ThemeVariantMode.Dark => darkTheme,
+            _ => lightTheme
+        };
+        _configService.ApplyTheme(theme.Name);
+        _configService.Save();
+        UpdateThemeMenuChecks();
+    }
+
+    private void UpdateThemeMenuChecks()
+    {
+        // 设置中选用同系列的其他配色时，菜单仍勾选对应的系列。
+        var activeFamily = ThemeModel.AllThemes.Concat(ThemeModel.AllDarkThemes)
+            .FirstOrDefault(theme => theme.Variant == Application.Current!.ActualThemeVariant)?.Family;
+        foreach (var menuItem in ThemeMenuItems)
+            menuItem.IsChecked = Equals(menuItem.Header, activeFamily);
     }
 
     private sealed record EditorStateSnapshot(

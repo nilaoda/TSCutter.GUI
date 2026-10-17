@@ -21,6 +21,9 @@ sealed class Program
             {
                 // DirectComposition can spin without waiting for VSync on some Windows VMs.
                 // Keep the modern GPU path and fall back to the redirection surface instead.
+                // Windows 11 使用 DWM 圆角；较旧 Windows 使用直角外框，保留系统阴影。
+                // 不设置固定物理像素的模糊层半径，避免与 DPI、最大化状态错位。
+                WinUICompositionBackdropCornerRadius = null,
                 CompositionMode =
                 [
                     Win32CompositionMode.WinUIComposition,

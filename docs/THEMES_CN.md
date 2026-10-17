@@ -1,0 +1,49 @@
+# 主题图册
+
+[English](THEMES.md) | [返回 README](../README_CN.md)
+
+按六个主题系列展示，Classic 选取一套代表配色。通过 **视图 → 主题** 快速切换系列，或在 **工具 → 设置** 中分别选择浅色、深色配色；**自动检测** 会跟随系统外观。
+
+以下截图使用相同的设置窗口、尺寸和英文界面，点击可查看原图。Aero 与 Windows 11 展示实色回退外观，实际模糊或 Mica 材质取决于平台支持。深色配色包含本应用对经典 Windows 风格的扩展。
+
+窗口圆角取决于宿主系统：Windows 11（Build 22000 及以上）上的 Aero 和 Windows 11 主题保留圆角，较旧 Windows 上这两个主题使用直角窗口。
+
+## Windows Classic
+
+<a href="../img/themes/classic.png"><img src="../img/themes/classic.png" alt="Classic" width="380"></a>
+
+## Windows XP
+
+| Luna Blue | Luna (Dark) |
+| :---: | :---: |
+| <a href="../img/themes/luna-blue.png"><img src="../img/themes/luna-blue.png" alt="Luna Blue" width="380"></a> | <a href="../img/themes/luna-dark.png"><img src="../img/themes/luna-dark.png" alt="Luna (Dark)" width="380"></a> |
+
+其他 Luna 配色：
+
+| Luna Silver | Luna Olive Green |
+| :---: | :---: |
+| <a href="../img/themes/luna-silver.png"><img src="../img/themes/luna-silver.png" alt="Luna Silver" width="380"></a> | <a href="../img/themes/luna-olive-green.png"><img src="../img/themes/luna-olive-green.png" alt="Luna Olive Green" width="380"></a> |
+
+## Windows 7
+
+| Windows 7 Aero | Windows 7 Aero (Dark) |
+| :---: | :---: |
+| <a href="../img/themes/aero.png"><img src="../img/themes/aero.png" alt="Windows 7 Aero" width="380"></a> | <a href="../img/themes/aero-dark.png"><img src="../img/themes/aero-dark.png" alt="Windows 7 Aero (Dark)" width="380"></a> |
+
+## Windows 8
+
+| Windows 8 | Windows 8 (Dark) |
+| :---: | :---: |
+| <a href="../img/themes/windows8.png"><img src="../img/themes/windows8.png" alt="Windows 8" width="380"></a> | <a href="../img/themes/windows8-dark.png"><img src="../img/themes/windows8-dark.png" alt="Windows 8 (Dark)" width="380"></a> |
+
+## Windows 10
+
+| Windows 10 | Windows 10 (Dark) |
+| :---: | :---: |
+| <a href="../img/themes/windows10.png"><img src="../img/themes/windows10.png" alt="Windows 10" width="380"></a> | <a href="../img/themes/windows10-dark.png"><img src="../img/themes/windows10-dark.png" alt="Windows 10 (Dark)" width="380"></a> |
+
+## Windows 11
+
+| Windows 11 | Windows 11 (Dark) |
+| :---: | :---: |
+| <a href="../img/themes/windows11.png"><img src="../img/themes/windows11.png" alt="Windows 11" width="380"></a> | <a href="../img/themes/windows11-dark.png"><img src="../img/themes/windows11-dark.png" alt="Windows 11 (Dark)" width="380"></a> |

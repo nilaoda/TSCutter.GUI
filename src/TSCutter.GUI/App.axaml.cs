@@ -64,17 +64,21 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        // 检测深色模式
-        var actualThemeVariant = Current?.ActualThemeVariant;
-        var isDarkMode = actualThemeVariant == ThemeVariant.Dark
-                         || actualThemeVariant?.InheritVariant == ThemeVariant.Dark;
-        if (isDarkMode)
-        {
-            AppConfig.IsSystemDarkMode = true;
-        }
-        
-        // 加载配置
+        // 自动模式既读取启动时的系统外观，也监听运行期间的变化。
         var configService = Locator.Current.GetService<IConfigurationService>()!;
+        if (PlatformSettings is { } platformSettings)
+        {
+            var themeMonitor = new SystemThemeMonitor(platformSettings, configService);
+            if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+                desktop.Exit += (_, _) => themeMonitor.Dispose();
+        }
+        else
+        {
+            AppConfig.IsSystemDarkMode = ActualThemeVariant == ThemeVariant.Dark ||
+                                         ActualThemeVariant.InheritVariant == ThemeVariant.Dark;
+        }
+
+        // 加载配置
         configService.Load();
         FFmpegNativeBootstrapper.Initialize(configService.CurrentConfig);
 

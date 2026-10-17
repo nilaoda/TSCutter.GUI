@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+<defs>
+  <linearGradient id="blue" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#C0F2FF"/><stop offset="100%" stop-color="#138BD0"/></linearGradient>
+  <linearGradient id="gold" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#FFF5BD"/><stop offset="100%" stop-color="#E3AC3D"/></linearGradient>
+  <linearGradient id="metal" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#8DABBB"/></linearGradient>
+  <linearGradient id="lens" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#C0F2FF"/></linearGradient>
+</defs>
+<path d="M3 8V6a2 2 0 0 1 2-2h7l4 4h11a2 2 0 0 1 2 2v16H3Z" fill="url(#gold)" stroke="#9D742A" stroke-linejoin="round"/>
+<path d="M4 13h25l-4 14H3Z" fill="url(#gold)" stroke="#9D742A" stroke-linejoin="round"/>
+<path d="M5 14.5h22" fill="none" stroke="#FFF9E4"/>
+<path d="M16 15h14v14H16Z" fill="#304957" stroke="#36536C"/>
+<path d="M20 17h6v10h-6Z" fill="url(#lens)"/>
+<path d="M17 17h1v2h-1Z M17 21h1v2h-1Z M17 25h1v2h-1Z M28 17h1v2h-1Z M28 21h1v2h-1Z M28 25h1v2h-1Z" fill="#E2EEF4"/>
+</svg>

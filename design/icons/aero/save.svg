@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+<defs>
+  <linearGradient id="blue" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#C0F2FF"/><stop offset="100%" stop-color="#138BD0"/></linearGradient>
+  <linearGradient id="gold" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#FFF5BD"/><stop offset="100%" stop-color="#E3AC3D"/></linearGradient>
+  <linearGradient id="metal" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#8DABBB"/></linearGradient>
+  <linearGradient id="lens" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#C0F2FF"/></linearGradient>
+</defs>
+<path d="M3.5 3.5h20l5 5v20h-25Z" fill="url(#blue)" stroke="#36536C" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/><path d="M9 3.5h13v10H9Z" fill="url(#metal)" stroke="#36536C" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/><path d="M17 4.5h3v7h-3Z" fill="#53687C"/><path d="M8 18h16v10.5H8Z" fill="#FCFDF7" stroke="#36536C" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/><path d="M11 21h10 M11 24h10" fill="none" stroke="#93A8B6" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

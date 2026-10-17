@@ -1,0 +1,131 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+                    xmlns:local="using:TSCutter.GUI.Themes">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://TSCutterGUI/Themes/DesktopResources.axaml" />
+    </ResourceDictionary.MergedDictionaries>
+    <!-- 窗口使用蓝色边框和红色关闭按钮，控件状态参考 WPF PresentationFramework.Aero2。 -->
+    <Color x:Key="{x:Static common:SystemColors.ActiveBorderColorKey}">#6BADF6</Color>
+    <Color x:Key="{x:Static common:SystemColors.ActiveCaptionColorKey}">#6BADF6</Color>
+    <Color x:Key="{x:Static common:SystemColors.ActiveCaptionTextColorKey}">#000000</Color>
+    <Color x:Key="{x:Static common:SystemColors.AppWorkspaceColorKey}">#ABABAB</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlColorKey}">#F0F0F0</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlDarkColorKey}">#A0A0A0</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlDarkDarkColorKey}">#696969</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlLightColorKey}">#E3E3E3</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlLightLightColorKey}">#FFFFFF</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlTextColorKey}">#000000</Color>
+    <Color x:Key="{x:Static common:SystemColors.DesktopColorKey}">#4F98E0</Color>
+    <Color x:Key="{x:Static common:SystemColors.GradientActiveCaptionColorKey}">#6BADF6</Color>
+    <Color x:Key="{x:Static common:SystemColors.GradientInactiveCaptionColorKey}">#EBEBEB</Color>
+    <Color x:Key="{x:Static common:SystemColors.GrayTextColorKey}">#838383</Color>
+    <Color x:Key="{x:Static common:SystemColors.HighlightColorKey}">#3399FF</Color>
+    <Color x:Key="{x:Static common:SystemColors.HighlightTextColorKey}">#FFFFFF</Color>
+    <Color x:Key="{x:Static common:SystemColors.HotTrackColorKey}">#0066CC</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveBorderColorKey}">#EBEBEB</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveCaptionColorKey}">#EBEBEB</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveCaptionTextColorKey}">#555555</Color>
+    <Color x:Key="{x:Static common:SystemColors.InfoColorKey}">#FFFFE1</Color>
+    <Color x:Key="{x:Static common:SystemColors.InfoTextColorKey}">#000000</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuColorKey}">#F2F2F2</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuBarColorKey}">#F0F0F0</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuHighlightColorKey}">#D1E8FF</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuTextColorKey}">#000000</Color>
+    <Color x:Key="{x:Static common:SystemColors.ScrollBarColorKey}">#C8C8C8</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowColorKey}">#FFFFFF</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowFrameColorKey}">#5284BC</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowTextColorKey}">#000000</Color>
+
+    <x:Double x:Key="{x:Static common:SystemParameters.WindowCaptionHeightKey}">29</x:Double>
+    <CornerRadius x:Key="DesktopWindowCornerRadius">0</CornerRadius>
+    <Thickness x:Key="DesktopFrameThickness">7,1,7,7</Thickness>
+
+    <Color x:Key="AppAccentColor">#3C7FB1</Color>
+    <Color x:Key="AppAccentHoverColor">#2C628B</Color>
+    <Color x:Key="AppSelectionColor">#D1E8FF</Color>
+    <Color x:Key="AppSurfaceRaisedColor">#F0F0F0</Color>
+    <Color x:Key="AppSurfaceHoverColor">#E5F1FB</Color>
+    <Color x:Key="AppBorderColor">#ACACAC</Color>
+    <Color x:Key="AppSecondaryTextColor">#555555</Color>
+    <Color x:Key="SystemAccentColor">#3399FF</Color>
+    <Color x:Key="SystemBaseLowColor">#E6E6E6</Color>
+    <Color x:Key="SystemAccentColorLight1">#D1E8FF</Color>
+    <Color x:Key="DesktopRowHoverColor">#E5F3FF</Color>
+    <Color x:Key="DesktopFocusBorderColor">#3399FF</Color>
+    <Color x:Key="AppErrorColor">#B71C1C</Color>
+    <Color x:Key="AppWarningColor">#765000</Color>
+    <Color x:Key="AppSuccessColor">#1B5E20</Color>
+    <Color x:Key="DesktopRowInvalidColor">#22B71C1C</Color>
+
+    <SolidColorBrush x:Key="DesktopButtonBorderBrush" Color="#ACACAC" />
+    <SolidColorBrush x:Key="DesktopButtonHoverHighlightBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="DesktopFocusHighlightBrush" Color="#3399FF" />
+    <SolidColorBrush x:Key="DesktopDisabledBackgroundBrush" Color="#F4F4F4" />
+    <SolidColorBrush x:Key="DesktopDisabledBorderBrush" Color="#ADB2B5" />
+    <SolidColorBrush x:Key="DesktopInputBorderBrush" Color="#ABADB3" />
+    <SolidColorBrush x:Key="DesktopTabBorderBrush" Color="#ACACAC" />
+    <SolidColorBrush x:Key="DesktopTabSurfaceBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="DesktopHoverAccentBrush" Color="#3C7FB1" />
+    <SolidColorBrush x:Key="DesktopCheckBorderBrush" Color="#707070" />
+    <SolidColorBrush x:Key="DesktopCheckMarkBrush" Color="#212121" />
+    <SolidColorBrush x:Key="DesktopCheckIndeterminateBrush" Color="#707070" />
+    <SolidColorBrush x:Key="DesktopProgressBorderBrush" Color="#BCBCBC" />
+    <SolidColorBrush x:Key="DesktopProgressFillBrush" Color="#06B025" />
+    <SolidColorBrush x:Key="DesktopScrollTrackBrush" Color="#F0F0F0" />
+    <SolidColorBrush x:Key="DesktopScrollArrowBrush" Color="#606060" />
+    <SolidColorBrush x:Key="DesktopScrollBorderBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="DesktopScrollArrowHoverBrush" Color="#000000" />
+    <SolidColorBrush x:Key="DesktopScrollArrowPressedBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="DesktopScrollPressedBrush" Color="#606060" />
+    <SolidColorBrush x:Key="DesktopScrollGripBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="DesktopToolbarBorderBrush" Color="#7EB4EA" />
+    <SolidColorBrush x:Key="DesktopToolbarHoverBrush" Color="#E5F3FF" />
+    <SolidColorBrush x:Key="DesktopToolbarPressedBrush" Color="#CCE4F7" />
+    <SolidColorBrush x:Key="DesktopGroupBorderBrush" Color="#D5D5D5" />
+    <SolidColorBrush x:Key="DesktopGroupForegroundBrush" Color="#000000" />
+    <SolidColorBrush x:Key="DesktopCaptionGlyphBrush" Color="#000000" />
+    <SolidColorBrush x:Key="DesktopInnerHighlightBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="DesktopCaptionButtonBorderBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="DesktopCaptionHoverBrush" Color="#3665B2" />
+    <SolidColorBrush x:Key="DesktopCaptionButtonBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="DesktopCloseButtonBrush" Color="#C75050" />
+    <SolidColorBrush x:Key="DesktopActiveCaptionBrush" Color="#6BADF6" />
+    <SolidColorBrush x:Key="DesktopInactiveCaptionBrush" Color="#EBEBEB" />
+    <SolidColorBrush x:Key="DesktopButtonPressedBrush" Color="#C4E5F6" />
+    <SolidColorBrush x:Key="DesktopScrollBrush" Color="#CDCDCD" />
+    <SolidColorBrush x:Key="DesktopScrollHoverBrush" Color="#A6A6A6" />
+    <SolidColorBrush x:Key="DesktopTabBrush" Color="#F0F0F0" />
+    <SolidColorBrush x:Key="DesktopCheckBrush" Color="#FFFFFF" />
+
+    <SolidColorBrush x:Key="FlatButtonHoverBrush" Color="#BEE6FD" />
+    <SolidColorBrush x:Key="FlatButtonPressedBorderBrush" Color="#2C628B" />
+    <SolidColorBrush x:Key="FlatButtonCheckedBrush" Color="#BCDDEE" />
+    <SolidColorBrush x:Key="FlatButtonCheckedBorderBrush" Color="#245A83" />
+    <SolidColorBrush x:Key="FlatCheckHoverBrush" Color="#F3F9FF" />
+    <SolidColorBrush x:Key="FlatCheckHoverBorderBrush" Color="#5593FF" />
+    <SolidColorBrush x:Key="FlatCheckPressedBrush" Color="#D9ECFF" />
+    <SolidColorBrush x:Key="FlatCheckPressedBorderBrush" Color="#3C77DD" />
+    <SolidColorBrush x:Key="FlatCheckDisabledBrush" Color="#E6E6E6" />
+    <SolidColorBrush x:Key="FlatCheckDisabledBorderBrush" Color="#BCBCBC" />
+    <SolidColorBrush x:Key="FlatProgressTrackBrush" Color="#E6E6E6" />
+    <SolidColorBrush x:Key="FlatInputHoverBorderBrush" Color="#7EB4EA" />
+    <SolidColorBrush x:Key="FlatInputFocusBorderBrush" Color="#569DE5" />
+    <SolidColorBrush x:Key="Windows8CaptionPressedBrush" Color="#1E4884" />
+    <SolidColorBrush x:Key="Windows8CloseHoverBrush" Color="#E04343" />
+    <SolidColorBrush x:Key="Windows8ClosePressedBrush" Color="#993D3D" />
+    <SolidColorBrush x:Key="Windows8InactiveCloseBrush" Color="#BCBCBC" />
+
+    <!-- 普通按钮使用柔和的灰色渐变。 -->
+    <LinearGradientBrush x:Key="DesktopButtonBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#F0F0F0" Offset="0" />
+        <GradientStop Color="#E5E5E5" Offset="1" />
+    </LinearGradientBrush>
+    <local:WindowFramePalette x:Key="DesktopActiveFramePalette" Outer="#5284BC" Middle="#6BADF6" Inner="#6BADF6" />
+    <local:WindowFramePalette x:Key="DesktopInactiveFramePalette" Outer="#AAAAAA" Middle="#EBEBEB" Inner="#EBEBEB" />
+    <SolidColorBrush x:Key="DesktopToolTipBackgroundBrush" Color="#F1F2F7" />
+    <SolidColorBrush x:Key="DesktopToolTipBorderBrush" Color="#767676" />
+    <SolidColorBrush x:Key="DesktopToolTipForegroundBrush" Color="#575757" />
+    <CornerRadius x:Key="DesktopToolTipCornerRadius">0</CornerRadius>
+    <Thickness x:Key="DesktopToolTipPadding">6,4</Thickness>
+</ResourceDictionary>

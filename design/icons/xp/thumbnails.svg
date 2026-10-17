@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+<defs>
+  <linearGradient id="blue" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#91D9FF"/><stop offset="100%" stop-color="#2673CD"/></linearGradient>
+  <linearGradient id="gold" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#FFF4A8"/><stop offset="100%" stop-color="#ECA726"/></linearGradient>
+  <linearGradient id="metal" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#F8FBFF"/><stop offset="100%" stop-color="#9FAFC1"/></linearGradient>
+  <linearGradient id="lens" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#91D9FF"/></linearGradient>
+</defs>
+<path d="M3.5 4.5h25v23h-25Z" fill="url(#metal)" stroke="#174A8B" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/><path d="M6 7h8v8H6Z M18 7h8v8h-8Z M6 18h8v7H6Z M18 18h8v7h-8Z" fill="url(#blue)" stroke="#174A8B" stroke-width="0.7" stroke-linejoin="round" stroke-linecap="round"/><path d="m6.5 14 3-4 4 4Z M18.5 14l3-4 4 4Z M6.5 24l3-4 4 4Z M18.5 24l3-4 4 4Z" fill="#6CA962"/>
+</svg>

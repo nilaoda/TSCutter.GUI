@@ -1,0 +1,79 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:local="using:TSCutter.GUI.Themes">
+    <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.Windows11}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Windows11.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.Windows11Dark}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Windows11Dark.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="Default">
+            <Bitmap x:Key="Icon.open">avares://TSCutterGUI/Assets/directory_movie-3.png</Bitmap>
+            <Bitmap x:Key="Icon.zoom-in">avares://TSCutterGUI/Assets/magnifying_glass_4-zoom-in.png</Bitmap>
+            <Bitmap x:Key="Icon.zoom-out">avares://TSCutterGUI/Assets/magnifying_glass_4-zoom-out.png</Bitmap>
+            <Bitmap x:Key="Icon.original">avares://TSCutterGUI/Assets/original.png</Bitmap>
+            <Bitmap x:Key="Icon.fit">avares://TSCutterGUI/Assets/fit.png</Bitmap>
+            <Bitmap x:Key="Icon.keyframes">avares://TSCutterGUI/Assets/keyframe_overview.png</Bitmap>
+            <Bitmap x:Key="Icon.thumbnails">avares://TSCutterGUI/Assets/thumbnail_sheet.png</Bitmap>
+            <Bitmap x:Key="Icon.snapshot">avares://TSCutterGUI/Assets/kodak_imaging-0.png</Bitmap>
+            <Bitmap x:Key="Icon.tools">avares://TSCutterGUI/Assets/file_tools.png</Bitmap>
+            <Bitmap x:Key="Icon.info">avares://TSCutterGUI/Assets/file_eye.png</Bitmap>
+            <Bitmap x:Key="Icon.save">avares://TSCutterGUI/Assets/save.gif</Bitmap>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.LunaBlue}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Xp.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.LunaSilver}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Xp.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.LunaOliveGreen}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Xp.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.LunaDark}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Xp.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.Aero}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Aero.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.AeroDark}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Aero.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.Windows8}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Windows8.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.Windows8Dark}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Windows8Dark.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.Windows10}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Windows10.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.Windows10Dark}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Windows10Dark.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </ResourceDictionary.ThemeDictionaries>
+</ResourceDictionary>

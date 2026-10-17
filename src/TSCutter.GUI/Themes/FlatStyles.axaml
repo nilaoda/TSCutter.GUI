@@ -1,0 +1,206 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:classic="clr-namespace:Classic.Avalonia.Theme;assembly=Classic.Avalonia.Theme"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        xmlns:primitives="using:Avalonia.Controls.Primitives">
+    <Styles.Resources>
+        <ControlTemplate x:Key="FlatCaptionButtonTemplate" TargetType="Button">
+            <Border Background="{TemplateBinding Background}">
+                <ContentPresenter Name="PART_ContentPresenter" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                  TextElement.Foreground="{TemplateBinding Foreground}" />
+            </Border>
+        </ControlTemplate>
+    </Styles.Resources>
+    <!-- 扁平主题共用基础控件，各主题补充具体外观和标题栏。 -->
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme.flat-theme">
+        <Setter Property="TransparencyLevelHint" Value="None" />
+        <Style Selector="^ common|ToolBarButton[Size=Large][TextPlacement=Down] /template/ AccessText#PART_Text">
+            <Setter Property="Margin" Value="1,2,1,1" />
+        </Style>
+        <!-- 扁平窗口用完整底色衔接细边框，避免标题栏底部间距两端露出透明点。 -->
+        <Style Selector="^ /template/ Panel > Border[IsHitTestVisible=False]">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <!-- 共用模板保留行为，普通控件去除圆角和内高光。 -->
+        <Style Selector="^ Button /template/ Border#DesktopButtonBorder, ^ Button /template/ Border#DesktopButtonHighlight, ^ TabItem /template/ Border#DesktopTabBorder, ^ TabItem /template/ Border#DesktopTabHighlight, ^ Slider /template/ primitives|Track primitives|Thumb /template/ Border#DesktopSliderThumb">
+            <Setter Property="CornerRadius" Value="0" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):focus /template/ Border#DesktopButtonHighlight, ^ Button[IsDefault=True]:not(.desktop-template-button) /template/ Border#DesktopButtonHighlight">
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):focus, ^ Button[IsDefault=True]:not(.hyperlink):not(.desktop-template-button)">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopFocusHighlightBrush}" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):pointerover, ^ RepeatButton:not(.desktop-template-button):pointerover, ^ ToggleButton:not(.desktop-template-button):pointerover">
+            <Setter Property="Background" Value="{DynamicResource FlatButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopHoverAccentBrush}" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):pressed, ^ RepeatButton:not(.desktop-template-button):pressed, ^ ToggleButton:not(.desktop-template-button):pressed, ^ ToggleButton:not(.desktop-template-button):checked">
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonPressedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FlatButtonPressedBorderBrush}" />
+        </Style>
+        <Style Selector="^ ToggleButton:not(.desktop-template-button):checked">
+            <Setter Property="Background" Value="{DynamicResource FlatButtonCheckedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FlatButtonCheckedBorderBrush}" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):disabled, ^ RepeatButton:not(.desktop-template-button):disabled, ^ ToggleButton:not(.desktop-template-button):disabled">
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ TextBox:pointerover">
+            <Setter Property="BorderBrush" Value="{DynamicResource FlatInputHoverBorderBrush}" />
+        </Style>
+        <Style Selector="^ TextBox:focus">
+            <Setter Property="BorderBrush" Value="{DynamicResource FlatInputFocusBorderBrush}" />
+        </Style>
+        <Style Selector="^ TextBox:disabled">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <!-- Windows 8/10 的下拉框整块响应焦点与展开状态，收起文字不再套用 Classic 的深蓝选区。 -->
+        <Style Selector="^ ComboBox">
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonBrush}" />
+        </Style>
+        <Style Selector="^ ComboBox:pointerover:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource FlatButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopHoverAccentBrush}" />
+        </Style>
+        <Style Selector="^ ComboBox:focus:not(:disabled), ^ ComboBox[IsDropDownOpen=True]:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonPressedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FlatInputFocusBorderBrush}" />
+        </Style>
+        <Style Selector="^ ComboBox:focus /template/ Border#SelectedItemBorder">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource {x:Static common:SystemColors.WindowTextBrushKey}}" />
+        </Style>
+        <Style Selector="^ ComboBox:disabled /template/ Border#SelectedItemBorder">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+        </Style>
+        <!-- 沿用原模板的开合绑定和整框命中区，只替换右侧箭头，避免出现独立的立体按钮。 -->
+        <Style Selector="^ ComboBox /template/ ToggleButton#toggle">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <DockPanel Background="Transparent" LastChildFill="False">
+                        <Border DockPanel.Dock="Right" Width="{DynamicResource {x:Static common:SystemParameters.VerticalScrollBarWidthKey}}">
+                            <Path Name="FlatDropDownArrow" Width="8" Height="4" Data="M0,0 L4,4 L8,0"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center"
+                                  Stroke="{TemplateBinding Foreground}" StrokeThickness="1" />
+                        </Border>
+                    </DockPanel>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <!-- 关闭弹出窗口的系统阴影，避免阴影覆盖上方输入框的细边框。 -->
+        <Style Selector="^ ComboBox /template/ primitives|Popup#PART_Popup">
+            <Setter Property="WindowManagerAddShadowHint" Value="False" />
+        </Style>
+        <!-- 展开列表使用细强调色外框，保留标准选择和滚动行为。 -->
+        <Style Selector="^ ComboBox /template/ Border#DropDownBorder">
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static common:SystemColors.HighlightBrushKey}}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="^ TabItem:selected /template/ Border#DesktopTabHighlight, ^ TabItem:pointerover /template/ Border#DesktopTabHighlight">
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="^ TabItem:pointerover:not(:selected):not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource FlatButtonHoverBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:indeterminate /template/ Path#CheckMarkPath">
+            <Setter Property="Data" Value="M0,0 H7 V7 H0 Z" />
+        </Style>
+        <Style Selector="^ CheckBox:pointerover /template/ classic|ClassicBorderDecorator#CheckMark">
+            <Setter Property="Background" Value="{DynamicResource FlatCheckHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FlatCheckHoverBorderBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:pressed /template/ classic|ClassicBorderDecorator#CheckMark">
+            <Setter Property="Background" Value="{DynamicResource FlatCheckPressedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FlatCheckPressedBorderBrush}" />
+        </Style>
+        <Style Selector="^ ComboBox:disabled">
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBackgroundBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:disabled /template/ classic|ClassicBorderDecorator#CheckMark">
+            <Setter Property="Background" Value="{DynamicResource FlatCheckDisabledBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FlatCheckDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton:pointerover">
+            <Setter Property="Background" Value="{DynamicResource DesktopToolbarHoverBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton:pressed">
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonPressedBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton:disabled">
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBackgroundBrush}" />
+        </Style>
+        <!-- 滚动块为纯色，无抓手和凹凸描边，保留原有轨道与箭头事件。 -->
+        <Style Selector="^ ScrollBar /template/ Border">
+            <Setter Property="CornerRadius" Value="0" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ primitives|Track primitives|Thumb /template/ Border#DesktopThumb">
+            <Setter Property="CornerRadius" Value="0" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ primitives|Track primitives|Thumb /template/ StackPanel#DesktopGrip">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ primitives|Track primitives|Thumb:pressed /template/ Border#DesktopThumb">
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollPressedBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar:disabled /template/ primitives|Track primitives|Thumb /template/ Border#DesktopThumb">
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollTrackBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineUpButton, ^ ScrollBar /template/ RepeatButton#PART_LineDownButton">
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollTrackBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineUpButton:pointerover, ^ ScrollBar /template/ RepeatButton#PART_LineDownButton:pointerover">
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineUpButton:pressed, ^ ScrollBar /template/ RepeatButton#PART_LineDownButton:pressed">
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollPressedBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineUpButton:disabled, ^ ScrollBar /template/ RepeatButton#PART_LineDownButton:disabled">
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollTrackBrush}" />
+        </Style>
+        <Style Selector="^ ProgressBar">
+            <Setter Property="Background" Value="{DynamicResource FlatProgressTrackBrush}" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="TemplateRoot" Background="{TemplateBinding Background}"
+                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                        <LayoutTransformControl Name="PART_LayoutTransformControl">
+                            <DockPanel Name="PART_Track" ClipToBounds="True" LastChildFill="False">
+                                <Border Name="PART_Indicator" Background="{TemplateBinding Foreground}" />
+                            </DockPanel>
+                        </LayoutTransformControl>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="^ DataGrid, ^ DataGridColumnHeader">
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="^ DataGridColumnHeader /template/ classic|ClassicBorderDecorator#HeaderBorder">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopGroupBorderBrush}" />
+        </Style>
+    </Style>
+    <!-- 弹出菜单单独标记主题，选中时保留深色文字，避免浅蓝底上出现白字。 -->
+    <Style Selector="MenuItem.flat-theme /template/ Border#root">
+        <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="MenuItem.flat-theme:selected /template/ ContentPresenter#PART_HeaderPresenter, MenuItem.flat-theme:selected /template/ TextBlock#PART_InputGestureText">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource {x:Static common:SystemColors.MenuTextBrushKey}}" />
+    </Style>
+    <Style Selector="MenuItem.flat-theme:selected /template/ Path#rightArrow">
+        <Setter Property="Fill" Value="{DynamicResource {x:Static common:SystemColors.MenuTextBrushKey}}" />
+    </Style>
+    <Style Selector="MenuItem.flat-theme:disabled /template/ ContentPresenter#PART_HeaderPresenter, MenuItem.flat-theme:disabled /template/ TextBlock#PART_InputGestureText">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+    </Style>
+    <Style Selector="MenuItem.flat-theme:disabled /template/ Path#rightArrow">
+        <Setter Property="Fill" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+    </Style>
+    <Style Selector="ContextMenu.flat-theme /template/ classic|ClassicBorderDecorator, MenuFlyoutPresenter.flat-theme /template/ classic|ClassicBorderDecorator#LayoutRoot, MenuItem.flat-theme /template/ classic|ClassicBorderDecorator:not(#PART_IconBorder):not(#ClassicBorder)">
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+</Styles>

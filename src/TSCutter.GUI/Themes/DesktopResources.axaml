@@ -1,0 +1,46 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia">
+    <!-- 桌面主题共用的应用语义色和表格画刷。 -->
+    <!-- 应用资源与系统色板保持一致。状态提示色由各配色提供。 -->
+
+    <SolidColorBrush x:Key="AppAccentBrush" Color="{DynamicResource AppAccentColor}" />
+    <SolidColorBrush x:Key="AppAccentHoverBrush" Color="{DynamicResource AppAccentHoverColor}" />
+    <SolidColorBrush x:Key="AppSelectionBrush" Color="{DynamicResource AppSelectionColor}" />
+    <SolidColorBrush x:Key="AppSurfaceRaisedBrush" Color="{DynamicResource AppSurfaceRaisedColor}" />
+    <SolidColorBrush x:Key="AppSurfaceHoverBrush" Color="{DynamicResource AppSurfaceHoverColor}" />
+    <SolidColorBrush x:Key="AppBorderBrush" Color="{DynamicResource AppBorderColor}" />
+    <SolidColorBrush x:Key="AppSecondaryTextBrush" Color="{DynamicResource AppSecondaryTextColor}" />
+    <SolidColorBrush x:Key="AppErrorBrush" Color="{DynamicResource AppErrorColor}" />
+    <SolidColorBrush x:Key="AppWarningBrush" Color="{DynamicResource AppWarningColor}" />
+    <SolidColorBrush x:Key="AppSuccessBrush" Color="{DynamicResource AppSuccessColor}" />
+
+    <SolidColorBrush x:Key="SystemControlForegroundBaseMediumBrush" Color="{DynamicResource AppSecondaryTextColor}" />
+    <SolidColorBrush x:Key="SystemControlBackgroundBaseLowBrush" Color="{DynamicResource AppSurfaceHoverColor}" />
+    <SolidColorBrush x:Key="ThemeForegroundBrush" Color="{DynamicResource {x:Static common:SystemColors.ControlTextColorKey}}" />
+
+    <SolidColorBrush x:Key="DataGridCellBackgroundBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="DataGridRowBackgroundBrush" Color="Transparent" />
+    <SolidColorBrush x:Key="DataGridGridLinesBrush" Color="{DynamicResource {x:Static common:SystemColors.ScrollBarColorKey}}" />
+    <SolidColorBrush x:Key="DataGridFillerColumnGridLinesBrush" Color="{DynamicResource {x:Static common:SystemColors.ScrollBarColorKey}}" />
+    <SolidColorBrush x:Key="DataGridColumnHeaderBackgroundBrush" Color="{DynamicResource {x:Static common:SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="DataGridColumnHeaderForegroundBrush" Color="{DynamicResource {x:Static common:SystemColors.ControlTextColorKey}}" />
+    <SolidColorBrush x:Key="DataGridColumnHeaderHoveredBackgroundBrush" Color="{DynamicResource {x:Static common:SystemColors.ControlLightColorKey}}" />
+    <SolidColorBrush x:Key="DataGridColumnHeaderPressedBackgroundBrush" Color="{DynamicResource {x:Static common:SystemColors.ScrollBarColorKey}}" />
+    <SolidColorBrush x:Key="DataGridColumnHeaderDraggedBackgroundBrush" Color="{DynamicResource {x:Static common:SystemColors.ControlLightColorKey}}" />
+    <SolidColorBrush x:Key="DataGridRowHoveredBackgroundColor" Color="{DynamicResource DesktopRowHoverColor}" />
+    <SolidColorBrush x:Key="DataGridRowSelectedBackgroundBrush" Color="{DynamicResource {x:Static common:SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="DataGridRowSelectedHoveredBackgroundBrush" Color="{DynamicResource {x:Static common:SystemColors.HighlightColorKey}}" />
+    <SolidColorBrush x:Key="DataGridRowSelectedUnfocusedBackgroundBrush" Color="{DynamicResource {x:Static common:SystemColors.ControlColorKey}}" />
+    <SolidColorBrush x:Key="DataGridRowSelectedHoveredUnfocusedBackgroundBrush" Color="{DynamicResource {x:Static common:SystemColors.ScrollBarColorKey}}" />
+    <SolidColorBrush x:Key="DataGridCellFocusVisualPrimaryBrush" Color="{DynamicResource DesktopFocusBorderColor}" />
+    <SolidColorBrush x:Key="DataGridCellFocusVisualSecondaryBrush" Color="{DynamicResource {x:Static common:SystemColors.WindowColorKey}}" />
+    <SolidColorBrush x:Key="DataGridCellInvalidBrush" Color="{DynamicResource AppErrorColor}" />
+    <SolidColorBrush x:Key="DataGridRowInvalidBrush" Color="{DynamicResource DesktopRowInvalidColor}" />
+    <!-- 提示框在独立弹出根中使用相同的主题资源，默认保留 Luna 的浅黄配色。 -->
+    <SolidColorBrush x:Key="DesktopToolTipBackgroundBrush" Color="{DynamicResource {x:Static common:SystemColors.InfoColorKey}}" />
+    <SolidColorBrush x:Key="DesktopToolTipForegroundBrush" Color="{DynamicResource {x:Static common:SystemColors.InfoTextColorKey}}" />
+    <SolidColorBrush x:Key="DesktopToolTipBorderBrush" Color="{DynamicResource {x:Static common:SystemColors.WindowFrameColorKey}}" />
+    <CornerRadius x:Key="DesktopToolTipCornerRadius">0</CornerRadius>
+    <Thickness x:Key="DesktopToolTipPadding">3,2</Thickness>
+</ResourceDictionary>

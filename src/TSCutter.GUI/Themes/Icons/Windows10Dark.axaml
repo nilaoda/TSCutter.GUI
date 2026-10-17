@@ -1,0 +1,150 @@
+<!-- 此文件由 tools/generate_theme_icons.py 生成，请修改 design/icons 中的源稿。 -->
+<ResourceDictionary xmlns="https://github.com/avaloniaui" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <DrawingImage x:Key="Icon.open">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F1 M3 9V6h10l3 3h13v4H9l-5 14H2V9Z M10 15h20l-5 12H6Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.zoom-in">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F1 M14 3a11 11 0 1 0 6.8 19.6L28.2 30 30 28.2l-7.4-7.4A11 11 0 0 0 14 3Zm0 2.5a8.5 8.5 0 1 1 0 17 8.5 8.5 0 0 1 0-17Z M13 9h2v4h4v2h-4v4h-2v-4H9v-2h4Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.zoom-out">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F1 M14 3a11 11 0 1 0 6.8 19.6L28.2 30 30 28.2l-7.4-7.4A11 11 0 0 0 14 3Zm0 2.5a8.5 8.5 0 1 1 0 17 8.5 8.5 0 0 1 0-17Z M9 13h10v2H9Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.original">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F0 M3 5h26v22H3Zm2 2v18h22V7Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 M9 12h2v8H9v-6H7v-1Z M15 12h2v2h-2Z M15 18h2v2h-2Z M23 12h2v8h-2v-6h-2v-1Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.fit">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F1 M3 3h9v2H5v7H3Z M20 3h9v9h-2V5h-7Z M3 20h2v7h7v2H3Z M27 20h2v9h-9v-2h7Z M7 7h6v2h-2.6l4.3 4.3-1.4 1.4L9 10.4V13H7Z M25 25h-6v-2h2.6l-4.3-4.3 1.4-1.4 4.3 4.3V19h2Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.keyframes">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F0 M3 5h26v22H3Zm2 2v3h3V7Zm0 7v4h3v-4Zm0 8v3h3v-3ZM24 7v3h3V7Zm0 7v4h3v-4Zm0 8v3h3v-3ZM10 7v18h12V7Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 m16 10 4 6-4 6-4-6Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.thumbnails">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F0 M3 5h26v22H3Zm2 2v18h22V7ZM7 9h7v6H7Zm11 0h7v6h-7ZM7 18h7v5H7Zm11 0h7v5h-7Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.snapshot">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F0 m11 5-2 4H3v18h26V9h-6l-2-4ZM5 11v14h22V11Z M16 12a6 6 0 1 0 0 12 6 6 0 0 0 0-12Zm0 2a4 4 0 1 1 0 8 4 4 0 0 1 0-8Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.tools">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F0 M22 3a8 8 0 0 0-9.6 10.7L3 23.1V29h5.9l9.4-9.4A8 8 0 0 0 29 10l-5.1 5.1-5-2-2-5Z M7 23a2 2 0 1 1 0 4 2 2 0 0 1 0-4Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.info">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F0 M16 2a14 14 0 1 0 0 28 14 14 0 0 0 0-28Zm0 2a12 12 0 1 1 0 24 12 12 0 0 1 0-24Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 M14.5 8h3v3h-3Z M14.5 14h3v9h-3Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.save">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F0 M4 3h20l5 5v21H3V3Zm1 2v22h22V9l-4-4h-1v9H9V5Zm6 0v7h9V5ZM8 18h16v9H8Zm2 2v7h12v-7Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#60CDFF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+</ResourceDictionary>

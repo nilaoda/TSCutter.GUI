@@ -1,0 +1,97 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:classic="clr-namespace:Classic.Avalonia.Theme;assembly=Classic.Avalonia.Theme"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        xmlns:primitives="using:Avalonia.Controls.Primitives"
+        xmlns:chrome="clr-namespace:Avalonia.Controls.Chrome;assembly=Avalonia.Controls"
+        xmlns:local="using:TSCutter.GUI.Themes">
+    <Styles.Resources>
+        <ControlTemplate x:Key="Windows8TitleTemplate" TargetType="TemplatedControl">
+            <Panel>
+                <Border Name="PART_GradientBar" IsHitTestVisible="False" />
+                <!-- 只替换标题布局，原标题控件继续绑定窗口按钮，拖动和双击由共用标题栏处理器接管。 -->
+                <local:Windows8TitlePanel ClipToBounds="True">
+                    <local:DesktopWindowIcon Icon="{Binding $parent[Window].Icon}"
+                                             SmallIcon="{Binding (classic:ClassicWindow.SmallIcon), RelativeSource={RelativeSource Mode=FindAncestor, AncestorType=Window}}"
+                                             Width="16" Height="16" Margin="3,0,0,0" VerticalAlignment="Center" IsHitTestVisible="False" />
+                    <TextBlock Name="Windows8Title" Text="{Binding $parent[Window].Title}" TextTrimming="CharacterEllipsis"
+                               FontFamily="{DynamicResource {x:Static common:NonClientMetrics.CaptionFontKey}}"
+                               FontSize="{DynamicResource {x:Static common:NonClientMetrics.CaptionFontSizeKey}}"
+                               Foreground="{DynamicResource {x:Static common:SystemColors.ActiveCaptionTextBrushKey}}"
+                               TextAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+                    <local:DesktopCaptionButtons Name="PART_CaptionButtons" VerticalAlignment="Top" />
+                </local:Windows8TitlePanel>
+            </Panel>
+        </ControlTemplate>
+        <DataTemplate x:Key="Windows8MinimizeGlyph">
+            <Path Width="10" Height="10" Margin="0" Stretch="None" Data="M0,7 H10 V9 H0 Z"
+                  Fill="{Binding $parent[Button].Foreground}" />
+        </DataTemplate>
+        <DataTemplate x:Key="Windows8MaximizeGlyph">
+            <Path Width="10" Height="10" Margin="0" Stretch="None" Data="F0 M0,1 H10 V9 H0 Z M1,3 V8 H9 V3 Z"
+                  Fill="{Binding $parent[Button].Foreground}" />
+        </DataTemplate>
+        <DataTemplate x:Key="Windows8RestoreGlyph">
+            <Path Width="10" Height="10" Margin="0" Stretch="None"
+                  Data="F0 M2,0 H10 V8 H8 V10 H0 V2 H2 Z M3,2 V3 H8 V7 H9 V2 Z M1,5 V9 H7 V5 Z"
+                  Fill="{Binding $parent[Button].Foreground}" />
+        </DataTemplate>
+        <DataTemplate x:Key="Windows8CloseGlyph">
+            <Path Width="8" Height="8" Margin="0" Stretch="None"
+                  Data="M1,0 L4,3 L7,0 L8,1 L5,4 L8,7 L7,8 L4,5 L1,8 L0,7 L3,4 L0,1 Z" Fill="White" />
+        </DataTemplate>
+    </Styles.Resources>
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme.windows8">
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl)">
+            <Setter Property="Template" Value="{StaticResource Windows8TitleTemplate}" />
+        </Style>
+        <Style Selector="^[IsActive=False] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ TextBlock#Windows8Title">
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.InactiveCaptionTextBrushKey}}" />
+        </Style>
+        <!-- 标题按钮保留各部件名称，最大化、还原及全屏仍交给原有控件。 -->
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button">
+            <Setter Property="Template" Value="{StaticResource FlatCaptionButtonTemplate}" />
+            <Setter Property="Width" Value="26" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_MinimizeButton">
+            <Setter Property="ContentTemplate" Value="{StaticResource Windows8MinimizeGlyph}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_RestoreButton">
+            <Setter Property="ContentTemplate" Value="{StaticResource Windows8MaximizeGlyph}" />
+        </Style>
+        <Style Selector="^[WindowState=Maximized] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_RestoreButton">
+            <Setter Property="ContentTemplate" Value="{StaticResource Windows8RestoreGlyph}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton">
+            <Setter Property="Width" Value="30" />
+            <Setter Property="ContentTemplate" Value="{StaticResource Windows8CloseGlyph}" />
+        </Style>
+        <Style Selector="^[IsActive=False] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton">
+            <Setter Property="Background" Value="{DynamicResource Windows8InactiveCloseBrush}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button:pointerover">
+            <Setter Property="Background" Value="{DynamicResource DesktopCaptionHoverBrush}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button:pressed">
+            <Setter Property="Background" Value="{DynamicResource Windows8CaptionPressedBrush}" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton:pointerover">
+            <Setter Property="Background" Value="{DynamicResource Windows8CloseHoverBrush}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton:pressed">
+            <Setter Property="Background" Value="{DynamicResource Windows8ClosePressedBrush}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button:disabled">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Opacity" Value="0.35" />
+        </Style>
+    </Style>
+</Styles>

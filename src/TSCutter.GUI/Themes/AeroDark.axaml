@@ -1,0 +1,232 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+                    xmlns:local="using:TSCutter.GUI.Themes">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://TSCutterGUI/Themes/Aero.axaml" />
+    </ResourceDictionary.MergedDictionaries>
+    <!-- 复用 Aero 的控件、窗口尺寸和红色关闭按钮，正文使用冷灰蓝，玻璃使用较深的染色。 -->
+    <Color x:Key="{x:Static common:SystemColors.ActiveBorderColorKey}">#3B5367</Color>
+    <Color x:Key="{x:Static common:SystemColors.ActiveCaptionColorKey}">#2D455A</Color>
+    <Color x:Key="{x:Static common:SystemColors.ActiveCaptionTextColorKey}">#F2F4F7</Color>
+    <Color x:Key="{x:Static common:SystemColors.AppWorkspaceColorKey}">#111A22</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlColorKey}">#2A343E</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlDarkColorKey}">#1D2730</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlDarkDarkColorKey}">#101820</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlLightColorKey}">#3A4957</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlLightLightColorKey}">#536777</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlTextColorKey}">#E6E9EE</Color>
+    <Color x:Key="{x:Static common:SystemColors.DesktopColorKey}">#111316</Color>
+    <Color x:Key="{x:Static common:SystemColors.GradientActiveCaptionColorKey}">#526C81</Color>
+    <Color x:Key="{x:Static common:SystemColors.GradientInactiveCaptionColorKey}">#3C4F5E</Color>
+    <Color x:Key="{x:Static common:SystemColors.GrayTextColorKey}">#8A99A6</Color>
+    <Color x:Key="{x:Static common:SystemColors.HighlightColorKey}">#315F82</Color>
+    <Color x:Key="{x:Static common:SystemColors.HighlightTextColorKey}">#F7F9FB</Color>
+    <Color x:Key="{x:Static common:SystemColors.HotTrackColorKey}">#79B9E8</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveBorderColorKey}">#30353D</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveCaptionColorKey}">#263642</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveCaptionTextColorKey}">#9DA5B1</Color>
+    <Color x:Key="{x:Static common:SystemColors.InfoColorKey}">#283847</Color>
+    <Color x:Key="{x:Static common:SystemColors.InfoTextColorKey}">#E6E9EE</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuColorKey}">#202D38</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuBarColorKey}">#25323E</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuHighlightColorKey}">#2D4C63</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuTextColorKey}">#E6E9EE</Color>
+    <Color x:Key="{x:Static common:SystemColors.ScrollBarColorKey}">#292D33</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowColorKey}">#19232C</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowFrameColorKey}">#101820</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowTextColorKey}">#E6E9EE</Color>
+    <Color x:Key="AppAccentColor">#65ADE0</Color>
+    <Color x:Key="AppAccentHoverColor">#91CCF1</Color>
+    <Color x:Key="AppSelectionColor">#294F6B</Color>
+    <Color x:Key="AppSurfaceRaisedColor">#2A3743</Color>
+    <Color x:Key="AppSurfaceHoverColor">#32495C</Color>
+    <Color x:Key="AppBorderColor">#4A5E6F</Color>
+    <Color x:Key="AppSecondaryTextColor">#A9BBC9</Color>
+    <Color x:Key="SystemAccentColor">#65ADE0</Color>
+    <Color x:Key="SystemBaseLowColor">#344756</Color>
+    <Color x:Key="SystemAccentColorLight1">#294F6B</Color>
+    <Color x:Key="DesktopRowHoverColor">#2A3E4F</Color>
+    <Color x:Key="DesktopFocusBorderColor">#83C3ED</Color>
+    <Color x:Key="AppErrorColor">#FF9992</Color>
+    <Color x:Key="AppWarningColor">#E9C578</Color>
+    <Color x:Key="AppSuccessColor">#90D9A3</Color>
+    <Color x:Key="DesktopRowInvalidColor">#33FF7870</Color>
+
+    <SolidColorBrush x:Key="DesktopButtonBorderBrush" Color="#647584" />
+    <SolidColorBrush x:Key="AeroButtonPressedBorderBrush" Color="#72B6E5" />
+    <SolidColorBrush x:Key="DesktopButtonHoverHighlightBrush" Color="#688EA9" />
+    <SolidColorBrush x:Key="DesktopFocusHighlightBrush" Color="#78B6E4" />
+    <SolidColorBrush x:Key="DesktopDisabledBackgroundBrush" Color="#252B31" />
+    <SolidColorBrush x:Key="DesktopDisabledBorderBrush" Color="#404A54" />
+    <SolidColorBrush x:Key="DesktopInputBorderBrush" Color="#596976" />
+    <SolidColorBrush x:Key="DesktopTabBorderBrush" Color="#556675" />
+    <SolidColorBrush x:Key="DesktopTabSurfaceBrush" Color="#252E37" />
+    <SolidColorBrush x:Key="DesktopHoverAccentBrush" Color="#72B6E5" />
+    <SolidColorBrush x:Key="DesktopCheckBorderBrush" Color="#7F92A2" />
+    <SolidColorBrush x:Key="DesktopCheckMarkBrush" Color="#C9EAF7" />
+    <SolidColorBrush x:Key="DesktopCheckIndeterminateBrush" Color="#65ADE0" />
+    <SolidColorBrush x:Key="DesktopProgressBorderBrush" Color="#506571" />
+    <SolidColorBrush x:Key="DesktopProgressFillBrush" Color="#43C553" />
+    <SolidColorBrush x:Key="DesktopScrollTrackBrush" Color="#20272D" />
+    <SolidColorBrush x:Key="DesktopScrollArrowBrush" Color="#D9E7F0" />
+    <SolidColorBrush x:Key="DesktopScrollBorderBrush" Color="#617481" />
+    <SolidColorBrush x:Key="DesktopScrollArrowHoverBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="DesktopScrollArrowPressedBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="DesktopScrollPressedBrush" Color="#315F80" />
+    <SolidColorBrush x:Key="DesktopScrollGripBrush" Color="#AAC0D0" />
+    <SolidColorBrush x:Key="DesktopToolbarBorderBrush" Color="#4C7390" />
+    <SolidColorBrush x:Key="DesktopToolbarHoverBrush" Color="#334C60" />
+    <SolidColorBrush x:Key="DesktopToolbarPressedBrush" Color="#253D50" />
+    <SolidColorBrush x:Key="DesktopGroupBorderBrush" Color="#475965" />
+    <SolidColorBrush x:Key="DesktopGroupForegroundBrush" Color="#9DCEE9" />
+    <Color x:Key="AeroTitleGlowColor">#080D13</Color>
+    <SolidColorBrush x:Key="AeroTitleGlowBrush" Color="{DynamicResource AeroTitleGlowColor}" />
+    <SolidColorBrush x:Key="AeroCaptionGlyphOutlineBrush" Color="#111A21" />
+    <SolidColorBrush x:Key="DesktopInnerHighlightBrush" Color="#405F7689" />
+    <SolidColorBrush x:Key="DesktopCaptionButtonBorderBrush" Color="#B00B1219" />
+    <SolidColorBrush x:Key="AeroCaptionHighlightBrush" Color="#38FFFFFF" />
+
+    <!-- 深色玻璃仅叠加少量染色，避免与系统深色材质叠加后遮住背后颜色。 -->
+    <LinearGradientBrush x:Key="AeroGlassTintBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#40314F68" Offset="0" />
+        <GradientStop Color="#28253E53" Offset="0.25" />
+        <GradientStop Color="#201B3042" Offset="0.7" />
+        <GradientStop Color="#48121F2C" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AeroGlassInactiveSurfaceBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#302D3D4A" Offset="0" />
+        <GradientStop Color="#281B2C3A" Offset="0.5" />
+        <GradientStop Color="#40121F2B" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AeroGlassBaseBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#52697C" Offset="0" />
+        <GradientStop Color="#3C5367" Offset="0.25" />
+        <GradientStop Color="#2B4256" Offset="0.7" />
+        <GradientStop Color="#203345" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopInactiveCaptionBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#3F5261" Offset="0" />
+        <GradientStop Color="#304350" Offset="0.5" />
+        <GradientStop Color="#233540" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AeroGlassCaptionButtonBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#286D91AA" Offset="0" />
+        <GradientStop Color="#20385D7B" Offset="0.45" />
+        <GradientStop Color="#4820374C" Offset="0.46" />
+        <GradientStop Color="#303C5C73" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopCaptionButtonBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#526A7D" Offset="0" />
+        <GradientStop Color="#3C5366" Offset="0.45" />
+        <GradientStop Color="#263F53" Offset="0.46" />
+        <GradientStop Color="#344F66" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopButtonBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#455565" Offset="0" />
+        <GradientStop Color="#354552" Offset="0.5" />
+        <GradientStop Color="#293845" Offset="0.5" />
+        <GradientStop Color="#314452" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopButtonPressedBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#233E52" Offset="0" />
+        <GradientStop Color="#2B4F68" Offset="0.5" />
+        <GradientStop Color="#1C3A50" Offset="0.5" />
+        <GradientStop Color="#345C79" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopScrollBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#455C6C" Offset="0" />
+        <GradientStop Color="#354B5B" Offset="0.5" />
+        <GradientStop Color="#293D4D" Offset="0.5" />
+        <GradientStop Color="#3A5163" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopScrollHoverBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#5A7A91" Offset="0" />
+        <GradientStop Color="#416781" Offset="0.5" />
+        <GradientStop Color="#2D4F6C" Offset="0.5" />
+        <GradientStop Color="#466B88" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopTabBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#3C4D5C" Offset="0" />
+        <GradientStop Color="#2B3B49" Offset="0.5" />
+        <GradientStop Color="#21303D" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopCheckBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#1B2731" Offset="0" />
+        <GradientStop Color="#273846" Offset="0.4" />
+        <GradientStop Color="#324B60" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AeroButtonHoverBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#486B85" Offset="0" />
+        <GradientStop Color="#375B76" Offset="0.5" />
+        <GradientStop Color="#274963" Offset="0.5" />
+        <GradientStop Color="#335E7E" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AeroCaptionHoverBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#6DABC7" Offset="0" />
+        <GradientStop Color="#397CA7" Offset="0.45" />
+        <GradientStop Color="#1D5B8B" Offset="0.46" />
+        <GradientStop Color="#609DC1" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AeroCaptionPressedBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#386D92" Offset="0" />
+        <GradientStop Color="#255A7F" Offset="0.45" />
+        <GradientStop Color="#16466B" Offset="0.46" />
+        <GradientStop Color="#3E769B" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AeroMenuSelectionBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#36566D" Offset="0" />
+        <GradientStop Color="#284459" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AeroVerticalScrollBrush" StartPoint="0%,0%" EndPoint="100%,0%">
+        <GradientStop Color="#455C6C" Offset="0" />
+        <GradientStop Color="#354B5B" Offset="0.5" />
+        <GradientStop Color="#293D4D" Offset="0.5" />
+        <GradientStop Color="#3A5163" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AeroVerticalScrollHoverBrush" StartPoint="0%,0%" EndPoint="100%,0%">
+        <GradientStop Color="#5A7A91" Offset="0" />
+        <GradientStop Color="#416781" Offset="0.5" />
+        <GradientStop Color="#2D4F6C" Offset="0.5" />
+        <GradientStop Color="#466B88" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="AeroDataGridHeaderBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#3D4F5F" Offset="0" />
+        <GradientStop Color="#304251" Offset="0.5" />
+        <GradientStop Color="#263643" Offset="1" />
+    </LinearGradientBrush>
+
+    <DrawingBrush x:Key="AeroGlassSurfaceBrush" Stretch="Fill">
+        <DrawingBrush.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.Children>
+                    <GeometryDrawing Brush="{StaticResource AeroGlassTintBrush}" Geometry="M0,0 L760,0 L760,29 L0,29 Z" />
+                    <GeometryDrawing Brush="{StaticResource AeroGlassReflectionBrush}" Geometry="M250,0 L490,0 L435,29 L195,29 Z" />
+                    <GeometryDrawing Brush="{StaticResource AeroGlassReflectionBrush}" Geometry="M540,0 L620,0 L565,29 L485,29 Z" />
+                </DrawingGroup.Children>
+            </DrawingGroup>
+        </DrawingBrush.Drawing>
+    </DrawingBrush>
+    <DrawingBrush x:Key="DesktopActiveCaptionBrush" Stretch="Fill">
+        <DrawingBrush.Drawing>
+            <DrawingGroup>
+                <DrawingGroup.Children>
+                    <GeometryDrawing Brush="{StaticResource AeroGlassBaseBrush}" Geometry="M0,0 L760,0 L760,29 L0,29 Z" />
+                    <GeometryDrawing Brush="{StaticResource AeroGlassReflectionBrush}" Geometry="M250,0 L490,0 L435,29 L195,29 Z" />
+                    <GeometryDrawing Brush="{StaticResource AeroGlassReflectionBrush}" Geometry="M540,0 L620,0 L565,29 L485,29 Z" />
+                </DrawingGroup.Children>
+            </DrawingGroup>
+        </DrawingBrush.Drawing>
+    </DrawingBrush>
+
+    <local:WindowFramePalette x:Key="DesktopActiveFramePalette" Outer="#111A22" Middle="#738D9F" Inner="{StaticResource AeroGlassBaseBrush}" />
+    <local:WindowFramePalette x:Key="DesktopInactiveFramePalette" Outer="#131C24" Middle="#4F6474" Inner="{StaticResource DesktopInactiveCaptionBrush}" />
+    <local:WindowFramePalette x:Key="AeroGlassActiveFramePalette" Outer="#E00B141E" Middle="#657E9CAF" Inner="{StaticResource AeroGlassTintBrush}" />
+    <local:WindowFramePalette x:Key="AeroGlassInactiveFramePalette" Outer="#D00D151D" Middle="#405D7486" Inner="{StaticResource AeroGlassInactiveSurfaceBrush}" />
+    <LinearGradientBrush x:Key="DesktopToolTipBackgroundBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#344553" Offset="0" />
+        <GradientStop Color="#26343F" Offset="1" />
+    </LinearGradientBrush>
+    <SolidColorBrush x:Key="DesktopToolTipBorderBrush" Color="#778797" />
+    <SolidColorBrush x:Key="DesktopToolTipForegroundBrush" Color="#E6E9EE" />
+</ResourceDictionary>
