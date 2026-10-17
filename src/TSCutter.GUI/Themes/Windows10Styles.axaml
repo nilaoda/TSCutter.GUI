@@ -88,6 +88,10 @@
         <Style Selector="^[IsActive=False] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button:pressed">
             <Setter Property="Background" Value="{DynamicResource Windows10InactiveCaptionPressedBrush}" />
         </Style>
+        <!-- 失焦时仍区分可用与禁用按钮；关闭按钮的红底白图标继续由交互状态接管。 -->
+        <Style Selector="^.windows10[IsActive=False] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button:not(:disabled)">
+            <Setter Property="Foreground" Value="{DynamicResource Windows10InactiveCaptionGlyphBrush}" />
+        </Style>
         <!-- 关闭按钮仅在悬停或按下时变红，文字同步变白，失焦窗口也遵循相同规则。 -->
         <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton:pointerover">
             <Setter Property="Background" Value="{DynamicResource Windows10CloseHoverBrush}" />

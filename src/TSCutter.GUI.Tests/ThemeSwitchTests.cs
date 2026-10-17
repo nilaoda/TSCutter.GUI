@@ -405,6 +405,8 @@ public sealed class ThemeSwitchTests
                 Flush();
                 var maximize = window.GetVisualDescendants().OfType<Button>()
                     .Single(control => control.Name == "PART_RestoreButton");
+                var minimize = window.GetVisualDescendants().OfType<Button>()
+                    .Single(control => control.Name == "PART_MinimizeButton");
                 var caption = window.GetVisualDescendants().OfType<Border>()
                     .Single(control => control.Name == "PART_GradientBar");
                 foreach (var active in new[] { true, false })
@@ -425,8 +427,19 @@ public sealed class ThemeSwitchTests
                     var second = Luminance(background) + 0.05;
                     Assert.True(Math.Max(first, second) / Math.Min(first, second) >= 2,
                         "Disabled maximize should remain distinguishable on the caption background.");
+                    if (!dark)
+                    {
+                        Assert.True(minimize.IsEffectivelyEnabled);
+                        var enabled = Assert.IsAssignableFrom<ISolidColorBrush>(minimize.Foreground).Color;
+                        var enabledLuminance = Luminance(enabled) + 0.05;
+                        Assert.True(Math.Max(first, enabledLuminance) / Math.Min(first, enabledLuminance) >= 1.8,
+                            "Disabled maximize should look different from enabled caption buttons in both activation states.");
+                    }
                     var point = maximize.TranslatePoint(new Point(23, 16), window)!.Value;
                     window.MouseMove(point);
+                    Flush();
+                    Assert.Equal(foreground, Assert.IsAssignableFrom<ISolidColorBrush>(maximize.Foreground).Color);
+                    Assert.Equal(0, Assert.IsAssignableFrom<ISolidColorBrush>(maximize.Background).Color.A);
                     window.MouseDown(point, MouseButton.Left);
                     window.MouseUp(point, MouseButton.Left);
                     Flush();

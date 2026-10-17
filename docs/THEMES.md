@@ -2,7 +2,7 @@
 
 [中文版](THEMES_CN.md) | [Back to README](../README.md)
 
-Six theme families, with one representative palette for Classic. Switch families with **View → Theme**, or choose light and dark palettes independently in **Tools → Settings**. **Auto detect** follows the system appearance.
+Six theme families. Classic shows one light palette and Standard (Dark). Switch families with **View → Theme**, or choose light and dark palettes independently in **Tools → Settings**. **Auto detect** follows the system appearance.
 
 Previews use the same Settings window, dimensions, and English interface. Click an image for its original size. Aero and Windows 11 show the solid-background fallback; blur and Mica depend on platform support. Dark palettes include this application's adaptations of classic Windows styles.
 
@@ -10,7 +10,9 @@ Window corners depend on the host system: Aero and Windows 11 themes retain roun
 
 ## Windows Classic
 
-<a href="../img/themes/classic.png"><img src="../img/themes/classic.png" alt="Classic" width="380"></a>
+| Classic | Standard (Dark) |
+| :---: | :---: |
+| <a href="../img/themes/classic.png"><img src="../img/themes/classic.png" alt="Classic" width="380"></a> | <a href="../img/themes/dark-standard.png"><img src="../img/themes/dark-standard.png" alt="Standard (Dark)" width="380"></a> |
 
 ## Windows XP
 

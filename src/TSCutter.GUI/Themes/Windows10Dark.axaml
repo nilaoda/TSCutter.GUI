@@ -35,6 +35,7 @@
     <SolidColorBrush x:Key="DesktopActiveCaptionBrush" Color="#000000" />
     <SolidColorBrush x:Key="DesktopInactiveCaptionBrush" Color="#151515" />
     <SolidColorBrush x:Key="DesktopCaptionGlyphBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="Windows10InactiveCaptionGlyphBrush" Color="#999999" />
     <SolidColorBrush x:Key="Windows10DisabledCaptionGlyphBrush" Color="#808080" />
     <SolidColorBrush x:Key="Windows10InactiveDisabledCaptionGlyphBrush" Color="#999999" />
     <SolidColorBrush x:Key="DesktopCaptionButtonBrush" Color="Transparent" />

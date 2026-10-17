@@ -2,7 +2,7 @@
 
 [English](THEMES.md) | [返回 README](../README_CN.md)
 
-按六个主题系列展示，Classic 选取一套代表配色。通过 **视图 → 主题** 快速切换系列，或在 **工具 → 设置** 中分别选择浅色、深色配色；**自动检测** 会跟随系统外观。
+按六个主题系列展示，Classic 展示一套浅色配色及 Standard (Dark) 深色配色。通过 **视图 → 主题** 快速切换系列，或在 **工具 → 设置** 中分别选择浅色、深色配色；**自动检测** 会跟随系统外观。
 
 以下截图使用相同的设置窗口、尺寸和英文界面，点击可查看原图。Aero 与 Windows 11 展示实色回退外观，实际模糊或 Mica 材质取决于平台支持。深色配色包含本应用对经典 Windows 风格的扩展。
 
@@ -10,7 +10,9 @@
 
 ## Windows Classic
 
-<a href="../img/themes/classic.png"><img src="../img/themes/classic.png" alt="Classic" width="380"></a>
+| Classic | Standard (Dark) |
+| :---: | :---: |
+| <a href="../img/themes/classic.png"><img src="../img/themes/classic.png" alt="Classic" width="380"></a> | <a href="../img/themes/dark-standard.png"><img src="../img/themes/dark-standard.png" alt="Standard (Dark)" width="380"></a> |
 
 ## Windows XP
 
