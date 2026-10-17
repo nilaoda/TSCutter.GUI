@@ -22,7 +22,7 @@
     <Thickness x:Key="Windows11MenuChevronMargin">24,0,0,-1</Thickness>
     <x:Double x:Key="Windows11ComboGlyphAreaWidth">30</x:Double>
     <Thickness x:Key="Windows11ComboPadding">12,4,0,4</Thickness>
-    <!-- 文本和菜单模板基于 Classic.Avalonia；许可见 ThirdParty/Classic.Avalonia/LICENSE.txt。 -->
+    <!-- 文本和菜单模板基于 Classic.Avalonia；许可见 THIRD_PARTY_LICENSES.txt。 -->
     <!-- 输入框保留文本呈现、输入法、选区、密码、验证及滚动部件，仅替换外框和底线。 -->
 <ControlTemplate x:Key="Windows11TextBoxTemplate" TargetType="TextBox">
         <DockPanel HorizontalAlignment="{TemplateBinding HorizontalAlignment}"

@@ -23,6 +23,7 @@ jobs:
       version: ${{ steps.metadata.outputs.version }}
       stage: ${{ steps.metadata.outputs.stage }}
       tag: ${{ steps.metadata.outputs.tag }}
+      sdk-version: ${{ steps.metadata.outputs.sdk-version }}
     steps:
       - uses: actions/checkout@v4
       - name: Set up dotnet
@@ -33,7 +34,7 @@ jobs:
         id: metadata
         shell: bash
         run: |
-          dotnet msbuild src/TSCutter.GUI/TSCutter.GUI.csproj -nologo -getProperty:Version,ReleaseStage,ReleaseTag > "$RUNNER_TEMP/release-info.json"
+          dotnet msbuild src/TSCutter.GUI/TSCutter.GUI.csproj -nologo -getProperty:Version,ReleaseStage,ReleaseTag,NETCoreSdkVersion > "$RUNNER_TEMP/release-info.json"
           python3 - <<'PYTHON'
           import json
           import os
@@ -44,13 +45,28 @@ jobs:
           version = properties["Version"]
           stage = properties["ReleaseStage"]
           tag = properties["ReleaseTag"]
+          sdk = properties["NETCoreSdkVersion"]
           if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
               raise ValueError("Release version must contain three numeric components")
           if stage != "Beta" or tag != f"v{version}":
               raise ValueError("Unexpected Beta release metadata")
           with open(os.environ["GITHUB_OUTPUT"], "a") as output:
-              output.write(f"version={version}\nstage={stage}\ntag={tag}\n")
+              output.write(f"version={version}\nstage={stage}\ntag={tag}\nsdk-version={sdk}\n")
           PYTHON
+
+      - name: Generate shared third-party notices
+        run: |
+          dotnet restore src/TSCutter.GUI/TSCutter.GUI.csproj -r linux-x64 -property:Configuration=Release -property:SelfContained=true -property:PublishAot=false -property:PublishTrimmed=false
+          dotnet msbuild src/TSCutter.GUI/TSCutter.GUI.csproj -nologo -target:ResolveFrameworkReferences -property:Configuration=Release -property:RuntimeIdentifier=linux-x64 -property:SelfContained=true -property:PublishAot=false -property:PublishTrimmed=false -getItem:ResolvedRuntimePack > "$RUNNER_TEMP/runtime-packs.json"
+          python3 tools/generate_third_party_notices.py --runtime-packs "$RUNNER_TEMP/runtime-packs.json" --output "$RUNNER_TEMP/third-party-notices/THIRD_PARTY_NOTICES.txt"
+
+      - name: Upload shared third-party notices
+        uses: actions/upload-artifact@v4
+        with:
+          name: third-party-notices
+          path: ${{ runner.temp }}/third-party-notices/THIRD_PARTY_NOTICES.txt
+          if-no-files-found: error
+          retention-days: 1
 
   build-win-x64:
     runs-on: windows-latest
@@ -62,7 +78,7 @@ jobs:
       - name: Set up dotnet
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+          dotnet-version: ${{ needs.release-info.outputs.sdk-version }}
 
       - name: Install 7zip and zip
         run: |
@@ -101,6 +117,12 @@ jobs:
           Invoke-WebRequest -Uri "${{ env.FFMPEG_RUNTIME_WIN_X64_URL }}" -OutFile $zipPath
           Expand-Archive -Path $zipPath -DestinationPath "src/TSCutter.GUI/artifact" -Force
 
+      - name: Download third-party notices [win-x64]
+        uses: actions/download-artifact@v4
+        with:
+          name: third-party-notices
+          path: src/TSCutter.GUI/artifact
+
       - name: Package [win-x64]
         run: |
           cd src/TSCutter.GUI/artifact
@@ -125,7 +147,7 @@ jobs:
       - name: Set up dotnet
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+          dotnet-version: ${{ needs.release-info.outputs.sdk-version }}
 
       - name: Publish [linux-x64]
         run: dotnet publish src/TSCutter.GUI -r linux-x64 -c Release -o artifact
@@ -134,6 +156,12 @@ jobs:
         run: |
           curl -L "${{ env.FFMPEG_RUNTIME_LINUX_X64_URL }}" -o "$RUNNER_TEMP/ffmpeg-runtime-linux-x64.zip"
           unzip -o "$RUNNER_TEMP/ffmpeg-runtime-linux-x64.zip" -d artifact
+
+      - name: Download third-party notices [linux-x64]
+        uses: actions/download-artifact@v4
+        with:
+          name: third-party-notices
+          path: artifact
 
       - name: Package [linux-x64]
         run: |
@@ -157,7 +185,7 @@ jobs:
       - name: Set up dotnet
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ env.DOTNET_SDK_VERSION }}
+          dotnet-version: ${{ needs.release-info.outputs.sdk-version }}
 
       - name: Publish [osx-arm64]
         run: dotnet publish src/TSCutter.GUI -r osx-arm64 -c Release -o artifact
@@ -215,6 +243,12 @@ jobs:
           </plist>
           EOF
 
+      - name: Download third-party notices [osx-arm64]
+        uses: actions/download-artifact@v4
+        with:
+          name: third-party-notices
+          path: ${{ runner.temp }}/TSCutter.GUI.app/Contents/MacOS
+
       - name: Package [osx-arm64]
         run: |
           cd "$RUNNER_TEMP"
@@ -237,6 +271,8 @@ jobs:
     steps:
       - name: Fetch artifacts
         uses: actions/download-artifact@v4
+        with:
+          pattern: TSCutter.GUI_*
 
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1

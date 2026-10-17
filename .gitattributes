@@ -1,0 +1,2 @@
+# Keep original whitespace in upstream license texts.
+THIRD_PARTY_LICENSES.txt whitespace=-blank-at-eol,-blank-at-eof

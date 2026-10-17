@@ -6,7 +6,7 @@ Windows 11 浅色和深色共用控件模板，以 Fluent 的表面分层、细�
 - 单选框外圈及交互状态依据 [WinUI RadioButton 的资源定义](https://github.com/microsoft/microsoft-ui-xaml/blob/main/controls/dev/CommonStyles/RadioButton_themeresources.xaml)，与普通控件的弱描边分开处理。
 - 菜单几何尺寸依据 [WinUI MenuFlyout](https://github.com/microsoft/microsoft-ui-xaml/blob/main/controls/dev/CommonStyles/MenuFlyout_themeresources.xaml) 的鼠标输入规格：条目内边距 `11,4,11,5`、条目外边距 `4,2`、弹出层内边距 `0,2`，普通图标后间距 12，快捷键及箭头前间距 24；选中标记区域按应用的桌面密度收紧为 16 像素标记加 2 像素间距，不套用普通图标的留白。度量集中在 `Windows11Templates.axaml`，各级菜单共用。
 - 下拉框采用 [Avalonia Fluent ComboBox](https://github.com/AvaloniaUI/Avalonia/blob/11.3.12/src/Avalonia.Themes.Fluent/Controls/ComboBox.xaml) 的 30 像素箭头区域和 12 像素文字起始留白，沿用应用现有控件高度。
-- 输入框和菜单模板保留 [Classic.Avalonia](https://github.com/BAndysc/Classic.Avalonia) 的文本呈现、验证、菜单状态和模板部件，许可见 `ThirdParty/Classic.Avalonia/LICENSE.txt`。
+- 输入框和菜单模板保留 [Classic.Avalonia](https://github.com/BAndysc/Classic.Avalonia) 的文本呈现、验证、菜单状态和模板部件，许可见 `THIRD_PARTY_LICENSES.txt`。
 - Windows 11 通过 Avalonia 请求 Mica；macOS 使用系统背景模糊作为近似材质，原生图层圆角启用后撤销应用的重复裁剪，避免圆角边缘出现亮边或生硬的像素过渡。只有实际获得材质时才使用半透明表面，不支持时使用实色背景。Windows 11 主题失焦时全窗切换为实色背景，重新激活后恢复材质。
 - 常规窗口四角半径为 8，最大化和全屏时取消圆角和自绘边框。材质裁剪与应用绘制保持同步。
 - Windows 11 Build 22000 及以上由 DWM 为 Windows 11 和 Aero 主题统一处理窗口、背景材质和阴影的圆角；原生设置成功后撤销应用的重复裁剪。最大化、全屏使用直角，离开圆角主题时恢复系统原值；较旧 Windows 的 Windows 7 / Aero 与 Windows 11 主题均使用直角窗口，与原生矩形边框和阴影一致；不再使用应用圆角或二值 HWND 区域裁剪。
