@@ -1,0 +1,102 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:classic="clr-namespace:Classic.Avalonia.Theme;assembly=Classic.Avalonia.Theme"
+        xmlns:primitives="using:Avalonia.Controls.Primitives"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia">
+    <!-- 保留原有控件行为与尺寸约束，以实色、蓝色强调和细边框组成 Windows 10 控件。 -->
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme.windows10">
+        <Style Selector="^ TextBox">
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <!-- 传统桌面复选框使用十三像素细边框和深色勾选；选中后保留浅色底。 -->
+        <Style Selector="^ CheckBox /template/ classic|ClassicBorderDecorator#CheckMark">
+            <Setter Property="Width" Value="13" />
+            <Setter Property="Height" Value="13" />
+        </Style>
+        <Style Selector="^ CheckBox /template/ Path#CheckMarkPath">
+            <Setter Property="Width" Value="9" />
+            <Setter Property="Height" Value="9" />
+            <Setter Property="Margin" Value="1" />
+            <Setter Property="Stretch" Value="Uniform" />
+            <Setter Property="Data" Value="M0,4 L1,3 L3,5 L7,0 L8,1 L3,7 Z" />
+        </Style>
+        <Style Selector="^ CheckBox:indeterminate:not(:pointerover):not(:pressed):not(:disabled) /template/ classic|ClassicBorderDecorator#CheckMark">
+            <Setter Property="Background" Value="{DynamicResource DesktopCheckBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:indeterminate /template/ Path#CheckMarkPath">
+            <Setter Property="Data" Value="M1,1 H8 V8 H1 Z" />
+            <Setter Property="Stretch" Value="None" />
+        </Style>
+        <!-- 单选框与复选框采用相同的中性色及悬停、按下反馈。 -->
+        <Style Selector="^ RadioButton /template/ Border#DesktopRadioBorder">
+            <Setter Property="Width" Value="13" />
+            <Setter Property="Height" Value="13" />
+            <Setter Property="CornerRadius" Value="7" />
+        </Style>
+        <Style Selector="^ RadioButton:pointerover:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource FlatCheckHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FlatCheckHoverBorderBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton:pressed:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource FlatCheckPressedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FlatCheckPressedBorderBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton /template/ Ellipse#DesktopRadioMark">
+            <Setter Property="Width" Value="5" />
+            <Setter Property="Height" Value="5" />
+        </Style>
+        <Style Selector="^ RadioButton:not(:disabled) /template/ Ellipse#DesktopRadioMark">
+            <Setter Property="Fill" Value="{DynamicResource DesktopCheckMarkBrush}" />
+        </Style>
+        <!-- 选项卡以强调线标记当前页，四种排列方向都将线条朝向正文。 -->
+        <Style Selector="^ TabItem:selected:not(:disabled) /template/ Border#DesktopTabHighlight">
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows10CheckedBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+        </Style>
+        <Style Selector="^ TabItem:selected[TabStripPlacement=Bottom]:not(:disabled) /template/ Border#DesktopTabHighlight">
+            <Setter Property="BorderThickness" Value="0,2,0,0" />
+        </Style>
+        <Style Selector="^ TabItem:selected[TabStripPlacement=Left]:not(:disabled) /template/ Border#DesktopTabHighlight">
+            <Setter Property="BorderThickness" Value="0,0,2,0" />
+        </Style>
+        <Style Selector="^ TabItem:selected[TabStripPlacement=Right]:not(:disabled) /template/ Border#DesktopTabHighlight">
+            <Setter Property="BorderThickness" Value="2,0,0,0" />
+        </Style>
+        <Style Selector="^ ProgressBar">
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <!-- 滑块沿用原有轨道、刻度、方向及拖动逻辑，只替换轨道和滑块绘制。 -->
+        <Style Selector="^ Slider /template/ classic|ClassicBorderDecorator#TrackBackground">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="{DynamicResource Windows10SliderTrackBrush}" />
+        </Style>
+        <Style Selector="^ Slider /template/ primitives|Track primitives|Thumb /template/ Border#DesktopSliderThumb">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="{DynamicResource Windows10SliderThumbBrush}" />
+        </Style>
+        <Style Selector="^ Slider /template/ primitives|Track primitives|Thumb:pointerover /template/ Border#DesktopSliderThumb">
+            <Setter Property="Background" Value="{DynamicResource Windows10SliderThumbHoverBrush}" />
+        </Style>
+        <Style Selector="^ Slider /template/ primitives|Track primitives|Thumb:pressed /template/ Border#DesktopSliderThumb">
+            <Setter Property="Background" Value="{DynamicResource Windows10CheckedPressedBrush}" />
+        </Style>
+        <Style Selector="^ Slider:disabled /template/ primitives|Track primitives|Thumb /template/ Border#DesktopSliderThumb">
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ primitives|Track primitives|Thumb /template/ Border#DesktopThumb">
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="^ ToggleButton:checked:not(.desktop-template-button):not(:disabled)">
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="^ ToggleButton:checked:pointerover:not(.desktop-template-button):not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows10CheckedHoverBrush}" />
+        </Style>
+        <Style Selector="^ ToggleButton:checked:pressed:not(.desktop-template-button):not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows10CheckedPressedBrush}" />
+        </Style>
+        <Style Selector="^ ToggleButton:not(.desktop-template-button):not(:checked):not(:disabled)">
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.ControlTextBrushKey}}" />
+        </Style>
+    </Style>
+</Styles>

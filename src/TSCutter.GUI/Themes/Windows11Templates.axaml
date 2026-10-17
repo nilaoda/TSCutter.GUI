@@ -1,0 +1,350 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:classic="clr-namespace:Classic.Avalonia.Theme;assembly=Classic.Avalonia.Theme"
+                    xmlns:primitives="using:Avalonia.Controls.Primitives"
+                    xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+                    xmlns:sys="using:System"
+                    xmlns:conv="using:Avalonia.Controls.Converters">
+    <!-- 还原图标使用错位的细线圆角方框，前框遮挡后框的左下部分。 -->
+    <DataTemplate x:Key="Windows11RestoreGlyph">
+        <Path Width="10" Height="10" Margin="0" Stretch="None" StrokeThickness="1" Fill="{x:Null}"
+              Data="M2.5,2.5 V1.5 Q2.5,0.5 3.5,0.5 H8.5 Q9.5,0.5 9.5,1.5 V6.5 Q9.5,7.5 8.5,7.5 H7.5 M1.5,2.5 H6.5 Q7.5,2.5 7.5,3.5 V8.5 Q7.5,9.5 6.5,9.5 H1.5 Q0.5,9.5 0.5,8.5 V3.5 Q0.5,2.5 1.5,2.5 Z"
+              Stroke="{Binding $parent[Button].Foreground}" />
+    </DataTemplate>
+    <!-- 菜单采用 WinUI 鼠标输入尺寸；公共度量由模板与样式共同引用。 -->
+    <Thickness x:Key="Windows11MenuItemPadding">11,4,11,5</Thickness>
+    <Thickness x:Key="Windows11MenuItemMargin">4,2</Thickness>
+    <Thickness x:Key="Windows11MenuPresenterPadding">0,2</Thickness>
+    <Thickness x:Key="Windows11MenuIconMargin">0,0,12,0</Thickness>
+    <!-- 选中标记使用紧凑间距，避免主题子菜单左侧留出过宽的空槽。 -->
+    <Thickness x:Key="Windows11MenuToggleMargin">0,0,2,0</Thickness>
+    <Thickness x:Key="Windows11MenuGestureMargin">24,0,0,0</Thickness>
+    <Thickness x:Key="Windows11MenuChevronMargin">24,0,0,-1</Thickness>
+    <x:Double x:Key="Windows11ComboGlyphAreaWidth">30</x:Double>
+    <Thickness x:Key="Windows11ComboPadding">12,4,0,4</Thickness>
+    <!-- 文本和菜单模板基于 Classic.Avalonia；许可见 ThirdParty/Classic.Avalonia/LICENSE.txt。 -->
+    <!-- 输入框保留文本呈现、输入法、选区、密码、验证及滚动部件，仅替换外框和底线。 -->
+<ControlTemplate x:Key="Windows11TextBoxTemplate" TargetType="TextBox">
+        <DockPanel HorizontalAlignment="{TemplateBinding HorizontalAlignment}"
+                   VerticalAlignment="{TemplateBinding VerticalAlignment}">
+
+          <TextBlock Name="floatingWatermark"
+                     DockPanel.Dock="Top"
+                     FontSize="{DynamicResource FontSizeSmall}"
+                     Foreground="{DynamicResource ThemeAccentBrush}"
+                     Text="{TemplateBinding Watermark}">
+            <TextBlock.IsVisible>
+              <MultiBinding Converter="{x:Static BoolConverters.And}">
+                <Binding Path="UseFloatingWatermark"
+                         RelativeSource="{RelativeSource TemplatedParent}" />
+                <Binding Converter="{x:Static StringConverters.IsNotNullOrEmpty}"
+                         Path="Text"
+                         RelativeSource="{RelativeSource TemplatedParent}" />
+              </MultiBinding>
+            </TextBlock.IsVisible>
+          </TextBlock>
+
+          <DataValidationErrors>
+            <Grid>
+
+            <Border Name="Windows11TextBorder" CornerRadius="{TemplateBinding CornerRadius}"
+                                          Background="{TemplateBinding Background}"
+                                          BorderThickness="{TemplateBinding BorderThickness}"
+                                          BorderBrush="{TemplateBinding BorderBrush}">
+
+              <Grid ColumnDefinitions="Auto,*,Auto">
+                <ContentPresenter Grid.Column="0"
+                                  Grid.ColumnSpan="1"
+                                  Content="{TemplateBinding InnerLeftContent}" />
+                <ScrollViewer Name="PART_ScrollViewer"
+                              Grid.Column="1"
+                              Grid.ColumnSpan="1"
+                              AllowAutoHide="{TemplateBinding (ScrollViewer.AllowAutoHide)}"
+                              BringIntoViewOnFocusChange="{TemplateBinding (ScrollViewer.BringIntoViewOnFocusChange)}"
+                              HorizontalScrollBarVisibility="{TemplateBinding (ScrollViewer.HorizontalScrollBarVisibility)}"
+                              IsScrollChainingEnabled="{TemplateBinding (ScrollViewer.IsScrollChainingEnabled)}"
+                              VerticalScrollBarVisibility="{TemplateBinding (ScrollViewer.VerticalScrollBarVisibility)}">
+                  <Panel Margin="{TemplateBinding Padding}">
+                    <TextBlock Name="watermark"
+                               HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                               VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                               Opacity="0.5"
+                               Text="{TemplateBinding Watermark}"
+                               TextAlignment="{TemplateBinding TextAlignment}"
+                               TextWrapping="{TemplateBinding TextWrapping}">
+                      <TextBlock.IsVisible>
+                        <MultiBinding Converter="{x:Static BoolConverters.And}">
+                          <Binding ElementName="PART_TextPresenter" Path="PreeditText" Converter="{x:Static StringConverters.IsNullOrEmpty}"/>
+                          <Binding RelativeSource="{RelativeSource TemplatedParent}" Path="Text" Converter="{x:Static StringConverters.IsNullOrEmpty}"/>
+                        </MultiBinding>
+                      </TextBlock.IsVisible>
+                    </TextBlock>
+                    <TextPresenter Name="PART_TextPresenter"
+                                   CaretBlinkInterval="{TemplateBinding CaretBlinkInterval}"
+                                   CaretBrush="{TemplateBinding CaretBrush}"
+                                   CaretIndex="{TemplateBinding CaretIndex}"
+                                   LineHeight="{TemplateBinding LineHeight}"
+                                   LetterSpacing="{TemplateBinding LetterSpacing}"
+                                   PasswordChar="{TemplateBinding PasswordChar}"
+                                   RevealPassword="{TemplateBinding RevealPassword}"
+                                   SelectionBrush="{TemplateBinding SelectionBrush}"
+                                   SelectionEnd="{TemplateBinding SelectionEnd}"
+                                   SelectionForegroundBrush="{TemplateBinding SelectionForegroundBrush}"
+                                   SelectionStart="{TemplateBinding SelectionStart}"
+                                   Text="{TemplateBinding Text,Mode=TwoWay}"
+                                   TextAlignment="{TemplateBinding TextAlignment}"
+                                   TextWrapping="{TemplateBinding TextWrapping}" />
+                  </Panel>
+                  <ScrollViewer.Styles>
+                    <Style Selector="ScrollContentPresenter#PART_ContentPresenter">
+                      <Setter Property="Cursor" Value="IBeam" />
+                    </Style>
+                  </ScrollViewer.Styles>
+                </ScrollViewer>
+                <ContentPresenter Grid.Column="2"
+                                  Grid.ColumnSpan="1"
+                                  Content="{TemplateBinding InnerRightContent}" />
+              </Grid>
+
+            </Border>
+                        <Border Name="Windows11InputUnderline" Height="1" VerticalAlignment="Bottom" IsHitTestVisible="False"
+                      CornerRadius="0,0,4,4" Background="{DynamicResource DesktopInputBorderBrush}" />
+            </Grid>
+          </DataValidationErrors>
+        </DockPanel>
+      </ControlTemplate>
+
+    <!-- 滚动箭头只绘制连续线条，不继承立体边框和内高光；重复滚动仍由原按钮处理。 -->
+    <ControlTemplate x:Key="Windows11ScrollArrowTemplate" TargetType="RepeatButton">
+        <Border Name="Windows11ScrollArrowBorder" Background="{TemplateBinding Background}" CornerRadius="4">
+            <Path Name="Windows11ScrollArrow" Width="8" Height="4" Data="M0,4 L4,0 L8,4"
+                  HorizontalAlignment="Center" VerticalAlignment="Center" StrokeThickness="1.2" StrokeJoin="Round"
+                  Stroke="{TemplateBinding Foreground}" />
+        </Border>
+    </ControlTemplate>
+    <ControlTemplate x:Key="Windows11CaptionButtonTemplate" TargetType="Button">
+        <Grid>
+            <Border Name="Windows11CaptionButtonBorder" Background="{TemplateBinding Background}" />
+            <ContentPresenter Name="PART_ContentPresenter" HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                              TextElement.Foreground="{TemplateBinding Foreground}" />
+        </Grid>
+    </ControlTemplate>
+    <ControlTemplate x:Key="Windows11TabItemTemplate" TargetType="TabItem">
+        <Grid>
+            <Border Name="Windows11TabBorder" Background="{TemplateBinding Background}"
+                    BorderThickness="{TemplateBinding BorderThickness}" BorderBrush="{TemplateBinding BorderBrush}"
+                    CornerRadius="{TemplateBinding CornerRadius}">
+                <ContentPresenter Name="PART_ContentPresenter" Margin="{TemplateBinding Padding}"
+                                  Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                  RecognizesAccessKey="True" TextElement.Foreground="{TemplateBinding Foreground}" />
+            </Border>
+            <Border Name="Windows11TabIndicator" Width="16" Height="3" CornerRadius="1.5"
+                    HorizontalAlignment="Center" VerticalAlignment="Bottom" IsVisible="False" IsHitTestVisible="False"
+                    Background="{DynamicResource Windows11AccentBrush}" />
+        </Grid>
+    </ControlTemplate>
+    <ControlTemplate x:Key="Windows11ComboToggleTemplate" TargetType="ToggleButton">
+        <DockPanel Background="Transparent" LastChildFill="False">
+            <Border Width="{StaticResource Windows11ComboGlyphAreaWidth}" DockPanel.Dock="Right">
+                <Path Name="Windows11ComboArrow" Width="8" Height="4" Data="M0,0 L4,4 L8,0"
+                      Stroke="{TemplateBinding Foreground}" StrokeThickness="1.2" StrokeJoin="Round"
+                      HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+        </DockPanel>
+    </ControlTemplate>
+    <ControlTemplate x:Key="Windows11ComboBoxTemplate" TargetType="ComboBox">
+        <Grid>
+            <Border Name="Windows11ComboBorder" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="{TemplateBinding CornerRadius}" />
+            <DockPanel Margin="{TemplateBinding BorderThickness}" IsHitTestVisible="False">
+                <Control Width="{StaticResource Windows11ComboGlyphAreaWidth}" DockPanel.Dock="Right" />
+                <Border Name="SelectedItemBorder" Padding="{TemplateBinding Padding}" ClipToBounds="True">
+                    <Panel>
+                        <TextBlock Name="PlaceholderTextBlock" Text="{TemplateBinding PlaceholderText}"
+                                   Foreground="{TemplateBinding PlaceholderForeground}"
+                                   IsVisible="{TemplateBinding SelectionBoxItem, Converter={x:Static ObjectConverters.IsNull}}"
+                                   HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                   VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        <ContentPresenter Content="{TemplateBinding SelectionBoxItem}" ContentTemplate="{TemplateBinding ItemTemplate}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Panel>
+                </Border>
+            </DockPanel>
+            <ToggleButton Name="toggle" Background="Transparent" BorderThickness="0" Padding="0" MinHeight="0" MinWidth="0"
+                          Focusable="False" IsChecked="{TemplateBinding IsDropDownOpen, Mode=TwoWay}" ClickMode="Press" />
+            <Popup Name="PART_Popup" Placement="Bottom" HorizontalOffset="-6" IsLightDismissEnabled="True" Focusable="False"
+                   WindowManagerAddShadowHint="False" MaxHeight="{TemplateBinding MaxDropDownHeight}"
+                   PlacementTarget="{TemplateBinding}" IsOpen="{TemplateBinding IsDropDownOpen, Mode=TwoWay}">
+                <Border Name="DropDownBorder" Margin="6,4,6,8" Padding="4" CornerRadius="8" BorderThickness="1"
+                        MinWidth="{Binding Bounds.Width, RelativeSource={RelativeSource TemplatedParent}}"
+                        Background="{DynamicResource Windows11MenuBrush}" BorderBrush="{DynamicResource Windows11StrokeBrush}"
+                        BoxShadow="0 4 10 0 #26000000">
+                    <ScrollViewer Name="DropDownScrollViewer"
+                                  HorizontalScrollBarVisibility="{TemplateBinding (ScrollViewer.HorizontalScrollBarVisibility)}"
+                                  VerticalScrollBarVisibility="{TemplateBinding (ScrollViewer.VerticalScrollBarVisibility)}"
+                                  IsDeferredScrollingEnabled="{TemplateBinding (ScrollViewer.IsDeferredScrollingEnabled)}">
+                        <ItemsPresenter Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}"
+                                        KeyboardNavigation.TabNavigation="Contained" />
+                    </ScrollViewer>
+                </Border>
+            </Popup>
+        </Grid>
+    </ControlTemplate>
+    <ControlTemplate x:Key="Windows11CheckBoxTemplate" TargetType="CheckBox">
+        <classic:BulletDecorator Background="Transparent">
+            <classic:BulletDecorator.Bullet>
+                <Border Name="Windows11CheckBorder" Width="20" Height="20" CornerRadius="4"
+                        Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                        BorderThickness="{TemplateBinding BorderThickness}">
+                    <Path Name="CheckMarkPath" Width="12" Height="10" Stretch="Uniform" Margin="2"
+                          Data="M0,5 L4,9 L12,0 L13,1 L4,11 L-1,6 Z" FlowDirection="LeftToRight"
+                          Fill="{DynamicResource Windows11OnAccentBrush}" />
+                </Border>
+            </classic:BulletDecorator.Bullet>
+            <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                              Margin="{TemplateBinding Padding}" TextElement.Foreground="{TemplateBinding Foreground}"
+                              VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                              HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" RecognizesAccessKey="True" />
+        </classic:BulletDecorator>
+    </ControlTemplate>
+    <ControlTemplate x:Key="Windows11ListItemTemplate" TargetType="ContentControl">
+        <Border Name="Windows11ListItemBorder" Background="{TemplateBinding Background}" CornerRadius="4"
+                BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+            <Grid>
+                <Border Name="Windows11SelectionIndicator" Width="3" Height="16" CornerRadius="2" HorizontalAlignment="Left"
+                        Background="{DynamicResource Windows11AccentBrush}" IsVisible="False" IsHitTestVisible="False" />
+                <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                  Margin="{TemplateBinding Padding}" TextElement.Foreground="{TemplateBinding Foreground}"
+                                  HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                  VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+            </Grid>
+        </Border>
+    </ControlTemplate>
+    <!-- 弹出层用普通圆角边框，避免传统装饰器的方形底色露出。 -->
+    <ControlTemplate x:Key="Windows11MenuTemplate" TargetType="ItemsControl">
+        <Border Name="Windows11MenuBorder" Background="{DynamicResource Windows11MenuBrush}"
+                BorderBrush="{DynamicResource Windows11StrokeBrush}" BorderThickness="1" CornerRadius="8"
+                Margin="6,4,6,8" Padding="{StaticResource Windows11MenuPresenterPadding}" BoxShadow="0 4 10 0 #26000000">
+            <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <ItemsPresenter Name="PART_ItemsPresenter" ItemsPanel="{TemplateBinding ItemsPanel}"
+                                Grid.IsSharedSizeScope="True" KeyboardNavigation.TabNavigation="Continue" />
+            </ScrollViewer>
+        </Border>
+    </ControlTemplate>
+    <conv:PlatformKeyGestureConverter x:Key="Windows11KeyGestureConverter" />
+    <ControlTemplate x:Key="Windows11MenuItemTemplate" TargetType="MenuItem">
+        <Panel>
+            <Border Name="root" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="{TemplateBinding CornerRadius}" Padding="{TemplateBinding Padding}"
+                    RenderOptions.EdgeMode="Antialias">
+                <!-- 各列按同一菜单共享宽度，图标为空时不额外保留传统菜单的固定空槽。 -->
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="Windows11MenuToggle" />
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="Windows11MenuIcon" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="MenuItemIGT" />
+                        <ColumnDefinition Width="Auto" SharedSizeGroup="Windows11MenuChevron" />
+                    </Grid.ColumnDefinitions>
+                    <ContentControl Name="PART_ToggleIconPresenter" Grid.Column="0" IsVisible="False"
+                                    Width="16" Height="16" Margin="{StaticResource Windows11MenuToggleMargin}"
+                                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                    <ContentControl Name="PART_IconPresenter" Grid.Column="1" IsVisible="False"
+                                    Width="16" Height="16" Content="{TemplateBinding Icon}"
+                                    Margin="{StaticResource Windows11MenuIconMargin}"
+                                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center" />
+                    <ContentPresenter Name="PART_HeaderPresenter" Grid.Column="2" VerticalAlignment="Center"
+                                      Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}">
+                        <ContentPresenter.DataTemplates>
+                            <DataTemplate DataType="sys:String">
+                                <AccessText Text="{Binding}" />
+                            </DataTemplate>
+                        </ContentPresenter.DataTemplates>
+                    </ContentPresenter>
+                    <TextBlock Name="PART_InputGestureText" Grid.Column="3" VerticalAlignment="Center"
+                               HorizontalAlignment="Right" Margin="{StaticResource Windows11MenuGestureMargin}"
+                               IsVisible="{TemplateBinding InputGesture, Converter={x:Static ObjectConverters.IsNotNull}}"
+                               Text="{TemplateBinding InputGesture, Converter={StaticResource Windows11KeyGestureConverter}}" />
+                    <Path Name="rightArrow" Grid.Column="4" Width="4" Height="8"
+                          HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Margin="{StaticResource Windows11MenuChevronMargin}"
+                          Data="M0,0 L4,4 L0,8" StrokeThickness="1.2" StrokeJoin="Round"
+                          Stroke="{TemplateBinding Foreground}" Fill="Transparent" />
+                </Grid>
+            </Border>
+            <Popup Name="PART_Popup" Placement="RightEdgeAlignedTop" PlacementTarget="{TemplateBinding}"
+                   IsLightDismissEnabled="False" IsOpen="{TemplateBinding IsSubMenuOpen, Mode=TwoWay}"
+                   VerticalOffset="-4" HorizontalOffset="-4" WindowManagerAddShadowHint="False">
+                <Border Name="Windows11SubmenuBorder" CornerRadius="8" Padding="{StaticResource Windows11MenuPresenterPadding}"
+                        Margin="6,4,6,8" BoxShadow="0 4 10 0 #26000000"
+                        Background="{DynamicResource Windows11MenuBrush}"
+                        BorderBrush="{DynamicResource Windows11StrokeBrush}" BorderThickness="1">
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                        <ItemsPresenter Name="PART_ItemsPresenter" Grid.IsSharedSizeScope="True"
+                                        ItemsPanel="{TemplateBinding ItemsPanel}" />
+                    </ScrollViewer>
+                </Border>
+            </Popup>
+        </Panel>
+    </ControlTemplate>
+
+    <ControlTemplate x:Key="Windows11TopMenuItemTemplate" TargetType="MenuItem">
+        <Border Name="root" CornerRadius="4" Background="{TemplateBinding Background}" Padding="{TemplateBinding Padding}">
+            <Panel>
+                <ContentPresenter Name="PART_HeaderPresenter" Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+                                  VerticalContentAlignment="Center" RecognizesAccessKey="True" />
+                <Popup Name="PART_Popup" Placement="BottomEdgeAlignedLeft" PlacementTarget="{TemplateBinding}" IsLightDismissEnabled="True"
+                       IsOpen="{TemplateBinding IsSubMenuOpen, Mode=TwoWay}" WindowManagerAddShadowHint="False"
+                       HorizontalOffset="-6" OverlayInputPassThroughElement="{Binding $parent[Menu]}">
+                    <Border Name="Windows11SubmenuBorder" Background="{DynamicResource Windows11MenuBrush}"
+                            BorderBrush="{DynamicResource Windows11StrokeBrush}" BorderThickness="1" CornerRadius="8"
+                            Margin="6,4,6,8" Padding="{StaticResource Windows11MenuPresenterPadding}" BoxShadow="0 4 10 0 #26000000">
+                        <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                            <ItemsPresenter Name="PART_ItemsPresenter" Grid.IsSharedSizeScope="True" ItemsPanel="{TemplateBinding ItemsPanel}" />
+                        </ScrollViewer>
+                    </Border>
+                </Popup>
+            </Panel>
+        </Border>
+    </ControlTemplate>
+    <ControlTemplate x:Key="Windows11SpinnerTemplate" TargetType="ButtonSpinner">
+        <DataValidationErrors>
+            <Border CornerRadius="4" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="{TemplateBinding BorderThickness}">
+                <DockPanel>
+                    <UniformGrid Name="PART_SpinnerPanel" DockPanel.Dock="Right" Rows="2" Width="24"
+                                 IsVisible="{TemplateBinding ShowButtonSpinner}">
+                        <RepeatButton Name="PART_IncreaseButton" Padding="0" MinHeight="0" IsTabStop="{TemplateBinding IsTabStop}">
+                            <Path Width="8" Height="4" Data="M0,4 L4,0 L8,4" Stroke="{DynamicResource ThemeForegroundBrush}" StrokeThickness="1.2" />
+                        </RepeatButton>
+                        <RepeatButton Name="PART_DecreaseButton" Padding="0" MinHeight="0" IsTabStop="{TemplateBinding IsTabStop}">
+                            <Path Width="8" Height="4" Data="M0,0 L4,4 L8,0" Stroke="{DynamicResource ThemeForegroundBrush}" StrokeThickness="1.2" />
+                        </RepeatButton>
+                    </UniformGrid>
+                    <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      Padding="{TemplateBinding Padding}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                </DockPanel>
+            </Border>
+        </DataValidationErrors>
+    </ControlTemplate>
+    <ControlTemplate x:Key="Windows11FlyoutTemplate" TargetType="FlyoutPresenter">
+        <Border CornerRadius="8" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                BorderThickness="1" Margin="6,4,6,8" BoxShadow="0 4 10 0 #26000000" RenderOptions.EdgeMode="Antialias">
+            <ScrollViewer HorizontalScrollBarVisibility="{TemplateBinding (ScrollViewer.HorizontalScrollBarVisibility)}"
+                          VerticalScrollBarVisibility="{TemplateBinding (ScrollViewer.VerticalScrollBarVisibility)}">
+                <ContentPresenter Name="PART_ContentPresenter" Margin="{TemplateBinding Padding}"
+                                  Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                  HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                  VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                  HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+            </ScrollViewer>
+        </Border>
+    </ControlTemplate>
+</ResourceDictionary>

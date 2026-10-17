@@ -1,0 +1,114 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+                    xmlns:local="using:TSCutter.GUI.Themes">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://TSCutterGUI/Themes/Windows8.axaml" />
+    </ResourceDictionary.MergedDictionaries>
+    <!-- 深色配色复用 Windows 8 的直角和扁平控件，保留蓝色标题栏及红色关闭按钮。 -->
+    <Color x:Key="{x:Static common:SystemColors.ActiveBorderColorKey}">#284D73</Color>
+    <Color x:Key="{x:Static common:SystemColors.ActiveCaptionColorKey}">#284D73</Color>
+    <Color x:Key="{x:Static common:SystemColors.ActiveCaptionTextColorKey}">#F0F4F8</Color>
+    <Color x:Key="{x:Static common:SystemColors.AppWorkspaceColorKey}">#14181D</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlColorKey}">#25292E</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlDarkColorKey}">#1A1F24</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlDarkDarkColorKey}">#11161B</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlLightColorKey}">#383F47</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlLightLightColorKey}">#52606D</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlTextColorKey}">#E7ECEF</Color>
+    <Color x:Key="{x:Static common:SystemColors.DesktopColorKey}">#14181D</Color>
+    <Color x:Key="{x:Static common:SystemColors.GradientActiveCaptionColorKey}">#284D73</Color>
+    <Color x:Key="{x:Static common:SystemColors.GradientInactiveCaptionColorKey}">#30363D</Color>
+    <Color x:Key="{x:Static common:SystemColors.GrayTextColorKey}">#909AA4</Color>
+    <Color x:Key="{x:Static common:SystemColors.HighlightColorKey}">#294D70</Color>
+    <Color x:Key="{x:Static common:SystemColors.HighlightTextColorKey}">#F5F8FA</Color>
+    <Color x:Key="{x:Static common:SystemColors.HotTrackColorKey}">#80BDED</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveBorderColorKey}">#30363D</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveCaptionColorKey}">#30363D</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveCaptionTextColorKey}">#AAB4BF</Color>
+    <Color x:Key="{x:Static common:SystemColors.InfoColorKey}">#2A3037</Color>
+    <Color x:Key="{x:Static common:SystemColors.InfoTextColorKey}">#E7ECEF</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuColorKey}">#242A30</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuBarColorKey}">#25292E</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuHighlightColorKey}">#294D70</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuTextColorKey}">#E7ECEF</Color>
+    <Color x:Key="{x:Static common:SystemColors.ScrollBarColorKey}">#30373E</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowColorKey}">#181C20</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowFrameColorKey}">#162D43</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowTextColorKey}">#E7ECEF</Color>
+
+    <Color x:Key="AppAccentColor">#68B5F0</Color>
+    <Color x:Key="AppAccentHoverColor">#91CBF5</Color>
+    <Color x:Key="AppSelectionColor">#294D70</Color>
+    <Color x:Key="AppSurfaceRaisedColor">#30363D</Color>
+    <Color x:Key="AppSurfaceHoverColor">#314A60</Color>
+    <Color x:Key="AppBorderColor">#56616D</Color>
+    <Color x:Key="AppSecondaryTextColor">#AAB4BF</Color>
+    <Color x:Key="SystemAccentColor">#68B5F0</Color>
+    <Color x:Key="SystemBaseLowColor">#343C45</Color>
+    <Color x:Key="SystemAccentColorLight1">#294D70</Color>
+    <Color x:Key="DesktopRowHoverColor">#263D50</Color>
+    <Color x:Key="DesktopFocusBorderColor">#82C5F4</Color>
+    <Color x:Key="AppErrorColor">#FF9992</Color>
+    <Color x:Key="AppWarningColor">#E9C578</Color>
+    <Color x:Key="AppSuccessColor">#90D9A3</Color>
+    <Color x:Key="DesktopRowInvalidColor">#33FF7870</Color>
+
+    <SolidColorBrush x:Key="DesktopButtonBorderBrush" Color="#65717D" />
+    <SolidColorBrush x:Key="DesktopFocusHighlightBrush" Color="#82C5F4" />
+    <SolidColorBrush x:Key="DesktopDisabledBackgroundBrush" Color="#292F35" />
+    <SolidColorBrush x:Key="DesktopDisabledBorderBrush" Color="#48515B" />
+    <SolidColorBrush x:Key="DesktopInputBorderBrush" Color="#5D6A77" />
+    <SolidColorBrush x:Key="DesktopTabBorderBrush" Color="#56616D" />
+    <SolidColorBrush x:Key="DesktopTabSurfaceBrush" Color="#252C33" />
+    <SolidColorBrush x:Key="DesktopHoverAccentBrush" Color="#82C5F4" />
+    <SolidColorBrush x:Key="DesktopCheckBorderBrush" Color="#8A9AA9" />
+    <SolidColorBrush x:Key="DesktopCheckMarkBrush" Color="#E7ECEF" />
+    <SolidColorBrush x:Key="DesktopCheckIndeterminateBrush" Color="#AAB4BF" />
+    <SolidColorBrush x:Key="DesktopProgressBorderBrush" Color="#56616D" />
+    <SolidColorBrush x:Key="DesktopProgressFillBrush" Color="#3EC154" />
+    <SolidColorBrush x:Key="DesktopScrollTrackBrush" Color="#252B31" />
+    <SolidColorBrush x:Key="DesktopScrollArrowBrush" Color="#B2C0CB" />
+    <SolidColorBrush x:Key="DesktopScrollArrowHoverBrush" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="DesktopScrollPressedBrush" Color="#8193A3" />
+    <SolidColorBrush x:Key="DesktopToolbarBorderBrush" Color="#6FA8D4" />
+    <SolidColorBrush x:Key="DesktopToolbarHoverBrush" Color="#314A60" />
+    <SolidColorBrush x:Key="DesktopToolbarPressedBrush" Color="#25425C" />
+    <SolidColorBrush x:Key="DesktopGroupBorderBrush" Color="#48545F" />
+    <SolidColorBrush x:Key="DesktopGroupForegroundBrush" Color="#E7ECEF" />
+    <SolidColorBrush x:Key="DesktopCaptionGlyphBrush" Color="#F0F4F8" />
+    <SolidColorBrush x:Key="DesktopCaptionHoverBrush" Color="#3B74A8" />
+    <SolidColorBrush x:Key="DesktopActiveCaptionBrush" Color="#284D73" />
+    <SolidColorBrush x:Key="DesktopInactiveCaptionBrush" Color="#30363D" />
+    <SolidColorBrush x:Key="DesktopButtonPressedBrush" Color="#25425C" />
+    <SolidColorBrush x:Key="DesktopScrollBrush" Color="#52616F" />
+    <SolidColorBrush x:Key="DesktopScrollHoverBrush" Color="#6D7F8E" />
+    <SolidColorBrush x:Key="DesktopTabBrush" Color="#30363D" />
+    <SolidColorBrush x:Key="DesktopCheckBrush" Color="#1B2229" />
+    <SolidColorBrush x:Key="DesktopToolTipBackgroundBrush" Color="#2A3037" />
+    <SolidColorBrush x:Key="DesktopToolTipBorderBrush" Color="#6B7885" />
+    <SolidColorBrush x:Key="DesktopToolTipForegroundBrush" Color="#E7ECEF" />
+
+    <SolidColorBrush x:Key="FlatButtonHoverBrush" Color="#35556F" />
+    <SolidColorBrush x:Key="FlatButtonPressedBorderBrush" Color="#68B5F0" />
+    <SolidColorBrush x:Key="FlatButtonCheckedBrush" Color="#294D70" />
+    <SolidColorBrush x:Key="FlatButtonCheckedBorderBrush" Color="#82C5F4" />
+    <SolidColorBrush x:Key="FlatCheckHoverBrush" Color="#314A60" />
+    <SolidColorBrush x:Key="FlatCheckHoverBorderBrush" Color="#82C5F4" />
+    <SolidColorBrush x:Key="FlatCheckPressedBrush" Color="#25425C" />
+    <SolidColorBrush x:Key="FlatCheckPressedBorderBrush" Color="#68B5F0" />
+    <SolidColorBrush x:Key="FlatCheckDisabledBrush" Color="#343A40" />
+    <SolidColorBrush x:Key="FlatCheckDisabledBorderBrush" Color="#525C66" />
+    <SolidColorBrush x:Key="FlatProgressTrackBrush" Color="#30373E" />
+    <SolidColorBrush x:Key="FlatInputHoverBorderBrush" Color="#6FA8D4" />
+    <SolidColorBrush x:Key="FlatInputFocusBorderBrush" Color="#82C5F4" />
+    <SolidColorBrush x:Key="Windows8CaptionPressedBrush" Color="#1C3A55" />
+    <SolidColorBrush x:Key="Windows8InactiveCloseBrush" Color="#56616D" />
+
+    <LinearGradientBrush x:Key="DesktopButtonBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#373D43" Offset="0" />
+        <GradientStop Color="#30363C" Offset="1" />
+    </LinearGradientBrush>
+    <local:WindowFramePalette x:Key="DesktopActiveFramePalette" Outer="#162D43" Middle="#284D73" Inner="#284D73" />
+    <local:WindowFramePalette x:Key="DesktopInactiveFramePalette" Outer="#1D242B" Middle="#30363D" Inner="#30363D" />
+</ResourceDictionary>

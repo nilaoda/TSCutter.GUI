@@ -1,0 +1,641 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:classic="clr-namespace:Classic.Avalonia.Theme;assembly=Classic.Avalonia.Theme"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        xmlns:primitives="using:Avalonia.Controls.Primitives"
+        xmlns:local="using:TSCutter.GUI.Themes"
+        xmlns:controls="using:TSCutter.GUI.Controls"
+        xmlns:utils="clr-namespace:Classic.Avalonia.Theme.Utils;assembly=Classic.Avalonia.Theme"
+        xmlns:chrome="clr-namespace:Avalonia.Controls.Chrome;assembly=Avalonia.Controls">
+    <Styles.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceInclude Source="avares://TSCutterGUI/Themes/Windows11Templates.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Styles.Resources>
+    <Style Selector=":is(classic|ClassicWindow).windows11">
+        <Setter Property="Background" Value="Transparent" />
+        <Style Selector="^.windows-legacy-frame /template/ classic|ClassicBorderDecorator#Bd">
+            <Setter Property="(local:DesktopWindowChrome.FramePalette)" Value="{DynamicResource Windows11LegacyInactiveFramePalette}" />
+        </Style>
+        <Style Selector="^.windows-legacy-frame[IsActive=True] /template/ classic|ClassicBorderDecorator#Bd">
+            <Setter Property="(local:DesktopWindowChrome.FramePalette)" Value="{DynamicResource Windows11LegacyActiveFramePalette}" />
+        </Style>
+        <!-- 关闭背景覆盖标题栏预留的上、右边框，只由窗口外层裁剪圆角，避免浅色接缝。 -->
+        <Style Selector="^ /template/ DockPanel#RootLayout, ^ /template/ DockPanel#RootLayout > :is(TemplatedControl), ^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ DockPanel, ^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons)">
+            <Setter Property="ClipToBounds" Value="False" />
+        </Style>
+        <Style Selector="^ /template/ Panel > Border[IsHitTestVisible=True]">
+            <Setter Property="ZIndex" Value="1" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button">
+            <Setter Property="Template" Value="{StaticResource Windows11CaptionButtonTemplate}" />
+            <Setter Property="ClipToBounds" Value="False" />
+            <Setter Property="Height" Value="{DynamicResource {x:Static common:SystemParameters.WindowCaptionHeightKey}}" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+        </Style>
+        <Style Selector="^:not(classic|ClassicWindow[WindowState=Maximized]):not(classic|ClassicWindow[WindowState=FullScreen]) /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton /template/ Border#Windows11CaptionButtonBorder">
+            <Setter Property="Margin" Value="0,-1,-1,0" />
+        </Style>
+        <Style Selector="^[WindowState=Maximized] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_RestoreButton">
+            <Setter Property="ContentTemplate" Value="{StaticResource Windows11RestoreGlyph}" />
+        </Style>
+        <!-- Avalonia 将此标记映射为 HTMAXBUTTON，并转发非客户区输入，交给 Windows 显示 Snap Layouts。 -->
+        <Style Selector="^.windows11-snap[CanResize=True][CanMaximize=True]:not(classic|ClassicWindow[WindowState=FullScreen]) /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_RestoreButton:not(:disabled)">
+            <Setter Property="(Win32Properties.NonClientHitTestResult)" Value="MaxButton" />
+            <!-- Snap 面板和系统非客户区提示接管悬停反馈，避免与应用 ToolTip 重叠。 -->
+            <Setter Property="ToolTip.Tip" Value="{x:Null}" />
+        </Style>
+        <!-- 平面表面和细分隔线替代主界面的立体边框，不改变内容区域的操作。 -->
+        <Style Selector="^ classic|ClassicBorderDecorator[BorderStyle=Etched]:not(#DropPanelFrame):not(#DropPanelContent):not(#PART_Border):not(#Bd)">
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        </Style>
+        <Style Selector="^ classic|ClassicBorderDecorator.app-section-frame, ^ classic|ClassicBorderDecorator.app-preview-frame">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        </Style>
+        <Style Selector="^ classic|ClassicBorderDecorator.app-menu-frame">
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+        </Style>
+        <Style Selector="^ classic|ClassicBorderDecorator.app-preview-frame">
+            <Setter Property="Margin" Value="6,4,0,4" />
+            <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="6" />
+        </Style>
+        <Style Selector="^ classic|ClassicBorderDecorator.app-sidebar-frame">
+            <Setter Property="Margin" Value="4,4,6,4" />
+            <Setter Property="Background" Value="{DynamicResource Windows11SurfaceBrush}" />
+            <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="8" />
+        </Style>
+        <Style Selector="^ classic|ClassicBorderDecorator.app-item-frame">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        </Style>
+        <Style Selector="^ Border.app-info-frame">
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <!-- 分隔条保留透明命中面，避免在材质背景上形成一条实色竖线。 -->
+        <Style Selector="^ GridSplitter">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="^ GridSplitter:pointerover, ^ GridSplitter:focus-visible">
+            <Setter Property="Background" Value="{DynamicResource Windows11SubtleBrush}" />
+        </Style>
+        <Style Selector="^ GridSplitter:pressed">
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentBrush}" />
+        </Style>
+        <!-- 双向滚动的交汇角沿用下层表面，不能填入 Classic 的不透明控件色。 -->
+        <Style Selector="^ ScrollViewer /template/ Grid > Panel">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="^ common|RebarHandle">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="^ common|ToolBar /template/ common|ToolbarPanel > Separator">
+            <Setter Property="Width" Value="1" />
+            <Setter Property="MinWidth" Value="1" />
+            <Setter Property="Margin" Value="8,8" />
+            <Setter Property="Template">
+                <ControlTemplate><Border Background="{DynamicResource Windows11StrokeBrush}" /></ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="^ common|StatusBar">
+            <Setter Property="Height" Value="24" />
+        </Style>
+        <Style Selector="^ common|StatusBarItem">
+            <Setter Property="Padding" Value="6,0" />
+        </Style>
+        <Style Selector="^ common|StatusBarItem /template/ classic|ClassicBorderDecorator">
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <!-- 时间轴保留原坐标与命中区，只用同色细线替代上下高光。 -->
+        <Style Selector="^ controls|TimelineControl">
+            <Setter Property="BorderDarkBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+            <Setter Property="BorderLightBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+            <Setter Property="TrackBrush" Value="{DynamicResource Windows11SurfaceBrush}" />
+            <Setter Property="EmptyTrackBrush" Value="{DynamicResource Windows11SurfaceBrush}" />
+        </Style>
+        <Style Selector="^ TabControl">
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="Background" Value="{DynamicResource Windows11SurfaceBrush}" />
+        </Style>
+        <Style Selector="^ TabItem">
+            <Setter Property="Padding" Value="12,7" />
+            <Setter Property="Margin" Value="0,0,3,0" />
+            <Setter Property="Background" Value="{DynamicResource DesktopTabBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopTabBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6,6,0,0" />
+            <Setter Property="Template" Value="{StaticResource Windows11TabItemTemplate}" />
+        </Style>
+        <!-- 系统支持时使用壁纸材质；其他平台采用背景模糊，均保留实色回退。 -->
+        <Setter Property="TransparencyLevelHint" Value="Mica,AcrylicBlur,Blur,Transparent" />
+        <Style Selector="^ /template/ Panel > Border[IsHitTestVisible=False]:not(#PART_TransparencyFallback)">
+            <Setter Property="Background" Value="{DynamicResource {x:Static common:SystemColors.ControlBrushKey}}" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button), ^ RepeatButton:not(.desktop-template-button), ^ ToggleButton:not(.desktop-template-button)">
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="10,4" />
+            <Setter Property="MinHeight" Value="28" />
+        </Style>
+        <!-- 固定宽度的标记按钮保留足够的内容空间，避免符号被通用按钮内边距裁掉。 -->
+        <Style Selector="^ Button.LeftBtn">
+            <Setter Property="Padding" Value="4,4" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):disabled, ^ RepeatButton:not(.desktop-template-button):disabled, ^ ToggleButton:not(.desktop-template-button):disabled">
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        </Style>
+        <Style Selector="^ Button /template/ Border#DesktopButtonBorder, ^ Button /template/ Border#DesktopButtonHighlight">
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):focus-visible /template/ Border#DesktopButtonHighlight">
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static common:SystemColors.ControlTextBrushKey}}" />
+        </Style>
+        <Style Selector="^ Button[IsDefault=True]:not(.desktop-template-button):not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource Windows11OnAccentBrush}" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="^ Button[IsDefault=True]:not(.desktop-template-button):pointerover:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentHoverBrush}" />
+        </Style>
+        <Style Selector="^ Button[IsDefault=True]:not(.desktop-template-button):pressed:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentPressedBrush}" />
+        </Style>
+        <Style Selector="^ ToggleButton:checked:not(.desktop-template-button):not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource Windows11OnAccentBrush}" />
+        </Style>
+        <Style Selector="^ ToggleButton:checked:pointerover:not(.desktop-template-button):not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentHoverBrush}" />
+        </Style>
+        <Style Selector="^ ToggleButton:checked:pressed:not(.desktop-template-button):not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentPressedBrush}" />
+        </Style>
+        <Style Selector="^ Button:not(.desktop-template-button), ^ ToggleButton:not(.desktop-template-button), ^ CheckBox, ^ RadioButton, ^ ComboBox">
+            <Setter Property="FocusAdorner" Value="{x:Null}" />
+        </Style>
+        <Style Selector="^ ComboBox:focus-visible /template/ Border#Windows11ComboBorder">
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static common:SystemColors.ControlTextBrushKey}}" />
+        </Style>
+        <Style Selector="^ RadioButton:focus-visible /template/ Border#DesktopRadioBorder">
+            <Setter Property="BoxShadow" Value="0 0 0 2 #80808080" />
+        </Style>
+        <!-- 输入框保持原有文本部件和验证路径，底线独立绘制以保留细边框。 -->
+        <Style Selector="^ TextBox">
+            <Setter Property="Template" Value="{StaticResource Windows11TextBoxTemplate}" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+            <Setter Property="Padding" Value="8,4" />
+        </Style>
+        <Style Selector="^ TextBox:pointerover:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource FlatButtonHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        </Style>
+        <Style Selector="^ TextBox:focus:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11InputActiveBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        </Style>
+        <Style Selector="^ TextBox:focus:not(:disabled) /template/ Border#Windows11InputUnderline">
+            <Setter Property="Height" Value="2" />
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentBrush}" />
+        </Style>
+        <!-- 无边框文本框用于日志和信息展示，不额外绘制输入底线，聚焦时也保持无边框。 -->
+        <Style Selector="^ TextBox[BorderThickness=0] /template/ Border#Windows11InputUnderline">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="^ TextBox:disabled /template/ Border#Windows11InputUnderline">
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ ComboBox">
+            <Setter Property="Template" Value="{StaticResource Windows11ComboBoxTemplate}" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="Padding" Value="{StaticResource Windows11ComboPadding}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        </Style>
+        <Style Selector="^ ComboBox /template/ ToggleButton#toggle">
+            <Setter Property="Template" Value="{StaticResource Windows11ComboToggleTemplate}" />
+        </Style>
+        <Style Selector="^ ComboBox:pointerover:not(:disabled), ^ ComboBox:focus:not(:disabled), ^ ComboBox[IsDropDownOpen=True]:not(:disabled)">
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        </Style>
+        <Style Selector="^ ComboBox /template/ Border#DropDownBorder">
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        </Style>
+        <Style Selector="^ ComboBoxItem">
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style Selector="^ ComboBoxItem, ^ ListBoxItem">
+            <Setter Property="Template" Value="{StaticResource Windows11ListItemTemplate}" />
+        </Style>
+        <Style Selector="^ ComboBoxItem:pointerover:not(:disabled), ^ ComboBoxItem:selected:not(:disabled), ^ ListBoxItem:pointerover:not(:disabled), ^ ListBoxItem:selected:not(:disabled)">
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.ControlTextBrushKey}}" />
+            <Setter Property="Background" Value="{DynamicResource Windows11SubtleBrush}" />
+        </Style>
+        <Style Selector="^ ComboBoxItem:selected /template/ Border#Windows11SelectionIndicator, ^ ListBoxItem:selected /template/ Border#Windows11SelectionIndicator">
+            <Setter Property="IsVisible" Value="True" />
+        </Style>
+        <!-- 三态复选框和单选框使用强调色填充，禁用状态始终覆盖交互状态。 -->
+        <Style Selector="^ CheckBox">
+            <Setter Property="Template" Value="{StaticResource Windows11CheckBoxTemplate}" />
+            <Setter Property="Padding" Value="6,0,0,0" />
+        </Style>
+        <Style Selector="^ CheckBox:pointerover:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource FlatCheckHoverBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:pressed:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource FlatCheckPressedBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:checked:not(:disabled), ^ CheckBox:indeterminate:not(:disabled), ^ RadioButton:checked:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11AccentBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:checked:pointerover:not(:disabled), ^ CheckBox:indeterminate:pointerover:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentHoverBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:checked:pressed:not(:disabled), ^ CheckBox:indeterminate:pressed:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentPressedBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:checked /template/ Path#CheckMarkPath, ^ CheckBox:indeterminate /template/ Path#CheckMarkPath">
+            <Setter Property="Fill" Value="{DynamicResource Windows11OnAccentBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:indeterminate /template/ Path#CheckMarkPath">
+            <Setter Property="Data" Value="M0,4 H12 V6 H0 Z" />
+        </Style>
+        <Style Selector="^ CheckBox:focus-visible /template/ Border#Windows11CheckBorder">
+            <Setter Property="BoxShadow" Value="0 0 0 2 #80808080" />
+        </Style>
+        <Style Selector="^ CheckBox:disabled">
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBackgroundBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:disabled /template/ Path#CheckMarkPath">
+            <Setter Property="Fill" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+        </Style>
+        <Style Selector="^ RadioButton">
+            <Setter Property="Padding" Value="6,0,0,0" />
+        </Style>
+        <!-- 单选框外圈使用强描边色，不能继承普通按钮的弱描边或透明边框。 -->
+        <Style Selector="^ RadioButton:pointerover:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource FlatCheckHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopCheckBorderBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton:pressed:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource FlatCheckPressedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource FlatCheckDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton /template/ Border#DesktopRadioBorder">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="CornerRadius" Value="10" />
+        </Style>
+        <Style Selector="^ RadioButton /template/ Ellipse#DesktopRadioMark">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+            <Setter Property="Fill" Value="{DynamicResource Windows11OnAccentBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton:checked:pointerover:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentHoverBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11AccentHoverBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton:checked:pressed:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentPressedBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11AccentPressedBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton:disabled /template/ Ellipse#DesktopRadioMark">
+            <Setter Property="Fill" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+        </Style>
+        <!-- 滑块保留方向、刻度和拖动范围，圆形手柄拥有完整的命中区域。 -->
+        <Style Selector="^ Slider /template/ primitives|Track primitives|Thumb">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border CornerRadius="10" Background="{DynamicResource Windows11SurfaceBrush}"
+                            BorderBrush="{DynamicResource Windows11StrokeBrush}" BorderThickness="1" BoxShadow="0 1 2 0 #20000000">
+                        <Ellipse Name="Windows11SliderDot" Width="10" Height="10" Fill="{DynamicResource Windows11AccentBrush}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="^ Slider /template/ primitives|Track primitives|Thumb:pointerover /template/ Ellipse#Windows11SliderDot">
+            <Setter Property="Width" Value="12" />
+            <Setter Property="Height" Value="12" />
+        </Style>
+        <Style Selector="^ Slider /template/ primitives|Track primitives|Thumb:pressed /template/ Ellipse#Windows11SliderDot">
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="8" />
+        </Style>
+        <Style Selector="^ Slider:disabled /template/ primitives|Track primitives|Thumb /template/ Ellipse#Windows11SliderDot">
+            <Setter Property="Fill" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ Slider /template/ primitives|Track RepeatButton#PART_DecreaseButton">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="Transparent">
+                        <Border Name="Windows11SliderFill" Height="4" VerticalAlignment="Center" CornerRadius="2"
+                                Background="{DynamicResource Windows11AccentBrush}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="^ Slider:vertical /template/ primitives|Track RepeatButton#PART_DecreaseButton /template/ Border#Windows11SliderFill">
+            <Setter Property="Width" Value="4" />
+            <Setter Property="Height" Value="NaN" />
+            <Setter Property="VerticalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="^ Slider:disabled /template/ primitives|Track RepeatButton#PART_DecreaseButton /template/ Border#Windows11SliderFill">
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ Slider /template/ classic|ClassicBorderDecorator#TrackBackground">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollBrush}" />
+            <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="2" />
+        </Style>
+        <Style Selector="^ ProgressBar">
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="TemplateRoot" Background="{TemplateBinding Background}" CornerRadius="1"
+                            BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                        <Grid Name="PART_Track" ClipToBounds="True">
+                            <Border Name="PART_Indicator" Background="{TemplateBinding Foreground}"
+                                    HorizontalAlignment="Left" />
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="^ ProgressBar:vertical /template/ Border#PART_Indicator">
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="VerticalAlignment" Value="Bottom" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineUpButton, ^ ScrollBar /template/ RepeatButton#PART_LineDownButton">
+            <Setter Property="Template" Value="{StaticResource Windows11ScrollArrowTemplate}" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineUpButton:disabled, ^ ScrollBar /template/ RepeatButton#PART_LineDownButton:disabled">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineDownButton /template/ Path#Windows11ScrollArrow">
+            <Setter Property="Data" Value="M0,0 L4,4 L8,0" />
+        </Style>
+        <Style Selector="^ ScrollBar:horizontal /template/ RepeatButton /template/ Path#Windows11ScrollArrow">
+            <Setter Property="Width" Value="4" />
+            <Setter Property="Height" Value="8" />
+        </Style>
+        <Style Selector="^ ScrollBar:horizontal /template/ RepeatButton#PART_LineUpButton /template/ Path#Windows11ScrollArrow">
+            <Setter Property="Data" Value="M4,0 L0,4 L4,8" />
+        </Style>
+        <Style Selector="^ ScrollBar:horizontal /template/ RepeatButton#PART_LineDownButton /template/ Path#Windows11ScrollArrow">
+            <Setter Property="Data" Value="M0,0 L4,4 L0,8" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineUpButton:pointerover:not(:disabled), ^ ScrollBar /template/ RepeatButton#PART_LineDownButton:pointerover:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11SubtleBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineUpButton:pressed:not(:disabled), ^ ScrollBar /template/ RepeatButton#PART_LineDownButton:pressed:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11SubtlePressedBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ primitives|Track RepeatButton:pressed /template/ Rectangle#PageButtonBackground">
+            <Setter Property="Fill" Value="{DynamicResource Windows11SubtlePressedBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ primitives|Track primitives|Thumb">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="Transparent">
+                        <Border Name="Windows11ScrollThumb" Margin="2,5" CornerRadius="3" Background="{DynamicResource DesktopScrollBrush}" Opacity="0.65" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="^ ScrollBar:vertical /template/ primitives|Track primitives|Thumb /template/ Border#Windows11ScrollThumb">
+            <Setter Property="Margin" Value="5,2" />
+        </Style>
+        <Style Selector="^ ScrollBar:pointerover /template/ primitives|Track primitives|Thumb /template/ Border#Windows11ScrollThumb">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="^ ScrollBar:not(:pointerover) /template/ RepeatButton#PART_LineUpButton, ^ ScrollBar:not(:pointerover) /template/ RepeatButton#PART_LineDownButton">
+            <Setter Property="Opacity" Value="0" />
+        </Style>
+        <Style Selector="^ ScrollBar:disabled /template/ primitives|Track primitives|Thumb /template/ Border#Windows11ScrollThumb">
+            <Setter Property="Opacity" Value="0.3" />
+        </Style>
+        <!-- 页签以轮廓和底色区分状态，选中页签连接内容区；短强调线保留选中提示。 -->
+        <Style Selector="^ TabItem:selected">
+            <Setter Property="Background" Value="{DynamicResource DesktopTabSurfaceBrush}" />
+            <Setter Property="Margin" Value="0,0,3,-1" />
+            <Setter Property="BorderThickness" Value="1,1,1,0" />
+        </Style>
+        <Style Selector="^ TabItem:pointerover:not(:selected):not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11TabHoverBrush}" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Bottom]">
+            <Setter Property="CornerRadius" Value="0,0,6,6" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Bottom]:selected">
+            <Setter Property="Margin" Value="0,-1,3,0" />
+            <Setter Property="BorderThickness" Value="1,0,1,1" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Left]">
+            <Setter Property="CornerRadius" Value="6,0,0,6" />
+            <Setter Property="Margin" Value="0,0,0,3" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Left]:selected">
+            <Setter Property="Margin" Value="0,0,-1,3" />
+            <Setter Property="BorderThickness" Value="1,1,0,1" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Right]">
+            <Setter Property="CornerRadius" Value="0,6,6,0" />
+            <Setter Property="Margin" Value="0,0,0,3" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Right]:selected">
+            <Setter Property="Margin" Value="-1,0,0,3" />
+            <Setter Property="BorderThickness" Value="0,1,1,1" />
+        </Style>
+        <Style Selector="^ TabItem:selected:not(:disabled) /template/ Border#Windows11TabIndicator">
+            <Setter Property="IsVisible" Value="True" />
+        </Style>
+        <Style Selector="^ TabItem:focus-visible /template/ Border#Windows11TabBorder">
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static common:SystemColors.ControlTextBrushKey}}" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Bottom] /template/ Border#Windows11TabIndicator">
+            <Setter Property="VerticalAlignment" Value="Top" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Left] /template/ Border#Windows11TabIndicator, ^ TabItem[TabStripPlacement=Right] /template/ Border#Windows11TabIndicator">
+            <Setter Property="Width" Value="3" />
+            <Setter Property="Height" Value="16" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Right] /template/ Border#Windows11TabIndicator">
+            <Setter Property="HorizontalAlignment" Value="Left" />
+        </Style>
+        <Style Selector="^ NumericUpDown">
+            <Setter Property="Height" Value="28" />
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="^ ButtonSpinner">
+            <Setter Property="Template" Value="{StaticResource Windows11SpinnerTemplate}" />
+        </Style>
+        <Style Selector="^ ButtonSpinner:left /template/ UniformGrid#PART_SpinnerPanel">
+            <Setter Property="DockPanel.Dock" Value="Left" />
+        </Style>
+        <Style Selector="^ ButtonSpinner /template/ RepeatButton">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="{TemplateBinding Background}" CornerRadius="2" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter Name="PART_ContentPresenter" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                          Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="^ ButtonSpinner /template/ RepeatButton:pointerover">
+            <Setter Property="Background" Value="{DynamicResource Windows11SubtleBrush}" />
+        </Style>
+        <Style Selector="^ ButtonSpinner /template/ RepeatButton:pressed">
+            <Setter Property="Background" Value="{DynamicResource Windows11SubtlePressedBrush}" />
+        </Style>
+        <Style Selector="^ ButtonSpinner /template/ RepeatButton:disabled">
+            <Setter Property="Opacity" Value="0.35" />
+        </Style>
+        <Style Selector="^ TreeView, ^ ListBox">
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="^ TreeViewItem /template/ utils|DiagonalLine">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector="^ TreeViewItem /template/ Border#PART_Header">
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style Selector="^ TreeViewItem:selected /template/ Border#PART_Header, ^ TreeViewItem:focus-within:selected /template/ Border#PART_Header">
+            <Setter Property="Background" Value="{DynamicResource Windows11SubtleBrush}" />
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource {x:Static common:SystemColors.ControlTextBrushKey}}" />
+        </Style>
+        <Style Selector="^ TreeViewItem:selected, ^ TreeViewItem:focus-within:selected">
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.ControlTextBrushKey}}" />
+        </Style>
+        <Style Selector="^ TreeViewItem /template/ ToggleButton#PART_ExpandCollapseChevron">
+            <Setter Property="Width" Value="20" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="Transparent">
+                        <Path Name="Windows11TreeChevron" Width="4" Height="8" Data="M0,0 L4,4 L0,8"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" StrokeThickness="1.2"
+                              Stroke="{DynamicResource {x:Static common:SystemColors.ControlTextBrushKey}}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="^ TreeViewItem /template/ ToggleButton#PART_ExpandCollapseChevron:checked /template/ Path#Windows11TreeChevron">
+            <Setter Property="Data" Value="M0,0 L4,4 L8,0" />
+            <Setter Property="Width" Value="8" />
+            <Setter Property="Height" Value="4" />
+        </Style>
+        <Style Selector="^ DataGrid">
+            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        </Style>
+        <Style Selector="^ common|ToolBarButton /template/ classic|ClassicBorderDecorator#PART_Border">
+            <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="4" />
+        </Style>
+        <Style Selector="^ classic|ClassicBorderDecorator#DropPanelFrame">
+            <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="8" />
+        </Style>
+    </Style>
+    <!-- 只有实际获得系统材质才清除实色底层，透明模式本身不触发材质样式。 -->
+    <Style Selector=":is(classic|ClassicWindow).windows11.windows11-backdrop">
+        <Setter Property="Background" Value="Transparent" />
+        <Style Selector="^ /template/ Panel > Border:not(#PART_TransparencyFallback)">
+            <Setter Property="Background" Value="{x:Null}" />
+        </Style>
+        <!-- 内容宿主与标题栏不再叠加底色，全窗只保留一次轻量染色。 -->
+        <Style Selector="^ /template/ Panel > Border[IsHitTestVisible=False]:not(#PART_TransparencyFallback)">
+            <Setter Property="Background" Value="{DynamicResource Windows11BackdropTintBrush}" />
+        </Style>
+        <Style Selector="^ Menu, ^ common|ToolBar, ^ common|StatusBarItem">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ Border#PART_GradientBar">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <!-- 失焦时整窗使用实色回退，避免仅标题栏取消材质、内容区仍透出背景。 -->
+        <Style Selector="^[IsActive=False] /template/ Panel > Border[IsHitTestVisible=False]:not(#PART_TransparencyFallback)">
+            <Setter Property="Background" Value="{DynamicResource {x:Static common:SystemColors.ControlBrushKey}}" />
+        </Style>
+    </Style>
+    <!-- 菜单和提示使用独立弹出根的主题，切换后可恢复原来的模板。 -->
+    <Style Selector="ContextMenu.windows11, MenuFlyoutPresenter.windows11">
+        <Setter Property="Template" Value="{StaticResource Windows11MenuTemplate}" />
+    </Style>
+    <Style Selector="MenuItem.windows11:not(:separator)">
+        <Setter Property="Template" Value="{StaticResource Windows11MenuItemTemplate}" />
+        <Setter Property="Height" Value="NaN" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="Padding" Value="{StaticResource Windows11MenuItemPadding}" />
+        <Setter Property="Margin" Value="{StaticResource Windows11MenuItemMargin}" />
+        <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="Menu.windows11 > MenuItem:not(:separator)">
+        <Setter Property="Template" Value="{StaticResource Windows11TopMenuItemTemplate}" />
+        <Setter Property="Height" Value="26" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Padding" Value="8,0" />
+        <Setter Property="Margin" Value="0" />
+    </Style>
+    <Style Selector="MenuItem.windows11 /template/ Border#root">
+        <Setter Property="CornerRadius" Value="4" />
+    </Style>
+    <Style Selector="MenuItem.windows11:pointerover /template/ Border#root, MenuItem.windows11[IsSubMenuOpen=True] /template/ Border#root">
+        <Setter Property="Background" Value="{DynamicResource Windows11SubtleBrush}" />
+    </Style>
+    <Style Selector="MenuItem.windows11:pressed:pointerover /template/ Border#root">
+        <Setter Property="Background" Value="{DynamicResource Windows11SubtlePressedBrush}" />
+    </Style>
+    <Style Selector="MenuItem.windows11:icon /template/ ContentControl#PART_IconPresenter">
+        <Setter Property="IsVisible" Value="True" />
+    </Style>
+    <Style Selector="MenuItem.windows11 /template/ TextBlock#PART_InputGestureText, MenuItem.windows11:selected /template/ TextBlock#PART_InputGestureText">
+        <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
+    </Style>
+    <Style Selector="MenuItem.windows11:disabled /template/ TextBlock#PART_InputGestureText">
+        <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+    </Style>
+    <Style Selector="MenuItem.windows11 /template/ Path#rightArrow, MenuItem.windows11:selected /template/ Path#rightArrow">
+        <Setter Property="Fill" Value="Transparent" />
+        <Setter Property="Stroke" Value="{DynamicResource AppSecondaryTextBrush}" />
+    </Style>
+    <Style Selector="MenuItem.windows11:disabled /template/ Path#rightArrow">
+        <Setter Property="Stroke" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+    </Style>
+    <Style Selector="ContextMenu.windows11 Separator, MenuFlyoutPresenter.windows11 Separator, MenuItem.windows11 Separator">
+        <Setter Property="Height" Value="1" />
+        <Setter Property="Margin" Value="8,4" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Background="{DynamicResource Windows11StrokeBrush}" Height="1" />
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="ToolTip.windows11 /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Margin" Value="6,4,6,8" />
+        <Setter Property="BoxShadow" Value="0 3 8 0 #26000000" />
+    </Style>
+    <Style Selector="FlyoutPresenter.windows11">
+        <Setter Property="Template" Value="{StaticResource Windows11FlyoutTemplate}" />
+        <Setter Property="Background" Value="{DynamicResource Windows11MenuBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        <Setter Property="Padding" Value="8" />
+    </Style>
+</Styles>

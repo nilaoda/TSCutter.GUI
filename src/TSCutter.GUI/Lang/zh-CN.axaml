@@ -1,5 +1,10 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <x:String x:Key="String.Window.Minimize">最小化</x:String>
+    <x:String x:Key="String.Window.Maximize">最大化</x:String>
+    <x:String x:Key="String.Window.Restore">还原</x:String>
+    <x:String x:Key="String.Window.Close">关闭</x:String>
+    <x:String x:Key="String.Window.ExitFullScreen">退出全屏</x:String>
     <x:String x:Key="String.PleaseLoadVideo">请加载视频</x:String>
     <x:String x:Key="String.PleaseLoadAVideo">请加载一个视频</x:String>
     <x:String x:Key="String.VideoNotInit">视频未初始化</x:String>

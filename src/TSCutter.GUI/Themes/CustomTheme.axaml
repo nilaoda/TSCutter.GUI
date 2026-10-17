@@ -1,10 +1,70 @@
 <Styles xmlns="https://github.com/avaloniaui"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:classic="clr-namespace:Classic.Avalonia.Theme;assembly=Classic.Avalonia.Theme"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        xmlns:controls="using:TSCutter.GUI.Controls"
+        xmlns:local="using:TSCutter.GUI.Themes">
     <Styles.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
                 <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Colors.axaml" />
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Styles.Resources>
+    <!-- 界面框架的默认值集中在样式层，各主题可覆盖外观而不改变布局和交互。 -->
+    <Style Selector="classic|ClassicBorderDecorator.app-section-frame, classic|ClassicBorderDecorator.app-item-frame">
+        <Setter Property="BorderThickness" Value="2" />
+    </Style>
+    <Style Selector="classic|ClassicBorderDecorator.app-preview-frame">
+        <Setter Property="BorderThickness" Value="0,2" />
+    </Style>
+    <Style Selector="Border.app-info-frame">
+        <Setter Property="BorderBrush" Value="#808080" />
+    </Style>
+    <Style Selector="controls|TimelineControl">
+        <Setter Property="TrackBrush" Value="{DynamicResource AppTimelineTrackBrush}" />
+        <Setter Property="EmptyTrackBrush" Value="{DynamicResource AppTimelineEmptyTrackBrush}" />
+        <Setter Property="BorderDarkBrush" Value="{DynamicResource {x:Static common:SystemColors.ControlDarkDarkColorKey}}" />
+        <Setter Property="BorderLightBrush" Value="{DynamicResource {x:Static common:SystemColors.ControlLightLightColorKey}}" />
+    </Style>
+    <!-- 子菜单显式使用菜单文字色，避免继承父项高亮后的前景色。 -->
+    <Style Selector="MenuItem:not(.aero):not(.flat-theme)">
+        <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.MenuTextBrushKey}}" />
+    </Style>
+    <!-- Classic / Luna 的勾号和圆点绑定菜单项前景色，高亮时需与文字一起切换。 -->
+    <Style Selector="MenuItem:not(.aero):not(.flat-theme):selected:not(:disabled)">
+        <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.HighlightTextBrushKey}}" />
+    </Style>
+    <!-- 顶层菜单栏保持浅色底与立体边框，选中时继续使用菜单文字色。 -->
+    <Style Selector="Menu > MenuItem:not(.aero):not(.flat-theme):selected:not(:disabled)">
+        <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.MenuTextBrushKey}}" />
+    </Style>
+    <Style Selector="MenuItem:not(.aero):not(.flat-theme):disabled">
+        <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+    </Style>
+    <!-- 菜单展开期间命令变为不可用时，禁用文字仍覆盖先前的高亮状态。 -->
+    <Style Selector="MenuItem:not(.aero):not(.flat-theme):disabled /template/ ContentPresenter#PART_HeaderPresenter, MenuItem:not(.aero):not(.flat-theme):disabled /template/ TextBlock#PART_InputGestureText">
+        <Setter Property="TextElement.Foreground" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+    </Style>
+    <StyleInclude Source="avares://TSCutterGUI/Themes/DesktopStyles.axaml" />
+    <StyleInclude Source="avares://TSCutterGUI/Themes/IconStyles.axaml" />
+    <StyleInclude Source="avares://TSCutterGUI/Themes/AeroStyles.axaml" />
+    <StyleInclude Source="avares://TSCutterGUI/Themes/FlatStyles.axaml" />
+    <StyleInclude Source="avares://TSCutterGUI/Themes/Windows8Styles.axaml" />
+    <StyleInclude Source="avares://TSCutterGUI/Themes/Windows10Styles.axaml" />
+    <StyleInclude Source="avares://TSCutterGUI/Themes/Windows10ControlStyles.axaml" />
+    <StyleInclude Source="avares://TSCutterGUI/Themes/Windows11Styles.axaml" />
+    <!-- 旧 Windows 不保留会在最大化时露出的系统标题栏；BorderOnly 仍保留原生缩放边框。 -->
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme.windows-legacy-frame">
+        <Setter Property="SystemDecorations" Value="BorderOnly" />
+        <!-- 旧系统没有 DWM 圆角，两个圆角主题统一使用直角，匹配原生边框和阴影。 -->
+        <Style Selector="^ /template/ Panel, ^ /template/ classic|ClassicBorderDecorator#Bd">
+            <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="0" />
+        </Style>
+    </Style>
+    <!-- 细外框位于实色底层上方、内容下方；透明内容宿主让外框可见，也允许关闭背景覆盖它。 -->
+    <Style Selector=":is(classic|ClassicWindow).windows11.windows-legacy-frame /template/ Panel > Border[IsHitTestVisible=True]">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
 </Styles>

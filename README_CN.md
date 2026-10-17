@@ -42,7 +42,7 @@ TSCutter.GUI 是一个跨平台 MPEG-TS 剪辑与诊断工具。它在快速关�
 
 - **多平台支持**：支持 Windows、Linux 和 macOS。
 - **多语言界面**：支持英文、简体中文和繁体中文。
-- **浅色与深色主题**：适配主题的 Classic 桌面界面。
+- **桌面主题**：Windows Classic、XP、7、8、10、11 六个系列，可分别配置深浅配色并跟随系统切换。
 - **独立工具窗口**：可同时打开多个工具或扫描窗口进行对照。
 - **有界资源占用**：面向大文件的工具采用流式或按需读取，不会把完整媒体文件加载到内存。
 
@@ -60,6 +60,21 @@ TSCutter.GUI 是一个跨平台 MPEG-TS 剪辑与诊断工具。它在快速关�
   <source media="(prefers-color-scheme: light)" srcset="img/light_cn.png">
   <img alt="TSCutter.GUI 界面预览" src="img/light_cn.png">
 </picture>
+
+### 桌面主题
+
+提供六个 Windows 风格的主题系列及各自的深浅配色，均可在 Windows、Linux 和 macOS 上使用。
+
+<a href="docs/THEMES_CN.md">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="img/themes/overview-dark.png">
+    <img alt="Windows Classic、XP、7、8、10、11 六个主题系列的设置页预览" src="img/themes/overview-light.png">
+  </picture>
+</a>
+
+通过 **视图 → 主题** 快速切换系列；在 **工具 → 设置** 中分别选择浅色、深色配色，并可设为 **自动检测**，跟随系统外观。XP 提供 Luna 蓝色、银色和橄榄绿，Classic 另有多套经典配色。
+
+[查看主题图册 →](docs/THEMES_CN.md)
 
 ## 使用方法
 

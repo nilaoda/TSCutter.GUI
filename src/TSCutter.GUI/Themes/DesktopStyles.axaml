@@ -1,0 +1,484 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:classic="clr-namespace:Classic.Avalonia.Theme;assembly=Classic.Avalonia.Theme"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        xmlns:local="using:TSCutter.GUI.Themes"
+        xmlns:primitives="using:Avalonia.Controls.Primitives"
+        xmlns:chrome="clr-namespace:Avalonia.Controls.Chrome;assembly=Avalonia.Controls">
+    <Styles.Resources>
+        <ControlTemplate x:Key="DesktopButtonTemplate" TargetType="Button">
+            <Border Name="DesktopButtonBorder" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="3" RenderOptions.EdgeMode="Unspecified">
+                <Border Name="DesktopButtonHighlight" BorderThickness="1" BorderBrush="Transparent" CornerRadius="2">
+                    <ContentPresenter Name="PART_ContentPresenter"
+                                      Margin="{TemplateBinding Padding}"
+                                      HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
+                                      Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      TextElement.Foreground="{TemplateBinding Foreground}" RecognizesAccessKey="True" />
+                </Border>
+            </Border>
+        </ControlTemplate>
+        <ControlTemplate x:Key="DesktopCaptionButtonTemplate" TargetType="Button">
+            <Border Name="DesktopButtonBorder" Background="{TemplateBinding Background}"
+                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                    CornerRadius="3" RenderOptions.EdgeMode="Unspecified">
+                <Border Name="DesktopButtonHighlight" BorderThickness="1" BorderBrush="Transparent" CornerRadius="2">
+                    <ContentPresenter Name="PART_ContentPresenter"
+                                      Margin="0" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                      Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      TextElement.Foreground="{TemplateBinding Foreground}" RecognizesAccessKey="True" />
+                </Border>
+            </Border>
+        </ControlTemplate>
+        <ControlTemplate x:Key="DesktopScrollArrowTemplate" TargetType="RepeatButton">
+            <Border Name="DesktopScrollArrowBorder" CornerRadius="2" BorderBrush="{TemplateBinding BorderBrush}"
+                    BorderThickness="1" Background="{TemplateBinding Background}">
+                <Border BorderBrush="{DynamicResource DesktopInnerHighlightBrush}" BorderThickness="1" CornerRadius="1">
+                    <Path Name="DesktopScrollArrow" HorizontalAlignment="Center" VerticalAlignment="Center"
+                          Fill="{TemplateBinding Foreground}" Data="{TemplateBinding Content}" />
+                </Border>
+            </Border>
+        </ControlTemplate>
+    </Styles.Resources>
+    <!-- 标题面板使用透明命中面接收右键；左键仍交给平台拖动，玻璃底色不受影响。 -->
+    <Style Selector=":is(classic|ClassicWindow) /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ Panel">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- 菜单打开期间补齐边框的命中区域，关闭后恢复平台原有的缩放与拖动判定。 -->
+    <Style Selector=":is(classic|ClassicWindow).window-menu-open /template/ Panel">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- Windows 7 及后续主题平滑绘制斜线和圆弧；Classic 和 Luna 保留原有硬边风格。 -->
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme:not(.luna)">
+        <Style Selector="^ /template/ Panel, ^ CheckBox /template/ classic|BulletDecorator, ^ RadioButton /template/ classic|BulletDecorator, ^ CalendarDatePicker /template/ Calendar#PART_Calendar">
+            <Setter Property="(local:ThemeRenderOptions.EdgeMode)" Value="Antialias" />
+        </Style>
+    </Style>
+    <!-- 弹出层有独立的绘制根，也需覆盖模板中强制设置的硬边模式。 -->
+    <Style Selector="ToolTip.desktop-theme:not(.luna) /template/ ContentPresenter#PART_ContentPresenter, MenuFlyoutPresenter.desktop-theme:not(.luna) /template/ classic|ClassicBorderDecorator#LayoutRoot, FlyoutPresenter.desktop-theme:not(.luna) /template/ classic|ClassicBorderDecorator#LayoutRoot">
+        <Setter Property="(local:ThemeRenderOptions.EdgeMode)" Value="Antialias" />
+    </Style>
+    <!-- 原生标题按钮均有文字提示；Snap 最大化按钮在 Windows 11 样式中单独交给系统。 -->
+    <Style Selector=":is(classic|ClassicWindow)">
+        <!-- 标题按钮提示跟随语言资源，最大化后将操作文案切换为还原。 -->
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_MinimizeButton">
+            <Setter Property="ToolTip.Tip" Value="{DynamicResource String.Window.Minimize}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_RestoreButton">
+            <Setter Property="ToolTip.Tip" Value="{DynamicResource String.Window.Maximize}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton">
+            <Setter Property="ToolTip.Tip" Value="{DynamicResource String.Window.Close}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_FullScreenButton">
+            <Setter Property="ToolTip.Tip" Value="{DynamicResource String.Window.ExitFullScreen}" />
+        </Style>
+        <Style Selector="^[WindowState=Maximized] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_RestoreButton">
+            <Setter Property="ToolTip.Tip" Value="{DynamicResource String.Window.Restore}" />
+        </Style>
+        <Style Selector="^[WindowState=Minimized] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_MinimizeButton">
+            <Setter Property="ToolTip.Tip" Value="{DynamicResource String.Window.Restore}" />
+        </Style>
+    </Style>
+    <!-- 沿用 Classic 的标题栏拖动、缩放和 CaptionButtons 操作，仅替换外观。 -->
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme">
+        <Setter Property="TransparencyLevelHint" Value="Transparent" />
+        <Style Selector="^ /template/ Panel">
+            <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="{DynamicResource DesktopWindowCornerRadius}" />
+        </Style>
+        <Style Selector="^[WindowState=Maximized] /template/ Panel">
+            <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="0" />
+        </Style>
+        <Style Selector="^[WindowState=FullScreen] /template/ Panel">
+            <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="0" />
+        </Style>
+        <!-- 配色分别提供外框厚度，使标题栏高光直接衔接圆角外框。 -->
+        <Style Selector="^ /template/ DockPanel#RootLayout">
+            <Setter Property="Margin" Value="{DynamicResource DesktopFrameThickness}" />
+        </Style>
+        <!-- 外层容器已补偿系统移出屏幕的边距，最大化时内层不再重复留白。 -->
+        <Style Selector="^[WindowState=Maximized] /template/ DockPanel#RootLayout">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <Style Selector="^ /template/ classic|ClassicBorderDecorator#Bd">
+            <Setter Property="(local:DesktopWindowChrome.FramePalette)" Value="{DynamicResource DesktopInactiveFramePalette}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="(local:DesktopWindowChrome.FrameThickness)" Value="{DynamicResource DesktopFrameThickness}" />
+            <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="{DynamicResource DesktopWindowCornerRadius}" />
+        </Style>
+        <Style Selector="^[IsActive=True] /template/ classic|ClassicBorderDecorator#Bd">
+            <Setter Property="(local:DesktopWindowChrome.FramePalette)" Value="{DynamicResource DesktopActiveFramePalette}" />
+        </Style>
+        <Style Selector="^[WindowState=Maximized] /template/ classic|ClassicBorderDecorator#Bd">
+            <Setter Property="(local:DesktopWindowChrome.FrameThickness)" Value="0" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ Border#PART_GradientBar">
+            <Setter Property="Background" Value="{DynamicResource DesktopInactiveCaptionBrush}" />
+        </Style>
+        <Style Selector="^[IsActive=True] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ Border#PART_GradientBar">
+            <Setter Property="Background" Value="{DynamicResource DesktopActiveCaptionBrush}" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button">
+            <Setter Property="Template" Value="{StaticResource DesktopCaptionButtonTemplate}" />
+            <Setter Property="Width" Value="21" />
+            <Setter Property="Height" Value="21" />
+            <Setter Property="Margin" Value="2,0,0,0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopCaptionButtonBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource DesktopCaptionGlyphBrush}" />
+            <Setter Property="Background" Value="{DynamicResource DesktopCaptionButtonBrush}" />
+            <Setter Property="Opacity" Value="0.65" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton">
+            <Setter Property="Background" Value="{DynamicResource DesktopCloseButtonBrush}" />
+        </Style>
+        <Style Selector="^[IsActive=True] /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button:pressed">
+            <Setter Property="Opacity" Value="0.75" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button:disabled">
+            <Setter Property="Opacity" Value="0.35" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button Path">
+            <Setter Property="Fill" Value="{DynamicResource DesktopCaptionGlyphBrush}" />
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button:pointerover /template/ Border#DesktopButtonHighlight">
+            <Setter Property="Background" Value="{DynamicResource DesktopCaptionHoverBrush}" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button), ^ RepeatButton:not(.desktop-template-button), ^ ToggleButton:not(.desktop-template-button)">
+            <Setter Property="Template" Value="{StaticResource DesktopButtonTemplate}" />
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopButtonBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="5,3" />
+            <Setter Property="MinHeight" Value="23" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):pointerover /template/ Border#DesktopButtonHighlight, ^ RepeatButton:not(.desktop-template-button):pointerover /template/ Border#DesktopButtonHighlight, ^ ToggleButton:not(.desktop-template-button):pointerover /template/ Border#DesktopButtonHighlight">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopButtonHoverHighlightBrush}" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):focus /template/ Border#DesktopButtonHighlight, ^ RepeatButton:not(.desktop-template-button):focus /template/ Border#DesktopButtonHighlight, ^ ToggleButton:not(.desktop-template-button):focus /template/ Border#DesktopButtonHighlight">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopFocusHighlightBrush}" />
+        </Style>
+        <Style Selector="^ Button[IsDefault=True]:not(.hyperlink):not(.desktop-template-button) /template/ Border#DesktopButtonHighlight">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopFocusHighlightBrush}" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):pressed, ^ RepeatButton:not(.desktop-template-button):pressed, ^ ToggleButton:not(.desktop-template-button):pressed, ^ ToggleButton:not(.desktop-template-button):checked">
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonPressedBrush}" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):disabled, ^ RepeatButton:not(.desktop-template-button):disabled, ^ ToggleButton:not(.desktop-template-button):disabled">
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBackgroundBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ TextBox, ^ ComboBox">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="^ TextBox:focus, ^ ComboBox:focus">
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static common:SystemColors.HighlightBrushKey}}" />
+        </Style>
+        <Style Selector="^ TextBox:disabled, ^ ComboBox:disabled">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ ComboBox /template/ ToggleButton#toggle /template/ classic|ClassicBorderDecorator">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollBrush}" />
+        </Style>
+        <Style Selector="^ ComboBox:pointerover /template/ ToggleButton#toggle /template/ classic|ClassicBorderDecorator">
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollHoverBrush}" />
+        </Style>
+        <Style Selector="^ TabControl">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopTabBorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource DesktopTabSurfaceBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="^ TabItem">
+            <Setter Property="Background" Value="{DynamicResource DesktopTabBrush}" />
+            <Setter Property="Padding" Value="7,4" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="DesktopTabBorder" Background="{TemplateBinding Background}"
+                            BorderBrush="{DynamicResource DesktopTabBorderBrush}" BorderThickness="1" CornerRadius="3,3,0,0">
+                        <Border Name="DesktopTabHighlight" BorderBrush="Transparent" BorderThickness="0,2,0,0" CornerRadius="2,2,0,0">
+                            <ContentPresenter Name="PART_ContentPresenter" Margin="{TemplateBinding Padding}"
+                                              Content="{TemplateBinding Header}" ContentTemplate="{TemplateBinding HeaderTemplate}"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}"
+                                              RecognizesAccessKey="True" TextElement.Foreground="{TemplateBinding Foreground}" />
+                        </Border>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="^ TabItem:selected">
+            <Setter Property="Background" Value="{DynamicResource DesktopTabSurfaceBrush}" />
+        </Style>
+        <Style Selector="^ TabItem:selected /template/ Border#DesktopTabHighlight, ^ TabItem:pointerover /template/ Border#DesktopTabHighlight">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopHoverAccentBrush}" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Bottom] /template/ Border#DesktopTabBorder">
+            <Setter Property="CornerRadius" Value="0,0,3,3" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Bottom] /template/ Border#DesktopTabHighlight">
+            <Setter Property="BorderThickness" Value="0,0,0,2" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Left] /template/ Border#DesktopTabBorder">
+            <Setter Property="CornerRadius" Value="3,0,0,3" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Left] /template/ Border#DesktopTabHighlight">
+            <Setter Property="BorderThickness" Value="2,0,0,0" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Right] /template/ Border#DesktopTabBorder">
+            <Setter Property="CornerRadius" Value="0,3,3,0" />
+        </Style>
+        <Style Selector="^ TabItem[TabStripPlacement=Right] /template/ Border#DesktopTabHighlight">
+            <Setter Property="BorderThickness" Value="0,0,2,0" />
+        </Style>
+        <!-- 保留复选框原有的三态及键盘焦点逻辑，只调整边框和勾选颜色。 -->
+        <Style Selector="^ CheckBox">
+            <Setter Property="Background" Value="{DynamicResource DesktopCheckBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopCheckBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="^ CheckBox /template/ Path#CheckMarkPath">
+            <Setter Property="Fill" Value="{DynamicResource DesktopCheckMarkBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:indeterminate /template/ Path#CheckMarkPath">
+            <Setter Property="Fill" Value="{DynamicResource DesktopCheckIndeterminateBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:pointerover /template/ classic|ClassicBorderDecorator#CheckMark">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopHoverAccentBrush}" />
+        </Style>
+        <Style Selector="^ ProgressBar">
+            <Setter Property="Background" Value="{DynamicResource {x:Static common:SystemColors.WindowBrushKey}}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopProgressBorderBrush}" />
+            <Setter Property="Foreground" Value="{DynamicResource DesktopProgressFillBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="^ ScrollBar">
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollTrackBrush}" />
+        </Style>
+        <!-- 箭头不继承其他控件的高光和阴影，避免未点击时出现白色箭头。 -->
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineUpButton, ^ ScrollBar /template/ RepeatButton#PART_LineDownButton">
+            <Setter Property="Template" Value="{StaticResource DesktopScrollArrowTemplate}" />
+            <Setter Property="Foreground" Value="{DynamicResource DesktopScrollArrowBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopScrollBorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineUpButton:pointerover, ^ ScrollBar /template/ RepeatButton#PART_LineDownButton:pointerover">
+            <Setter Property="Foreground" Value="{DynamicResource DesktopScrollArrowHoverBrush}" />
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollHoverBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineUpButton:pressed, ^ ScrollBar /template/ RepeatButton#PART_LineDownButton:pressed">
+            <Setter Property="Foreground" Value="{DynamicResource DesktopScrollArrowPressedBrush}" />
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollPressedBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ primitives|Track primitives|Thumb">
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Name="DesktopThumb" CornerRadius="2" BorderBrush="{DynamicResource DesktopScrollBorderBrush}" BorderThickness="1" Background="{DynamicResource DesktopScrollBrush}">
+                        <Border BorderBrush="{DynamicResource DesktopInnerHighlightBrush}" BorderThickness="1" CornerRadius="1">
+                            <StackPanel Name="DesktopGrip" Orientation="Horizontal" Spacing="2" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Rectangle Width="1" Height="6" Fill="{DynamicResource DesktopScrollGripBrush}" />
+                                <Rectangle Width="1" Height="6" Fill="{DynamicResource DesktopScrollGripBrush}" />
+                                <Rectangle Width="1" Height="6" Fill="{DynamicResource DesktopScrollGripBrush}" />
+                            </StackPanel>
+                        </Border>
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="^ ScrollBar /template/ primitives|Track primitives|Thumb:pointerover /template/ Border#DesktopThumb">
+            <Setter Property="Background" Value="{DynamicResource DesktopScrollHoverBrush}" />
+        </Style>
+        <Style Selector="^ common|ToolBarButton /template/ classic|ClassicBorderDecorator#PART_Border">
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="^ common|ToolBarButton:pointerover /template/ classic|ClassicBorderDecorator#PART_Border">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopToolbarBorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource DesktopToolbarHoverBrush}" />
+        </Style>
+        <Style Selector="^ common|ToolBarButton:pressed /template/ classic|ClassicBorderDecorator#PART_Border, ^ common|ToolBarButton:flyout-open /template/ classic|ClassicBorderDecorator#PART_Border">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopToolbarBorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource DesktopToolbarPressedBrush}" />
+        </Style>
+        <Style Selector="^[WindowState=FullScreen] /template/ classic|ClassicBorderDecorator#Bd">
+            <Setter Property="(local:DesktopWindowChrome.FrameThickness)" Value="0" />
+        </Style>
+        <Style Selector="^[WindowState=FullScreen] /template/ DockPanel#RootLayout">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_CloseButton Path">
+            <Setter Property="Fill" Value="White" />
+            <Setter Property="Width" Value="11" />
+            <Setter Property="Height" Value="11" />
+            <Setter Property="Stretch" Value="Fill" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_RestoreButton Path">
+            <Setter Property="Width" Value="11" />
+            <Setter Property="Height" Value="11" />
+            <Setter Property="Stretch" Value="Fill" />
+        </Style>
+        <Style Selector="^ /template/ DockPanel#RootLayout > :is(TemplatedControl) /template/ :is(chrome|CaptionButtons) /template/ Button#PART_MinimizeButton Path">
+            <Setter Property="Width" Value="10" />
+            <Setter Property="Height" Value="3" />
+            <Setter Property="Stretch" Value="Fill" />
+            <Setter Property="Margin" Value="0,8,0,0" />
+        </Style>
+        <Style Selector="^ RadioButton">
+            <Setter Property="Background" Value="{DynamicResource DesktopCheckBrush}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopCheckBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <classic:BulletDecorator Background="Transparent">
+                        <classic:BulletDecorator.Bullet>
+                            <Border Name="DesktopRadioBorder" Width="13" Height="13" CornerRadius="7"
+                                    BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" Background="{TemplateBinding Background}">
+                                <Ellipse Name="DesktopRadioMark" Width="5" Height="5" Fill="{DynamicResource DesktopCheckMarkBrush}" Opacity="0" />
+                            </Border>
+                        </classic:BulletDecorator.Bullet>
+                        <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          Margin="{TemplateBinding Padding}" TextElement.Foreground="{TemplateBinding Foreground}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" VerticalAlignment="{TemplateBinding VerticalContentAlignment}" RecognizesAccessKey="True" />
+                    </classic:BulletDecorator>
+                </ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="^ RadioButton:checked /template/ Ellipse#DesktopRadioMark">
+            <Setter Property="Opacity" Value="1" />
+        </Style>
+        <Style Selector="^ RadioButton:indeterminate /template/ Ellipse#DesktopRadioMark">
+            <Setter Property="Opacity" Value="0.5" />
+        </Style>
+        <Style Selector="^ RadioButton:pointerover">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopHoverAccentBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton:pressed">
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonPressedBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton:disabled">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ RadioButton:disabled /template/ Ellipse#DesktopRadioMark">
+            <Setter Property="Fill" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+        </Style>
+        <Style Selector="^ ScrollBar:vertical /template/ primitives|Track primitives|Thumb /template/ StackPanel#DesktopGrip">
+            <Setter Property="Orientation" Value="Vertical" />
+        </Style>
+        <Style Selector="^ ScrollBar:vertical /template/ primitives|Track primitives|Thumb /template/ StackPanel#DesktopGrip Rectangle">
+            <Setter Property="Width" Value="6" />
+            <Setter Property="Height" Value="1" />
+        </Style>
+        <Style Selector="^ ScrollBar:disabled /template/ primitives|Track primitives|Thumb /template/ Border#DesktopThumb">
+            <Setter Property="Background" Value="{DynamicResource {x:Static common:SystemColors.ControlBrushKey}}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar:disabled /template/ primitives|Track primitives|Thumb /template/ StackPanel#DesktopGrip">
+            <Setter Property="Opacity" Value="0.4" />
+        </Style>
+        <Style Selector="^ Slider /template/ primitives|Track primitives|Thumb">
+            <Setter Property="Template">
+                <ControlTemplate><Border Name="DesktopSliderThumb" CornerRadius="2" BorderBrush="{DynamicResource DesktopInputBorderBrush}" BorderThickness="1" Background="{DynamicResource DesktopButtonBrush}" /></ControlTemplate>
+            </Setter>
+        </Style>
+        <Style Selector="^ Slider /template/ primitives|Track primitives|Thumb:pointerover /template/ Border#DesktopSliderThumb">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopHoverAccentBrush}" />
+        </Style>
+        <Style Selector="^ Slider:disabled /template/ primitives|Track primitives|Thumb /template/ Border#DesktopSliderThumb">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ Slider /template/ classic|ClassicBorderDecorator#TrackBackground">
+            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="^ HeaderedContentControl">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopGroupBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+        <Style Selector="^ HeaderedContentControl /template/ ContentPresenter#PART_HeaderPresenter">
+            <Setter Property="TextElement.Foreground" Value="{DynamicResource DesktopGroupForegroundBrush}" />
+        </Style>
+        <!-- 拖入提示沿用当前配色的外框和标题栏，不再嵌套 Classic 凹凸边框。 -->
+        <Style Selector="^ classic|ClassicBorderDecorator#DropPanelFrame">
+            <Setter Property="(local:DesktopWindowChrome.FramePalette)" Value="{DynamicResource DesktopActiveFramePalette}" />
+            <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="{DynamicResource DesktopWindowCornerRadius}" />
+            <Setter Property="BorderThickness" Value="{DynamicResource DesktopFrameThickness}" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="^ Border#DropPanelTitle">
+            <Setter Property="Background" Value="{DynamicResource DesktopActiveCaptionBrush}" />
+        </Style>
+        <Style Selector="^ classic|ClassicBorderDecorator#DropPanelContent">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Padding" Value="20,22" />
+        </Style>
+        <!-- 禁用状态最后覆盖，避免悬停或不确定状态留下彩色高光。 -->
+        <Style Selector="^ CheckBox:disabled">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:disabled /template/ classic|ClassicBorderDecorator#CheckMark, ^ ComboBox:disabled /template/ ToggleButton#toggle /template/ classic|ClassicBorderDecorator">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBackgroundBrush}" />
+        </Style>
+        <Style Selector="^ CheckBox:disabled /template/ Path#CheckMarkPath">
+            <Setter Property="Fill" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+        </Style>
+        <Style Selector="^ RadioButton:disabled">
+            <Setter Property="Background" Value="{DynamicResource DesktopDisabledBackgroundBrush}" />
+        </Style>
+        <Style Selector="^ Button:not(.hyperlink):not(.desktop-template-button):disabled /template/ Border#DesktopButtonHighlight, ^ RepeatButton:not(.desktop-template-button):disabled /template/ Border#DesktopButtonHighlight, ^ ToggleButton:not(.desktop-template-button):disabled /template/ Border#DesktopButtonHighlight">
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="^ TabItem:disabled /template/ Border#DesktopTabHighlight">
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        </Style>
+        <Style Selector="^ ScrollBar /template/ RepeatButton#PART_LineUpButton:disabled, ^ ScrollBar /template/ RepeatButton#PART_LineDownButton:disabled">
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+            <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+            <Setter Property="Background" Value="{DynamicResource {x:Static common:SystemColors.ControlBrushKey}}" />
+        </Style>
+        <Style Selector="^ common|ToolBarButton:disabled /template/ classic|ClassicBorderDecorator#PART_Border">
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+    </Style>
+    <!-- 桌面主题的顶部菜单栏使用各自的系统菜单栏颜色；右键菜单、工具弹出菜单及各级子菜单使用对应菜单背景色。 -->
+    <Style Selector="Menu.desktop-theme">
+        <Setter Property="Background" Value="{DynamicResource {x:Static common:SystemColors.MenuBarBrushKey}}" />
+    </Style>
+    <Style Selector="ContextMenu.desktop-theme /template/ classic|ClassicBorderDecorator, MenuFlyoutPresenter.desktop-theme /template/ classic|ClassicBorderDecorator#LayoutRoot, MenuItem.desktop-theme /template/ classic|ClassicBorderDecorator:not(#PART_IconBorder):not(#ClassicBorder)">
+        <Setter Property="Background" Value="{DynamicResource {x:Static common:SystemColors.MenuBrushKey}}" />
+    </Style>
+    <!-- 系统图层同时裁剪材质和客户区；原生圆角启用后撤销应用的第二次裁剪，保留平滑边缘。 -->
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme.windows-native-corners /template/ Panel, :is(classic|ClassicWindow).desktop-theme.macos-native-corners /template/ Panel">
+        <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="0" />
+    </Style>
+    <Style Selector="MenuItem.desktop-theme:selected /template/ Border#root">
+        <Setter Property="Background" Value="{DynamicResource {x:Static common:SystemColors.MenuHighlightBrushKey}}" />
+    </Style>
+    <Style Selector="MenuItem.desktop-theme /template/ classic|ClassicBorderDecorator#PART_IconBorder">
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- 提示框脱离窗口的可视树，使用自身主题类匹配样式。 -->
+    <Style Selector="ToolTip.desktop-theme">
+        <Setter Property="Background" Value="{DynamicResource DesktopToolTipBackgroundBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource DesktopToolTipForegroundBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopToolTipBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="{DynamicResource DesktopToolTipCornerRadius}" />
+        <Setter Property="Padding" Value="{DynamicResource DesktopToolTipPadding}" />
+    </Style>
+    <!-- 复用原模板以保留内容和字体设置，为 Aero 提示框留出阴影空间。 -->
+    <Style Selector="ToolTip.aero /template/ ContentPresenter#PART_ContentPresenter">
+        <Setter Property="Margin" Value="4,4,4,6" />
+        <Setter Property="BoxShadow" Value="0 2 4 0 #50000000" />
+    </Style>
+</Styles>

@@ -4,6 +4,7 @@
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:ia="using:Avalonia.Xaml.Interactivity"
+        xmlns:themes="using:TSCutter.GUI.Themes"
         xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
         xmlns:converters="clr-namespace:TSCutter.GUI.Converters"
         xmlns:local="clr-namespace:TSCutter.GUI"
@@ -34,6 +35,19 @@
     </Interaction.Behaviors>
     
     <Window.Styles>
+        <Style Selector="ClassicBorderDecorator#DropPanelFrame">
+            <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="Background" Value="{DynamicResource {x:Static commonControls:SystemColors.ControlBrushKey}}" />
+        </Style>
+        <Style Selector="Border#DropPanelTitle">
+            <Setter Property="Background" Value="{DynamicResource DropTitleBrush}" />
+        </Style>
+        <Style Selector="ClassicBorderDecorator#DropPanelContent">
+            <Setter Property="BorderThickness" Value="2" />
+            <Setter Property="Margin" Value="8" />
+            <Setter Property="Padding" Value="14,16" />
+        </Style>
         <Style Selector="ToolTip">
             <Setter Property="FontWeight" Value="Normal" />
         </Style>
@@ -82,16 +96,12 @@
             <ResourceDictionary>
                 <ResourceDictionary.ThemeDictionaries>
                     <ResourceDictionary x:Key="Light">
-                        <SolidColorBrush x:Key="MaskBackgroundBrush">White</SolidColorBrush>
-                        <SolidColorBrush x:Key="DropPanelBrush" Color="#C0C0C0" />
                         <SolidColorBrush x:Key="ClipSelectionBackgroundBrush"
                                          Color="{DynamicResource SystemAccentColorLight1}" />
                         <SolidColorBrush x:Key="ClipThumbnailBackgroundBrush" Color="#303236" />
                         <SolidColorBrush x:Key="ClipThumbnailPlaceholderBrush" Color="#D8DADD" />
                     </ResourceDictionary>
                     <ResourceDictionary x:Key="Dark">
-                        <SolidColorBrush x:Key="MaskBackgroundBrush" Color="#111316" />
-                        <SolidColorBrush x:Key="DropPanelBrush" Color="#30343A" />
                         <!-- 选中卡片只做轻微蓝色染色，避免与标题栏、进度条争夺视觉焦点。 -->
                         <SolidColorBrush x:Key="ClipSelectionBackgroundBrush" Color="#2B3B4B" />
                         <SolidColorBrush x:Key="ClipThumbnailBackgroundBrush" Color="#111316" />
@@ -99,14 +109,14 @@
                     </ResourceDictionary>
                 </ResourceDictionary.ThemeDictionaries>
                 <LinearGradientBrush x:Key="DropTitleBrush" StartPoint="0%,0%" EndPoint="100%,0%">
-                    <GradientStop Color="{DynamicResource {x:Static commonControls:SystemColors.InactiveCaptionColorKey}}" Offset="0" />
-                    <GradientStop Color="{DynamicResource {x:Static commonControls:SystemColors.GradientInactiveCaptionColorKey}}" Offset="1" />
+                    <GradientStop Color="{DynamicResource {x:Static commonControls:SystemColors.ActiveCaptionColorKey}}" Offset="0" />
+                    <GradientStop Color="{DynamicResource {x:Static commonControls:SystemColors.GradientActiveCaptionColorKey}}" Offset="1" />
                 </LinearGradientBrush>
                 <SolidColorBrush x:Key="DropTitleTextBrush"
                                  Color="{DynamicResource {x:Static commonControls:SystemColors.ActiveCaptionTextColorKey}}" />
             </ResourceDictionary>
         </Grid.Resources>
-        <ClassicBorderDecorator Grid.Row="0" DockPanel.Dock="Top" BorderThickness="2" BorderStyle="Etched">
+        <ClassicBorderDecorator Grid.Row="0" DockPanel.Dock="Top" Classes="app-section-frame app-menu-frame" BorderStyle="Etched">
             <DockPanel Margin="0, 2">
                 <commonControls:RebarHandle />
                 <Menu>
@@ -211,20 +221,17 @@
               IsVisible="False"
               IsHitTestVisible="False"
               x:Name="DropMask">
-            <Border Background="{DynamicResource MaskBackgroundBrush}" Opacity="0.78" />
-            <ClassicBorderDecorator BorderThickness="2" BorderStyle="Raised"
-                                    Background="{DynamicResource DropPanelBrush}"
-                                    Width="340" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                    Padding="4">
+            <Border Background="{DynamicResource {x:Static commonControls:SystemColors.WindowBrushKey}}" Opacity="0.78" />
+            <ClassicBorderDecorator x:Name="DropPanelFrame" BorderStyle="Raised"
+                                    Width="340" HorizontalAlignment="Center" VerticalAlignment="Center">
                 <Grid RowDefinitions="24,Auto">
-                    <Border Background="{DynamicResource DropTitleBrush}" Padding="8,2">
+                    <Border x:Name="DropPanelTitle" Padding="8,2">
                         <TextBlock Text="TSCutter.GUI" Foreground="{DynamicResource DropTitleTextBrush}" FontWeight="Bold"
                                    VerticalAlignment="Center" />
                     </Border>
-                    <ClassicBorderDecorator Grid.Row="1" BorderThickness="2" BorderStyle="Sunken"
-                                            Margin="8" Padding="14,16">
+                    <ClassicBorderDecorator x:Name="DropPanelContent" Grid.Row="1" BorderStyle="Sunken">
                         <StackPanel Orientation="Horizontal" Spacing="12" VerticalAlignment="Center">
-                            <Image Source="/Assets/directory_movie-3.png" Width="32" Height="32"
+                            <Image Classes="theme-icon" Source="{DynamicResource Icon.open}" Width="32" Height="32"
                                    Stretch="Uniform" VerticalAlignment="Center" />
                             <StackPanel Spacing="4" Width="220" VerticalAlignment="Center">
                                 <TextBlock Text="{DynamicResource String.DropToolTip}" FontWeight="Bold"
@@ -256,47 +263,56 @@
                 </commonControls:StatusBarItem>
             </commonControls:StatusBar>
             <!-- 主界面 -->
-            <ClassicBorderDecorator BorderThickness="2" BorderStyle="Etched">
+            <ClassicBorderDecorator Classes="app-section-frame" BorderStyle="Etched">
                 <Grid RowDefinitions="Auto, *" Margin="0,2">
                     <commonControls:ToolBar Grid.Row="0" Margin="0,0,0,2" TextPlacement="Down" Size="Large">
                         <commonControls:RebarHandle />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.OpenVideoTip}"
-                                                      LargeIcon="/Assets/directory_movie-3.png"
+                                                      LargeIcon="/Assets/directory_movie-3.png" Classes="themed-icon"
+                                                      themes:ThemeIcons.Source="{DynamicResource Icon.open}"
                                                       Text="{DynamicResource String.ToolBar.Open}"
                                                       Command="{Binding LoadVideoClickCommand}" />
                         <Separator />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.ZoomIn}"
-                                                      LargeIcon="/Assets/magnifying_glass_4-zoom-in.png"
+                                                      LargeIcon="/Assets/magnifying_glass_4-zoom-in.png" Classes="themed-icon"
+                                                      themes:ThemeIcons.Source="{DynamicResource Icon.zoom-in}"
                                                       Text="{DynamicResource String.ToolBar.ZoomIn}"
                                                       Command="{Binding ZoomInCommand}" />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.ZoomOut}"
-                                                      LargeIcon="/Assets/magnifying_glass_4-zoom-out.png"
+                                                      LargeIcon="/Assets/magnifying_glass_4-zoom-out.png" Classes="themed-icon"
+                                                      themes:ThemeIcons.Source="{DynamicResource Icon.zoom-out}"
                                                       Text="{DynamicResource String.ToolBar.ZoomOut}"
                                                       Command="{Binding ZoomOutCommand}" />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.OriginalSize}"
-                                                      LargeIcon="/Assets/original.png"
+                                                      LargeIcon="/Assets/original.png" Classes="themed-icon"
+                                                      themes:ThemeIcons.Source="{DynamicResource Icon.original}"
                                                       Text="{DynamicResource String.ToolBar.OriginalSize}"
                                                       Command="{Binding ZoomNoneCommand}" />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.Fit}"
-                                                      LargeIcon="/Assets/fit.png"
+                                                      LargeIcon="/Assets/fit.png" Classes="themed-icon"
+                                                      themes:ThemeIcons.Source="{DynamicResource Icon.fit}"
                                                       Text="{DynamicResource String.ToolBar.Fit}"
                                                       Command="{Binding FitCommand, ElementName=ImageViewer}" />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.KeyFrameOverviewTip}"
-                                                      LargeIcon="/Assets/keyframe_overview.png"
+                                                      LargeIcon="/Assets/keyframe_overview.png" Classes="themed-icon"
+                                                      themes:ThemeIcons.Source="{DynamicResource Icon.keyframes}"
                                                       Text="{DynamicResource String.ToolBar.KeyFrameOverview}"
                                                       Command="{Binding KeyFrameOverviewClickCommand}" />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.ThumbnailSheetTip}"
-                                                      LargeIcon="/Assets/thumbnail_sheet.png"
+                                                      LargeIcon="/Assets/thumbnail_sheet.png" Classes="themed-icon"
+                                                      themes:ThemeIcons.Source="{DynamicResource Icon.thumbnails}"
                                                       Text="{DynamicResource String.ToolBar.ThumbnailSheet}"
                                                       Command="{Binding ThumbnailSheetClickCommand}" />
                         <Separator />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.SaveFrameTip}"
-                                                      LargeIcon="/Assets/kodak_imaging-0.png"
+                                                      LargeIcon="/Assets/kodak_imaging-0.png" Classes="themed-icon"
+                                                      themes:ThemeIcons.Source="{DynamicResource Icon.snapshot}"
                                                       Text="{DynamicResource String.ToolBar.SaveFrame}"
                                                       Command="{Binding SaveFrameClickCommand}" />
                         <commonControls:ToolBarButton x:Name="CurrentFileToolsButton"
                                                       ToolTip.Tip="{DynamicResource String.ToolBar.FileToolsTip}"
-                                                      LargeIcon="/Assets/file_tools.png"
+                                                      LargeIcon="/Assets/file_tools.png" Classes="themed-icon"
+                                                      themes:ThemeIcons.Source="{DynamicResource Icon.tools}"
                                                       Text="{DynamicResource String.ToolBar.FileTools}"
                                                       IsEnabled="{Binding CanUseCurrentFileTools}">
                             <commonControls:ToolBarButton.Flyout>
@@ -333,7 +349,8 @@
                         <TextBlock VerticalAlignment="Center"
                                    Text="{Binding ZoomFactorStr}" />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.MediaInfoTip}"
-                                                      LargeIcon="/Assets/file_eye.png"
+                                                      LargeIcon="/Assets/file_eye.png" Classes="themed-icon"
+                                                      themes:ThemeIcons.Source="{DynamicResource Icon.info}"
                                                       Text="{DynamicResource String.ToolBar.MediaInfo}"
                                                       HorizontalAlignment="Right"
                                                       Command="{Binding ShowMediaInfoClickCommand}" />
@@ -341,7 +358,7 @@
                     <Grid Grid.Row="1" RowDefinitions="*, Auto, Auto">
                         <Grid Grid.Row="0" ColumnDefinitions="*, Auto, 240">
                             <!-- 图片预览区域 -->
-                            <ClassicBorderDecorator Grid.Column="0" BorderThickness="0, 2" BorderStyle="Etched">
+                            <ClassicBorderDecorator Grid.Column="0" Classes="app-preview-frame" BorderStyle="Etched">
                                 <Grid RowDefinitions="Auto,*">
                                     <StackPanel Grid.Row="0" Margin="6,4"
                                                 IsVisible="{Binding ShowPreviewTrackSelector}">
@@ -420,7 +437,7 @@
                                 </Grid>
                             </ClassicBorderDecorator>
                             <GridSplitter Grid.Column="1" Width="3" />
-                            <ClassicBorderDecorator Grid.Column="2" BorderThickness="2" BorderStyle="Sunken">
+                            <ClassicBorderDecorator Grid.Column="2" Classes="app-section-frame app-sidebar-frame" BorderStyle="Sunken">
                                 <DockPanel>
                                     <!-- TabControl：片段列表和导出队列 -->
                                     <TabControl Name="RightTabControl">
@@ -476,10 +493,10 @@
                                                                     </Border.Styles>
                                                                     <Grid>
                                                                         <!-- Inactive: Raised border -->
-                                                                        <ClassicBorderDecorator BorderThickness="2" BorderStyle="Raised"
+                                                                        <ClassicBorderDecorator Classes="app-item-frame" BorderStyle="Raised"
                                                                                                 IsVisible="{Binding IsActive, Converter={x:Static local:App.InverseBoolConverter}}" />
                                                                         <!-- Active editor: Sunken border -->
-                                                                        <ClassicBorderDecorator BorderThickness="2" BorderStyle="Sunken"
+                                                                        <ClassicBorderDecorator Classes="app-item-frame" BorderStyle="Sunken"
                                                                                                 IsVisible="{Binding IsActive}" />
                                                                         <!-- Content -->
                                                                         <Grid Margin="4"
@@ -612,7 +629,7 @@
                                                             Command="{Binding BatchExportQueueCommand}"
                                                             Classes="accent">
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <Image Height="16" Source="/Assets/save.gif" />
+                                                            <Image Classes="theme-icon" Height="16" Source="{DynamicResource Icon.save}" />
                                                             <TextBlock VerticalAlignment="Center"
                                                                        Text="{DynamicResource String.BatchExportQueue}"
                                                                        Margin="4,0,0,0" />
@@ -640,7 +657,7 @@
                                                                         </Style>
                                                                     </Border.Styles>
                                                                     <Grid>
-                                                                        <ClassicBorderDecorator BorderThickness="2" BorderStyle="Raised" />
+                                                                        <ClassicBorderDecorator Classes="app-item-frame" BorderStyle="Raised" />
                                                                         <Grid ColumnDefinitions="*,Auto">
                                                                         <StackPanel Grid.Column="0" Margin="4" Spacing="2">
                                                                             <!-- Header: Source filename -->
@@ -710,10 +727,6 @@
                                                   ZoomRequested="Timeline_OnZoomRequested"
                                                   FitRequested="Timeline_OnFitRequested"
                                                   BackgroundBrush="{DynamicResource {x:Static commonControls:SystemColors.ControlColorKey}}"
-                                                  TrackBrush="{DynamicResource AppTimelineTrackBrush}"
-                                                  EmptyTrackBrush="{DynamicResource AppTimelineEmptyTrackBrush}"
-                                                  BorderDarkBrush="{DynamicResource {x:Static commonControls:SystemColors.ControlDarkDarkColorKey}}"
-                                                  BorderLightBrush="{DynamicResource {x:Static commonControls:SystemColors.ControlLightLightColorKey}}"
                                                   TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
                                                   MutedTextBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
                                                   ClipBrush="{DynamicResource AppStatusSuccessForegroundBrush}"
@@ -842,7 +855,7 @@
                                         VerticalContentAlignment="Center"
                                         ToolTip.Tip="{Binding ClipOutputToolTip}">
                                     <StackPanel Orientation="Horizontal">
-                                        <Image Height="16" Source="/Assets/save.gif" />
+                                        <Image Classes="theme-icon" Height="16" Source="{DynamicResource Icon.save}" />
                                         <TextBlock VerticalAlignment="Center" Text="{Binding ClipOutputText}" Margin="4,0,0,0" />
                                     </StackPanel>
                                 </Button>

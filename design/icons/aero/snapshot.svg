@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+<defs>
+  <linearGradient id="blue" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#C0F2FF"/><stop offset="100%" stop-color="#138BD0"/></linearGradient>
+  <linearGradient id="gold" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#FFF5BD"/><stop offset="100%" stop-color="#E3AC3D"/></linearGradient>
+  <linearGradient id="metal" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#8DABBB"/></linearGradient>
+  <linearGradient id="lens" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="#FFFFFF"/><stop offset="100%" stop-color="#C0F2FF"/></linearGradient>
+</defs>
+<path d="m11 5-2 4H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h22a2 2 0 0 0 2-2V11a2 2 0 0 0-2-2h-4l-2-4Z" fill="#506775" stroke="#2C414E" stroke-linejoin="round"/>
+<path d="M4 11h24v4H4Z" fill="url(#metal)"/>
+<path d="M4 23h24v3H4Z" fill="#30414D"/>
+<circle cx="16" cy="18" r="7" fill="url(#metal)" stroke="#2C414E"/>
+<circle cx="16" cy="18" r="5.2" fill="url(#blue)" stroke="#2C414E"/>
+<circle cx="14.4" cy="16.4" r="1.8" fill="#DDF8FF" opacity="0.8"/>
+<path d="M24 11.5h3v2h-3Z" fill="#FFFFFF"/>
+</svg>

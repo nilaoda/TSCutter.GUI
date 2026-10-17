@@ -1,0 +1,153 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+                    xmlns:local="using:TSCutter.GUI.Themes">
+    <ResourceDictionary.MergedDictionaries>
+        <MergeResourceInclude Source="avares://TSCutterGUI/Themes/DesktopResources.axaml" />
+    </ResourceDictionary.MergedDictionaries>
+    <!-- Luna (Silver) 系统色参考：https://gist.github.com/zaxbux/64b5a88e2e390fb8f8d24eb1736f71e0 -->
+    <Color x:Key="{x:Static common:SystemColors.ActiveBorderColorKey}">#D4D0C8</Color>
+    <Color x:Key="{x:Static common:SystemColors.ActiveCaptionColorKey}">#C0C0C0</Color>
+    <Color x:Key="{x:Static common:SystemColors.ActiveCaptionTextColorKey}">#0E1010</Color>
+    <Color x:Key="{x:Static common:SystemColors.AppWorkspaceColorKey}">#808080</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlColorKey}">#E0DFE3</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlDarkColorKey}">#9D9DA1</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlDarkDarkColorKey}">#716F64</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlLightColorKey}">#F1EFE2</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlLightLightColorKey}">#FFFFFF</Color>
+    <Color x:Key="{x:Static common:SystemColors.ControlTextColorKey}">#000000</Color>
+    <Color x:Key="{x:Static common:SystemColors.DesktopColorKey}">#585768</Color>
+    <Color x:Key="{x:Static common:SystemColors.GradientActiveCaptionColorKey}">#C8C8C8</Color>
+    <Color x:Key="{x:Static common:SystemColors.GradientInactiveCaptionColorKey}">#EEEFF7</Color>
+    <Color x:Key="{x:Static common:SystemColors.GrayTextColorKey}">#ACA899</Color>
+    <Color x:Key="{x:Static common:SystemColors.HighlightColorKey}">#B2B4BF</Color>
+    <Color x:Key="{x:Static common:SystemColors.HighlightTextColorKey}">#000000</Color>
+    <Color x:Key="{x:Static common:SystemColors.HotTrackColorKey}">#648BCB</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveBorderColorKey}">#D4D0C8</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveCaptionColorKey}">#FFFFFF</Color>
+    <Color x:Key="{x:Static common:SystemColors.InactiveCaptionTextColorKey}">#A2A1A1</Color>
+    <Color x:Key="{x:Static common:SystemColors.InfoColorKey}">#FFFFE1</Color>
+    <Color x:Key="{x:Static common:SystemColors.InfoTextColorKey}">#000000</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuColorKey}">#FFFFFF</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuBarColorKey}">#E0E2EB</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuHighlightColorKey}">#BBB7C7</Color>
+    <Color x:Key="{x:Static common:SystemColors.MenuTextColorKey}">#000000</Color>
+    <Color x:Key="{x:Static common:SystemColors.ScrollBarColorKey}">#D4D0C8</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowColorKey}">#FFFFFF</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowFrameColorKey}">#000000</Color>
+    <Color x:Key="{x:Static common:SystemColors.WindowTextColorKey}">#000000</Color>
+
+    <x:Double x:Key="{x:Static common:SystemParameters.WindowCaptionHeightKey}">25</x:Double>
+    <CornerRadius x:Key="DesktopWindowCornerRadius">6,6,3,3</CornerRadius>
+    <Thickness x:Key="DesktopFrameThickness">3,1,3,3</Thickness>
+
+    <!-- 兼容应用已有的颜色资源，随配色一起切换。 -->
+    <Color x:Key="AppAccentColor">#B2B4BF</Color>
+    <Color x:Key="AppAccentHoverColor">#C8C8C8</Color>
+    <Color x:Key="AppSelectionColor">#B2B4BF</Color>
+    <Color x:Key="AppSurfaceRaisedColor">#E0DFE3</Color>
+    <Color x:Key="AppSurfaceHoverColor">#F1EFE2</Color>
+    <Color x:Key="AppBorderColor">#9D9DA1</Color>
+    <Color x:Key="AppSecondaryTextColor">#716F64</Color>
+    <Color x:Key="SystemAccentColor">#B2B4BF</Color>
+    <Color x:Key="SystemBaseLowColor">#9D9DA1</Color>
+    <Color x:Key="SystemAccentColorLight1">#DDDDE8</Color>
+    <Color x:Key="DesktopRowHoverColor">#F1F1F7</Color>
+    <Color x:Key="DesktopFocusBorderColor">#003C74</Color>
+
+    <SolidColorBrush x:Key="DesktopButtonBorderBrush" Color="#003C74" />
+    <SolidColorBrush x:Key="DesktopButtonHoverHighlightBrush" Color="#F8B73B" />
+    <SolidColorBrush x:Key="DesktopFocusHighlightBrush" Color="#90B3F5" />
+    <SolidColorBrush x:Key="DesktopDisabledBackgroundBrush" Color="#F1F1ED" />
+    <SolidColorBrush x:Key="DesktopDisabledBorderBrush" Color="#C4C3BF" />
+    <SolidColorBrush x:Key="DesktopInputBorderBrush" Color="#A5ACB2" />
+    <SolidColorBrush x:Key="DesktopTabBorderBrush" Color="#919B9C" />
+    <SolidColorBrush x:Key="DesktopTabSurfaceBrush" Color="#FCFCFE" />
+    <SolidColorBrush x:Key="DesktopHoverAccentBrush" Color="#E8A234" />
+    <SolidColorBrush x:Key="DesktopCheckBorderBrush" Color="#5D5D72" />
+    <SolidColorBrush x:Key="DesktopCheckMarkBrush" Color="#68687F" />
+    <SolidColorBrush x:Key="DesktopCheckIndeterminateBrush" Color="#B0B0BD" />
+    <SolidColorBrush x:Key="DesktopProgressBorderBrush" Color="#8B8B97" />
+    <SolidColorBrush x:Key="DesktopProgressFillBrush" Color="#76A66A" />
+    <SolidColorBrush x:Key="DesktopScrollTrackBrush" Color="#F1F1F5" />
+    <SolidColorBrush x:Key="DesktopScrollArrowBrush" Color="#3F3D3D" />
+    <SolidColorBrush x:Key="DesktopScrollBorderBrush" Color="#A4A4B8" />
+    <SolidColorBrush x:Key="DesktopScrollArrowHoverBrush" Color="#36364B" />
+    <SolidColorBrush x:Key="DesktopScrollArrowPressedBrush" Color="#252536" />
+    <SolidColorBrush x:Key="DesktopScrollPressedBrush" Color="#B3B2C5" />
+    <SolidColorBrush x:Key="DesktopScrollGripBrush" Color="#77778D" />
+    <SolidColorBrush x:Key="DesktopToolbarBorderBrush" Color="#9D9DA1" />
+    <SolidColorBrush x:Key="DesktopToolbarHoverBrush" Color="#EEEFF7" />
+    <SolidColorBrush x:Key="DesktopToolbarPressedBrush" Color="#C6C5D7" />
+    <SolidColorBrush x:Key="DesktopGroupBorderBrush" Color="#B5B4C4" />
+    <SolidColorBrush x:Key="DesktopGroupForegroundBrush" Color="#57566F" />
+    <SolidColorBrush x:Key="DesktopCaptionGlyphBrush" Color="#3F3D3D" />
+    <local:WindowFramePalette x:Key="DesktopActiveFramePalette" Outer="#5B5B68" Middle="#D4D5E4" Inner="#9D9EAF" />
+    <local:WindowFramePalette x:Key="DesktopInactiveFramePalette" Outer="#A5A5B4" Middle="#E5E5EF" Inner="#CBCBD7" />
+
+    <!-- 控件高光与渐变参考 WPF PresentationFramework.Luna。 -->
+    <LinearGradientBrush x:Key="DesktopActiveCaptionBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#F5F5FD" Offset="0" />
+        <GradientStop Color="#D9D9E7" Offset="0.12" />
+        <GradientStop Color="#B6B5C8" Offset="0.28" />
+        <GradientStop Color="#C0C0C0" Offset="0.48" />
+        <GradientStop Color="#CBCBD8" Offset="0.68" />
+        <GradientStop Color="#E0E0EA" Offset="0.84" />
+        <GradientStop Color="#BABACA" Offset="0.94" />
+        <GradientStop Color="#858597" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopInactiveCaptionBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#FAFAFF" Offset="0" />
+        <GradientStop Color="#EEEFF7" Offset="0.15" />
+        <GradientStop Color="#E3E3EE" Offset="0.3" />
+        <GradientStop Color="#E7E7F0" Offset="0.5" />
+        <GradientStop Color="#F4F4FA" Offset="0.85" />
+        <GradientStop Color="#C7C7D5" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopCaptionButtonBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#F3F3FB" Offset="0" />
+        <GradientStop Color="#C5C5D8" Offset="0.35" />
+        <GradientStop Color="#8D8DA8" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopCloseButtonBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#F5AD90" Offset="0" />
+        <GradientStop Color="#E76A47" Offset="0.35" />
+        <GradientStop Color="#CF3511" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopButtonBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#E3E5F0" Offset="0.5" />
+        <GradientStop Color="#C6C5D7" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopButtonPressedBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#B3B2C5" Offset="0" />
+        <GradientStop Color="#DADBE5" Offset="0.5" />
+        <GradientStop Color="#FFFFFF" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopScrollBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#F7F7FC" Offset="0" />
+        <GradientStop Color="#DDDDEB" Offset="0.5" />
+        <GradientStop Color="#B9B9CF" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopScrollHoverBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#C6C5D7" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopTabBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#FFFFFF" Offset="0" />
+        <GradientStop Color="#DADAE5" Offset="1" />
+    </LinearGradientBrush>
+    <LinearGradientBrush x:Key="DesktopCheckBrush" StartPoint="0%,0%" EndPoint="0%,100%">
+        <GradientStop Color="#D2D4D2" Offset="0" />
+        <GradientStop Color="#F7F7FA" Offset="0.4" />
+        <GradientStop Color="#FFFFFF" Offset="1" />
+    </LinearGradientBrush>
+    <!-- 浅色配色的状态提示色和控件高光。 -->
+    <Color x:Key="AppErrorColor">#B71C1C</Color>
+    <Color x:Key="AppWarningColor">#765000</Color>
+    <Color x:Key="AppSuccessColor">#1B5E20</Color>
+    <SolidColorBrush x:Key="DesktopInnerHighlightBrush" Color="#EEFFFFFF" />
+    <SolidColorBrush x:Key="DesktopCaptionButtonBorderBrush" Color="White" />
+    <SolidColorBrush x:Key="DesktopCaptionHoverBrush" Color="#35FFFFFF" />
+    <Color x:Key="DesktopRowInvalidColor">#22B71C1C</Color>
+</ResourceDictionary>

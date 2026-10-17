@@ -2,6 +2,66 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                     xmlns:theme="clr-namespace:TSCutter.GUI.Themes">
     <ResourceDictionary.ThemeDictionaries>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.Windows11}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Windows11.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.Windows11Dark}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Windows11Dark.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.Windows10}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Windows10.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.Windows10Dark}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Windows10Dark.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.Windows8Dark}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Windows8Dark.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.Windows8}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Windows8.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.AeroDark}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/AeroDark.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.Aero}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Aero.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.LunaBlue}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/LunaBlue.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.LunaSilver}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/LunaSilver.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.LunaOliveGreen}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/LunaOliveGreen.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.LunaDark}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/LunaDark.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
         <ResourceDictionary x:Key="{x:Static theme:CustomTheme.DarkStandard}">
             <ResourceDictionary.MergedDictionaries>
                 <MergeResourceInclude Source="avares://TSCutterGUI/Themes/DarkStandardWindows.axaml" />
