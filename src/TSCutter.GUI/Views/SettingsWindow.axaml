@@ -7,6 +7,7 @@
         xmlns:views="clr-namespace:TSCutter.GUI.Views"
         xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
         xmlns:models="clr-namespace:TSCutter.GUI.Models"
+        xmlns:app="using:TSCutter.GUI"
         mc:Ignorable="d"
         d:DesignWidth="380" d:DesignHeight="426"
         Width="380" Height="426"
@@ -141,6 +142,18 @@
                               IsEnabled="{Binding IsHardwareDecodingAvailable}"
                               Content="{DynamicResource String.Settings.PreferHardwareDecoding}"
                               ToolTip.Tip="{DynamicResource String.Settings.PreferHardwareDecodingTip}" />
+                </StackPanel>
+            </TabItem>
+            <TabItem Header="{DynamicResource String.Settings.Output}">
+                <StackPanel Margin="10,12" Spacing="10">
+                    <TextBlock Text="{DynamicResource String.Settings.OutputTemplate}" />
+                    <TextBox Text="{Binding ClipOutputTemplate}" MaxLength="240" />
+                    <TextBlock Text="{DynamicResource String.Settings.OutputTemplateHint}" TextWrapping="Wrap" />
+                    <TextBlock Text="{DynamicResource String.Settings.OutputTemplatePreview}" FontWeight="Bold" Margin="0,6,0,0" />
+                    <TextBox Text="{Binding OutputNamePreview}" IsReadOnly="True" IsVisible="{Binding IsOutputTemplateValid}" />
+                    <TextBlock Text="{DynamicResource String.Settings.OutputTemplateInvalid}"
+                               TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}"
+                               IsVisible="{Binding IsOutputTemplateValid, Converter={x:Static app:App.InverseBoolConverter}}" />
                 </StackPanel>
             </TabItem>
         </TabControl>

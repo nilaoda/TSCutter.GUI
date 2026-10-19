@@ -29,6 +29,7 @@ public class AppConfig : ObservableObject
         get => _showImageNavigator;
         set => SetProperty(ref _showImageNavigator, value);
     }
+    public string ClipOutputTemplate { get; set; } = Utils.ClipOutputNaming.DefaultTemplate;
     public bool TsBatchCheckSaveLogs { get; set; }
     public bool ExportCurrentProgramOnly { get; set; }
     public bool PreferHardwareDecoding

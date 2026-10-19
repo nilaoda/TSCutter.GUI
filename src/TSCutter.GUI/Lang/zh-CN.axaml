@@ -1161,4 +1161,20 @@
     <x:String x:Key="String.TsPacketViewer.Field.M2tsHeader">M2TS 附加头</x:String>
     <x:String x:Key="String.TsPacketViewer.Field.CopyPermission">复制许可标志</x:String>
     <x:String x:Key="String.TsPacketViewer.Field.ArrivalTimestamp">到达时间戳</x:String>
+    <x:String x:Key="String.ClipDetails.Edit">编辑片段信息</x:String>
+    <x:String x:Key="String.ClipDetails.Title">片段信息</x:String>
+    <x:String x:Key="String.ClipDetails.Name">片段名称</x:String>
+    <x:String x:Key="String.ClipDetails.Notes">备注</x:String>
+    <x:String x:Key="String.ClipDetails.Color">标记颜色</x:String>
+    <x:String x:Key="String.ClipDetails.ColorNone">无</x:String>
+    <x:String x:Key="String.ClipDetails.ColorBlue">蓝色</x:String>
+    <x:String x:Key="String.ClipDetails.ColorGreen">绿色</x:String>
+    <x:String x:Key="String.ClipDetails.ColorAmber">琥珀色</x:String>
+    <x:String x:Key="String.ClipDetails.ColorRed">红色</x:String>
+    <x:String x:Key="String.ClipDetails.ColorPurple">紫色</x:String>
+    <x:String x:Key="String.Settings.Output">导出</x:String>
+    <x:String x:Key="String.Settings.OutputTemplate">文件命名模板</x:String>
+    <x:String x:Key="String.Settings.OutputTemplateHint">{source}：源文件名；{name}：片段名；{index}：三位序号；{start}/{end}：起止时间。名称为空时使用 clip001。扩展名自动添加。</x:String>
+    <x:String x:Key="String.Settings.OutputTemplatePreview">文件名预览</x:String>
+    <x:String x:Key="String.Settings.OutputTemplateInvalid">请填写不超过 240 字符的模板，并使用支持的占位符。</x:String>
 </ResourceDictionary>

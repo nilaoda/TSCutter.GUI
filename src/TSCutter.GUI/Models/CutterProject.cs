@@ -5,7 +5,7 @@ namespace TSCutter.GUI.Models;
 
 public sealed class CutterProject
 {
-    public int Version { get; set; } = 2;
+    public int Version { get; set; } = 3;
     public ProjectSource? Source { get; set; }
     public PreviewStreamSelection? PreviewSelection { get; set; }
     public bool ExportCurrentProgramOnly { get; set; }
@@ -27,6 +27,9 @@ public sealed class ProjectSource
 
 public sealed class ProjectClip
 {
+    public string Name { get; set; } = "";
+    public string Notes { get; set; } = "";
+    public string Color { get; set; } = "";
     public double StartTime { get; set; }
     public double EndTime { get; set; }
     public long StartPts { get; set; }
@@ -42,6 +45,11 @@ public sealed class ProjectClip
 
 public sealed class ProjectQueueItem
 {
+    public int ClipIndex { get; set; } = 1;
+    public string GeneratedFileName { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Notes { get; set; } = "";
+    public string Color { get; set; } = "";
     public ProjectSource Source { get; set; } = new();
     public int? ProgramId { get; set; }
     public string OutputFilePath { get; set; } = string.Empty;

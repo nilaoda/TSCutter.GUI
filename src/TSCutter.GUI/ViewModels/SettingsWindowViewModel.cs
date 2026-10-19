@@ -10,6 +10,16 @@ namespace TSCutter.GUI.ViewModels;
 
 public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(IsOutputTemplateValid), nameof(OutputNamePreview))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyCommand), nameof(OkCommand))]
+    private string _clipOutputTemplate = Utils.ClipOutputNaming.DefaultTemplate;
+
+    public bool IsOutputTemplateValid => Utils.ClipOutputNaming.IsValidTemplate(ClipOutputTemplate);
+    public string OutputNamePreview => IsOutputTemplateValid
+        ? Utils.ClipOutputNaming.Generate(ClipOutputTemplate, "Recording.ts", "Highlight", 1, 10, 20, "ts")
+        : "";
+
     private readonly IConfigurationService _configService;
     private readonly ILocalizationService _locService;
 
@@ -44,6 +54,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     {
         _configService = configurationService;
         _locService = localizationService;
+        ClipOutputTemplate = Utils.ClipOutputNaming.IsValidTemplate(_configService.CurrentConfig.ClipOutputTemplate)
+            ? _configService.CurrentConfig.ClipOutputTemplate : Utils.ClipOutputNaming.DefaultTemplate;
         AutoDetectLanguage = _configService.CurrentConfig.AutoDetectLanguage;
         AutoCheckForUpdates = _configService.CurrentConfig.AutoCheckForUpdates;
         ShowImageNavigator = _configService.CurrentConfig.ShowImageNavigator;
@@ -56,14 +68,14 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
             SelectedLanguage = selectedLanguage;
     }
     
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(IsOutputTemplateValid))]
     private void Apply()
     {
         // 仅提交，不关闭窗口
         CommitChanges();
     }
 
-    [RelayCommand]
+    [RelayCommand(CanExecute = nameof(IsOutputTemplateValid))]
     private void Ok()
     {
         // 提交并关闭
@@ -80,6 +92,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     
     private void CommitChanges()
     {
+        if (!IsOutputTemplateValid) return;
+        _configService.CurrentConfig.ClipOutputTemplate = ClipOutputTemplate.Trim();
         // 更新配置
         _configService.CurrentConfig.AutoDetectLanguage = AutoDetectLanguage;
         _configService.CurrentConfig.AutoCheckForUpdates = AutoCheckForUpdates;

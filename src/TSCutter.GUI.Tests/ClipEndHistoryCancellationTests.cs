@@ -3,6 +3,7 @@ using Avalonia;
 using Splat;
 using TSCutter.GUI.Models;
 using TSCutter.GUI.Services;
+using TSCutter.GUI.Utils;
 using TSCutter.GUI.ViewModels;
 using Xunit;
 
@@ -156,6 +157,86 @@ public sealed class ClipEndHistoryCancellationTests
             if (previousLocale is not null)
                 Locator.CurrentMutable.RegisterConstant(previousLocale);
         }
+    }
+
+    [Fact]
+    public void ClipLabelsParticipateInUndoRedoAndProjectDirtyState()
+    {
+        using var resolver = new ModernDependencyResolver();
+        using var resolverScope = resolver.WithResolver();
+        var app = new Application();
+        using var scope = BindApplication(app);
+        app.RegisterServices();
+        var locale = new LocalizationService();
+        Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+        var path = Path.Combine(Path.GetTempPath(), $"clip-labels-{Guid.NewGuid():N}.ts");
+        try
+        {
+            File.WriteAllBytes(path, new byte[1000]);
+            var vm = new MainWindowViewModel(null!, new ConfigurationService(locale)) { VideoPath = path, DurationMax = 60 };
+            using var video = new VideoInstance(path);
+            typeof(VideoInstance).GetProperty(nameof(VideoInstance.Inited))!.SetValue(video, true);
+            typeof(VideoInstance).GetProperty(nameof(VideoInstance.CanBinaryClip))!.SetValue(video, true);
+            Set(vm, "_videoInstance", video);
+            var clip = new PickedClip
+            {
+                InFileInfo = new FileInfo(path), StartTime = 0, EndTime = 1,
+                StartPosition = 0, EndPosition = 188, IsSelected = true
+            };
+            vm.Clips.Add(clip);
+            vm.SelectedClip = clip;
+            Set(vm, "_projectPath", path + ".tscut");
+            typeof(MainWindowViewModel).GetMethod("MarkProjectCheckpoint", PrivateMembers)!.Invoke(vm, null);
+            Assert.False(vm.HasUnsavedProjectChanges);
+
+            vm.UpdateClipDetails(clip, " Opening ", " Keep this shot ", "purple");
+            Assert.Equal(("Opening", "Keep this shot", "purple"), (clip.Name, clip.Notes, clip.Color));
+            Assert.Equal("purple", Assert.Single(vm.SelectedClipRanges).Color);
+            Assert.True(vm.HasUnsavedProjectChanges);
+            vm.UndoCommand.Execute(null);
+            Assert.Equal(("", "", ""), (clip.Name, clip.Notes, clip.Color));
+            Assert.False(vm.HasUnsavedProjectChanges);
+            vm.RedoCommand.Execute(null);
+            Assert.Equal(("Opening", "Keep this shot", "purple"), (clip.Name, clip.Notes, clip.Color));
+            Assert.True(vm.HasUnsavedProjectChanges);
+            vm.Close();
+        }
+        finally { File.Delete(path); }
+    }
+
+    [Fact]
+    public void ClipOutputNamesUseListPositionsAndDisplayedEndTimes()
+    {
+        using var resolver = new ModernDependencyResolver();
+        using var resolverScope = resolver.WithResolver();
+        var app = new Application();
+        using var scope = BindApplication(app);
+        app.RegisterServices();
+        var locale = new LocalizationService();
+        Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+        var config = new ConfigurationService(locale);
+        config.CurrentConfig.ClipOutputTemplate = "{index}_{name}_{end}";
+        var vm = new MainWindowViewModel(null!, config);
+        var first = new PickedClip { InFileInfo = new FileInfo("Recording.ts"), EndTime = 60 };
+        var second = new PickedClip
+        {
+            InFileInfo = first.InFileInfo, Name = "Opening", EndTime = 20.5, EndPosition = 188
+        };
+        vm.Clips.Add(first);
+        vm.Clips.Add(second);
+        string OutputName(PickedClip clip) => (string)typeof(MainWindowViewModel)
+            .GetMethod("CreateClipOutputName", PrivateMembers)!.Invoke(vm, [clip])!;
+        Assert.Equal("001_clip001_00.01.00.000.ts", OutputName(first));
+        Assert.Equal("002_Opening_00.00.20.500.ts", OutputName(second));
+        vm.Clips.Remove(first);
+        Assert.Equal("001_Opening_00.00.20.500.ts", OutputName(second));
+        config.CurrentConfig.ClipOutputTemplate = ClipOutputNaming.DefaultTemplate;
+        vm.Clips.Insert(0, first);
+        Assert.Equal($"Recording_({CommonUtil.FormatSeconds(first.StartTime, true)}-" +
+                     $"{CommonUtil.FormatSeconds(first.EndTime, true)}).ts", OutputName(first));
+        vm.Clips.Remove(first);
+        first.Dispose();
+        vm.Close();
     }
 
     private const BindingFlags PrivateMembers = BindingFlags.Instance | BindingFlags.NonPublic;

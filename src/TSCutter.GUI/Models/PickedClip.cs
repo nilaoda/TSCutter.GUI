@@ -18,6 +18,21 @@ public enum ClipExportStatus
 
 public partial class PickedClip : ObservableObject, IDisposable
 {
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName))]
+    private string _name = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasNotes))]
+    private string _notes = "";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(LabelBrush), nameof(HasColor))]
+    private string _color = "";
+
+    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? $"#{ClipID}" : $"#{ClipID} · {Name}";
+    public bool HasNotes => !string.IsNullOrWhiteSpace(Notes);
+    public bool HasColor => !string.IsNullOrEmpty(Color);
+    public Avalonia.Media.IBrush LabelBrush => ClipLabels.Brush(Color);
+
     private static long _idCounter = 0;
     public long ClipID { get; }
 
@@ -56,7 +71,7 @@ public partial class PickedClip : ObservableObject, IDisposable
     private FileInfo? _outputFileInfo;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusText))]
+    [NotifyPropertyChangedFor(nameof(StatusText), nameof(HasExportStatus))]
     private ClipExportStatus _exportStatus = ClipExportStatus.Pending;
 
     [ObservableProperty]
@@ -87,6 +102,8 @@ public partial class PickedClip : ObservableObject, IDisposable
         + CommonUtil.FormatFileSize(
             Math.Max(0, (EndPosition > 0 ? EndPosition : InFileInfo.Length) - StartPosition)
         );
+
+    public bool HasExportStatus => ExportStatus != ClipExportStatus.Pending;
 
     public string StatusText => ExportStatus switch
     {
