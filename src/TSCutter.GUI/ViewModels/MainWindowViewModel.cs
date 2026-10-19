@@ -2277,8 +2277,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private bool CanEditVideo => !_isLoadingVideo && _videoInstance is { Inited: true, CanBinaryClip: true };
     private bool CanEditSelectedClip => CanEditVideo && HasSelectedClip;
-    // 无可靠帧位置时仍可预览，但不能把 -1 当作剪辑边界写入项目。
-    private bool CanMarkVideo => CanEditVideo && !IsDecoding && !_isResolvingClipEnd
+    // 标记取已显示帧的快照，后台 seek 不影响可用状态；加载、边界扫描和无效帧仍需禁用。
+    private bool CanMarkVideo => CanEditVideo && !_isResolvingClipEnd
         && PositionInFile >= 0 && CurrentPts != long.MinValue;
     private bool CanMarkSelectedClip => CanMarkVideo && HasSelectedClip;
 
