@@ -145,6 +145,67 @@ public sealed class CutterProjectServiceTests
         Assert.True(CutterProjectService.IsSavedExportCurrent(fixedEnd, 1000, 1200));
     }
 
+    [Fact]
+    public void LabelsAndQueueNamingSurviveProjectRoundTrip()
+    {
+        using var files = new ProjectTestFiles();
+        var project = CreateProject(files.CreateSource());
+        project.Clips[0].Name = "Opening";
+        project.Clips[0].Notes = "First line\nSecond line";
+        project.Clips[0].Color = "blue";
+        project.Queue[0].Name = "Queued opening";
+        project.Queue[0].Notes = "Independent snapshot";
+        project.Queue[0].Color = "green";
+        project.Queue[0].ClipIndex = 2;
+        project.Queue[0].GeneratedFileName = "Recording_002.ts";
+
+        var restored = CutterProjectService.Deserialize(CutterProjectService.Serialize(project));
+
+        Assert.Equal(3, restored.Version);
+        Assert.Equal(("Opening", "First line\nSecond line", "blue"),
+            (restored.Clips[0].Name, restored.Clips[0].Notes, restored.Clips[0].Color));
+        Assert.Equal(("Queued opening", "Independent snapshot", "green", 2, "Recording_002.ts"),
+            (restored.Queue[0].Name, restored.Queue[0].Notes, restored.Queue[0].Color,
+                restored.Queue[0].ClipIndex, restored.Queue[0].GeneratedFileName));
+    }
+
+    [Theory]
+    [InlineData(1)]
+    [InlineData(2)]
+    public void OlderProjectsDefaultToEmptyLabels(int version)
+    {
+        using var files = new ProjectTestFiles();
+        var project = CreateProject(files.CreateSource());
+        project.Version = version;
+        var json = System.Text.Json.Nodes.JsonNode.Parse(CutterProjectService.Serialize(project))!;
+        foreach (var item in json["Clips"]!.AsArray().Concat(json["Queue"]!.AsArray()))
+            foreach (var property in new[] { "Name", "Notes", "Color", "ClipIndex", "GeneratedFileName" })
+                item!.AsObject().Remove(property);
+
+        var restored = CutterProjectService.Deserialize(json.ToJsonString());
+        Assert.All(restored.Clips, clip => Assert.Equal(("", "", ""), (clip.Name, clip.Notes, clip.Color)));
+        Assert.Equal(1, restored.Queue[0].ClipIndex);
+        Assert.Empty(restored.Queue[0].GeneratedFileName);
+    }
+
+    [Fact]
+    public void InvalidLabelsAreRejectedBeforeRestoringState()
+    {
+        using var files = new ProjectTestFiles();
+        var project = CreateProject(files.CreateSource());
+        project.Clips[0].Name = new string('a', ClipLabels.MaximumNameLength + 1);
+        Assert.Throws<InvalidDataException>(() => CutterProjectService.Validate(project));
+        project.Clips[0].Name = "";
+        project.Clips[0].Notes = null!;
+        Assert.Throws<InvalidDataException>(() => CutterProjectService.Validate(project));
+        project.Clips[0].Notes = "";
+        project.Queue[0].Color = "not-a-color";
+        Assert.Throws<InvalidDataException>(() => CutterProjectService.Validate(project));
+        project.Queue[0].Color = "";
+        project.Queue[0].ClipIndex = 0;
+        Assert.Throws<InvalidDataException>(() => CutterProjectService.Validate(project));
+    }
+
     private static CutterProject CreateProject(ProjectSource source) => new()
     {
         Source = source,

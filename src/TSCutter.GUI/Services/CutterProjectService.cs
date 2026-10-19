@@ -125,7 +125,7 @@ internal static class CutterProjectService
         if (project.PreviewSelection is { } selection &&
             (project.Source is null || selection.StreamIndex < 0))
             throw new InvalidDataException("The saved preview track is invalid.");
-        if (project.Version is not (1 or 2))
+        if (project.Version is not (1 or 2 or 3))
             throw new InvalidDataException($"Unsupported project version: {project.Version}.");
         if (project.Clips is null || project.Queue is null ||
             project.Clips.Count > MaximumItems || project.Queue.Count > MaximumItems)
@@ -149,9 +149,9 @@ internal static class CutterProjectService
 
         foreach (var clip in project.Clips)
         {
-            if (clip is null || !ValidRange(clip.StartTime, clip.EndTime,
+            if (clip is null || !ClipLabels.IsValid(clip.Name, clip.Notes, clip.Color) || !ValidRange(clip.StartTime, clip.EndTime,
                     clip.StartPosition, clip.EndPosition, project.Source!.Length))
-                throw new InvalidDataException("A saved clip has invalid boundaries.");
+                throw new InvalidDataException("A saved clip has invalid labels or boundaries.");
             if (clip.StartThumbnailJpeg?.Length > 512 * 1024 ||
                 clip.EndThumbnailJpeg?.Length > 512 * 1024)
                 throw new InvalidDataException("A saved clip thumbnail is too large.");
@@ -163,7 +163,9 @@ internal static class CutterProjectService
             OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
         foreach (var item in project.Queue)
         {
-            if (item is null || item.Source is null || item.ProgramId is < 1 or > 65535)
+            if (item is null || item.Source is null || !ClipLabels.IsValid(item.Name, item.Notes, item.Color) ||
+                item.ClipIndex < 1 || item.GeneratedFileName is null || item.GeneratedFileName.Length > 255 ||
+                item.ProgramId is < 1 or > 65535)
                 throw new InvalidDataException("A queued export is invalid.");
             ValidateSourceOnce(item.Source, validatedSources);
             if (!(item.EndPosition == -1 && item.EndTime == -1

@@ -1161,4 +1161,20 @@
     <x:String x:Key="String.TsPacketViewer.Field.M2tsHeader">M2TS header</x:String>
     <x:String x:Key="String.TsPacketViewer.Field.CopyPermission">Copy permission indicator</x:String>
     <x:String x:Key="String.TsPacketViewer.Field.ArrivalTimestamp">Arrival timestamp</x:String>
+    <x:String x:Key="String.ClipDetails.Edit">Edit clip</x:String>
+    <x:String x:Key="String.ClipDetails.Title">Clip details</x:String>
+    <x:String x:Key="String.ClipDetails.Name">Clip name</x:String>
+    <x:String x:Key="String.ClipDetails.Notes">Notes</x:String>
+    <x:String x:Key="String.ClipDetails.Color">Label color</x:String>
+    <x:String x:Key="String.ClipDetails.ColorNone">None</x:String>
+    <x:String x:Key="String.ClipDetails.ColorBlue">Blue</x:String>
+    <x:String x:Key="String.ClipDetails.ColorGreen">Green</x:String>
+    <x:String x:Key="String.ClipDetails.ColorAmber">Amber</x:String>
+    <x:String x:Key="String.ClipDetails.ColorRed">Red</x:String>
+    <x:String x:Key="String.ClipDetails.ColorPurple">Purple</x:String>
+    <x:String x:Key="String.Settings.Output">Export</x:String>
+    <x:String x:Key="String.Settings.OutputTemplate">Filename template</x:String>
+    <x:String x:Key="String.Settings.OutputTemplateHint">{source}: source filename; {name}: clip name; {index}: 3-digit index; {start}/{end}: start/end time. Empty names use clip001. The extension is added automatically.</x:String>
+    <x:String x:Key="String.Settings.OutputTemplatePreview">Example filename</x:String>
+    <x:String x:Key="String.Settings.OutputTemplateInvalid">Enter a template (up to 240 characters) using the supported placeholders.</x:String>
 </ResourceDictionary>

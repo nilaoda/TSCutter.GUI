@@ -138,7 +138,7 @@ public partial class MainWindowViewModel : ViewModelBase
         .Select(clip => new ClipTimelineRange(
             clip.StartTime,
             clip.EndTime < 0 ? DurationMax : clip.EndTime,
-            ReferenceEquals(clip, SelectedClip)))
+            ReferenceEquals(clip, SelectedClip), clip.DisplayName, clip.Notes, clip.Color))
         .ToArray();
 
     public string SelectedClipEstimatedSizeStr => IsProgramExportFiltered && (SelectedClip is not null || SelectedClipCount > 1)
@@ -756,6 +756,9 @@ public partial class MainWindowViewModel : ViewModelBase
                          || clip.EndPts != state.EndPts
                          || clip.EndPosition != state.EndPosition;
 
+        clip.Name = state.Name;
+        clip.Notes = state.Notes;
+        clip.Color = state.Color;
         clip.StartTime = state.StartTime;
         clip.StartPts = state.StartPts;
         clip.StartPosition = state.StartPosition;
@@ -1513,6 +1516,7 @@ public partial class MainWindowViewModel : ViewModelBase
         ExportCurrentProgramOnly = ExportCurrentProgramOnly,
         Clips = Clips.Select(clip => new ProjectClip
         {
+            Name = clip.Name, Notes = clip.Notes, Color = clip.Color,
             StartTime = clip.StartTime,
             EndTime = clip.EndTime,
             StartPts = clip.StartPts,
@@ -1526,6 +1530,8 @@ public partial class MainWindowViewModel : ViewModelBase
         }).ToList(),
         Queue = ExportQueue.Select(item => new ProjectQueueItem
         {
+            Name = item.Name, Notes = item.Notes, Color = item.Color, ClipIndex = item.ClipIndex,
+            GeneratedFileName = item.GeneratedFileName,
             Source = new ProjectSource { Path = item.SourceFilePath },
             ProgramId = item.ProgramId,
             OutputFilePath = item.OutputFilePath,
@@ -1582,6 +1588,7 @@ public partial class MainWindowViewModel : ViewModelBase
             var clip = new PickedClip
             {
                 InFileInfo = new FileInfo(project.Source!.Path),
+                Name = saved.Name, Notes = saved.Notes, Color = saved.Color,
                 StartTime = saved.StartTime,
                 EndTime = saved.EndPosition < 0 ? DurationMax : saved.EndTime,
                 StartPts = saved.StartPts,
@@ -1609,6 +1616,8 @@ public partial class MainWindowViewModel : ViewModelBase
         foreach (var saved in project.Queue)
             ExportQueue.Add(new ExportQueueItem
             {
+                Name = saved.Name, Notes = saved.Notes, Color = saved.Color, ClipIndex = saved.ClipIndex,
+                GeneratedFileName = saved.GeneratedFileName,
                 QueueItemId = Interlocked.Increment(ref _queueIdCounter),
                 SourceFilePath = saved.Source.Path,
                 ProgramId = saved.ProgramId,
@@ -2297,6 +2306,7 @@ public partial class MainWindowViewModel : ViewModelBase
         CloseVideoClickCommand.NotifyCanExecuteChanged();
         ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsPreviewOnly));
+        EditClipDetailsCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(StatusInfoText));
         AddClipCommand.NotifyCanExecuteChanged();
         RemoveClipCommand.NotifyCanExecuteChanged();
@@ -2324,8 +2334,7 @@ public partial class MainWindowViewModel : ViewModelBase
     
     private async Task SaveVideoAsync()
     {
-        var defaultName = Path.GetFileNameWithoutExtension(SelectedClip!.InFileInfo.FullName)
-            + $"_({CommonUtil.FormatSeconds(SelectedClip!.StartTime, true)}-{CommonUtil.FormatSeconds(SelectedClip!.EndTime, true)}).{ClipExtension}";
+        var defaultName = CreateClipOutputName(SelectedClip!);
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_SaveYourClip,
@@ -2368,10 +2377,11 @@ public partial class MainWindowViewModel : ViewModelBase
         if (!await ShowConfirmAsync(confirmMsg)) return;
 
         var tasks = new List<BatchTask>();
+        var reservedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Path.GetFullPath(VideoPath) };
         foreach (var clip in Clips)
         {
             var fileName = GenerateClipFileName(clip);
-            var destPath = Path.Combine(sourceDir, fileName);
+            var destPath = ClipOutputNaming.UniquePath(sourceDir, fileName, reservedPaths);
             tasks.Add(new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition, SelectedOutputProgramId));
             clip.ExportStatus = ClipExportStatus.Pending;
         }
@@ -2434,8 +2444,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private string GenerateClipFileName(PickedClip clip)
     {
-        var sourceName = Path.GetFileNameWithoutExtension(clip.InFileInfo.FullName);
-        return $"{sourceName}_clip{clip.ClipID}_({CommonUtil.FormatSeconds(clip.StartTime, true)}-{CommonUtil.FormatSeconds(clip.EndTime, true)}).{ClipExtension}";
+        return CreateClipOutputName(clip);
     }
 
     // ---- 导出队列 ----
@@ -2448,16 +2457,19 @@ public partial class MainWindowViewModel : ViewModelBase
         var programId = SelectedOutputProgramId;
         var sourceDirectory = Path.GetDirectoryName(clip.InFileInfo.FullName)!;
         var generatedName = await GenerateQueueFileNameAsync(
-            clip.InFileInfo.FullName, clip.StartTime, clip.EndTime);
+            clip.InFileInfo.FullName, clip.StartTime, clip.EndTime,
+            clip.Name, Math.Max(1, Clips.IndexOf(clip) + 1));
         var previousItem = ExportQueue.LastOrDefault();
         // 只有上一项确实偏离系统默认名称时，才把它当作用户的手工命名参照；如果用户
         // 始终沿用默认名称，则每个源文件继续独立生成文件名，仅记住输出目录。
-        var suggestedName = previousItem is not null && previousItem.EndTimeSeconds >= 0 && !FileNamesEqual(
+        var suggestedName = OutputNameTemplate == ClipOutputNaming.DefaultTemplate && previousItem is not null &&
+            previousItem.EndTimeSeconds >= 0 && !FileNamesEqual(
             previousItem.OutputFileName,
-            await GenerateQueueFileNameAsync(
-                previousItem.SourceFilePath,
-                previousItem.StartTimeSeconds,
-                previousItem.EndTimeSeconds))
+            string.IsNullOrEmpty(previousItem.GeneratedFileName)
+                ? await GenerateQueueFileNameAsync(previousItem.SourceFilePath, previousItem.StartTimeSeconds,
+                    previousItem.EndTimeSeconds,
+                    previousItem.Name, previousItem.ClipIndex)
+                : previousItem.GeneratedFileName)
             ? previousItem.OutputFileName
             : generatedName;
         if (!ReferenceEquals(SelectedClip, clip) || !CanEditSelectedClip) return;
@@ -2499,6 +2511,9 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var item = new ExportQueueItem
         {
+            Name = clip.Name, Notes = clip.Notes, Color = clip.Color,
+            ClipIndex = Math.Max(1, Clips.IndexOf(clip) + 1),
+            GeneratedFileName = generatedName,
             QueueItemId = Interlocked.Increment(ref _queueIdCounter),
             SourceFilePath = clip.InFileInfo.FullName,
             ProgramId = programId,
@@ -2549,9 +2564,10 @@ public partial class MainWindowViewModel : ViewModelBase
     private async Task<string> GenerateQueueFileNameAsync(
         string sourceFilePath,
         double startTimeSeconds,
-        double endTimeSeconds) =>
-        Path.GetFileNameWithoutExtension(sourceFilePath) +
-        $"_({CommonUtil.FormatSeconds(startTimeSeconds, true)}-{CommonUtil.FormatSeconds(endTimeSeconds, true)}).{await GetClipExtensionAsync(sourceFilePath)}";
+        double endTimeSeconds,
+        string name,
+        int index) => ClipOutputNaming.Generate(OutputNameTemplate, sourceFilePath, name, index,
+            startTimeSeconds, endTimeSeconds, await GetClipExtensionAsync(sourceFilePath));
 
     private static bool FileNamesEqual(string left, string right) => string.Equals(
         left, right,
@@ -2671,7 +2687,10 @@ public partial class MainWindowViewModel : ViewModelBase
         bool HasEndThumbnail,
         string? OutputFilePath,
         ClipExportStatus ExportStatus,
-        double ExportPercent)
+        double ExportPercent,
+        string Name,
+        string Notes,
+        string Color)
     {
         public static ClipStateSnapshot Create(PickedClip clip) => new(
             clip.ClipID,
@@ -2687,7 +2706,10 @@ public partial class MainWindowViewModel : ViewModelBase
             clip.HasEndThumbnail,
             clip.OutputFileInfo?.FullName,
             clip.ExportStatus,
-            clip.ExportPercent);
+            clip.ExportPercent,
+            clip.Name,
+            clip.Notes,
+            clip.Color);
     }
 
     private readonly record struct HistoryThumbnailKey(

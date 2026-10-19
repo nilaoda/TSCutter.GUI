@@ -54,6 +54,7 @@ public partial class App : Application
         SplatRegistrations.Register<SettingsWindowViewModel>();
         SplatRegistrations.Register<UpdatesInfoWindowViewModel>();
         SplatRegistrations.Register<CaptureFrameViewModel>();
+        SplatRegistrations.Register<ClipDetailsViewModel>();
         // --- 注册单例服务 ---
         var localizationService = new LocalizationService();
         SplatRegistrations.RegisterConstant<ILocalizationService>(localizationService);

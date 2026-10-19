@@ -117,6 +117,11 @@ public sealed class TimelineControl : Control
     }
 
     private readonly ToolTip _tooltip = new() { IsVisible = false };
+    private readonly TextBlock _tooltipText = new()
+    {
+        MaxWidth = 360, TextWrapping = TextWrapping.Wrap,
+        MaxLines = 8, TextTrimming = TextTrimming.CharacterEllipsis
+    };
     private HitPart _hoveredPart;
     private HitPart _pressedPart;
     private DragMode _dragMode;
@@ -142,6 +147,7 @@ public sealed class TimelineControl : Control
     {
         ClipToBounds = true;
         Focusable = true;
+        _tooltip.Content = _tooltipText;
         ToolTip.SetTip(this, _tooltip);
         AddHandler(PointerPressedEvent, OnPointerPressed, RoutingStrategies.Tunnel);
         AddHandler(PointerReleasedEvent, OnPointerReleased, RoutingStrategies.Tunnel);
@@ -272,7 +278,8 @@ public sealed class TimelineControl : Control
             var left = TimeToMainX(start, bounds);
             var right = TimeToMainX(end, bounds);
             using var opacity = context.PushOpacity(range.IsActive ? 0.95 : 0.52);
-            context.FillRectangle(brush, new Rect(left, bounds.Bottom - 7, Math.Max(1, right - left), 5));
+            var fill = string.IsNullOrEmpty(range.Color) ? brush : ClipLabels.Brush(range.Color);
+            context.FillRectangle(fill, new Rect(left, bounds.Bottom - 7, Math.Max(1, right - left), 5));
         }
     }
 
@@ -317,7 +324,8 @@ public sealed class TimelineControl : Control
                 var left = FullTimeToOverviewX(start, bounds);
                 var right = FullTimeToOverviewX(end, bounds);
                 using var opacity = context.PushOpacity(range.IsActive ? 0.8 : 0.42);
-                context.FillRectangle(clip,
+                var fill = string.IsNullOrEmpty(range.Color) ? clip : ClipLabels.Brush(range.Color);
+                context.FillRectangle(fill,
                     new Rect(left, bounds.Bottom - 4, Math.Max(1, right - left), 2));
             }
         }
@@ -548,15 +556,25 @@ public sealed class TimelineControl : Control
 
     private void UpdateTooltip(Point point, HitPart part)
     {
-        _tooltip.Content = part switch
+        _tooltipText.Text = part switch
         {
-            HitPart.Main => CommonUtil.FormatSeconds(MainXToTime(point.X)),
+            HitPart.Main => ClipTooltip(MainXToTime(point.X)),
             HitPart.Viewport or HitPart.Overview => ScrollTip,
             HitPart.Fit => FitTip,
             HitPart.ZoomOut or HitPart.Zoom or HitPart.ZoomIn => ZoomTip,
             _ => string.Empty
         };
         _tooltip.IsVisible = part != HitPart.None;
+    }
+
+    private string ClipTooltip(double time)
+    {
+        var range = Ranges?.Where(range => time >= range.Start && time <= range.End)
+            .OrderByDescending(range => range.IsActive).FirstOrDefault();
+        var details = range is { } selected
+            ? string.Join("\n", new[] { selected.Name, selected.Notes }.Where(value => !string.IsNullOrWhiteSpace(value)))
+            : "";
+        return CommonUtil.FormatSeconds(time) + (details.Length == 0 ? "" : "\n" + details);
     }
 
     private HitPart HitTest(Point point)

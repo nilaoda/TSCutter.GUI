@@ -7,7 +7,19 @@ namespace TSCutter.GUI.Models;
 
 public partial class ExportQueueItem : ObservableObject
 {
+    public string Name { get; init; } = "";
+    public string Notes { get; init; } = "";
+    public string Color { get; init; } = "";
+    public bool HasNotes => !string.IsNullOrWhiteSpace(Notes);
+    public bool HasColor => !string.IsNullOrEmpty(Color);
+    public Avalonia.Media.IBrush LabelBrush => ClipLabels.Brush(Color);
+    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? SourceDisplayName : $"{Name} · {SourceDisplayName}";
+
     public long QueueItemId { get; init; }
+
+    public int ClipIndex { get; init; } = 1;
+
+    public string GeneratedFileName { get; init; } = "";
 
     public int? ProgramId { get; init; }
 
@@ -59,6 +71,7 @@ public partial class ExportQueueItem : ObservableObject
     public void RefreshLocalizedText()
     {
         OnPropertyChanged(nameof(SourceDisplayName));
+        OnPropertyChanged(nameof(DisplayName));
         OnPropertyChanged(nameof(EstimatedSizeStr));
         OnPropertyChanged(nameof(StatusText));
         OnPropertyChanged(nameof(EndBoundaryTimeStr));

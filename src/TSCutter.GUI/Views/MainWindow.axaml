@@ -26,6 +26,40 @@
 
     <Window.Resources>
         <converters:SecondsToStringConverter x:Key="SecondsConverter" />
+        <ControlTheme x:Key="ClipEditButtonTheme" TargetType="Button">
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static commonControls:SystemColors.ControlTextBrushKey}}" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="2">
+                        <Path Width="12" Height="12" Stretch="Uniform" HorizontalAlignment="Center" VerticalAlignment="Center"
+                              Stroke="{TemplateBinding Foreground}" StrokeThickness="1.3" StrokeJoin="Round"
+                              Data="M 2,9 L 2,12 L 5,12 L 12,5 L 9,2 Z M 7.5,3.5 L 10.5,6.5" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+            <Style Selector="^:pointerover">
+                <Setter Property="Background" Value="{DynamicResource {x:Static commonControls:SystemColors.ControlLightBrushKey}}" />
+            </Style>
+            <Style Selector="^:pressed">
+                <Setter Property="Background" Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightBrushKey}}" />
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
+            </Style>
+            <Style Selector="^:focus-visible">
+                <Setter Property="BorderBrush" Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightBrushKey}}" />
+            </Style>
+            <Style Selector="^:disabled">
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static commonControls:SystemColors.GrayTextBrushKey}}" />
+            </Style>
+        </ControlTheme>
     </Window.Resources>
 
     <Interaction.Behaviors>
@@ -502,14 +536,23 @@
                                                                         <Grid Margin="4"
                                                                               RowDefinitions="Auto,64,Auto,Auto"
                                                                               ColumnDefinitions="*,8,*">
-                                                                            <!-- Header: ID + Status -->
                                                                             <Grid Grid.Row="0" Grid.ColumnSpan="3"
-                                                                                  ColumnDefinitions="Auto,*,Auto">
-                                                                                <TextBlock Text="{Binding ClipID, StringFormat='#{0}'}"
-                                                                                           FontWeight="Bold"
-                                                                                           FontSize="12" />
-                                                                                <TextBlock Grid.Column="2"
-                                                                                           Text="{Binding StatusText}" />
+                                                                                  RowDefinitions="Auto,Auto" ColumnDefinitions="6,*,Auto,Auto" ColumnSpacing="6">
+                                                                                <Border Background="{Binding LabelBrush}" IsVisible="{Binding HasColor}" Height="12" VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding DisplayName}" MaxLines="1" ToolTip.Tip="{Binding DisplayName}" FontWeight="Bold" FontSize="12"
+                                                                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                                                                                <Button Grid.Column="2" Theme="{StaticResource ClipEditButtonTheme}" Classes="desktop-template-button"
+                                                                                        AutomationProperties.Name="{DynamicResource String.ClipDetails.Edit}"
+                                                                                        Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).EditClipDetailsCommand}"
+                                                                                        CommandParameter="{Binding}" ToolTip.Tip="{DynamicResource String.ClipDetails.Edit}" />
+                                                                                <TextBlock Grid.Column="3" Text="{Binding StatusText}" IsVisible="{Binding HasExportStatus}" VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding Notes}" MaxLines="1"
+                                                                                           IsVisible="{Binding HasNotes}" TextTrimming="CharacterEllipsis" MaxHeight="20"
+                                                                                           Foreground="{DynamicResource AppSecondaryTextBrush}" Margin="0,2,0,3">
+                                                                                    <ToolTip.Tip>
+                                                                                        <TextBlock Text="{Binding Notes}" MaxWidth="320" TextWrapping="Wrap" MaxLines="8" TextTrimming="CharacterEllipsis" />
+                                                                                    </ToolTip.Tip>
+                                                                                </TextBlock>
                                                                             </Grid>
                                                                             <Button Grid.Row="1" Grid.Column="0" Padding="2"
                                                                                     MinWidth="0"
@@ -660,11 +703,16 @@
                                                                         <ClassicBorderDecorator Classes="app-item-frame" BorderStyle="Raised" />
                                                                         <Grid ColumnDefinitions="*,Auto">
                                                                         <StackPanel Grid.Column="0" Margin="4" Spacing="2">
-                                                                            <!-- Header: Source filename -->
-                                                                            <TextBlock Text="{Binding SourceDisplayName}"
-                                                                                       TextTrimming="CharacterEllipsis"
-                                                                                       FontWeight="Bold"
-                                                                                       FontSize="12" />
+                                                                            <Grid ColumnDefinitions="6,*" ColumnSpacing="6">
+                                                                                <Border Background="{Binding LabelBrush}" IsVisible="{Binding HasColor}" Height="12" VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Column="1" Text="{Binding DisplayName}" MaxLines="1" ToolTip.Tip="{Binding DisplayName}" TextTrimming="CharacterEllipsis" FontWeight="Bold" FontSize="12" />
+                                                                            </Grid>
+                                                                            <TextBlock Text="{Binding Notes}" MaxLines="1" IsVisible="{Binding HasNotes}" TextTrimming="CharacterEllipsis"
+                                                                                       Foreground="{DynamicResource AppSecondaryTextBrush}" MaxHeight="20">
+                                                                                <ToolTip.Tip>
+                                                                                    <TextBlock Text="{Binding Notes}" MaxWidth="320" TextWrapping="Wrap" MaxLines="8" TextTrimming="CharacterEllipsis" />
+                                                                                </ToolTip.Tip>
+                                                                            </TextBlock>
                                                                             <!-- Boundary times -->
                                                                             <Grid ColumnDefinitions="Auto,*,Auto" Margin="0,2,0,0">
                                                                                 <TextBlock Text="{Binding StartBoundaryTimeStr}" />

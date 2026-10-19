@@ -12,6 +12,20 @@
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Styles.Resources>
+    <!-- 单行输入统一预留文字空间；行高随字号变化，多行文本保留自身布局。 -->
+    <Style Selector="TextBox[AcceptsReturn=False]">
+        <Setter Property="LineHeight" Value="{Binding FontSize, RelativeSource={RelativeSource Self}, Converter={x:Static local:TextInputMetrics.LineHeight}}" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <Style Selector="NumericUpDown">
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+    </Style>
+    <!-- 数字输入的外框负责最小高度，避免内部输入框重复撑高控件。 -->
+    <Style Selector="NumericUpDown /template/ TextBox[AcceptsReturn=False]">
+        <Setter Property="MinHeight" Value="0" />
+    </Style>
     <!-- 界面框架的默认值集中在样式层，各主题可覆盖外观而不改变布局和交互。 -->
     <Style Selector="classic|ClassicBorderDecorator.app-section-frame, classic|ClassicBorderDecorator.app-item-frame">
         <Setter Property="BorderThickness" Value="2" />

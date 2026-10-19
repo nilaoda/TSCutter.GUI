@@ -15,6 +15,7 @@ TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It comb
 - **Keyframe-accurate cutting**: Preview and navigate nearby keyframes or jump to a specific time before marking clip boundaries.
 - **Zoomable timeline**: Continuously zoom, pan, or return to a full-file overview for accurate navigation in long recordings.
 - **Multiple clip management**: Create and edit several clip ranges, view their positions on the timeline, and compare duration and estimated size.
+- **Clip labels and output names**: Give clips names, notes, and colors; retain them in projects and queued exports. Configure a filename template with a live preview.
 - **Editing projects**: Save the current source, clip ranges, timeline view, and cross-file export queue in a `.tscut` file for later editing. Projects can reopen recordings that have grown since saving.
 - **Program and video track selection**: Switch previews in files with multiple programs or video tracks. Keyframe overviews, thumbnail sheets, and frame searches follow the selected track. Multi-program TS exports can preserve all programs or keep only the current program. Ordinary files with one program and one video track show no selectors.
 - **Flexible output**: Save one clip immediately, add clips to a batch export queue, or merge multiple selected clips into one TS file.
@@ -86,7 +87,22 @@ Use **View → Theme** to switch families. In **Tools → Settings**, choose lig
 4. Save the current clip, add it to the export queue, or select multiple clips and merge them.
 5. Use the File menu to save a `.tscut` project and reopen it later to restore clips and queued exports. A growing source is accepted when verification of its saved portion succeeds.
 
-Files with multiple programs or video tracks show selectors above the preview. After confirmation, switching tracks clears current clips and undo history; queued tasks retain their original program choice. “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks. New projects use version 2 and older projects remain readable; older app versions cannot open new projects.
+Files with multiple programs or video tracks show selectors above the preview. After confirmation, switching tracks clears current clips and undo history; queued tasks retain their original program choice. “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks. New projects use version 3 and can read version 1 and 2 projects; older app versions cannot open new projects.
+
+### Clip labels and output filenames
+
+Click the **pencil icon** on a clip card to edit its name, notes, and color. Changes support undo/redo. Timeline bars use the assigned color, with names and notes in the hover tooltip. Adding a clip to the queue takes a snapshot of its labels and boundaries.
+
+In **Tools → Settings → Export**, set the filename template used by single-clip saves, individual batch exports, and newly queued clips. The default is `{source}_({start}-{end})`; merged output keeps its separate filename suggestion.
+
+| Placeholder | Value |
+| --- | --- |
+| `{source}` | Source filename without extension |
+| `{name}` | Clip name, or `clip001` when empty (using that clip's index) |
+| `{index}` | Current position in the clip list, padded to 3 digits |
+| `{start}`, `{end}` | Start/end time, such as `00.00.10.000`; an unset end uses the video duration |
+
+For example, `{source}_{index}_{name}` produces `Recording_001_Opening.ts`. The actual TS/M2TS extension is added automatically. Unsafe filename characters are replaced; batch exports append `_2`, `_3`, etc. to avoid duplicate names and existing files. The template setting applies to future exports; queued output paths stay as chosen.
 
 ### Independent TS tools
 
