@@ -15,6 +15,80 @@ public sealed class EditorHistoryCollection;
 public sealed class ClipEndHistoryCancellationTests
 {
     [Fact]
+    public void SeekingKeepsMarkCommandsAvailableAndMarksTheDisplayedFrame()
+    {
+        using var resolver = new ModernDependencyResolver();
+        using var resolverScope = resolver.WithResolver();
+        var app = new Application();
+        using var scope = BindApplication(app);
+        app.RegisterServices();
+        var locale = new LocalizationService();
+        Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+        var path = Path.Combine(Path.GetTempPath(), $"clip-seek-{Guid.NewGuid():N}.ts");
+        try
+        {
+            File.WriteAllBytes(path, new byte[1000]);
+            var vm = new MainWindowViewModel(null!, new ConfigurationService(locale))
+            {
+                VideoPath = path, DurationMax = 60
+            };
+            using var video = new VideoInstance(path);
+            typeof(VideoInstance).GetProperty(nameof(VideoInstance.Inited))!.SetValue(video, true);
+            typeof(VideoInstance).GetProperty(nameof(VideoInstance.CanBinaryClip))!.SetValue(video, true);
+            Set(vm, "_videoInstance", video);
+            void PublishFrame(double seconds, long position, long pts) =>
+                typeof(MainWindowViewModel).GetMethod("ApplyDecodeResult", PrivateMembers)!.Invoke(vm,
+                    [new DecodeResult { FrameTimestamp = TimeSpan.FromSeconds(seconds), FramePosition = position, FramePts = pts }]);
+            PublishFrame(1, 188, 90_000);
+            vm.CurrentTime = 15; // seek 目标已移动，但新画面尚未发布。
+            vm.DecodingOpCount = 1;
+            Assert.True(vm.AddClipCommand.CanExecute(null));
+            Assert.False(vm.MarkClipStartCommand.CanExecute(null));
+            Assert.False(vm.MarkClipEndCommand.CanExecute(null));
+            vm.AddClipCommand.Execute(null);
+            var clip = Assert.Single(vm.Clips);
+            Assert.Equal((1d, 188L, 90_000L), (clip.StartTime, clip.StartPosition, clip.StartPts));
+            var marks = new System.Windows.Input.ICommand[]
+            {
+                vm.AddClipCommand, vm.MarkClipStartCommand, vm.MarkClipEndCommand,
+                vm.MarkClipStartShortcutCommand, vm.MarkClipEndShortcutCommand
+            };
+            // 连续 seek 和重叠的预览请求都不应改变按钮的启用状态。
+            foreach (var count in new[] { 0, 1, 2, 1, 0, 1 })
+            {
+                vm.DecodingOpCount = count;
+                Assert.All(marks, command => Assert.True(command.CanExecute(null)));
+                Assert.True(vm.RemoveClipCommand.CanExecute(null));
+            }
+            PublishFrame(2, 376, 180_000);
+            vm.CurrentTime = 20;
+            vm.MarkClipStartCommand.Execute(null);
+            Assert.Equal((2d, 376L, 180_000L), (clip.StartTime, clip.StartPosition, clip.StartPts));
+
+            Set(vm, "_isLoadingVideo", true);
+            Assert.All(marks, command => Assert.False(command.CanExecute(null)));
+            Set(vm, "_isLoadingVideo", false);
+            Set(vm, "_isResolvingClipEnd", true);
+            Assert.All(marks, command => Assert.False(command.CanExecute(null)));
+            Set(vm, "_isResolvingClipEnd", false);
+            PublishFrame(3, -1, 270_000);
+            Assert.All(marks, command => Assert.False(command.CanExecute(null)));
+            PublishFrame(3, 564, long.MinValue);
+            Assert.All(marks, command => Assert.False(command.CanExecute(null)));
+            PublishFrame(3, 564, 270_000);
+            Assert.All(marks, command => Assert.True(command.CanExecute(null)));
+            typeof(VideoInstance).GetProperty(nameof(VideoInstance.CanBinaryClip))!.SetValue(video, false);
+            Assert.All(marks, command => Assert.False(command.CanExecute(null)));
+            vm.Close();
+            Assert.All(marks, command => Assert.False(command.CanExecute(null)));
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void UndoAndRedoCancelPendingEndScansAndRefreshMarkCommands()
     {
         // 仅注册控件所需服务，不启动窗口、原生解码器或加载用户配置。
