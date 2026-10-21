@@ -1,0 +1,96 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:ia="using:Avalonia.Xaml.Interactivity"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels.Editing"
+        xmlns:converters="clr-namespace:TSCutter.GUI.Converters"
+        mc:Ignorable="d"
+        Height="180" Width="420"
+        x:Class="TSCutter.GUI.Views.Editing.OutputWindow"
+        d:DataContext="{x:Static local:App.OutputDialog}"
+        CanMaximize="False"
+        CanMinimize="False"
+        WindowStartupLocation="CenterOwner"
+        x:DataType="viewModels:OutputWindowViewModel"
+        Title="{DynamicResource String.Output.Title}">
+
+    <Window.Resources>
+        <converters:InverseBoolConverter x:Key="InverseBoolConverter" />
+    </Window.Resources>
+
+    <Interaction.Behaviors>
+        <RoutedEventTriggerBehavior RoutedEvent="{x:Static Control.LoadedEvent}">
+            <InvokeCommandAction Command="{Binding OutputCommand}" />
+        </RoutedEventTriggerBehavior>
+    </Interaction.Behaviors>
+
+    <Border BorderThickness="2" Padding="8">
+        <Grid RowDefinitions="Auto,*,Auto">
+            <!-- 顶部文件名 -->
+            <TextBlock Grid.Row="0"
+                       Text="{Binding CurrentFileName}"
+                       Margin="0,0,0,8"
+                       TextWrapping="NoWrap"
+                       TextTrimming="CharacterEllipsis"
+                       MaxWidth="400" />
+
+            <!-- 中部内容：进度条 + 状态 -->
+            <StackPanel Grid.Row="1" Spacing="6" HorizontalAlignment="Stretch" VerticalAlignment="Center">
+                <!-- 当前任务进度条 -->
+                <ProgressBar Minimum="0" Maximum="100"
+                             ShowProgressText="False"
+                             Value="{Binding Percent}"
+                             Height="20" />
+                <!-- 百分比（左）+ 速度（中）+ 剩余时间（右） -->
+                <Grid ColumnDefinitions="Auto, *, Auto">
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding PercentStr}"
+                               FontWeight="Bold" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding SpeedStr}"
+                               HorizontalAlignment="Center" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal">
+                        <TextBlock Text="{DynamicResource String.Output.Remaining}" />
+                        <TextBlock Text=" " />
+                        <TextBlock Text="{Binding RemainingTimeStr}" FontWeight="Bold" />
+                    </StackPanel>
+                </Grid>
+                <!-- 队列进度（仅批量模式） -->
+                <StackPanel IsVisible="{Binding IsBatchMode}" Spacing="4">
+                    <Border Height="1" Margin="0,4,0,4" Background="{DynamicResource SystemBaseLowColor}" />
+                    <Grid>
+                        <TextBlock HorizontalAlignment="Left"
+                                   Text="{DynamicResource String.Output.QueueProgress}" />
+                        <TextBlock HorizontalAlignment="Right"
+                                   Text="{Binding QueueProgressStr}"
+                                   FontWeight="Bold" />
+                    </Grid>
+                    <ProgressBar Minimum="0" Maximum="100"
+                                 ShowProgressText="False"
+                                 Value="{Binding QueueProgress}"
+                                 Height="14" />
+                </StackPanel>
+            </StackPanel>
+
+            <!-- 底部分隔线 + 按钮区 -->
+            <StackPanel Grid.Row="2" Orientation="Vertical">
+                <Border Height="1" Margin="0,8,0,8" Background="{DynamicResource SystemBaseLowColor}" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="6" HorizontalAlignment="Right">
+                        <Button Width="120"
+                                HorizontalAlignment="Right"
+                                Command="{Binding CancelOutputCommand}"
+                                Content="{Binding CancelButtonText}" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

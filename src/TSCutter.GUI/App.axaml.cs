@@ -9,10 +9,18 @@ using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.Avalonia;
 using Splat;
 using TSCutter.GUI.Converters;
-using TSCutter.GUI.Models;
-using TSCutter.GUI.Services;
-using TSCutter.GUI.Utils;
-using TSCutter.GUI.ViewModels;
+using TSCutter.GUI.Models.Application;
+using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Media;
+using TSCutter.GUI.ViewModels.Application;
+using TSCutter.GUI.ViewModels.Editing;
+using TSCutter.GUI.ViewModels.FrameSearch;
+using TSCutter.GUI.ViewModels.Preview;
+using TSCutter.GUI.ViewModels.TransportStream.Analysis;
+using TSCutter.GUI.ViewModels.TransportStream.Processing;
+using TSCutter.GUI.ViewModels.TransportStream.Repair;
+using TSCutter.GUI.Views.Editing;
 
 namespace TSCutter.GUI;
 

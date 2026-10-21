@@ -87,5 +87,5 @@ public class ViewLocatorBase : IDataTemplate, IViewLocator, IViewLocatorNavigati
     public virtual bool Match(object? data) => data is INotifyPropertyChanged;
 
     /// <inheritdoc />
-    public bool UseSinglePageNavigation => Application.Current?.ApplicationLifetime is ISingleViewApplicationLifetime || ForceSinglePageNavigation;
+    public bool UseSinglePageNavigation => Avalonia.Application.Current?.ApplicationLifetime is ISingleViewApplicationLifetime || ForceSinglePageNavigation;
 }

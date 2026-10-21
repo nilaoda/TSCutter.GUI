@@ -121,7 +121,7 @@ Open any utility directly from the **Tools** menu. Each tool opens in its own wi
 
 ## Documentation
 
-Design notes for the TS tools are available in [docs](docs/README.md).
+Design notes for the TS tools are available in [docs](docs/README.md). Source layout and namespace conventions are described in [src/README.md](src/README.md).
 
 ## Thanks
 This project is inspired by an excellent editing software called [VidePub](https://sourceforge.net/projects/videpub/).

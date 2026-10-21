@@ -5,6 +5,8 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Files;
 
 namespace TSCutter.GUI.Utils;
 

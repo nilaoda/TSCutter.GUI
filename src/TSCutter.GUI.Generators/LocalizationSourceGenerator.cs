@@ -37,7 +37,7 @@ namespace TSCutter.GUI.Generators
                     return;
 
                 const string className = "LocalizationManager";
-                const string namespaceName = "TSCutter.GUI.Utils";
+                const string namespaceName = "TSCutter.GUI.Utils.Application";
 
                 try
                 {

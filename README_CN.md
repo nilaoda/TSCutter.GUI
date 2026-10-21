@@ -121,7 +121,7 @@ TSCutter.GUI 是一个跨平台 MPEG-TS 剪辑与诊断工具。它在快速关�
 
 ## 设计文档
 
-TS 工具的设计说明位于 [docs](docs/README.md)。
+TS 工具的设计说明位于 [docs](docs/README.md)，源码目录与命名空间约定位于 [src/README.md](src/README.md)。
 
 ## 致谢
 此项目灵感来自一个出色的DVB视频剪辑软件 [VidePub](https://sourceforge.net/projects/videpub/)。

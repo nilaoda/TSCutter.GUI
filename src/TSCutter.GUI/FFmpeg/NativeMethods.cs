@@ -3,7 +3,7 @@ using System;
 using System.Runtime.CompilerServices;
 using System.Runtime.InteropServices;
 using FFmpeg.AutoGen.Abstractions;
-using TSCutter.GUI.Utils;
+using TSCutter.GUI.Utils.Media;
 
 namespace TSCutter.GUI.FFmpeg;
 
