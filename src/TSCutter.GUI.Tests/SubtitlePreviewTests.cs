@@ -14,10 +14,11 @@ namespace TSCutter.GUI.Tests;
 
 public sealed class NativeSubtitleFactAttribute : FactAttribute
 {
-    public NativeSubtitleFactAttribute()
+    public NativeSubtitleFactAttribute(string? requiredVariable = null)
     {
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("TSCUTTER_SUBTITLE_TEST_SAMPLES")))
-            Skip = "需要设置 TSCUTTER_SUBTITLE_TEST_SAMPLES 和包含 libass 的 FFmpeg 运行库目录。";
+        var sampleVariable = requiredVariable ?? "TSCUTTER_SUBTITLE_TEST_SAMPLES";
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(sampleVariable)))
+            Skip = "需要设置 " + sampleVariable + " 和包含 libass 的 FFmpeg 运行库目录。";
     }
 }
 
@@ -263,11 +264,10 @@ public sealed class SubtitlePreviewTests
         }, CancellationToken.None);
     }
 
-    [NativeSubtitleFact]
+    [NativeSubtitleFact("TSCUTTER_SUBTITLE_REAL_SAMPLE")]
     public async Task RealMp4SubtitleTrackRendersAtAnInteriorTimestamp()
     {
-        var path = Environment.GetEnvironmentVariable("TSCUTTER_SUBTITLE_REAL_SAMPLE");
-        if (string.IsNullOrEmpty(path)) return;
+        var path = Environment.GetEnvironmentVariable("TSCUTTER_SUBTITLE_REAL_SAMPLE")!;
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
         await session.Dispatch(() =>
         {

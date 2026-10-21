@@ -52,6 +52,21 @@ The script uses only the Python standard library. Run its focused checks with:
 python3 -m unittest discover -s tools -p 'test_*.py'
 ```
 
+## Running tests
+
+Run the ordinary tests with .NET 10; no sample environment variables are required:
+
+```sh
+dotnet test src/TSCutter.GUI.Tests -c Debug
+```
+
+Tests requiring native media samples are optional integration tests. They are
+reported as skipped when their sample variable is unset. The generators below
+create small, reusable fixtures; running them also requires a local FFmpeg CLI
+with the listed encoders. The application's shared libraries are used by the
+tests themselves. Real-file checks accept separate sample paths and do not
+require the generated fixture directories. Release builds do not run these tests.
+
 ## Remux export regression fixtures
 
 Generate small MP4/MKV files with B frames, multiple audio tracks, mov_text/ASS
@@ -91,5 +106,7 @@ Pass `--font /path/to/font.ttf` to test MKV font attachments. The generator need
 FFmpeg with libx264 and the dvbsub encoder. The native tests use the packaged
 FFmpeg 9 runtime with libass. They check subtitle timing, clearing, backward seeks,
 ASS animation, resizing, rapid track changes and switching subtitles off.
-Set `TSCUTTER_SUBTITLE_REAL_SAMPLE` to a local MP4 with one subtitle track to also
-check a real file, and `TSCUTTER_SUBTITLE_PREVIEW_IMAGE` to save the UI render.
+Set `TSCUTTER_SUBTITLE_REAL_SAMPLE` to a local MP4 with exactly one subtitle track
+and an active subtitle at 2.5 seconds to check a real file. This check is skipped
+when that variable is unset. `TSCUTTER_SUBTITLE_PREVIEW_IMAGE` is only an optional
+output path for saving the generated-fixture UI render; it is not a prerequisite.

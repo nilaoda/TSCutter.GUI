@@ -11,10 +11,9 @@ public sealed class RemuxExportFactAttribute : FactAttribute
 {
     public RemuxExportFactAttribute(string? requiredVariable = null)
     {
-        if (requiredVariable is not null && string.IsNullOrEmpty(Environment.GetEnvironmentVariable(requiredVariable)))
-            Skip = "Set " + requiredVariable + " to a compatible sample.";
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("TSCUTTER_REMUX_TEST_SAMPLES")))
-            Skip = "Set TSCUTTER_REMUX_TEST_SAMPLES to generated media fixtures (tools/generate-remux-export-samples.py).";
+        var sampleVariable = requiredVariable ?? "TSCUTTER_REMUX_TEST_SAMPLES";
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(sampleVariable)))
+            Skip = "需要设置 " + sampleVariable + " 和 FFmpeg 9 运行库目录。";
     }
 }
 
