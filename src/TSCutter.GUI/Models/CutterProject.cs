@@ -5,10 +5,11 @@ namespace TSCutter.GUI.Models;
 
 public sealed class CutterProject
 {
-    public int Version { get; set; } = 3;
+    public int Version { get; set; } = 4;
     public ProjectSource? Source { get; set; }
     public PreviewStreamSelection? PreviewSelection { get; set; }
     public bool ExportCurrentProgramOnly { get; set; }
+    public RemuxExportSettings? RemuxSettings { get; set; }
     public List<ProjectClip> Clips { get; set; } = [];
     public List<ProjectQueueItem> Queue { get; set; } = [];
     public int SelectedClipIndex { get; set; } = -1;
@@ -40,6 +41,7 @@ public sealed class ProjectClip
     public byte[]? StartThumbnailJpeg { get; set; }
     public byte[]? EndThumbnailJpeg { get; set; }
     public string? OutputFilePath { get; set; }
+    public MergedClipOutput? MergedOutput { get; set; }
     public bool WasExported { get; set; }
 }
 
@@ -51,6 +53,7 @@ public sealed class ProjectQueueItem
     public string Notes { get; set; } = "";
     public string Color { get; set; } = "";
     public ProjectSource Source { get; set; } = new();
+    public RemuxExportSettings? RemuxSettings { get; set; }
     public int? ProgramId { get; set; }
     public string OutputFilePath { get; set; } = string.Empty;
     public double StartTime { get; set; }

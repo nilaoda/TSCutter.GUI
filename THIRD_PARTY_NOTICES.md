@@ -18,12 +18,17 @@ Multiple NuGet packages from the same project are grouped below. Versions are sp
 | [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) | MIT |
 | [HanumanInstitute.MvvmDialogs](https://github.com/mysteryx93/HanumanInstitute.MvvmDialogs) | MIT |
 | [FFmpeg.AutoGen.Abstractions](https://github.com/Ruslan-B/FFmpeg.AutoGen) | MIT |
+| [libass 0.17.4](https://github.com/libass/libass/tree/0.17.4) | ISC |
 | [Splat](https://github.com/reactiveui/splat) | MIT |
 | [Tmds.DBus.Protocol](https://github.com/tmds/Tmds.DBus) | MIT |
 
 字体使用 [Inter](https://github.com/rsms/inter)（SIL OFL 1.1）；共享运行时来自 [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries)（GPL v3）。本清单不展开各项目内部的依赖。
 
 The font is Inter (SIL OFL 1.1); the shared runtime comes from FFmpegSharedLibraries (GPL v3). Internal dependencies are not listed individually.
+
+字幕渲染运行库包含 libass 0.17.4、FreeType 2.13.3、HarfBuzz 10.2.0、FriBidi 1.0.16、libunibreak 6.1；Linux 还包含 Fontconfig 2.16.0 和 Expat 2.6.4。源代码、版本及构建补丁见 [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries)。各项目的上游许可原文随本声明附带。
+
+The subtitle runtime includes libass 0.17.4, FreeType 2.13.3, HarfBuzz 10.2.0, FriBidi 1.0.16 and libunibreak 6.1; Linux also includes Fontconfig 2.16.0 and Expat 2.6.4. Source versions and build patches are available in [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries). Original upstream license texts are included with this notice. FriBidi uses LGPL 2.1 or later; the complete LGPL 2.1 text is included among the consolidated licenses.
 
 ## 参考代码 / Adapted code
 

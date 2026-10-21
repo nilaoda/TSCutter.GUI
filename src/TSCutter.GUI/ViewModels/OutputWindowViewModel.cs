@@ -14,7 +14,8 @@ using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.ViewModels;
 
-public record BatchTask(string SourcePath, string DestinationPath, long StartPosition, long EndPosition, int? ProgramId = null);
+public record BatchTask(string SourcePath, string DestinationPath, long StartPosition, long EndPosition, int? ProgramId = null,
+    RemuxExportSettings? RemuxSettings = null, double StartSeconds = 0, double? EndSeconds = null);
 
 public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
@@ -44,7 +45,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     public partial string CancelButtonText { get; set; } = "";
 
     public bool IsBatchMode => _tasks.Count > 0;
-    public bool IsMergeMode => _mergeRequest is not null;
+    public bool IsMergeMode => _mergeRequest is not null || _mediaRequest is not null;
     public int TotalTasks => _tasks.Count;
     public double QueueProgress => TotalTasks > 0 ? CurrentTaskIndex * 100.0 / TotalTasks : 0;
     public string QueueProgressStr => $"{CurrentTaskIndex} / {TotalTasks}";
@@ -62,6 +63,28 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     
     private readonly List<BatchTask> _tasks = [];
     private TsClipMergeRequest? _mergeRequest;
+    private RemuxExportRequest? _mediaRequest;
+    public RemuxExportSettings? RemuxSettings { get; set; }
+    public double StartSeconds { get; set; }
+    public double? EndSeconds { get; set; }
+
+    internal void SetRemuxTask(RemuxExportRequest request)
+    {
+        _mediaRequest = request;
+        OnPropertyChanged(nameof(IsMergeMode));
+    }
+
+    private Task ExportRemuxAsync(RemuxExportRequest request, int generation)
+    {
+        var progress = new Progress<RemuxExportProgress>(value =>
+        {
+            if (DialogResult is not null || generation != _copyGeneration) return;
+            Percent = value.Percent;
+            Speed = value.BytesPerSecond;
+            RemainingSeconds = value.RemainingSeconds;
+        });
+        return new RemuxExportService().ExportAsync(request, progress, _cts.Token);
+    }
     public List<int> CompletedTaskIndices { get; } = [];
     public List<int> FailedTaskIndices { get; } = [];
     private CancellationTokenSource _cts = new();
@@ -110,6 +133,21 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     private async Task RunMergeAsync()
     {
+        if (_mediaRequest is { } media)
+        {
+            try
+            {
+                CurrentFileName = Path.GetFileName(media.OutputPath);
+                await ExportRemuxAsync(media, ++_copyGeneration);
+                Percent = 100;
+                RemainingSeconds = 0;
+                DialogResult = true;
+            }
+            catch (OperationCanceledException) { DialogResult = false; }
+            catch (Exception exception) { Exception = exception; DialogResult = false; }
+            RequestClose?.Invoke();
+            return;
+        }
         var request = _mergeRequest;
         if (request is null)
             return;
@@ -154,7 +192,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _totalBytes = EndPosition > 0 ? EndPosition - StartPosition : new FileInfo(SourceFilePath!).Length - StartPosition;
             _startTime = DateTime.Now;
             _lastUpdateTime = _startTime;
-            await CopyClipAsync(new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId));
+            await CopyClipAsync(new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId,
+                RemuxSettings, StartSeconds, EndSeconds));
             Percent = 100;
             RemainingSeconds = 0;
             DialogResult = true;
@@ -163,7 +202,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         catch (OperationCanceledException)
         {
             Console.WriteLine("File copy was canceled.");
-            if (ProgramId is not null)
+            if (ProgramId is not null || RemuxSettings is not null)
             {
                 DialogResult = false;
                 RequestClose?.Invoke();
@@ -182,6 +221,9 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private Task CopyClipAsync(BatchTask task)
     {
         var generation = ++_copyGeneration;
+        if (task.RemuxSettings is { } settings)
+            return ExportRemuxAsync(new RemuxExportRequest(task.DestinationPath,
+                [new RemuxExportSegment(task.SourcePath, task.StartSeconds, task.EndSeconds, settings)]), generation);
         if (task.ProgramId is { } programId)
         {
             var progress = new Progress<TsFilterProgress>(value =>
@@ -307,7 +349,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _batchCancelled = true;
             _cts.Cancel();
         }
-        else if (IsMergeMode || ProgramId is not null)
+        else if (IsMergeMode || ProgramId is not null || RemuxSettings is not null)
         {
             // 过滤和合并服务在取消后删除半成品；等待清理完成再关闭窗口，避免误报成功。
             _cts.Cancel();
@@ -322,7 +364,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     
     public void OnClosing(CancelEventArgs e)
     {
-        if ((IsMergeMode || ProgramId is not null || _tasks.Exists(task => task.ProgramId is not null)) &&
+        if ((IsMergeMode || ProgramId is not null || RemuxSettings is not null || _tasks.Exists(task => task.ProgramId is not null || task.RemuxSettings is not null)) &&
             DialogResult is null)
             e.Cancel = true;
         CancelOutput();

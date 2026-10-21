@@ -17,13 +17,24 @@ TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It comb
 - **Multiple clip management**: Create and edit several clip ranges, view their positions on the timeline, and compare duration and estimated size.
 - **Clip labels and output names**: Give clips names, notes, and colors; retain them in projects and queued exports. Configure a filename template with a live preview.
 - **Editing projects**: Save the current source, clip ranges, timeline view, and cross-file export queue in a `.tscut` file for later editing. Projects can reopen recordings that have grown since saving.
-- **Program and video track selection**: Switch previews in files with multiple programs or video tracks. Keyframe overviews, thumbnail sheets, and frame searches follow the selected track. Multi-program TS exports can preserve all programs or keep only the current program. Ordinary files with one program and one video track show no selectors.
-- **Flexible output**: Save one clip immediately, add clips to a batch export queue, or merge multiple selected clips into one TS file.
+- **Program and video track selection**: Switch previews in files with multiple programs or video tracks. Keyframe overviews, thumbnail sheets, and frame searches follow the selected track. Multi-program TS exports can preserve all programs or keep only the current program. The selection area also appears when embedded subtitles are available.
+- **Embedded subtitle preview**: Select text or bitmap subtitles in MP4, MKV and TS. ASS styles, animations and MKV font attachments are supported. Subtitles follow the displayed frame when seeking, zooming or panning; export tracks remain controlled by export settings.
+- **Flexible output**: Save one clip immediately, add clips to a batch export queue, or merge multiple selected clips into one file.
 - **Lossless media copy**: Preserve the original encoded audio and video without transcoding.
 - **Frame capture and media information**: Save or copy the current preview frame and inspect the opened file's stream information.
 - **Image navigator**: Locate the visible region of a zoomed image with a floating overview in the main preview and thumbnail sheets. Click or drag to navigate; disable it in Settings.
 - **High-resolution thumbnail sheets**: Generate configurable N×M contact sheets up to 12,000 pixels wide, preview them with zoom and pan, and export PNG or JPEG images with timestamps and labeled video, audio, and subtitle metadata, including language and HDR, HLG, or Dolby Vision indicators.
-- **General video preview**: Open MP4, MKV, MOV, WebM, and other FFmpeg-supported video files for preview, seeking, screenshots, and media information. Non-TS files are preview-only.
+- **General video preview**: Open MP4, MKV, MOV, WebM, and other FFmpeg-supported video files for preview, seeking, screenshots, and media information. MP4/MOV and MKV/WebM inputs can be exported to MP4 or MKV; other non-TS formats are preview-only.
+
+### MP4 / MKV remux editing and merging
+
+- Choose the output container and retained tracks in **MP4 / MKV export settings**. Track order, language, titles, and default/forced flags follow the source.
+- Export individual clips or batches, merge selected ranges from one source, or merge different sources in queue order. Overlapping selected clips are combined once; queue ranges are appended in full.
+- Video cuts use keyframes and audio cuts use compressed packet boundaries. Text subtitles, including MP4 mov_text and MKV ASS, and chapters are trimmed and retimed. MKV attachments and MP4 cover art can be retained.
+- Copy compressed audio/video and codec configuration, preserving container-supported color, HDR static data, and Dolby Vision configuration. Dynamic metadata in the bitstream travels with the packets.
+- Check codec and track compatibility, with clear errors when content cannot be safely cut or merged.
+
+**MP4/MKV export does not re-encode audio/video, but is not byte-for-byte lossless.** Container structures, timestamps, and metadata are rewritten, so file hashes and sizes change. Metadata fields depend on the output container. MP4 exports retaining cover art use standard metadata fields; other MP4 exports can write custom metadata. Keeping subtitles requires scanning the source for events spanning the start, which may take longer for large files. Failed or cancelled exports preserve existing destinations and remove temporary output.
 
 ### TS tools
 
@@ -82,12 +93,12 @@ Use **View → Theme** to switch families. In **Tools → Settings**, choose lig
 ### Main editor
 
 1. Launch the application.
-2. Open a TS file or drag it into the main window.
+2. Open a TS, M2TS, MP4 or MKV file, or drag it into the main window.
 3. Navigate or zoom the timeline, add a clip, and mark its start and end points.
 4. Save the current clip, add it to the export queue, or select multiple clips and merge them.
 5. Use the File menu to save a `.tscut` project and reopen it later to restore clips and queued exports. A growing source is accepted when verification of its saved portion succeeds.
 
-Files with multiple programs or video tracks show selectors above the preview. After confirmation, switching tracks clears current clips and undo history; queued tasks retain their original program choice. “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks. New projects use version 3 and can read version 1 and 2 projects; older app versions cannot open new projects.
+Files with multiple programs or video tracks show selectors above the preview. After confirmation, switching tracks clears current clips and undo history; queued tasks retain their original program choice. “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks. New projects use version 4 and can read version 1, 2 and 3 projects; older app versions cannot open new projects.
 
 ### Clip labels and output filenames
 
@@ -102,7 +113,7 @@ In **Tools → Settings → Export**, set the filename template used by single-c
 | `{index}` | Current position in the clip list, padded to 3 digits |
 | `{start}`, `{end}` | Start/end time, such as `00.00.10.000`; an unset end uses the video duration |
 
-For example, `{source}_{index}_{name}` produces `Recording_001_Opening.ts`. The actual TS/M2TS extension is added automatically. Unsafe filename characters are replaced; batch exports append `_2`, `_3`, etc. to avoid duplicate names and existing files. The template setting applies to future exports; queued output paths stay as chosen.
+For example, `{source}_{index}_{name}` produces `Recording_001_Opening.ts`. The selected TS/M2TS/MP4/MKV extension is added automatically. Unsafe filename characters are replaced; batch exports append `_2`, `_3`, etc. to avoid duplicate names and existing files. The template setting applies to future exports; queued output paths stay as chosen.
 
 ### Independent TS tools
 

@@ -64,6 +64,74 @@ public static unsafe partial class NativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial long avio_size(AVIOContext* @s);
 
+    [LibraryImport("tscutter.avformat", EntryPoint = "avformat_alloc_output_context2", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int avformat_alloc_output_context2(AVFormatContext** context, AVOutputFormat* format, string formatName, string filename);
+
+    [LibraryImport("tscutter.avformat", EntryPoint = "avformat_new_stream", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial AVStream* avformat_new_stream(AVFormatContext* context, AVCodec* codec);
+
+    [LibraryImport("tscutter.avformat", EntryPoint = "avformat_query_codec", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int avformat_query_codec(AVOutputFormat* format, AVCodecID codec, int compliance);
+
+    [LibraryImport("tscutter.avformat", EntryPoint = "avformat_write_header", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int avformat_write_header(AVFormatContext* context, AVDictionary** options);
+
+    [LibraryImport("tscutter.avformat", EntryPoint = "av_interleaved_write_frame", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_interleaved_write_frame(AVFormatContext* context, AVPacket* packet);
+
+    [LibraryImport("tscutter.avformat", EntryPoint = "av_write_trailer", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_write_trailer(AVFormatContext* context);
+
+    [LibraryImport("tscutter.avformat", EntryPoint = "avformat_free_context", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void avformat_free_context(AVFormatContext* context);
+
+    [LibraryImport("tscutter.avformat", EntryPoint = "avio_open2", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int avio_open2(AVIOContext** context, string path, int flags, AVIOInterruptCB* interrupt, AVDictionary** options);
+
+    [LibraryImport("tscutter.avformat", EntryPoint = "avio_closep", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int avio_closep(AVIOContext** context);
+
+    [LibraryImport("tscutter.avcodec", EntryPoint = "avcodec_parameters_copy", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int avcodec_parameters_copy(AVCodecParameters* destination, AVCodecParameters* source);
+
+    [LibraryImport("tscutter.avcodec", EntryPoint = "av_new_packet")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_new_packet(AVPacket* packet, int size);
+
+    [LibraryImport("tscutter.avcodec", EntryPoint = "av_packet_copy_props")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_packet_copy_props(AVPacket* destination, AVPacket* source);
+
+    [LibraryImport("tscutter.avcodec", EntryPoint = "av_packet_move_ref")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void av_packet_move_ref(AVPacket* destination, AVPacket* source);
+
+    [LibraryImport("tscutter.avcodec", EntryPoint = "av_packet_ref", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_packet_ref(AVPacket* destination, AVPacket* source);
+
+    [LibraryImport("tscutter.avutil", EntryPoint = "av_dict_copy", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_dict_copy(AVDictionary** destination, AVDictionary* source, int flags);
+
+    [LibraryImport("tscutter.avutil", EntryPoint = "av_mallocz", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void* av_mallocz(ulong size);
+
+    [LibraryImport("tscutter.avutil", EntryPoint = "av_channel_layout_compare", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_channel_layout_compare(AVChannelLayout* first, AVChannelLayout* second);
+
     [LibraryImport("tscutter.avcodec", EntryPoint = "avcodec_alloc_context3", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial AVCodecContext* avcodec_alloc_context3(AVCodec* @codec);

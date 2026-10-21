@@ -9,6 +9,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
 using CommunityToolkit.Mvvm.Input;
 using TSCutter.GUI.Rendering;
+using TSCutter.GUI.Models;
 
 namespace TSCutter.GUI.Controls;
 
@@ -24,6 +25,7 @@ public class ImageViewer : Control
     {
         AffectsRender<ImageViewer>(
             ImageProperty,
+            SubtitleOverlayProperty,
             GpuFrameProperty,
             SourcePixelSizeProperty,
             ZoomProperty,
@@ -34,6 +36,15 @@ public class ImageViewer : Control
     }
 
     public static readonly StyledProperty<Bitmap?> ImageProperty = AvaloniaProperty.Register<ImageViewer, Bitmap?>(nameof(Image));
+
+    public static readonly StyledProperty<SubtitleOverlay?> SubtitleOverlayProperty =
+        AvaloniaProperty.Register<ImageViewer, SubtitleOverlay?>(nameof(SubtitleOverlay));
+
+    public SubtitleOverlay? SubtitleOverlay
+    {
+        get => GetValue(SubtitleOverlayProperty);
+        set => SetValue(SubtitleOverlayProperty, value);
+    }
 
     public static readonly StyledProperty<IGpuFrameLease?> GpuFrameProperty =
         AvaloniaProperty.Register<ImageViewer, IGpuFrameLease?>(nameof(GpuFrame));
@@ -498,6 +509,7 @@ public class ImageViewer : Control
             if (!GpuFrame.TryAttach(this))
                 return;
             GpuFrame.UpdateViewport(destRect);
+            DrawSubtitles(dc, destRect, visibleRect);
             return;
         }
 
@@ -520,9 +532,40 @@ public class ImageViewer : Control
             else
                 dc.DrawImage(Image, srcRect, visibleRect);
         }
+        DrawSubtitles(dc, destRect, visibleRect);
         if (GetNavigatorLayout() is { } layout)
             RenderNavigator(dc, layout);
     }
+
+    private static readonly IBrush SubtitleBackdropBrush = new ImmutableSolidColorBrush(Color.FromArgb(148, 0, 0, 0));
+
+    private void DrawSubtitles(DrawingContext dc, Rect destination, Rect visible)
+    {
+        if (SubtitleOverlay is not { CanvasSize.Width: > 0, CanvasSize.Height: > 0 } overlay) return;
+        if (overlay.Backdrop is { } backdrop && visible is { Width: > 0, Height: > 0 })
+        {
+            var bounds = GetSubtitlePartRect(destination, overlay.CanvasSize, backdrop.Bounds);
+            using (dc.PushClip(visible))
+                dc.DrawRectangle(SubtitleBackdropBrush, null, bounds,
+                    backdrop.CornerRadius * destination.Width / overlay.CanvasSize.Width,
+                    backdrop.CornerRadius * destination.Height / overlay.CanvasSize.Height);
+        }
+        foreach (var part in overlay.Parts)
+        {
+            var bounds = GetSubtitlePartRect(destination, overlay.CanvasSize,
+                new Rect(part.X, part.Y, part.Bitmap.PixelSize.Width, part.Bitmap.PixelSize.Height));
+            var clipped = visible.Intersect(bounds);
+            if (clipped is { Width: > 0, Height: > 0 })
+                dc.DrawImage(part.Bitmap, MapVisibleRectToBitmap(clipped, bounds, part.Bitmap.PixelSize), clipped);
+        }
+    }
+
+    // 字幕和视频共用目标矩形，缩放、平移及非方形像素校正都保持对齐。
+    internal static Rect GetSubtitlePartRect(Rect destination, PixelSize canvas, Rect part) => new(
+        destination.X + part.X / canvas.Width * destination.Width,
+        destination.Y + part.Y / canvas.Height * destination.Height,
+        part.Width / canvas.Width * destination.Width,
+        part.Height / canvas.Height * destination.Height);
 
     private static readonly IBrush NavigatorBackground = new ImmutableSolidColorBrush(Color.FromArgb(220, 24, 24, 24));
     private static readonly IBrush NavigatorMask = new ImmutableSolidColorBrush(Color.FromArgb(110, 0, 0, 0));

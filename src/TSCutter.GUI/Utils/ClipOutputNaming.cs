@@ -54,7 +54,7 @@ public static class ClipOutputNaming
             position = close;
         }
         var name = Sanitize(result.ToString());
-        var suffix = "." + (extension == "m2ts" ? "m2ts" : "ts");
+        var suffix = "." + (extension is "m2ts" or "mp4" or "mkv" ? extension : "ts");
         // A template such as {source} must not suggest overwriting the input.
         if (string.Equals(name + suffix, Path.GetFileName(sourcePath), StringComparison.OrdinalIgnoreCase))
             name += $"_clip{index:000}";

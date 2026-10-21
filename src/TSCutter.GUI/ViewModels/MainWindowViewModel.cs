@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -86,6 +87,8 @@ public partial class MainWindowViewModel : ViewModelBase
         // 集合项的计算属性不会随资源字典自动刷新，需要逐项通知界面重新取值。
         foreach (var program in PreviewPrograms)
             program.RefreshLocalizedText();
+        foreach (var subtitle in PreviewSubtitleTracks)
+            subtitle.RefreshLocalizedText();
         foreach (var clip in Clips)
             clip.RefreshLocalizedText();
         foreach (var item in ExportQueue)
@@ -141,12 +144,23 @@ public partial class MainWindowViewModel : ViewModelBase
             ReferenceEquals(clip, SelectedClip), clip.DisplayName, clip.Notes, clip.Color))
         .ToArray();
 
-    public string SelectedClipEstimatedSizeStr => IsProgramExportFiltered && (SelectedClip is not null || SelectedClipCount > 1)
-        ? FilteredClipSizeStr
+    public string SelectedClipEstimatedSizeStr => GetSelectedMergedOutputSize() is { } mergedSize ? mergedSize
         : SelectedClipCount > 1
-        ? LocalizationManager.Instance.String_SizePrefix
-          + CommonUtil.FormatFileSize(GetSelectedClipAggregate().Bytes)
-        : SelectedClip?.EstimatedSizeStr ?? string.Empty;
+        ? IsProgramExportFiltered || IsRemuxExport ? FilteredClipSizeStr
+            : LocalizationManager.Instance.String_SizePrefix + CommonUtil.FormatFileSize(GetSelectedClipAggregate().Bytes)
+        : SelectedClip is { } clip
+            ? IsProgramExportFiltered || IsRemuxExport ? clip.ExportSizeStr : clip.EstimatedSizeStr ?? string.Empty
+            : string.Empty;
+
+    private string? GetSelectedMergedOutputSize()
+    {
+        var selected = Clips.Where(clip => clip.IsSelected).ToArray();
+        if (selected.Length < 2 || selected[0].MergedOutput is not { } group || group.ClipCount != selected.Length ||
+            selected[0].OutputFileInfo is not { Exists: true } file ||
+            selected.Any(clip => clip.MergedOutput != group || clip.OutputFileInfo is not { Exists: true } output ||
+                                 !PathsEqual(file.FullName, output.FullName))) return null;
+        return LocalizationManager.Instance.String_SizePrefix + CommonUtil.FormatFileSize(file.Length);
+    }
 
     public string SelectedClipsSummaryStr
     {
@@ -196,6 +210,18 @@ public partial class MainWindowViewModel : ViewModelBase
         foreach (var clip in Clips)
             clip.IsActive = ReferenceEquals(clip, value);
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
+    }
+
+    partial void OnSelectedClipChanged(PickedClip? oldValue, PickedClip? newValue)
+    {
+        if (oldValue is not null) oldValue.PropertyChanged -= OnSelectedClipSizeChanged;
+        if (newValue is not null) newValue.PropertyChanged += OnSelectedClipSizeChanged;
+    }
+
+    private void OnSelectedClipSizeChanged(object? sender, PropertyChangedEventArgs args)
+    {
+        if (args.PropertyName == nameof(PickedClip.EstimatedSizeStr))
+            OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
     }
 
     public void SelectClip(PickedClip clip, KeyModifiers modifiers = KeyModifiers.None)
@@ -269,6 +295,21 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private (int Count, long Bytes, double DurationSeconds) GetSelectedClipAggregate()
     {
+        if (IsRemuxExport)
+        {
+            var selected = Clips.Where(clip => clip.IsSelected && clip.EndTime > clip.StartTime)
+                .OrderBy(clip => clip.StartTime).ToArray();
+            if (selected.Length == 0) return default;
+            var start = selected[0].StartTime;
+            var end = selected[0].EndTime;
+            double duration = 0;
+            foreach (var clip in selected.Skip(1))
+            {
+                if (clip.StartTime > end) { duration += end - start; start = clip.StartTime; }
+                end = Math.Max(end, clip.EndTime);
+            }
+            return (selected.Length, 0, duration + end - start);
+        }
         var ranges = Clips
             .Where(clip => clip.IsSelected)
             .Select(clip => new ClipAggregateRange(
@@ -411,8 +452,9 @@ public partial class MainWindowViewModel : ViewModelBase
         var newClip = new PickedClip()
         {
             InFileInfo = new FileInfo(VideoPath),
+            RequiresRemux = IsRemuxExport,
             StartTime = _displayedFrameTime,
-            StartPosition = PositionInFile,
+            StartPosition = Math.Max(0, PositionInFile),
             StartPts = CurrentPts,
             EndTime = DurationMax,
         };
@@ -450,7 +492,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         SelectedClip!.StartTime = _displayedFrameTime;
         SelectedClip!.StartPts = CurrentPts;
-        SelectedClip!.StartPosition = PositionInFile;
+        SelectedClip!.StartPosition = Math.Max(0, PositionInFile);
         SelectedClip!.ReplaceStartThumbnail(CreateCurrentFrameThumbnail());
         if (SelectedClip!.EndTime <= _displayedFrameTime)
         {
@@ -485,8 +527,9 @@ public partial class MainWindowViewModel : ViewModelBase
         NotifyVideoCapabilityChanged();
         try
         {
-            var endPosition = await TsClipBoundaryResolver.ResolveEndAsync(path, position, pts90k,
-                signature, cancellation.Token);
+            var endPosition = video is { CanRemuxClip: true } ? Math.Max(1, position) :
+                await TsClipBoundaryResolver.ResolveEndAsync(path, position, pts90k,
+                    signature, cancellation.Token);
             if (cancellation.IsCancellationRequested || !ReferenceEquals(_clipEndCancellation, cancellation)
                 || !ReferenceEquals(video, _videoInstance) || clip is not null && !Clips.Contains(clip))
                 return;
@@ -494,7 +537,7 @@ public partial class MainWindowViewModel : ViewModelBase
             RecordHistory();
             if (clip is null)
             {
-                clip = new PickedClip { InFileInfo = new FileInfo(path) };
+                clip = new PickedClip { InFileInfo = new FileInfo(path), RequiresRemux = IsRemuxExport };
                 Clips.Add(clip);
                 SelectClip(clip);
             }
@@ -619,7 +662,8 @@ public partial class MainWindowViewModel : ViewModelBase
         var snapshot = new EditorStateSnapshot(
             Clips.Select(ClipStateSnapshot.Create).ToArray(),
             SelectedClip?.ClipID,
-            _clipSelectionAnchor?.ClipID);
+            _clipSelectionAnchor?.ClipID,
+            _exportSettingsRevision);
         CacheSelectedClipThumbnails(snapshot);
         return snapshot;
     }
@@ -718,11 +762,12 @@ public partial class MainWindowViewModel : ViewModelBase
                 {
                     clip = new PickedClip(state.ClipId)
                     {
-                        InFileInfo = new FileInfo(state.FilePath)
+                        InFileInfo = new FileInfo(state.FilePath), RequiresRemux = IsRemuxExport
                     };
                 }
 
                 ApplyClipState(clip, state);
+                if (snapshot.ExportSettingsRevision != _exportSettingsRevision) clip.InvalidateExport();
                 restored.Add(clip);
             }
 
@@ -766,6 +811,7 @@ public partial class MainWindowViewModel : ViewModelBase
         clip.EndPts = state.EndPts;
         clip.EndPosition = state.EndPosition;
         clip.IsSelected = state.IsSelected;
+        clip.MergedOutput = state.MergedOutput;
         clip.OutputFileInfo = state.OutputFilePath is null ? null : new FileInfo(state.OutputFilePath);
         clip.ExportStatus = state.ExportStatus;
         clip.ExportPercent = state.ExportPercent;
@@ -1035,7 +1081,7 @@ public partial class MainWindowViewModel : ViewModelBase
             SuggestedFileName = Path.GetFileNameWithoutExtension(sourcePath) + "_merged." + ClipExtension,
             Filters =
             [
-                new(LocalizationManager.Instance.String_TsFiles, [ClipExtension]),
+                new(ExportFileFilterName, [ClipExtension]),
                 new(LocalizationManager.Instance.String_AllFiles, "*")
             ],
             DefaultExtension = ClipExtension
@@ -1068,7 +1114,10 @@ public partial class MainWindowViewModel : ViewModelBase
                 clip.EndTime < 0 ? DurationMax : clip.EndTime)).ToArray()
         };
         var outputViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
-        outputViewModel.SetMergeTask(request);
+        if (IsRemuxExport)
+            outputViewModel.SetRemuxTask(new RemuxExportRequest(outputPath, CreateMergedRemuxSegments(selected)));
+        else
+            outputViewModel.SetMergeTask(request);
         await _dialogService.ShowDialogAsync(this, outputViewModel).ConfigureAwait(true);
         if (outputViewModel.Exception is not null)
         {
@@ -1081,6 +1130,17 @@ public partial class MainWindowViewModel : ViewModelBase
 
         if (outputViewModel.DialogResult == true)
         {
+            if (File.Exists(outputPath))
+            {
+                var group = new MergedClipOutput(Guid.NewGuid().ToString("N"), selected.Length);
+                foreach (var clip in selected)
+                {
+                    clip.MergedOutput = group;
+                    clip.OutputFileInfo = new FileInfo(outputPath);
+                    clip.ExportStatus = ClipExportStatus.Done;
+                }
+                OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
+            }
             await ShowMessageAsync(
                 string.Format(
                     LocalizationManager.Instance.String_MergeClips_Completed,
@@ -1093,12 +1153,14 @@ public partial class MainWindowViewModel : ViewModelBase
     private bool CanMergeSelectedClips => CanEditVideo && SelectedClipCount >= 2 &&
                                           Clips.Where(clip => clip.IsSelected).All(clip =>
                                               clip.EndTime > clip.StartTime &&
-                                              clip.StartPosition >= 0 &&
+                                              (IsRemuxExport || clip.StartPosition >= 0 &&
                                               (clip.EndPosition < 0 ||
-                                               clip.EndPosition > clip.StartPosition));
+                                               clip.EndPosition > clip.StartPosition)));
 
     private static string FormatMergeError(Exception exception)
     {
+        if (exception is RemuxExportException remuxException)
+            return FormatRemuxExportError(remuxException);
         if (exception is TsFilterException filterException)
         {
             var strings = LocalizationManager.Instance;
@@ -1395,8 +1457,8 @@ public partial class MainWindowViewModel : ViewModelBase
                 prepared = new VideoInstance(project.Source.Path,
                     _configService.CurrentConfig.PreferHardwareDecoding, project.PreviewSelection);
                 await prepared.InitVideoAsync();
-                if (project.Clips.Count > 0 && !prepared.CanBinaryClip)
-                    throw new InvalidDataException("Clips require a 188-byte TS or 192-byte M2TS source file.");
+                if (project.Clips.Count > 0 && !prepared.CanClip)
+                    throw new InvalidDataException("Clips require a supported TS, M2TS, MP4 or MKV source file.");
             }
             catch (Exception exception)
             {
@@ -1514,6 +1576,7 @@ public partial class MainWindowViewModel : ViewModelBase
         Source = IsVideoInitialized ? new ProjectSource { Path = VideoPath } : null,
         PreviewSelection = IsVideoInitialized ? _activePreviewSelection : null,
         ExportCurrentProgramOnly = ExportCurrentProgramOnly,
+        RemuxSettings = CurrentRemuxSettings?.Snapshot(),
         Clips = Clips.Select(clip => new ProjectClip
         {
             Name = clip.Name, Notes = clip.Notes, Color = clip.Color,
@@ -1525,6 +1588,7 @@ public partial class MainWindowViewModel : ViewModelBase
             EndPosition = clip.EndPosition,
             IsSelected = clip.IsSelected,
             OutputFilePath = clip.OutputFileInfo?.FullName,
+            MergedOutput = clip.MergedOutput,
             WasExported = clip.ExportStatus == ClipExportStatus.Done &&
                           clip.OutputFileInfo?.Exists == true
         }).ToList(),
@@ -1534,6 +1598,7 @@ public partial class MainWindowViewModel : ViewModelBase
             GeneratedFileName = item.GeneratedFileName,
             Source = new ProjectSource { Path = item.SourceFilePath },
             ProgramId = item.ProgramId,
+            RemuxSettings = item.RemuxSettings?.Snapshot(),
             OutputFilePath = item.OutputFilePath,
             StartTime = item.StartTimeSeconds,
             EndTime = item.EndTimeSeconds,
@@ -1585,9 +1650,12 @@ public partial class MainWindowViewModel : ViewModelBase
         var currentSourceLength = project.Source is null ? 0 : new FileInfo(project.Source.Path).Length;
         foreach (var saved in project.Clips)
         {
+            var outputIsCurrent = CutterProjectService.IsSavedExportCurrent(saved, project.Source!.Length, currentSourceLength)
+                && saved.OutputFilePath is not null && File.Exists(saved.OutputFilePath);
             var clip = new PickedClip
             {
                 InFileInfo = new FileInfo(project.Source!.Path),
+                RequiresRemux = IsRemuxExport,
                 Name = saved.Name, Notes = saved.Notes, Color = saved.Color,
                 StartTime = saved.StartTime,
                 EndTime = saved.EndPosition < 0 ? DurationMax : saved.EndTime,
@@ -1596,12 +1664,9 @@ public partial class MainWindowViewModel : ViewModelBase
                 StartPosition = saved.StartPosition,
                 EndPosition = saved.EndPosition,
                 IsSelected = saved.IsSelected,
-                OutputFileInfo = saved.OutputFilePath is not null && File.Exists(saved.OutputFilePath)
-                    ? new FileInfo(saved.OutputFilePath) : null,
-                ExportStatus = CutterProjectService.IsSavedExportCurrent(
-                                   saved, project.Source.Length, currentSourceLength) &&
-                               saved.OutputFilePath is not null && File.Exists(saved.OutputFilePath)
-                    ? ClipExportStatus.Done : ClipExportStatus.Pending
+                MergedOutput = outputIsCurrent ? saved.MergedOutput : null,
+                OutputFileInfo = outputIsCurrent ? new FileInfo(saved.OutputFilePath!) : null,
+                ExportStatus = outputIsCurrent ? ClipExportStatus.Done : ClipExportStatus.Pending
             };
             clip.ReplaceStartThumbnail(DecodeProjectThumbnail(saved.StartThumbnailJpeg));
             clip.ReplaceEndThumbnail(DecodeProjectThumbnail(saved.EndThumbnailJpeg));
@@ -1612,6 +1677,7 @@ public partial class MainWindowViewModel : ViewModelBase
         _clipSelectionAnchor = SelectedClip;
         NotifyClipSelectionChanged();
 
+        _remuxExportSettings = project.RemuxSettings?.Snapshot();
         ExportQueue.Clear();
         foreach (var saved in project.Queue)
             ExportQueue.Add(new ExportQueueItem
@@ -1621,6 +1687,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 QueueItemId = Interlocked.Increment(ref _queueIdCounter),
                 SourceFilePath = saved.Source.Path,
                 ProgramId = saved.ProgramId,
+                RemuxSettings = saved.RemuxSettings?.Snapshot(),
                 SourceFileName = Path.GetFileName(saved.Source.Path),
                 OutputFilePath = saved.OutputFilePath,
                 StartTimeSeconds = saved.StartTime,
@@ -1649,10 +1716,12 @@ public partial class MainWindowViewModel : ViewModelBase
     private void NotifyQueueChanged()
     {
         OnPropertyChanged(nameof(HasExportQueue));
+        OnPropertyChanged(nameof(HasRemuxQueue));
         OnPropertyChanged(nameof(ExportQueueCount));
         AddToQueueCommand.NotifyCanExecuteChanged();
         ClearQueueCommand.NotifyCanExecuteChanged();
         BatchExportQueueCommand.NotifyCanExecuteChanged();
+        MergeRemuxQueueCommand.NotifyCanExecuteChanged();
         SaveProjectCommand.NotifyCanExecuteChanged();
         SaveProjectAsCommand.NotifyCanExecuteChanged();
     }
@@ -1949,6 +2018,7 @@ public partial class MainWindowViewModel : ViewModelBase
         DecodedGpuFrame = decodeResult.GpuFrame;
         SetDecodedBitmap(decodeResult.Bitmap, decodeResult.BitmapLease);
         CurrentTime = decodeResult.FrameTimestamp.TotalSeconds;
+        _ = RefreshSubtitleOverlayAsync();
     }
 
     private static PixelSize NormalizeScrubPreviewTarget(PixelSize targetSize) =>
@@ -2015,6 +2085,7 @@ public partial class MainWindowViewModel : ViewModelBase
     private void ClearVars()
     {
         SetPreviewTrackChoices([], null);
+        SetSubtitleTrackChoices([]);
         _currentFileSupportsTsTools = false;
         _previewFailure = null;
         CancelClipEndScan();
@@ -2065,7 +2136,9 @@ public partial class MainWindowViewModel : ViewModelBase
                     _configService.CurrentConfig.PreferHardwareDecoding);
                 if (prepared is null)
                     await _videoInstance.InitVideoAsync();
+                _remuxExportSettings = null;
                 SetPreviewTrackChoices(_videoInstance.PreviewPrograms, _videoInstance.StreamSelection);
+                SetSubtitleTrackChoices(_videoInstance.PreviewSubtitleTracks);
                 UpdateDecodeMode();
                 VideoInfoText = _videoInstance.GetVideoInfoText();
                 DurationMax = _videoInstance.GetVideoDurationInSeconds();
@@ -2232,6 +2305,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _previewSelectionCancellation?.Cancel();
         SetPreviewTrackChoices([], null);
+        SetSubtitleTrackChoices([]);
         CancelClipEndScan();
         keyFrameOverviewWindow?.CloseWindow();
         keyFrameOverviewWindow = null;
@@ -2274,7 +2348,7 @@ public partial class MainWindowViewModel : ViewModelBase
     // 文件工具独立读取源文件，拖动预览时仍可使用；换源加载期间才需要禁用。
     public bool HasCurrentFile => !string.IsNullOrEmpty(VideoPath);
     public bool CanUseCurrentFile => HasCurrentFile && !_isLoadingVideo;
-    public bool CanUseCurrentFileTools => CanUseCurrentFile && (CanEditVideo || _currentFileSupportsTsTools);
+    public bool CanUseCurrentFileTools => CanUseCurrentFile && (_videoInstance is { CanBinaryClip: true } || _currentFileSupportsTsTools);
     public bool IsToolsOnly => HasCurrentFile && _previewFailure is not null;
     public string ToolsOnlyMessage => _previewFailure is null ? string.Empty :
         $"{LocalizationManager.Instance.String_ToolsOnly_Title}\n\n{FormatPreviewFailure(_previewFailure)}\n\n" +
@@ -2284,11 +2358,11 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public bool IsPreviewOnly => IsVideoInitialized && !CanEditVideo;
 
-    private bool CanEditVideo => !_isLoadingVideo && _videoInstance is { Inited: true, CanBinaryClip: true };
+    private bool CanEditVideo => !_isLoadingVideo && _videoInstance is { Inited: true, CanClip: true };
     private bool CanEditSelectedClip => CanEditVideo && HasSelectedClip;
     // 标记取已显示帧的快照，后台 seek 不影响可用状态；加载、边界扫描和无效帧仍需禁用。
     private bool CanMarkVideo => CanEditVideo && !_isResolvingClipEnd
-        && PositionInFile >= 0 && CurrentPts != long.MinValue;
+        && (PositionInFile >= 0 || IsRemuxExport) && CurrentPts != long.MinValue;
     private bool CanMarkSelectedClip => CanMarkVideo && HasSelectedClip;
 
     private void NotifyVideoCapabilityChanged()
@@ -2307,6 +2381,8 @@ public partial class MainWindowViewModel : ViewModelBase
         ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsPreviewOnly));
         EditClipDetailsCommand.NotifyCanExecuteChanged();
+        RemuxExportOptionsCommand.NotifyCanExecuteChanged();
+        OnPropertyChanged(nameof(IsRemuxExport));
         OnPropertyChanged(nameof(StatusInfoText));
         AddClipCommand.NotifyCanExecuteChanged();
         RemoveClipCommand.NotifyCanExecuteChanged();
@@ -2342,7 +2418,7 @@ public partial class MainWindowViewModel : ViewModelBase
             SuggestedFileName = defaultName,
             Filters = new List<FileFilter>()
             {
-                new(LocalizationManager.Instance.String_TsFiles, new[] { ClipExtension }),
+                new(ExportFileFilterName, new[] { ClipExtension }),
                 new(LocalizationManager.Instance.String_AllFiles, "*")
             },
             DefaultExtension = ClipExtension
@@ -2356,8 +2432,11 @@ public partial class MainWindowViewModel : ViewModelBase
         dialogViewModel.EndPosition = SelectedClip!.EndPosition;
         dialogViewModel.OutputPath = result!.Path!.LocalPath;
         dialogViewModel.ProgramId = SelectedOutputProgramId;
+        dialogViewModel.RemuxSettings = CurrentRemuxSettings?.Snapshot();
+        dialogViewModel.StartSeconds = SelectedClip.StartTime;
+        dialogViewModel.EndSeconds = SelectedClip.EndPosition < 0 ? null : SelectedClip.EndTime;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
-        if (dialogViewModel.ProgramId is not null)
+        if (dialogViewModel.ProgramId is not null || dialogViewModel.RemuxSettings is not null)
             ForgetMissingClipOutput(SelectedClip!, dialogViewModel.OutputPath);
         if (dialogViewModel.Exception is not null)
         {
@@ -2366,7 +2445,11 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
         }
         if (dialogViewModel.DialogResult == true && File.Exists(dialogViewModel.OutputPath))
-            SelectedClip!.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
+        {
+            SelectedClip!.MergedOutput = null;
+            SelectedClip.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
+            SelectedClip.ExportStatus = ClipExportStatus.Done;
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanExportAll))]
@@ -2382,7 +2465,8 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             var fileName = GenerateClipFileName(clip);
             var destPath = ClipOutputNaming.UniquePath(sourceDir, fileName, reservedPaths);
-            tasks.Add(new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition, SelectedOutputProgramId));
+            tasks.Add(new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition, SelectedOutputProgramId,
+                CurrentRemuxSettings?.Snapshot(), clip.StartTime, clip.EndPosition < 0 ? null : clip.EndTime));
             clip.ExportStatus = ClipExportStatus.Pending;
         }
 
@@ -2394,11 +2478,12 @@ public partial class MainWindowViewModel : ViewModelBase
         var failedSet = dialogViewModel.FailedTaskIndices.ToHashSet();
         for (int i = 0; i < Clips.Count; i++)
         {
-            if (tasks[i].ProgramId is not null)
+            if (tasks[i].ProgramId is not null || tasks[i].RemuxSettings is not null)
                 ForgetMissingClipOutput(Clips[i], tasks[i].DestinationPath);
             if (completedSet.Contains(i))
             {
                 Clips[i].ExportStatus = ClipExportStatus.Done;
+                Clips[i].MergedOutput = null;
                 Clips[i].OutputFileInfo = new FileInfo(tasks[i].DestinationPath);
             }
             else if (failedSet.Contains(i))
@@ -2424,7 +2509,7 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private string ClipExtension => _videoInstance?.ClipExtension ?? "ts";
+    private string ClipExtension => CurrentRemuxSettings?.Container ?? _videoInstance?.ClipExtension ?? "ts";
 
     private async Task<string> GetClipExtensionAsync(string sourcePath)
     {
@@ -2432,6 +2517,8 @@ public partial class MainWindowViewModel : ViewModelBase
             return ClipExtension;
         try
         {
+            var queued = ExportQueue.LastOrDefault(item => PathsEqual(item.SourceFilePath, sourcePath));
+            if (queued?.RemuxSettings is { } media) return media.Container;
             return await Task.Run(() => TsPacketLayout.Detect(sourcePath).Extension);
         }
         catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
@@ -2476,7 +2563,9 @@ public partial class MainWindowViewModel : ViewModelBase
         var previousExtension = Path.GetExtension(suggestedName);
         if (previousExtension.Equals(".ts", StringComparison.OrdinalIgnoreCase) ||
             previousExtension.Equals(".m2ts", StringComparison.OrdinalIgnoreCase) ||
-            previousExtension.Equals(".mts", StringComparison.OrdinalIgnoreCase))
+            previousExtension.Equals(".mts", StringComparison.OrdinalIgnoreCase) ||
+            previousExtension.Equals(".mp4", StringComparison.OrdinalIgnoreCase) ||
+            previousExtension.Equals(".mkv", StringComparison.OrdinalIgnoreCase))
             suggestedName = Path.ChangeExtension(suggestedName, extension);
         var suggestedDirectory = !string.IsNullOrWhiteSpace(_lastQueueOutputDirectory) &&
                                  Directory.Exists(_lastQueueOutputDirectory)
@@ -2489,7 +2578,7 @@ public partial class MainWindowViewModel : ViewModelBase
             SuggestedFileName = suggestedName,
             Filters = new List<FileFilter>()
             {
-                new(LocalizationManager.Instance.String_TsFiles, new[] { extension }),
+                new(ExportFileFilterName, new[] { extension }),
                 new(LocalizationManager.Instance.String_AllFiles, "*")
             },
             DefaultExtension = extension
@@ -2498,6 +2587,13 @@ public partial class MainWindowViewModel : ViewModelBase
         if (result?.Path is null || !ReferenceEquals(SelectedClip, clip) || !CanEditSelectedClip) return;
 
         var outputPath = result.Path.LocalPath;
+        if (PathsEqual(outputPath, clip.InFileInfo.FullName) || ExportQueue.Any(item =>
+                PathsEqual(item.SourceFilePath, outputPath) || PathsEqual(item.OutputFilePath, clip.InFileInfo.FullName)))
+        {
+            await ShowMessageAsync(LocalizationManager.Instance.String_MergeClips_OutputMatchesSource,
+                LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
+            return;
+        }
         if (ExportQueue.Any(item => PathsEqual(item.OutputFilePath, outputPath)))
         {
             await ShowMessageAsync(
@@ -2517,6 +2613,7 @@ public partial class MainWindowViewModel : ViewModelBase
             QueueItemId = Interlocked.Increment(ref _queueIdCounter),
             SourceFilePath = clip.InFileInfo.FullName,
             ProgramId = programId,
+            RemuxSettings = CurrentRemuxSettings?.Snapshot(),
             OutputFilePath = outputPath,
             StartPosition = clip.StartPosition,
             EndPosition = clip.EndPosition,
@@ -2530,10 +2627,12 @@ public partial class MainWindowViewModel : ViewModelBase
         ExportQueue.Add(item);
         _lastQueueOutputDirectory = Path.GetDirectoryName(outputPath);
         OnPropertyChanged(nameof(HasExportQueue));
+        OnPropertyChanged(nameof(HasRemuxQueue));
         OnPropertyChanged(nameof(ExportQueueCount));
         AddToQueueCommand.NotifyCanExecuteChanged();
         ClearQueueCommand.NotifyCanExecuteChanged();
         BatchExportQueueCommand.NotifyCanExecuteChanged();
+        MergeRemuxQueueCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -2546,6 +2645,7 @@ public partial class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(ExportQueueCount));
             ClearQueueCommand.NotifyCanExecuteChanged();
             BatchExportQueueCommand.NotifyCanExecuteChanged();
+            MergeRemuxQueueCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -2554,9 +2654,11 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         ExportQueue.Clear();
         OnPropertyChanged(nameof(HasExportQueue));
+        OnPropertyChanged(nameof(HasRemuxQueue));
         OnPropertyChanged(nameof(ExportQueueCount));
         ClearQueueCommand.NotifyCanExecuteChanged();
         BatchExportQueueCommand.NotifyCanExecuteChanged();
+        MergeRemuxQueueCommand.NotifyCanExecuteChanged();
     }
 
     private bool HasExportQueueItems => ExportQueue.Count > 0;
@@ -2573,9 +2675,7 @@ public partial class MainWindowViewModel : ViewModelBase
         left, right,
         OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
 
-    private static bool PathsEqual(string left, string right) => string.Equals(
-        Path.GetFullPath(left), Path.GetFullPath(right),
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    private static bool PathsEqual(string left, string right) => MediaFileUtil.PathsEqual(left, right);
 
     [RelayCommand(CanExecute = nameof(HasExportQueueItems))]
     private async Task BatchExportQueueAsync()
@@ -2588,7 +2688,8 @@ public partial class MainWindowViewModel : ViewModelBase
         if (!await ShowConfirmAsync(confirmMsg)) return;
 
         var tasks = ExportQueue.Select(item =>
-            new BatchTask(item.SourceFilePath, item.OutputFilePath, item.StartPosition, item.EndPosition, item.ProgramId)
+            new BatchTask(item.SourceFilePath, item.OutputFilePath, item.StartPosition, item.EndPosition, item.ProgramId,
+                item.RemuxSettings?.Snapshot(), item.StartTimeSeconds, item.EndPosition < 0 ? null : item.EndTimeSeconds)
         ).ToList();
 
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
@@ -2617,9 +2718,11 @@ public partial class MainWindowViewModel : ViewModelBase
                 ExportQueue.RemoveAt(i);
         }
         OnPropertyChanged(nameof(HasExportQueue));
+        OnPropertyChanged(nameof(HasRemuxQueue));
         OnPropertyChanged(nameof(ExportQueueCount));
         ClearQueueCommand.NotifyCanExecuteChanged();
         BatchExportQueueCommand.NotifyCanExecuteChanged();
+        MergeRemuxQueueCommand.NotifyCanExecuteChanged();
         if (dialogViewModel.Exception is { } exception)
             await ShowMessageAsync(FormatMergeError(exception), LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
     }
@@ -2671,7 +2774,8 @@ public partial class MainWindowViewModel : ViewModelBase
     private sealed record EditorStateSnapshot(
         IReadOnlyList<ClipStateSnapshot> Clips,
         long? SelectedClipId,
-        long? SelectionAnchorId);
+        long? SelectionAnchorId,
+        long ExportSettingsRevision);
 
     private sealed record ClipStateSnapshot(
         long ClipId,
@@ -2686,6 +2790,7 @@ public partial class MainWindowViewModel : ViewModelBase
         bool HasStartThumbnail,
         bool HasEndThumbnail,
         string? OutputFilePath,
+        MergedClipOutput? MergedOutput,
         ClipExportStatus ExportStatus,
         double ExportPercent,
         string Name,
@@ -2705,6 +2810,7 @@ public partial class MainWindowViewModel : ViewModelBase
             clip.HasStartThumbnail,
             clip.HasEndThumbnail,
             clip.OutputFileInfo?.FullName,
+            clip.MergedOutput,
             clip.ExportStatus,
             clip.ExportPercent,
             clip.Name,

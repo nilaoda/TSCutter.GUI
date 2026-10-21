@@ -7,6 +7,17 @@ namespace TSCutter.GUI.Tests;
 public sealed class ClipOutputNamingTests
 {
     [Theory]
+    [InlineData("mp4")]
+    [InlineData("mkv")]
+    public void RemuxNamesUseTheOutputContainerAndAvoidSourceCollisions(string extension)
+    {
+        Assert.Equal("source_(00.00.00.000-00.00.02.000)." + extension,
+            ClipOutputNaming.Generate(ClipOutputNaming.DefaultTemplate, "source." + extension, "", 1, 0, 2, extension));
+        Assert.Equal("source_clip001." + extension,
+            ClipOutputNaming.Generate("{source}", "source." + extension, "", 1, 0, 2, extension));
+    }
+
+    [Theory]
     [InlineData("{source}_{index}_{name}_({start}-{end})")]
     public void TemplatesExpandLabelsAndTimes(string template)
     {
