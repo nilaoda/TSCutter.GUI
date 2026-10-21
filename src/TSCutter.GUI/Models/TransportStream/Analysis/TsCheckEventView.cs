@@ -1,0 +1,32 @@
+using TSCutter.GUI.Utils.TransportStream.Analysis;
+
+
+namespace TSCutter.GUI.Models.TransportStream.Analysis;
+
+public sealed class TsCheckEventView
+{
+    public TsCheckEventView(TsCheckEvent item, TsCheckTextFormatter text, TsCheckResult? result = null)
+    {
+        Item = item;
+        Severity = text.FormatSeverity(item.Severity);
+        SourceTime = text.FormatEventSourceTime(item);
+        ZeroBasedTime = text.FormatEventZeroBasedTime(item);
+        Type = text.FormatEventType(item);
+        Pid = item.PidText;
+        Stream = text.FormatPidDescription(item, result);
+        Packet = item.StartPacket == item.EndPacket
+            ? item.StartPacket.ToString("N0")
+            : $"{item.StartPacket:N0}-{item.EndPacket:N0}";
+        Message = text.FormatEventMessage(item);
+    }
+
+    public TsCheckEvent Item { get; }
+    public string Severity { get; }
+    public string SourceTime { get; }
+    public string ZeroBasedTime { get; }
+    public string Type { get; }
+    public string Pid { get; }
+    public string Stream { get; }
+    public string Packet { get; }
+    public string Message { get; }
+}

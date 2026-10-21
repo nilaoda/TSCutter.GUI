@@ -6,7 +6,8 @@ using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Input;
 using Avalonia.Media;
-using TSCutter.GUI.Models;
+using TSCutter.GUI.Models.TransportStream.Analysis;
+using TSCutter.GUI.Models.TransportStream.Repair;
 
 namespace TSCutter.GUI.Controls;
 

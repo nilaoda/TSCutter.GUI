@@ -7,7 +7,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using FFmpeg.AutoGen.Abstractions;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
-using TSCutter.GUI.Utils;
+using TSCutter.GUI.Utils.Media;
 
 namespace TSCutter.GUI.Rendering;
 

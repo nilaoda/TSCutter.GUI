@@ -5,7 +5,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
-using TSCutter.GUI.Models;
+using TSCutter.GUI.Models.Preview;
 
 namespace TSCutter.GUI.Controls;
 

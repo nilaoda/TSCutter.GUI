@@ -8,7 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
-using TSCutter.GUI.Models;
+using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.Controls;

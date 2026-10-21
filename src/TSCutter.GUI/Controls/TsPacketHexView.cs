@@ -3,7 +3,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Media;
-using TSCutter.GUI.Models;
+using TSCutter.GUI.Models.TransportStream.Analysis;
 
 namespace TSCutter.GUI.Controls;
 

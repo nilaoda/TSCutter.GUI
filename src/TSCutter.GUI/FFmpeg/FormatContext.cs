@@ -4,6 +4,8 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using FFmpeg.AutoGen.Abstractions;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
+using TSCutter.GUI.Models.TransportStream.Analysis;
+using TSCutter.GUI.Utils.Media;
 
 namespace TSCutter.GUI.FFmpeg;
 
@@ -29,7 +31,7 @@ public unsafe class FormatContext : SafeHandle
         : new InputFormatInfo(Marshal.PtrToStringUTF8((IntPtr)Raw->iformat->name) ?? "");
 
     public static FormatContext OpenInputUrl(string path)
-        => Utils.InterruptibleInputFormatContext.Open(path, static () => false);
+        => Utils.Media.InterruptibleInputFormatContext.Open(path, static () => false);
 
     public void LoadStreamInfo()
     {
@@ -38,7 +40,7 @@ public unsafe class FormatContext : SafeHandle
         // 某些视频（如 AVS3）在节目表到达前仍不能正确识别。
         // 已有节目表的普通文件保留原探测上限，不额外扫描整个文件。
         if (Raw->nb_programs == 0 && InputFormat?.Name == "mpegts")
-            Raw->probesize = Math.Max(Raw->probesize, Models.TsStreamAnalyzeOptions.StandardProbeBytes);
+            Raw->probesize = Math.Max(Raw->probesize, Models.TransportStream.Analysis.TsStreamAnalyzeOptions.StandardProbeBytes);
         FFmpegException.Check(FF.avformat_find_stream_info(Raw, null));
         var streams = new MediaStream[Raw->nb_streams];
         for (var i = 0; i < streams.Length; i++) streams[i] = new MediaStream(Raw->streams[i]);

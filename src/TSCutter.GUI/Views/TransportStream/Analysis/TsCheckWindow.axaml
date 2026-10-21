@@ -1,0 +1,256 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels.TransportStream.Analysis"
+        xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:models="clr-namespace:TSCutter.GUI.Models.TransportStream.Analysis"
+        xmlns:commonControls="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.TransportStream.Analysis.TsCheckWindow"
+        x:DataType="viewModels:TsCheckWindowViewModel"
+        Title="{Binding WindowTitle}"
+        Width="900" Height="580"
+        MinWidth="720" MinHeight="460"
+        WindowStartupLocation="CenterScreen">
+
+    <Window.Resources>
+        <ResourceDictionary>
+            <!-- 码率占比色属于当前工具；成功、警告和错误色使用应用级语义资源。 -->
+            <ResourceDictionary.ThemeDictionaries>
+                <ResourceDictionary x:Key="Light">
+                    <SolidColorBrush x:Key="TsCheckPacketShareBrush" Color="#2E6FAD" />
+                </ResourceDictionary>
+                <ResourceDictionary x:Key="Dark">
+                    <SolidColorBrush x:Key="TsCheckPacketShareBrush" Color="#5A94D6" />
+                </ResourceDictionary>
+            </ResourceDictionary.ThemeDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+
+    <Window.Styles>
+        <Style Selector="Border.errorCell">
+            <Setter Property="Background" Value="{DynamicResource AppStatusErrorBackgroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.errorCell">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="Border.warningCell">
+            <Setter Property="Background" Value="{DynamicResource AppStatusWarningBackgroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.warningCell">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+        </Style>
+        <Style Selector="TextBlock.passVerdict">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusSuccessForegroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.errorVerdict">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.warningVerdict">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+        </Style>
+        <!-- 选中行使用系统高亮文字色，并让局部状态背景服从整行选择背景。 -->
+        <Style Selector="DataGridRow:selected TextBlock">
+            <Setter Property="Foreground"
+                    Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
+        </Style>
+        <Style Selector="DataGridRow:selected Border.errorCell">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="DataGridRow:selected Border.warningCell">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="DataGridRow:selected controls|PacketShareBar">
+            <Setter Property="Fill"
+                    Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
+        </Style>
+    </Window.Styles>
+
+    <Grid Margin="12" RowDefinitions="Auto,Auto,Auto,Auto,*,Auto">
+        <ClassicBorderDecorator Grid.Row="0" BorderThickness="1" BorderStyle="Etched" Padding="8">
+            <Grid ColumnDefinitions="Auto,*,Auto,Auto" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="8" RowSpacing="4">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource String.TsCheck.File}" VerticalAlignment="Center" />
+                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding FilePath}" IsReadOnly="True" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="{DynamicResource String.TsCheck.FileSize}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="0" Grid.Column="3" Text="{Binding FileSizeText}" FontWeight="Bold" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="{DynamicResource String.TsCheck.Status}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding StatusText}" TextWrapping="Wrap" />
+                <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource String.Ts.BroadcastTime.Label}"
+                           IsVisible="{Binding HasBroadcastTime}" VerticalAlignment="Center" />
+                <TextBlock Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding BroadcastTimeText}"
+                           IsVisible="{Binding HasBroadcastTime}" FontWeight="SemiBold" />
+            </Grid>
+        </ClassicBorderDecorator>
+
+        <Grid Grid.Row="1" Margin="0,10,0,0" RowDefinitions="Auto,Auto" ColumnDefinitions="*,Auto" ColumnSpacing="12" RowSpacing="4">
+            <ProgressBar Grid.Row="0" Grid.Column="0" Minimum="0" Maximum="100" Value="{Binding Percent}" Height="18" />
+            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Percent, StringFormat={}{0:0.00}%}" MinWidth="70" TextAlignment="Right" />
+            <StackPanel Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="18">
+                <TextBlock><Run Text="{DynamicResource String.TsCheck.Progress}" /><Run Text=" " /><Run Text="{Binding ProgressText}" FontWeight="Bold" /></TextBlock>
+                <TextBlock><Run Text="{DynamicResource String.TsCheck.Speed}" /><Run Text=" " /><Run Text="{Binding SpeedText}" FontWeight="Bold" /></TextBlock>
+                <TextBlock><Run Text="{DynamicResource String.TsCheck.Packets}" /><Run Text=" " /><Run Text="{Binding PacketCountText}" FontWeight="Bold" /></TextBlock>
+                <TextBlock><Run Text="{DynamicResource String.TsCheck.Elapsed}" /><Run Text=" " /><Run Text="{Binding ElapsedText}" FontWeight="Bold" /></TextBlock>
+            </StackPanel>
+        </Grid>
+
+        <Grid Grid.Row="2" Margin="0,10,0,8" ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="24">
+            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                <TextBlock Text="{DynamicResource String.TsCheck.Verdict}" />
+                <TextBlock Text="{Binding VerdictText}" FontWeight="Bold"
+                           Classes.passVerdict="{Binding IsPassVerdict}"
+                           Classes.errorVerdict="{Binding IsErrorVerdict}"
+                           Classes.warningVerdict="{Binding IsWarningVerdict}" />
+            </StackPanel>
+            <TextBlock Grid.Column="1"><Run Text="{DynamicResource String.TsCheck.Errors}" /><Run Text=" " /><Run Text="{Binding ErrorCount}" FontWeight="Bold" /></TextBlock>
+            <TextBlock Grid.Column="2"><Run Text="{DynamicResource String.TsCheck.Warnings}" /><Run Text=" " /><Run Text="{Binding WarningCount}" FontWeight="Bold" /></TextBlock>
+            <StackPanel Grid.Column="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="14">
+                <RadioButton GroupName="TsCheckView" Content="{DynamicResource String.TsCheck.View.Summary}"
+                             IsChecked="{Binding IsSummaryView, Mode=TwoWay}" />
+                <RadioButton GroupName="TsCheckView" Content="{DynamicResource String.TsCheck.View.Details}"
+                             IsChecked="{Binding IsDetailsView, Mode=TwoWay}" />
+                <RadioButton GroupName="TsCheckView" Content="{DynamicResource String.TsCheck.View.Timeline}"
+                             IsChecked="{Binding IsTimelineView, Mode=TwoWay}" />
+            </StackPanel>
+        </Grid>
+
+        <Border Grid.Row="3" IsVisible="{Binding ShowTimelineNotice}" Margin="0,0,0,8"
+                Background="{DynamicResource AppStatusWarningBackgroundBrush}"
+                BorderBrush="{DynamicResource AppStatusWarningForegroundBrush}"
+                BorderThickness="1" Padding="8,5">
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <TextBlock Grid.Column="0" Text="{Binding TimelineNoticeText}"
+                           Foreground="{DynamicResource AppStatusWarningForegroundBrush}"
+                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                <Button Grid.Column="1" Content="{DynamicResource String.TsCheck.Timeline.Repair}"
+                        Command="{Binding RepairTimelineCommand}" IsVisible="{Binding CanRepairTimeline}"
+                        MinWidth="120" />
+            </Grid>
+        </Border>
+
+        <DataGrid Grid.Row="4" ItemsSource="{Binding PidSummaries}" IsReadOnly="True" AutoGenerateColumns="False"
+                  IsVisible="{Binding IsSummaryView}"
+                  GridLinesVisibility="All" CanUserResizeColumns="True">
+            <DataGrid.Columns>
+                <DataGridTextColumn Header="PID" Binding="{Binding PidText}" Width="90" />
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Stream}" Binding="{Binding Stream}" Width="*" />
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Packets}" Binding="{Binding PacketCountText}" Width="140" />
+                <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Bitrate}" Binding="{Binding BitrateText}" Width="105" />
+                <DataGridTemplateColumn Header="{DynamicResource String.TsCheck.Column.PacketPercentage}" Width="170">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8" Margin="4,0">
+                                <controls:PacketShareBar Grid.Column="0" Height="8"
+                                                         Fill="{DynamicResource TsCheckPacketShareBrush}"
+                                                         Value="{Binding PacketPercentage}" />
+                                <TextBlock Grid.Column="1" Text="{Binding PacketPercentageText}"
+                                           MinWidth="52" TextAlignment="Right" VerticalAlignment="Center" />
+                            </Grid>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="{DynamicResource String.TsCheck.Column.Errors}" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border Classes.errorCell="{Binding HasErrors}" Padding="6,0">
+                                <TextBlock Classes.errorCell="{Binding HasErrors}" Text="{Binding ErrorCount}" HorizontalAlignment="Right" />
+                            </Border>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+                <DataGridTemplateColumn Header="{DynamicResource String.TsCheck.Column.Warnings}" Width="100">
+                    <DataGridTemplateColumn.CellTemplate>
+                        <DataTemplate>
+                            <Border Classes.warningCell="{Binding HasWarnings}" Padding="6,0">
+                                <TextBlock Classes.warningCell="{Binding HasWarnings}" Text="{Binding WarningCount}" HorizontalAlignment="Right" />
+                            </Border>
+                        </DataTemplate>
+                    </DataGridTemplateColumn.CellTemplate>
+                </DataGridTemplateColumn>
+            </DataGrid.Columns>
+        </DataGrid>
+
+        <Grid Grid.Row="4" IsVisible="{Binding IsDetailsView}" RowDefinitions="*,Auto">
+            <DataGrid Grid.Row="0" ItemsSource="{Binding Events}" IsReadOnly="True" AutoGenerateColumns="False"
+                      x:Name="DetailsGrid"
+                      SelectedItem="{Binding SelectedEventRow, Mode=TwoWay}"
+                      DoubleTapped="DetailsGrid_OnDoubleTapped"
+                      GridLinesVisibility="All" CanUserResizeColumns="True"
+                      HorizontalScrollBarVisibility="Visible" VerticalScrollBarVisibility="Auto"
+                      ScrollViewer.HorizontalScrollBarVisibility="Visible"
+                      ScrollViewer.VerticalScrollBarVisibility="Auto">
+                <DataGrid.Columns>
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Severity}" Binding="{Binding Severity}" Width="90" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.SourceTime}" Binding="{Binding SourceTime}" Width="120" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.ZeroBasedTime}" Binding="{Binding ZeroBasedTime}" Width="120" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Type}" Binding="{Binding Type}" Width="175" />
+                    <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="80" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Stream}" Binding="{Binding Stream}" Width="220" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Packet}" Binding="{Binding Packet}" Width="135" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Description}" Binding="{Binding Message}" Width="420" />
+                </DataGrid.Columns>
+            </DataGrid>
+            <ClassicBorderDecorator Grid.Row="1" Margin="0,6,0,0" BorderThickness="1"
+                                    BorderStyle="Etched" Padding="6,4">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Button Content="{DynamicResource String.TsCheck.Location.OpenPacketViewer}"
+                            Command="{Binding OpenSelectedInPacketViewerCommand}" MinWidth="145" />
+                    <Button Content="{DynamicResource String.TsCheck.Location.OpenRawCutter}"
+                            Command="{Binding OpenSelectedInRawCutterCommand}" MinWidth="135" />
+                    <Button Content="{DynamicResource String.TsCheck.Location.Copy}"
+                            Command="{Binding CopySelectedLocationCommand}" MinWidth="115" />
+                </StackPanel>
+            </ClassicBorderDecorator>
+        </Grid>
+
+        <Grid Grid.Row="4" IsVisible="{Binding IsTimelineView}" RowDefinitions="Auto,*" RowSpacing="6">
+            <Grid Grid.Row="0" ColumnDefinitions="Auto,360,*" ColumnSpacing="8">
+                <TextBlock Grid.Column="0" Text="{DynamicResource String.TsCheck.Timeline.Stream}"
+                           VerticalAlignment="Center" />
+                <ComboBox Grid.Column="1" ItemsSource="{Binding TimelineStreams}"
+                          SelectedItem="{Binding SelectedTimelineStream, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:TsCheckTimelineStreamView">
+                            <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <TextBlock Grid.Column="2" Text="{DynamicResource String.TsCheck.Timeline.Hint}"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                           VerticalAlignment="Center" TextAlignment="Right" TextWrapping="Wrap" />
+            </Grid>
+            <ClassicBorderDecorator Grid.Row="1" BorderThickness="2" BorderStyle="Sunken">
+                <controls:TsCheckTimeline Buckets="{Binding TimelineBuckets}"
+                                          EventSelected="Timeline_OnEventSelected"
+                                          Events="{Binding TimelineEvents}"
+                                          SelectedPid="{Binding SelectedTimelinePid}"
+                                          SeriesName="{Binding SelectedTimelineSeriesName}"
+                                          SelectedEvent="{Binding SelectedTimelineEvent, Mode=TwoWay}"
+                                          BackgroundBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowColorKey}}"
+                                          PrimaryBrush="{DynamicResource TsCheckPacketShareBrush}"
+                                          SecondaryBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
+                                          GridBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
+                                          TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
+                                          ErrorBrush="{DynamicResource AppStatusErrorForegroundBrush}"
+                                          WarningBrush="{DynamicResource AppStatusWarningForegroundBrush}"
+                                          TooltipBackgroundBrush="{DynamicResource {x:Static commonControls:SystemColors.InfoColorKey}}"
+                                          TooltipTextBrush="{DynamicResource {x:Static commonControls:SystemColors.InfoTextColorKey}}"
+                                          TooltipBorderBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowFrameColorKey}}"
+                                          TotalText="{DynamicResource String.TsCheck.Timeline.TotalTs}"
+                                          NoDataText="{DynamicResource String.TsCheck.Timeline.NoData}"
+                                          ErrorText="{DynamicResource String.TsCheck.Severity.Error}"
+                                          WarningText="{DynamicResource String.TsCheck.Severity.Warning}"
+                                          MinHeight="200" />
+            </ClassicBorderDecorator>
+        </Grid>
+
+        <StackPanel Grid.Row="5" Margin="0,10,0,0" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="{DynamicResource String.TsCheck.Start}" Command="{Binding StartCommand}" Width="100" />
+            <Button Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}" Width="100" />
+            <Button Content="{DynamicResource String.TsCheck.Export}" Command="{Binding ExportCommand}" Width="120" />
+        </StackPanel>
+    </Grid>
+</Window>

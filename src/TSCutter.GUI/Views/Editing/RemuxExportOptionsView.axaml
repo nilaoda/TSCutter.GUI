@@ -1,0 +1,43 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TSCutter.GUI.ViewModels.Editing"
+        x:Class="TSCutter.GUI.Views.Editing.RemuxExportOptionsView"
+        x:DataType="vm:RemuxExportOptionsViewModel"
+        Width="500" SizeToContent="Height" CanResize="False"
+        CanMinimize="False" CanMaximize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" Title="{DynamicResource String.RemuxExport.Options}">
+    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="16">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
+            <TextBlock Text="{DynamicResource String.RemuxExport.Container}" FontWeight="Bold" VerticalAlignment="Center" />
+            <ComboBox Grid.Column="1" ItemsSource="{Binding Containers}" SelectedItem="{Binding Container, Mode=TwoWay}" Width="136" />
+        </Grid>
+        <Grid Grid.Row="1" RowDefinitions="Auto,Auto" RowSpacing="6">
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="12">
+                <TextBlock Text="{DynamicResource String.RemuxExport.Tracks}" FontWeight="Bold" />
+                <TextBlock Grid.Column="1" Text="{DynamicResource String.RemuxExport.TrackHint}" Opacity="0.7"
+                           TextWrapping="Wrap" HorizontalAlignment="Right" />
+            </Grid>
+            <ScrollViewer Grid.Row="1" MaxHeight="224" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                <ItemsControl ItemsSource="{Binding Tracks}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:RemuxExportTrackChoice">
+                            <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" IsEnabled="{Binding CanChange}"
+                                      MinHeight="28" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Margin="2,3,0,3" />
+                            </CheckBox>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Grid>
+        <StackPanel Grid.Row="2" Spacing="6">
+            <Separator Margin="0,0,0,6" />
+            <TextBlock Text="{DynamicResource String.RemuxExport.BoundaryHint}" TextWrapping="Wrap" />
+            <TextBlock Text="{DynamicResource String.RemuxExport.Notice}" TextWrapping="Wrap" Opacity="0.7" />
+        </StackPanel>
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Content="{DynamicResource String.Ok}" Command="{Binding ConfirmCommand}" MinWidth="80" IsDefault="True" />
+            <Button Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}" MinWidth="80" IsCancel="True" />
+        </StackPanel>
+    </Grid>
+</Window>

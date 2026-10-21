@@ -4,7 +4,7 @@ using System.Globalization;
 using Avalonia;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
-using TSCutter.GUI.Models;
+using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Utils;
 
 namespace TSCutter.GUI.Rendering;

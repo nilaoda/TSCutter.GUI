@@ -9,7 +9,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
 using CommunityToolkit.Mvvm.Input;
 using TSCutter.GUI.Rendering;
-using TSCutter.GUI.Models;
+using TSCutter.GUI.Models.Preview;
 
 namespace TSCutter.GUI.Controls;
 

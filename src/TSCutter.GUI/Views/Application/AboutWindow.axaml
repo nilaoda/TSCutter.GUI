@@ -1,0 +1,87 @@
+﻿<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        xmlns:local="clr-namespace:TSCutter.GUI"
+        xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels.Application"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        mc:Ignorable="d"
+        x:Class="TSCutter.GUI.Views.Application.AboutWindow"
+        DataContext="{x:Static local:App.AboutDialog}"
+        x:DataType="viewModels:AboutWindowViewModel"
+        Width="560" Height="400"
+        WindowStartupLocation="CenterOwner"
+        CanResize="False"
+        Title="{Binding Title}">
+    
+    <Grid Margin="10" RowDefinitions="Auto,Auto,Auto,*,Auto" ColumnDefinitions="Auto,*">
+        <Grid.Styles>
+            <Style Selector="HyperlinkButton">
+                <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.HotTrackColorKey}}"/> 
+            </Style>
+        </Grid.Styles>
+        <!-- 图标 -->
+        <Image Source="/Assets/logo.ico"
+               Width="32" Height="32"
+               Margin="6,0,12,0"
+               Grid.Row="0" Grid.Column="0"
+               VerticalAlignment="Top" />
+
+        <!-- 应用标题区 -->
+        <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Vertical" Spacing="2">
+            <TextBlock Text="{Binding AppName}" FontWeight="Bold" />
+            <TextBlock Text="{Binding AppVersion}" />
+            <TextBlock Text="{Binding BuildDate}" />
+            <TextBlock Text="{Binding Copyright}" />
+        </StackPanel>
+
+        <!-- 分隔间距 -->
+        <Rectangle Grid.Row="1" Grid.ColumnSpan="2" Height="12" Fill="Transparent" />
+
+        <!-- 项目链接 -->
+        <StackPanel Grid.Row="2" Grid.ColumnSpan="2" Orientation="Horizontal" Spacing="6">
+            <TextBlock Text="{DynamicResource String.About.Project}" VerticalAlignment="Center" />
+            <HyperlinkButton NavigateUri="{Binding ProjectUrl}" Padding="0">
+                <TextBlock Text="{Binding ProjectUrl}"
+                           TextDecorations="Underline"
+                           VerticalAlignment="Center" />
+            </HyperlinkButton>
+        </StackPanel>
+
+        <!-- 库列表 -->
+        <Border Grid.Row="3" Grid.ColumnSpan="2" Classes="app-info-frame" BorderThickness="1" Margin="0,10,0,10">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Auto" Margin="4">
+                <ItemsControl ItemsSource="{Binding AllLibraries}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate>
+                            <StackPanel Orientation="Horizontal" Margin="0,2">
+                                <TextBlock>
+                                    <Run FontWeight="Bold" Text="· " />
+                                    <Run FontWeight="Bold" Text="{Binding Name}" />
+                                    <Run Text=": " />
+                                </TextBlock>
+                                <HyperlinkButton NavigateUri="{Binding Url}" Padding="0">
+                                    <TextBlock Text="{Binding Url}" TextDecorations="Underline" />
+                                </HyperlinkButton>
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
+        </Border>
+
+        <!-- 底部按钮 -->
+        <Button Grid.Row="4" Grid.ColumnSpan="2"
+                Height="26"
+                HorizontalAlignment="Left"
+                Content="{DynamicResource String.About.Notices}"
+                Click="Notices_OnClick" />
+        <Button Grid.Row="4" Grid.ColumnSpan="2"
+                Width="80" Height="26"
+                HorizontalAlignment="Right"
+                Content="{DynamicResource String.Ok}"
+                IsDefault="True"
+                IsCancel="True"
+                Click="Button_OnClick" />
+    </Grid>
+</Window>
