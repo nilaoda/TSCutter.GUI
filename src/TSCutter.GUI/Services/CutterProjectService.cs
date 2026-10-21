@@ -125,8 +125,10 @@ internal static class CutterProjectService
         if (project.PreviewSelection is { } selection &&
             (project.Source is null || selection.StreamIndex < 0))
             throw new InvalidDataException("The saved preview track is invalid.");
-        if (project.Version is not (1 or 2 or 3))
+        if (project.Version is not (1 or 2 or 3 or 4))
             throw new InvalidDataException($"Unsupported project version: {project.Version}.");
+        if (project.RemuxSettings is { IsValid: false })
+            throw new InvalidDataException("Invalid media export settings.");
         if (project.Clips is null || project.Queue is null ||
             project.Clips.Count > MaximumItems || project.Queue.Count > MaximumItems)
             throw new InvalidDataException("The project contains an invalid item list.");
@@ -150,8 +152,11 @@ internal static class CutterProjectService
         foreach (var clip in project.Clips)
         {
             if (clip is null || !ClipLabels.IsValid(clip.Name, clip.Notes, clip.Color) || !ValidRange(clip.StartTime, clip.EndTime,
-                    clip.StartPosition, clip.EndPosition, project.Source!.Length))
+                    clip.StartPosition, clip.EndPosition, project.Source!.Length, project.RemuxSettings is not null))
                 throw new InvalidDataException("A saved clip has invalid labels or boundaries.");
+            if (clip.MergedOutput is { } merged && (merged.ClipCount is < 2 or > MaximumItems ||
+                !Guid.TryParseExact(merged.GroupId, "N", out _) || clip.OutputFilePath is null))
+                throw new InvalidDataException("Invalid merged export result.");
             if (clip.StartThumbnailJpeg?.Length > 512 * 1024 ||
                 clip.EndThumbnailJpeg?.Length > 512 * 1024)
                 throw new InvalidDataException("A saved clip thumbnail is too large.");
@@ -159,28 +164,28 @@ internal static class CutterProjectService
                 throw new InvalidDataException("A saved output path is invalid.");
         }
 
-        var paths = new HashSet<string>(
-            OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        var paths = new HashSet<string>(MediaFileUtil.PathComparer);
         foreach (var item in project.Queue)
         {
             if (item is null || item.Source is null || !ClipLabels.IsValid(item.Name, item.Notes, item.Color) ||
                 item.ClipIndex < 1 || item.GeneratedFileName is null || item.GeneratedFileName.Length > 255 ||
-                item.ProgramId is < 1 or > 65535)
+                item.ProgramId is < 1 or > 65535 || item.RemuxSettings is { IsValid: false } ||
+                item.RemuxSettings is not null && item.ProgramId is not null)
                 throw new InvalidDataException("A queued export is invalid.");
             ValidateSourceOnce(item.Source, validatedSources);
             if (!(item.EndPosition == -1 && item.EndTime == -1
                     ? IsFiniteNonnegative(item.StartTime) && item.StartPosition >= 0 &&
                       item.StartPosition <= item.Source.Length
                     : ValidRange(item.StartTime, item.EndTime,
-                        item.StartPosition, item.EndPosition, item.Source.Length)) ||
+                        item.StartPosition, item.EndPosition, item.Source.Length, item.RemuxSettings is not null)) ||
                 !Path.IsPathFullyQualified(item.OutputFilePath) ||
                 PathsEqual(item.OutputFilePath, item.Source.Path) ||
                 project.Source is not null && PathsEqual(item.OutputFilePath, project.Source.Path) ||
-                !paths.Add(Path.GetFullPath(item.OutputFilePath)))
+                !paths.Add(MediaFileUtil.CanonicalPath(item.OutputFilePath)))
                 throw new InvalidDataException("A queued export has invalid boundaries or output path.");
         }
         foreach (var item in project.Queue)
-            if (paths.Contains(Path.GetFullPath(item.Source.Path)))
+            if (paths.Contains(MediaFileUtil.CanonicalPath(item.Source.Path)))
                 throw new InvalidDataException("An export target conflicts with a source file.");
     }
 
@@ -260,15 +265,13 @@ internal static class CutterProjectService
     }
 
     private static bool ValidRange(double startTime, double endTime,
-        long start, long end, long length) =>
+        long start, long end, long length, bool timeBased = false) =>
         IsFiniteNonnegative(startTime) && double.IsFinite(endTime) && endTime >= startTime &&
-        start >= 0 && start <= length && (end == -1 || end > start && end <= length);
+        start >= 0 && start <= length && (end == -1 || end >= 0 && (timeBased || end > start) && end <= length);
 
     private static bool IsFiniteNonnegative(double value) => double.IsFinite(value) && value >= 0;
 
-    private static bool PathsEqual(string left, string right) => string.Equals(
-        Path.GetFullPath(left), Path.GetFullPath(right),
-        OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal);
+    private static bool PathsEqual(string left, string right) => MediaFileUtil.PathsEqual(left, right);
 }
 
 internal sealed class ProjectSourceChangedException(string sourcePath)

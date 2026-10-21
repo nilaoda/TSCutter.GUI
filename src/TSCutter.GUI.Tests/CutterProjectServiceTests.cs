@@ -8,6 +8,24 @@ namespace TSCutter.GUI.Tests;
 
 public sealed class CutterProjectServiceTests
 {
+    [Fact]
+    public void RemuxExportOptionsAndIndependentQueueSnapshotSurviveProjectRoundTrip()
+    {
+        using var files = new ProjectTestFiles();
+        var project = CreateProject(files.CreateSource());
+        project.RemuxSettings = new RemuxExportSettings
+        {
+            Container = "mkv", ReferenceVideoIndex = 0, TimelineOriginSeconds = 0.021, StreamIndices = [0, 1, 3]
+        };
+        project.Queue[0].RemuxSettings = project.RemuxSettings.Snapshot();
+        project.RemuxSettings.StreamIndices.Remove(3);
+        var restored = CutterProjectService.Deserialize(CutterProjectService.Serialize(project));
+        Assert.Equal("mkv", restored.RemuxSettings!.Container);
+        Assert.Equal(0.021, restored.RemuxSettings.TimelineOriginSeconds);
+        Assert.Equal(new[] { 0, 1 }, restored.RemuxSettings.StreamIndices);
+        Assert.Equal(new[] { 0, 1, 3 }, restored.Queue[0].RemuxSettings!.StreamIndices);
+    }
+
     [Theory]
     [InlineData("mts")]
     [InlineData("m2ts")]
@@ -161,7 +179,7 @@ public sealed class CutterProjectServiceTests
 
         var restored = CutterProjectService.Deserialize(CutterProjectService.Serialize(project));
 
-        Assert.Equal(3, restored.Version);
+        Assert.Equal(4, restored.Version);
         Assert.Equal(("Opening", "First line\nSecond line", "blue"),
             (restored.Clips[0].Name, restored.Clips[0].Notes, restored.Clips[0].Color));
         Assert.Equal(("Queued opening", "Independent snapshot", "green", 2, "Recording_002.ts"),

@@ -21,6 +21,7 @@ public partial class ExportQueueItem : ObservableObject
 
     public string GeneratedFileName { get; init; } = "";
 
+    public RemuxExportSettings? RemuxSettings { get; init; }
     public int? ProgramId { get; init; }
 
     public string SourceFilePath { get; init; } = "";
@@ -63,7 +64,7 @@ public partial class ExportQueueItem : ObservableObject
         : $"{CommonUtil.FormatSeconds(EndTimeSeconds)} ]";
 
     public string EstimatedSizeStr => LocalizationManager.Instance.String_SizePrefix
-        + (ProgramId is null ? CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes))
+        + (ProgramId is null && RemuxSettings is null ? CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes))
             : LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport);
 
     public string? OutputFilePathStr => OutputFilePath;

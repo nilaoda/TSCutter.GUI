@@ -51,3 +51,62 @@ The script uses only the Python standard library. Run its focused checks with:
 ```sh
 python3 -m unittest discover -s tools -p 'test_*.py'
 ```
+
+## Running tests
+
+Run the ordinary tests with .NET 10; no sample environment variables are required:
+
+```sh
+dotnet test src/TSCutter.GUI.Tests -c Debug
+```
+
+Tests requiring native media samples are optional integration tests. They are
+reported as skipped when their sample variable is unset. The generators below
+create small, reusable fixtures; running them also requires a local FFmpeg CLI
+with the listed encoders. The application's shared libraries are used by the
+tests themselves. Real-file checks accept separate sample paths and do not
+require the generated fixture directories. Release builds do not run these tests.
+
+## Remux export regression fixtures
+
+Generate small MP4/MKV files with B frames, multiple audio tracks, mov_text/ASS
+subtitles, chapters, attachments, cover art, and HDR10 using a local FFmpeg with
+libx264 and libx265:
+
+```sh
+python3 tools/generate-remux-export-samples.py /tmp/tscutter-remux-fixtures
+TSCUTTER_REMUX_TEST_SAMPLES=/tmp/tscutter-remux-fixtures \
+  dotnet test src/TSCutter.GUI.Tests -c Release --filter FullyQualifiedName~RemuxExportServiceTests
+```
+
+The tests use the application's FFmpeg 9 shared libraries. Set
+`TSCUTTER_FFMPEG_ROOT` if they are not in a default runtime directory. Optional
+`TSCUTTER_DOVI_TEST_SAMPLE` points to a Dolby Vision Profile 5 MP4 containing a
+video track at index 0 and audio at index 1. The optional test verifies both MP4
+and MKV exports, comparing compressed video packet hashes and Dolby Vision
+configuration. Optional `TSCUTTER_AV3A_TEST_SAMPLE` points to an Audio Vivid MP4;
+with compatible keyframe boundaries for partial cuts. Its tests check audio
+packet hashes and codec configuration in MP4 exports, merge three separate
+ranges and files in queue order, and confirm that unsupported MKV exports fail
+without creating output.
+Generated fixtures and local samples are not committed.
+
+## Subtitle preview regression fixtures
+
+Generate MP4 mov_text, animated MKV ASS, MKV PGS and MPEG-TS DVB subtitle samples:
+
+```sh
+python3 tools/generate-subtitle-preview-samples.py /path/to/subtitle-fixtures
+TSCUTTER_FFMPEG_ROOT=/path/to/ffmpeg-runtime \
+TSCUTTER_SUBTITLE_TEST_SAMPLES=/path/to/subtitle-fixtures \
+  dotnet test src/TSCutter.GUI.Tests --filter FullyQualifiedName~SubtitlePreviewTests
+```
+
+Pass `--font /path/to/font.ttf` to test MKV font attachments. The generator needs
+FFmpeg with libx264 and the dvbsub encoder. The native tests use the packaged
+FFmpeg 9 runtime with libass. They check subtitle timing, clearing, backward seeks,
+ASS animation, resizing, rapid track changes and switching subtitles off.
+Set `TSCUTTER_SUBTITLE_REAL_SAMPLE` to a local MP4 with exactly one subtitle track
+and an active subtitle at 2.5 seconds to check a real file. This check is skipped
+when that variable is unset. `TSCUTTER_SUBTITLE_PREVIEW_IMAGE` is only an optional
+output path for saving the generated-fixture UI render; it is not a prerequisite.

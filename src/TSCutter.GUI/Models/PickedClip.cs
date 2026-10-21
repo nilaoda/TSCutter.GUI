@@ -16,6 +16,8 @@ public enum ClipExportStatus
     Cancelled
 }
 
+public sealed record MergedClipOutput(string GroupId, int ClipCount);
+
 public partial class PickedClip : ObservableObject, IDisposable
 {
     [ObservableProperty]
@@ -27,6 +29,8 @@ public partial class PickedClip : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LabelBrush), nameof(HasColor))]
     private string _color = "";
+
+    public bool RequiresRemux { get; init; }
 
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? $"#{ClipID}" : $"#{ClipID} · {Name}";
     public bool HasNotes => !string.IsNullOrWhiteSpace(Notes);
@@ -67,8 +71,12 @@ public partial class PickedClip : ObservableObject, IDisposable
     private long _endPosition = -1;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(OutputFileSizeStr), nameof(EstimatedSizeStr), nameof(OutputFilePathStr))]
+    [NotifyPropertyChangedFor(nameof(OutputFileSizeStr), nameof(EstimatedSizeStr), nameof(ExportSizeStr), nameof(OutputFilePathStr))]
     private FileInfo? _outputFileInfo;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EstimatedSizeStr), nameof(ExportSizeStr))]
+    private MergedClipOutput? _mergedOutput;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText), nameof(HasExportStatus))]
@@ -95,13 +103,18 @@ public partial class PickedClip : ObservableObject, IDisposable
     public required FileInfo InFileInfo { get; init; }
 
     public string StartBoundaryTimeStr => $"[ {CommonUtil.FormatSeconds(StartTime)}";
-    public string? OutputFileSizeStr => OutputFileInfo == null ? null : CommonUtil.FormatFileSize(OutputFileInfo.Length);
+    public string? OutputFileSizeStr => OutputFileInfo is { Exists: true } file ? CommonUtil.FormatFileSize(file.Length) : null;
     public string? OutputFilePathStr => OutputFileInfo?.FullName;
     public string EndBoundaryTimeStr => $"{(EndTime < 0 ? "Inf." : CommonUtil.FormatSeconds(EndTime))} ]";
-    public string? EstimatedSizeStr => LocalizationManager.Instance.String_SizePrefix
-        + CommonUtil.FormatFileSize(
+    public string ExportSizeStr => MergedOutput is not null && OutputFileInfo is { Exists: true }
+        ? LocalizationManager.Instance.String_Clips_Merged
+        : LocalizationManager.Instance.String_SizePrefix
+          + (OutputFileSizeStr ?? LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport);
+    public string? EstimatedSizeStr => MergedOutput is not null && OutputFileInfo is { Exists: true }
+        ? ExportSizeStr : LocalizationManager.Instance.String_SizePrefix
+        + (OutputFileSizeStr ?? (RequiresRemux ? LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport : CommonUtil.FormatFileSize(
             Math.Max(0, (EndPosition > 0 ? EndPosition : InFileInfo.Length) - StartPosition)
-        );
+        )));
 
     public bool HasExportStatus => ExportStatus != ClipExportStatus.Pending;
 
@@ -118,8 +131,23 @@ public partial class PickedClip : ObservableObject, IDisposable
     public void RefreshLocalizedText()
     {
         OnPropertyChanged(nameof(EstimatedSizeStr));
+        OnPropertyChanged(nameof(ExportSizeStr));
         OnPropertyChanged(nameof(StatusText));
     }
+
+    // 已导出的文件仅对应当时的剪辑边界和轨道设置；修改后清除记录，不删除磁盘上的文件。
+    internal void InvalidateExport()
+    {
+        OutputFileInfo = null;
+        MergedOutput = null;
+        ExportStatus = ClipExportStatus.Pending;
+        ExportPercent = 0;
+    }
+
+    partial void OnStartTimeChanged(double value) => InvalidateExport();
+    partial void OnEndTimeChanged(double value) => InvalidateExport();
+    partial void OnStartPositionChanged(long value) => InvalidateExport();
+    partial void OnEndPositionChanged(long value) => InvalidateExport();
 
     internal void ReplaceStartThumbnail(Bitmap? thumbnail)
     {

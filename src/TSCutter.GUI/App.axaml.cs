@@ -55,6 +55,7 @@ public partial class App : Application
         SplatRegistrations.Register<UpdatesInfoWindowViewModel>();
         SplatRegistrations.Register<CaptureFrameViewModel>();
         SplatRegistrations.Register<ClipDetailsViewModel>();
+        SplatRegistrations.Register<RemuxExportOptionsViewModel>();
         // --- 注册单例服务 ---
         var localizationService = new LocalizationService();
         SplatRegistrations.RegisterConstant<ILocalizationService>(localizationService);
@@ -81,7 +82,7 @@ public partial class App : Application
 
         // 加载配置
         configService.Load();
-        FFmpegNativeBootstrapper.Initialize(configService.CurrentConfig);
+        FFmpegNativeBootstrapper.Configure(configService.CurrentConfig);
 
         GC.KeepAlive(typeof(DialogService));
         DialogService.Show(null, MainWindow);

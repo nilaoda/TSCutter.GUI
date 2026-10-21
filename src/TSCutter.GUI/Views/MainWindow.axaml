@@ -176,6 +176,10 @@
                                   Command="{Binding AddToQueueCommand}" />
                         <MenuItem Header="{DynamicResource String.MergeClips.Menu}"
                                   Command="{Binding MergeSelectedClipsCommand}" />
+                        <MenuItem Header="{DynamicResource String.RemuxExport.Options}"
+                                  IsVisible="{Binding IsRemuxExport}" Command="{Binding RemuxExportOptionsCommand}" />
+                        <MenuItem Header="{DynamicResource String.RemuxExport.MergeQueue}"
+                                  Command="{Binding MergeRemuxQueueCommand}" IsVisible="{Binding HasRemuxQueue}" />
                         <MenuItem Header="{DynamicResource String.Menu.ExportQueue}"
                                   Command="{Binding BatchExportQueueCommand}" />
                         <Separator />
@@ -396,54 +400,76 @@
                                 <Grid RowDefinitions="Auto,*">
                                     <StackPanel Grid.Row="0" Margin="6,4"
                                                 IsVisible="{Binding ShowPreviewTrackSelector}">
-                                        <WrapPanel>
-                                            <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="6" Margin="0,0,12,4"
-                                                  IsVisible="{Binding HasPreviewPrograms}">
+                                        <WrapPanel IsVisible="{Binding HasPreviewPrograms}" Margin="0,0,0,4">
+                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,12,0">
                                                 <TextBlock Grid.Column="0" VerticalAlignment="Center"
                                                            Text="{DynamicResource String.PreviewTrack.Program}" />
-                                                <ComboBox Grid.Column="1" MinWidth="80" MaxWidth="220"
-                                                          HorizontalAlignment="Left"
+                                                <ComboBox Grid.Column="1" Width="180" MinHeight="28"
                                                           IsEnabled="{Binding CanSelectPreviewProgram}"
                                                           ItemsSource="{Binding PreviewPrograms}"
                                                           ToolTip.Tip="{Binding SelectedPreviewProgram.DisplayText}"
                                                           SelectedItem="{Binding SelectedPreviewProgram, Mode=TwoWay}">
                                                     <ComboBox.ItemTemplate>
                                                         <DataTemplate x:DataType="models:PreviewProgramOption">
-                                                            <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" />
+                                                            <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                                                                       ToolTip.Tip="{Binding DisplayText}" />
                                                         </DataTemplate>
                                                     </ComboBox.ItemTemplate>
                                                 </ComboBox>
                                             </Grid>
-                                            <Grid ColumnDefinitions="Auto,Auto" ColumnSpacing="6" Margin="0,0,0,4">
-                                                <TextBlock Grid.Column="0" VerticalAlignment="Center"
-                                                           Text="{DynamicResource String.PreviewTrack.Video}" />
-                                                <ComboBox Grid.Column="1" MinWidth="100" MaxWidth="300"
-                                                          HorizontalAlignment="Left"
-                                                          IsEnabled="{Binding CanSelectPreviewVideo}"
-                                                          ItemsSource="{Binding PreviewVideoTracks}"
-                                                          ToolTip.Tip="{Binding SelectedPreviewVideoTrack.DisplayText}"
-                                                          SelectedItem="{Binding SelectedPreviewVideoTrack, Mode=TwoWay}">
-                                                    <ComboBox.ItemTemplate>
-                                                        <DataTemplate x:DataType="models:PreviewVideoTrackOption">
-                                                            <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" />
-                                                        </DataTemplate>
-                                                    </ComboBox.ItemTemplate>
-                                                </ComboBox>
-                                            </Grid>
-                                        </WrapPanel>
-                                        <WrapPanel>
-                                            <TextBlock Margin="0,0,16,0" MaxWidth="300" VerticalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       ToolTip.Tip="{Binding SelectedPreviewProgram.AudioDescription}">
-                                                <Run Text="{DynamicResource String.PreviewTrack.Audio}" />
-                                                <Run Text="{Binding SelectedPreviewProgram.AudioDescription}" />
-                                            </TextBlock>
                                             <CheckBox IsVisible="{Binding ShowProgramExportChoice}"
                                                       IsEnabled="{Binding CanChooseProgramExport}"
                                                       IsChecked="{Binding ExportCurrentProgramOnly, Mode=TwoWay}"
                                                       Content="{DynamicResource String.PreviewTrack.ExportCurrentProgramOnly}"
                                                       ToolTip.Tip="{DynamicResource String.PreviewTrack.ExportTip}" />
                                         </WrapPanel>
+                                        <Grid ColumnDefinitions="*,140" ColumnSpacing="12">
+                                            <UniformGrid Rows="1">
+                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,12,0">
+                                                    <TextBlock VerticalAlignment="Center"
+                                                               Text="{DynamicResource String.PreviewTrack.Video}" />
+                                                    <ComboBox Grid.Column="1" MinHeight="28" HorizontalAlignment="Stretch"
+                                                              IsEnabled="{Binding CanSelectPreviewVideo}"
+                                                              ItemsSource="{Binding PreviewVideoTracks}"
+                                                              ToolTip.Tip="{Binding SelectedPreviewVideoTrack.DisplayText}"
+                                                              SelectedItem="{Binding SelectedPreviewVideoTrack, Mode=TwoWay}">
+                                                        <ComboBox.ItemTemplate>
+                                                            <DataTemplate x:DataType="models:PreviewVideoTrackOption">
+                                                                <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                                                                           ToolTip.Tip="{Binding DisplayText}" />
+                                                            </DataTemplate>
+                                                        </ComboBox.ItemTemplate>
+                                                    </ComboBox>
+                                                </Grid>
+                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6"
+                                                      IsVisible="{Binding HasPreviewSubtitles}">
+                                                    <TextBlock VerticalAlignment="Center" Text="{DynamicResource String.SubtitlePreview.Label}"
+                                                               ToolTip.Tip="{DynamicResource String.SubtitlePreview.Tip}" />
+                                                    <ComboBox Grid.Column="1" MinHeight="28" HorizontalAlignment="Stretch"
+                                                              IsEnabled="{Binding CanSelectPreviewSubtitle}"
+                                                              ItemsSource="{Binding PreviewSubtitleTracks}"
+                                                              SelectedItem="{Binding SelectedPreviewSubtitleTrack, Mode=TwoWay}"
+                                                              ToolTip.Tip="{Binding SelectedPreviewSubtitleTrack.DisplayText}">
+                                                        <ComboBox.ItemTemplate>
+                                                            <DataTemplate x:DataType="models:PreviewSubtitleTrackOption">
+                                                                <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                                                                           ToolTip.Tip="{Binding DisplayText}" />
+                                                            </DataTemplate>
+                                                        </ComboBox.ItemTemplate>
+                                                    </ComboBox>
+                                                    <ProgressBar Grid.Column="1" Height="2" MinHeight="0" VerticalAlignment="Bottom"
+                                                                 BorderThickness="0" Padding="0" ClipToBounds="True"
+                                                                 IsIndeterminate="True" IsVisible="{Binding IsSubtitleLoading}"
+                                                                 ToolTip.Tip="{DynamicResource String.SubtitlePreview.Loading}" />
+                                                </Grid>
+                                            </UniformGrid>
+                                            <TextBlock Grid.Column="1" VerticalAlignment="Center"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip.Tip="{Binding SelectedPreviewProgram.AudioDescription}">
+                                                <Run Text="{DynamicResource String.PreviewTrack.Audio}" />
+                                                <Run Text="{Binding SelectedPreviewProgram.AudioDescription}" />
+                                            </TextBlock>
+                                        </Grid>
                                     </StackPanel>
                                     <controls:ImageViewer Grid.Row="1" Name="ImageViewer"
                                                           IsEnabled="{Binding IsVideoInitialized}"
@@ -455,6 +481,7 @@
                                                           Image="{Binding DecodedBitmap}"
                                                           GpuFrame="{Binding DecodedGpuFrame}"
                                                           SourcePixelSize="{Binding DecodedFrameSourceSize}"
+                                                          SubtitleOverlay="{Binding SubtitleOverlay}"
                                                           Zoom="{Binding ZoomFactor, Mode=TwoWay}">
                                     </controls:ImageViewer>
                                     <Border Grid.Row="1" IsVisible="{Binding IsToolsOnly}"
@@ -483,6 +510,10 @@
                                                 </TextBlock>
                                             </TabItem.Header>
                                             <DockPanel>
+                                                <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,0" IsVisible="{Binding IsRemuxExport}">
+                                                    <TextBlock Text="{DynamicResource String.RemuxExport.Notice}" TextWrapping="Wrap" FontSize="11" />
+                                                    <Button Content="{DynamicResource String.RemuxExport.Options}" Command="{Binding RemuxExportOptionsCommand}" />
+                                                </StackPanel>
                                                 <Grid DockPanel.Dock="Bottom"
                                                       ColumnDefinitions="*,*"
                                                       ColumnSpacing="4"
@@ -612,7 +643,7 @@
                                                                                            IsVisible="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).ShowRawClipSizeEstimate}"
                                                                                            VerticalAlignment="Center"
                                                                                            Margin="0,0,8,0" />
-                                                                                <TextBlock Text="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).FilteredClipSizeStr}"
+                                                                                <TextBlock Text="{Binding ExportSizeStr}"
                                                                                            IsVisible="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).IsProgramExportFiltered}"
                                                                                            VerticalAlignment="Center"
                                                                                            Margin="0,0,8,0" />
@@ -654,6 +685,11 @@
                                                 </StackPanel>
                                             </TabItem.Header>
                                             <DockPanel>
+                                                <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,0">
+                                                    <TextBlock Text="{DynamicResource String.RemuxExport.Notice}" TextWrapping="Wrap"
+                                                               FontSize="11" IsVisible="{Binding HasRemuxQueue}" />
+                                                    <Button Content="{DynamicResource String.RemuxExport.MergeQueue}" Command="{Binding MergeRemuxQueueCommand}" IsVisible="{Binding HasRemuxQueue}" />
+                                                </StackPanel>
                                                 <!-- 底部按钮 -->
                                                 <Grid DockPanel.Dock="Bottom"
                                                       ColumnDefinitions="*,*"

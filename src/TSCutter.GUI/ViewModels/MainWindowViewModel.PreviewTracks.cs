@@ -33,7 +33,7 @@ public partial class MainWindowViewModel
     private bool _exportCurrentProgramOnly;
 
     public bool ShowPreviewTrackSelector => PreviewPrograms.Count > 1 || PreviewVideoTracks.Count > 1 ||
-                                            _videoInstance?.ProgramCount > 1;
+                                            _videoInstance?.ProgramCount > 1 || HasPreviewSubtitles;
     public bool HasPreviewPrograms => PreviewPrograms.Any(program => program.Id is not null);
     public bool CanSelectPreviewProgram => CanSwitchPreviewTrack && PreviewPrograms.Count > 1;
     public bool CanSelectPreviewVideo => CanSwitchPreviewTrack && PreviewVideoTracks.Count > 1;
@@ -52,6 +52,7 @@ public partial class MainWindowViewModel
 
     partial void OnExportCurrentProgramOnlyChanged(bool value)
     {
+        InvalidateClipExports();
         _configService.CurrentConfig.ExportCurrentProgramOnly = value;
         _configService.Save();
         NotifyPreviewTrackChoicesChanged();
@@ -113,6 +114,7 @@ public partial class MainWindowViewModel
         OnPropertyChanged(nameof(CanSwitchPreviewTrack));
         OnPropertyChanged(nameof(CanSelectPreviewProgram));
         OnPropertyChanged(nameof(CanSelectPreviewVideo));
+        OnPropertyChanged(nameof(CanSelectPreviewSubtitle));
         OnPropertyChanged(nameof(CanChooseProgramExport));
         OnPropertyChanged(nameof(ShowProgramExportChoice));
         OnPropertyChanged(nameof(IsProgramExportFiltered));
@@ -161,12 +163,14 @@ public partial class MainWindowViewModel
             var previous = _videoInstance;
             ClearVars();
             _videoInstance = candidate;
+            _remuxExportSettings = null;
             candidate = null;
             previous?.Dispose();
             VideoInfoText = _videoInstance.GetVideoInfoText();
             DurationMax = duration;
             TimelineViewport.Reset(duration, _videoInstance.EstimatedKeyFrameIntervalSeconds);
             SetPreviewTrackChoices(_videoInstance.PreviewPrograms, _videoInstance.StreamSelection);
+            SetSubtitleTrackChoices(_videoInstance.PreviewSubtitleTracks);
             ApplyDecodeResult(frame);
             frame = null;
             UpdateDecodeMode();

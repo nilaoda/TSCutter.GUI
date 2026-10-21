@@ -45,10 +45,26 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
     public bool CanBinaryClip { get; private set; }
     public IReadOnlyList<PreviewProgramOption> PreviewPrograms { get; private set; } = [];
     public PreviewStreamSelection? StreamSelection { get; private set; }
+    public IReadOnlyList<PreviewSubtitleTrackOption> PreviewSubtitleTracks { get; private set; } = [];
+    internal double TimelineOriginSeconds => firstFrameTimestamp * timeBase.num / (double)timeBase.den;
+    internal Avalonia.PixelSize CodedVideoSize => new(inVideoStream.Codecpar!.Width, inVideoStream.Codecpar.Height);
     public int ProgramCount { get; private set; }
     internal long TsSyncOffset { get; private set; } = -1;
     internal TsPacketLayout PacketLayout { get; private set; }
-    internal string ClipExtension => PacketLayout.Extension;
+    public bool CanRemuxClip { get; private set; }
+    public bool CanClip => CanBinaryClip || CanRemuxClip;
+    internal string ClipExtension => CanRemuxClip
+        ? inFc.InputFormat!.Name.Split(',').Contains("mov") ? "mp4" : "mkv"
+        : PacketLayout.Extension;
+    internal IReadOnlyList<RemuxExportTrack> ExportTracks { get; private set; } = [];
+    internal RemuxExportSettings CreateExportSettings() => new()
+    {
+        Container = ClipExtension, ReferenceVideoIndex = videoStreamIndex,
+        TimelineOriginSeconds = firstFrameTimestamp * timeBase.num / (double)timeBase.den,
+        StreamIndices = inFc.Streams.Where(stream => stream.Codecpar?.CodecType is
+            AVMediaType.AVMEDIA_TYPE_VIDEO or AVMediaType.AVMEDIA_TYPE_AUDIO or
+            AVMediaType.AVMEDIA_TYPE_SUBTITLE or AVMediaType.AVMEDIA_TYPE_ATTACHMENT).Select(stream => stream.Index).ToList()
+    };
     public bool IsHardwareDecoding { get; private set; }
     public bool IsGpuPresentation { get; private set; }
     public VideoPresentationMode PresentationMode { get; private set; } = VideoPresentationMode.SoftwareBitmap;
@@ -141,6 +157,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
         if (isMpegTs && tsProbe.HasScrambledPayload)
             throw new ScrambledTsException();
         CanBinaryClip = isMpegTs && tsProbe.IsSupportedTransportStream;
+        CanRemuxClip = Services.RemuxExportService.IsSupportedInput(inFc.InputFormat?.Name);
+        if (CanRemuxClip) ExportTracks = Services.RemuxExportService.DescribeTracks(inFc);
         PacketLayout = tsProbe.Layout;
         if (isMpegTs)
             PacketLayout.RequireSupported();
@@ -152,6 +170,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
         PreviewPrograms = PreviewStreamUtil.CreateOptions(inFc);
         inVideoStream = PreviewStreamUtil.ResolveVideo(inFc, streamSelection);
         StreamSelection = PreviewStreamUtil.GetSelection(inFc, inVideoStream, streamSelection);
+        PreviewSubtitleTracks = PreviewStreamUtil.CreateSubtitleOptions(inFc, StreamSelection);
         if (inVideoStream.Codecpar?.CodecId is null)
         {
             throw new Exception("Read Failed!");
