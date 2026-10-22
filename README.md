@@ -19,6 +19,7 @@ TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It comb
 - **Editing projects**: Save the current source, clip ranges, timeline view, and cross-file export queue in a `.tscut` file for later editing. Projects can reopen recordings that have grown since saving.
 - **Program and video track selection**: Switch previews in files with multiple programs or video tracks. Keyframe overviews, thumbnail sheets, and frame searches follow the selected track. Multi-program TS exports can preserve all programs or keep only the current program. The selection area also appears when embedded subtitles are available.
 - **Embedded subtitle preview**: Select text or bitmap subtitles in MP4, MKV and TS. ASS styles, animations and MKV font attachments are supported. Subtitles follow the displayed frame when seeking, zooming or panning; export tracks remain controlled by export settings.
+- **HDR to SDR preview mapping**: Use CPU/SIMD processing for HDR10/PQ, HLG and Dolby Vision Profile 5. Temporarily toggle mapping and hardware/software decoding in the status bar; Settings stores defaults. Mapping applies to previews, while exports preserve the compressed audio and video.
 - **Flexible output**: Save one clip immediately, add clips to a batch export queue, or merge multiple selected clips into one file.
 - **Lossless media copy**: Preserve the original encoded audio and video without transcoding.
 - **Frame capture and media information**: Save or copy the current preview frame and inspect the opened file's stream information.

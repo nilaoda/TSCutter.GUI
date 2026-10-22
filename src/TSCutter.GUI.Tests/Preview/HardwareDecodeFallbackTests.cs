@@ -5,6 +5,21 @@ namespace TSCutter.GUI.Tests.Preview;
 
 public class HardwareDecodeFallbackTests
 {
+    [TSCutter.GUI.Tests.FFmpeg.NativeRuntimeFact]
+    public async Task UnsupportedCodecsDisableHardwareSwitchWithEitherDefault()
+    {
+        var directory = Environment.GetEnvironmentVariable("TSCUTTER_FFMPEG_TEST_SAMPLES")!;
+        foreach (var name in new[] { "AVS2.ts", "AVS3.ts" })
+        foreach (var preferHardware in new[] { false, true })
+        {
+            using var video = new VideoInstance(Path.Combine(directory, name), preferHardware, probeHardwareDecoding: true);
+            await video.InitVideoAsync();
+            Assert.True(video.Inited);
+            Assert.False(video.IsHardwareDecoding);
+            Assert.False(video.IsHardwareDecodingAvailable);
+        }
+    }
+
     [Fact]
     public void ResolveHardwareFallbackSeekPts_ForwardNavigationDoesNotUseStaleSeekPosition()
     {

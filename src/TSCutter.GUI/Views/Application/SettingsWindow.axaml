@@ -9,8 +9,8 @@
         xmlns:models="clr-namespace:TSCutter.GUI.Models.Application"
         xmlns:app="using:TSCutter.GUI"
         mc:Ignorable="d"
-        d:DesignWidth="380" d:DesignHeight="426"
-        Width="380" Height="426"
+        d:DesignWidth="380" d:DesignHeight="458"
+        Width="380" Height="458"
         x:Class="TSCutter.GUI.Views.Application.SettingsWindow"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
@@ -142,6 +142,9 @@
                               IsEnabled="{Binding IsHardwareDecodingAvailable}"
                               Content="{DynamicResource String.Settings.PreferHardwareDecoding}"
                               ToolTip.Tip="{DynamicResource String.Settings.PreferHardwareDecodingTip}" />
+                    <CheckBox IsChecked="{Binding EnableSdrToneMapping}"
+                              Content="{DynamicResource String.Settings.EnableSdrToneMapping}"
+                              ToolTip.Tip="{DynamicResource String.Settings.EnableSdrToneMappingTip}" />
                 </StackPanel>
             </TabItem>
             <TabItem Header="{DynamicResource String.Settings.Output}">

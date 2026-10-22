@@ -10,6 +10,7 @@ namespace TSCutter.GUI.Models.Application;
 public class AppConfig : ObservableObject
 {
     private bool _showImageNavigator = true;
+    private bool _enableSdrToneMapping = true;
     private bool _preferHardwareDecoding = IsHardwareDecodingSupported;
 
     // 系统当前是否处于深色模式
@@ -30,6 +31,11 @@ public class AppConfig : ObservableObject
     {
         get => _showImageNavigator;
         set => SetProperty(ref _showImageNavigator, value);
+    }
+    public bool EnableSdrToneMapping
+    {
+        get => _enableSdrToneMapping;
+        set => SetProperty(ref _enableSdrToneMapping, value);
     }
     public string ClipOutputTemplate { get; set; } = Utils.Editing.ClipOutputNaming.DefaultTemplate;
     public bool TsBatchCheckSaveLogs { get; set; }

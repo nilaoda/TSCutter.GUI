@@ -8,6 +8,16 @@ namespace TSCutter.GUI.Tests.Application;
 public class AppConfigTests
 {
     [Fact]
+    public void SdrMappingDefaultsToEnabledAndDisabledPreferenceSurvivesSerialization()
+    {
+        var config = JsonSerializer.Deserialize("{}", AppJsonContext.Default.AppConfig)!;
+        Assert.True(config.EnableSdrToneMapping);
+        config.EnableSdrToneMapping = false;
+        var json = JsonSerializer.Serialize(config, AppJsonContext.Default.AppConfig);
+        Assert.False(JsonSerializer.Deserialize(json, AppJsonContext.Default.AppConfig)!.EnableSdrToneMapping);
+    }
+
+    [Fact]
     public void ImageNavigatorDefaultsToEnabledForExistingConfigurations()
     {
         var config = JsonSerializer.Deserialize("{}", AppJsonContext.Default.AppConfig)!;

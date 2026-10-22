@@ -1,5 +1,6 @@
 using TSCutter.GUI.Tests.FFmpeg;
 using System.Text;
+using FFmpeg.AutoGen.Abstractions;
 using Xunit;
 using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Utils.Media;
@@ -10,6 +11,40 @@ namespace TSCutter.GUI.Tests.Preview;
 
 public sealed class MediaInfoBuilderTests
 {
+    [Fact]
+    public void DolbyVisionProfile5MatchesItsConfigurationRecord()
+    {
+        var info = MediaInfoBuilder.ParseDolbyVisionConfiguration([1, 0, 5, 7, 1, 0, 1, 0, 0], AVCodecID.AV_CODEC_ID_HEVC);
+        Assert.Equal(5, info!.Profile);
+        Assert.Equal("Dolby Vision, Version 1.0, Profile 5, dvhe.05.07, BL+RPU, no metadata compression", info.Description);
+        Assert.Equal("dvh1", MediaInfoBuilder.VideoCodecId(0x31687664, AVCodecID.AV_CODEC_ID_HEVC));
+    }
+
+    [Theory]
+    [InlineData(7, 1, 1, 0, "BL+EL+RPU", "HDR10 compatible", "no metadata compression")]
+    [InlineData(8, 0, 1, 1, "BL+RPU", "HDR10 compatible", "limited metadata compression")]
+    [InlineData(8, 0, 4, 3, "BL+RPU", "HLG compatible", "extended metadata compression")]
+    public void DolbyVisionPreservesLayersCompatibilityAndCompression(
+        byte profile, byte enhancement, byte compatibility, byte compression,
+        string layers, string expectedCompatibility, string expectedCompression)
+    {
+        var info = MediaInfoBuilder.ParseDolbyVisionConfiguration(
+            [1, 0, profile, 6, 1, enhancement, 1, compatibility, compression], AVCodecID.AV_CODEC_ID_HEVC)!;
+        Assert.Contains(layers, info.Description);
+        Assert.Contains(expectedCompatibility, info.Description);
+        Assert.Contains(expectedCompression, info.Description);
+    }
+
+    [Fact]
+    public void MissingOrTruncatedDolbyVisionFieldsAreNotInvented()
+    {
+        Assert.Null(MediaInfoBuilder.ParseDolbyVisionConfiguration([1, 0, 5], AVCodecID.AV_CODEC_ID_HEVC));
+        Assert.Null(MediaInfoBuilder.ParseDolbyVisionConfiguration([1, 0, 5, 7, 2, 0, 1, 0], AVCodecID.AV_CODEC_ID_HEVC));
+        var oldRecord = MediaInfoBuilder.ParseDolbyVisionConfiguration([1, 0, 5, 7, 1, 0, 1, 0], AVCodecID.AV_CODEC_ID_HEVC)!;
+        Assert.DoesNotContain("compression", oldRecord.Description);
+        Assert.Equal(((int)AVCodecID.AV_CODEC_ID_HEVC).ToString(), MediaInfoBuilder.VideoCodecId(0, AVCodecID.AV_CODEC_ID_HEVC));
+    }
+
     [Theory]
     [InlineData(188)]
     [InlineData(192)]

@@ -70,6 +70,8 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
     private bool isClosed;
     private bool previewDirty = true;
 
+    public bool EnableSdrToneMapping { get; set; } = true;
+
     public ThumbnailSheetWindowViewModel(IConfigurationService configService)
     {
         this.configService = configService;
@@ -516,7 +518,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             }
 
             StatusText = LocalizationManager.Instance.String_ThumbnailSheet_Status_Opening;
-            await service.OpenAsync(filePath, cts.Token, StreamSelection).ConfigureAwait(true);
+            await service.OpenAsync(filePath, cts.Token, StreamSelection, EnableSdrToneMapping).ConfigureAwait(true);
             cts.Token.ThrowIfCancellationRequested();
 
             await RebuildAsync().ConfigureAwait(true);

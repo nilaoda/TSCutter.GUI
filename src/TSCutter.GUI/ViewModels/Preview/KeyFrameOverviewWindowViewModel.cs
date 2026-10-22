@@ -44,6 +44,8 @@ public sealed partial class KeyFrameOverviewWindowViewModel : ViewModelBase,
     private bool closing;
     private bool selecting;
 
+    public bool EnableSdrToneMapping { get; set; } = true;
+
     public KeyFrameOverviewWindowViewModel()
     {
         SamplingOptions =
@@ -104,7 +106,7 @@ public sealed partial class KeyFrameOverviewWindowViewModel : ViewModelBase,
         {
             keyFrames = await service.OpenAsync(
                 FilePath,
-                cancellation.Token, StreamSelection).ConfigureAwait(true);
+                cancellation.Token, StreamSelection, EnableSdrToneMapping).ConfigureAwait(true);
             RebuildTiles();
             worker = ProcessQueueAsync(cancellation.Token);
             StatusText = string.Format(

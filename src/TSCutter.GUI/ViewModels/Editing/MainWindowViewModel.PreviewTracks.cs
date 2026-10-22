@@ -151,7 +151,8 @@ public partial class MainWindowViewModel
             CancelClipEndScan();
             await CompleteScrubPreviewAsync();
             candidate = new VideoInstance(VideoPath,
-                _configService.CurrentConfig.PreferHardwareDecoding, choice.Selection);
+                preferHardwareDecodingForPreview, choice.Selection,
+                () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true);
             await candidate.InitVideoAsync(cancellation.Token);
             var duration = candidate.GetVideoDurationInSeconds();
             if (CurrentTime > 0 && duration > 0)

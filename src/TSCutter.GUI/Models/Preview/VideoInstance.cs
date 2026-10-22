@@ -21,8 +21,9 @@ using TSCutter.GUI.Utils.TransportStream.Packets;
 
 namespace TSCutter.GUI.Models.Preview;
 
-public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
-    PreviewStreamSelection? streamSelection = null) : IDisposable
+public partial class VideoInstance(string filePath, bool enableHardwareDecoding = false,
+    PreviewStreamSelection? streamSelection = null, Func<bool>? enableSdrToneMapping = null,
+    bool retainPreviewFrame = false, bool probeHardwareDecoding = false) : IDisposable
 {
     private static readonly HashSet<string> HardwareTags = new() 
     { 
@@ -34,6 +35,8 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
     private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan KeyFrameProbeTimeout = TimeSpan.FromSeconds(5);
     private MediaReadDeadline? activeReadDeadline;
+    private readonly Lock decoderSync = new();
+    private bool closed;
     private const int HardwareNoFrameFailureThreshold = 3;
     private const int MaximumEstimatedKeyFrames = 100_000;
     private const int AV_PKT_FLAG_KEY_FRAME = 0x0001;
@@ -72,6 +75,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
             AVMediaType.AVMEDIA_TYPE_SUBTITLE or AVMediaType.AVMEDIA_TYPE_ATTACHMENT).Select(stream => stream.Index).ToList()
     };
     public bool IsHardwareDecoding { get; private set; }
+    public bool IsHardwareDecodingAvailable { get; private set; }
     public bool IsGpuPresentation { get; private set; }
     public VideoPresentationMode PresentationMode { get; private set; } = VideoPresentationMode.SoftwareBitmap;
     private string hardwareDecoderName = string.Empty;
@@ -112,6 +116,15 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
     public void InitVideo() => InitVideo(CancellationToken.None);
 
     public void InitVideo(CancellationToken cancellationToken)
+    {
+        lock (decoderSync)
+        {
+            ObjectDisposedException.ThrowIf(closed, this);
+            InitVideoCore(cancellationToken);
+        }
+    }
+
+    private void InitVideoCore(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var probedBeforeOpening = TsScramblingProbe.ShouldProbeBeforeOpening(videoPath);
@@ -205,6 +218,12 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
         UpdateTimelineDuration();
 
         var decoderOpened = preferHardwareDecoding && TryOpenHardwareDecoder();
+        if (!preferHardwareDecoding && probeHardwareDecoding)
+        {
+            // 主预览即使默认软解，也需确认设备及当前编码能否打开；探测上下文立即释放。
+            using var hardwareProbe = TryCreateHardwareDecoder(false, out _);
+            IsHardwareDecodingAvailable = hardwareProbe is not null;
+        }
         if (!decoderOpened)
             decoderOpened = TryOpenSoftwareDecoder();
 
@@ -241,6 +260,24 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
 
     private bool TryOpenHardwareDecoder(bool fullPacketDecoding = false)
     {
+        var candidate = TryCreateHardwareDecoder(fullPacketDecoding, out var deviceType);
+        IsHardwareDecodingAvailable = candidate is not null;
+        if (candidate is null) return false;
+        try { ReplaceVideoDecoder(candidate); }
+        catch { candidate.Dispose(); throw; }
+        hardwareDecoderOpened = true;
+        useFullPacketDecoding = fullPacketDecoding;
+        IsHardwareDecoding = true;
+        IsGpuPresentation = false;
+        PresentationMode = VideoPresentationMode.HardwareCpuTransfer;
+        hardwareDecoderName = GetHardwareDeviceDisplayName(deviceType);
+        Console.WriteLine($"Hardware decoder opened: {hardwareDecoderName} ("
+            + (fullPacketDecoding ? "full packets" : "key packets") + ")");
+        return true;
+    }
+
+    private CodecContext? TryCreateHardwareDecoder(bool fullPacketDecoding, out AVHWDeviceType selectedDevice)
+    {
         foreach (var deviceType in GetHardwareDeviceCandidates())
         {
             foreach (var decoder in softwareDecoders.AsEnumerable().Reverse())
@@ -258,18 +295,10 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                         candidate.SkipFrame = AVDiscard.AVDISCARD_NONKEY;
                     candidate.AttachHardwareDevice(deviceType);
                     candidate.Open();
-                    ReplaceVideoDecoder(candidate);
+                    var opened = candidate;
                     candidate = null;
-
-                    hardwareDecoderOpened = true;
-                    useFullPacketDecoding = fullPacketDecoding;
-                    IsHardwareDecoding = true;
-                    IsGpuPresentation = false;
-                    PresentationMode = VideoPresentationMode.HardwareCpuTransfer;
-                    hardwareDecoderName = GetHardwareDeviceDisplayName(deviceType);
-                    Console.WriteLine($"Hardware decoder opened: {decoder.Name} ({hardwareDecoderName}, "
-                        + (fullPacketDecoding ? "full packets" : "key packets") + ")");
-                    return true;
+                    selectedDevice = deviceType;
+                    return opened;
                 }
                 catch (Exception exception)
                 {
@@ -284,7 +313,13 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
         }
 
         Console.WriteLine("No supported hardware decoder was available; falling back to software decoding.");
-        return false;
+        selectedDevice = AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
+        return null;
+    }
+
+    internal void MarkHardwareDecodingUnavailable()
+    {
+        lock (decoderSync) IsHardwareDecodingAvailable = false;
     }
 
     private bool TryOpenSoftwareDecoder(bool fullPacketDecoding = false)
@@ -377,6 +412,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
 
         keyFrameGap = 90000;
         AudioMode = true;
+        IsHardwareDecodingAvailable = false;
         hardwareDecoderOpened = false;
         IsHardwareDecoding = false;
         hardwareDecoderName = string.Empty;
@@ -418,37 +454,31 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
 
     public void SeekFile(long pts)
     {
-        // if (lastSeekPts == pts)
-        //     return;
-        Console.WriteLine($"SeekFile lastSeekPts: {lastSeekPts}, targetPts: {pts}");
-        lastSeekPts = pts;
         RunReadOperation(() =>
         {
+            Console.WriteLine($"SeekFile lastSeekPts: {lastSeekPts}, targetPts: {pts}");
+            lastSeekPts = pts;
             inFc.SeekFrame(pts - keyFrameGap * 4, videoStreamIndex);
             activeReadDeadline!.ThrowIfInterrupted();
+            videoDecoder.FlushBuffers();
             return true;
         }, CancellationToken.None);
-        // flush
-        videoDecoder.FlushBuffers();
     }
 
     public void Seek(long pts, AVSEEK_FLAG flag = 0)
     {
-        // FLV 预览及 EOF 解码重试均从目标之前的关键帧开始，避免向前 seek 找不到帧。
-        if (flag == 0 && inFc.InputFormat?.Name is "flv" or "live_flv")
-            flag = AVSEEK_FLAG.Backward;
-        // if (lastSeekPts == pts)
-        //     return;
-        Console.WriteLine($"lastSeekPts: {lastSeekPts}, targetPts: {pts}, flag: {flag}");
-        lastSeekPts = pts;
         RunReadOperation(() =>
         {
+            // FLV 及 EOF 重试从目标之前的关键帧开始，避免向前定位找不到帧。
+            if (flag == 0 && inFc.InputFormat?.Name is "flv" or "live_flv")
+                flag = AVSEEK_FLAG.Backward;
+            Console.WriteLine($"lastSeekPts: {lastSeekPts}, targetPts: {pts}, flag: {flag}");
+            lastSeekPts = pts;
             inFc.SeekFrame(pts, videoStreamIndex, flag);
             activeReadDeadline!.ThrowIfInterrupted();
+            videoDecoder.FlushBuffers();
             return true;
         }, CancellationToken.None);
-        // flush
-        videoDecoder.FlushBuffers();
     }
 
     public async Task<DecodeResult> DecodeNextFrameAsync(int count = 1, CancellationToken cancellationToken = default)
@@ -592,6 +622,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
             }
         }
 
+        if (hardwareDecoderOpened) IsHardwareDecodingAvailable = false;
         if (!TryOpenSoftwareDecoder(fullPacketDecoding: true))
             ThrowDecodeFailure();
         return DecodeFullPacketsFromTarget();
@@ -890,7 +921,17 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
         return (firstPts, gap);
     }
 
-    private unsafe T RunReadOperation<T>(Func<T> operation, CancellationToken cancellationToken, TimeSpan? timeout = null)
+    // 同一实例的定位、解码和缓存刷新共用原生状态，必须完整互斥；嵌套调用可重入。
+    private T RunReadOperation<T>(Func<T> operation, CancellationToken cancellationToken, TimeSpan? timeout = null)
+    {
+        lock (decoderSync)
+        {
+            ObjectDisposedException.ThrowIf(closed, this);
+            return RunReadOperationCore(operation, cancellationToken, timeout);
+        }
+    }
+
+    private unsafe T RunReadOperationCore<T>(Func<T> operation, CancellationToken cancellationToken, TimeSpan? timeout)
     {
         if (activeReadDeadline is not null)
         {
@@ -930,7 +971,18 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
 
     public void Close()
     {
+        lock (decoderSync)
+        {
+            if (closed) return;
+            closed = true;
+            CloseCore();
+        }
+    }
+
+    private void CloseCore()
+    {
         Inited = false;
+        IsHardwareDecodingAvailable = false;
         inFc?.Close();
         inFc?.Dispose();
         videoDecoder?.Close();
@@ -939,6 +991,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
         reusableSoftwareFrame = null;
         reusableDecodeFrame?.Dispose();
         reusableDecodeFrame = null;
+        retainedPreviewFrame?.Dispose();
+        retainedPreviewFrame = null;
+        retainedPreviewInfo = null;
         hostFramePresenter.Dispose();
     }
 
@@ -1045,7 +1100,10 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                 // 成功打开硬件解码器并不代表当前编码器一定输出了硬件帧。
                 // VideoToolbox/D3D11 的部分失败只会在首帧初始化时才报告，
                 // 此时解码器其实已经完成打开。
+                if (!AudioMode) CompleteFrameColorMetadata(frame);
                 var isHardwareFrame = !AudioMode && frame.HasHardwareFramesContext;
+                // 设备打开后仍可能只返回软件帧，状态栏以实际输出为准。
+                if (hardwareDecoderOpened) IsHardwareDecodingAvailable = isHardwareFrame;
                 var displayGeometry = AudioMode
                     ? default
                     : GetDisplayGeometry(frame);
@@ -1127,32 +1185,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                         }
                         else
                         {
-                            try
-                            {
-                                hostFramePresenter.TryConvert(
-                                    softwareFrame ?? frame,
-                                    maxWidth,
-                                    maxHeight,
-                                    out bitmapLease);
-                            }
-                            catch (Exception hostException)
-                            {
-                                Console.WriteLine($"Host bitmap reuse unavailable; using allocation fallback: {hostException.Message}");
-                            }
-
-                            if (bitmapLease is not null)
-                            {
-                                bitmap = bitmapLease.Bitmap;
-                            }
-                            else
-                            {
-                                bitmap = maxWidth > 0 && maxHeight > 0
-                                    ? ImageUtil.CreateScaledBitmapFromFrame(
-                                        softwareFrame ?? frame,
-                                        maxWidth,
-                                        maxHeight)
-                                    : ImageUtil.CreateBitmapFromFrame(softwareFrame ?? frame);
-                            }
+                            bitmap = ConvertPreviewFrame(softwareFrame ?? frame, maxWidth, maxHeight, out bitmapLease);
                         }
                     }
                     catch (Exception exception)
@@ -1164,7 +1197,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                         Console.WriteLine(exception);
                         return null;
                     }
-                    return new DecodeResult()
+                    var result = new DecodeResult()
                     {
                         Bitmap = bitmap,
                         BitmapLease = bitmapLease,
@@ -1182,6 +1215,17 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                         FrameEndSignature = FindKeyPacketBoundary(pktPosition, pts),
                         PresentationMode = PresentationMode,
                     };
+                    try
+                    {
+                        RetainPreviewFrame(softwareFrame ?? frame, result);
+                        return result;
+                    }
+                    catch
+                    {
+                        bitmapLease?.Dispose();
+                        if (bitmapLease is null) bitmap.Dispose();
+                        throw;
+                    }
                 }
             }
         }
@@ -1206,6 +1250,21 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
         if (!receiveOnly && !isSearchScan)
             Console.WriteLine("no frames were successfully processed");
         return null;
+    }
+
+    // 部分解码器只在流参数中报告色彩信息，补齐帧上缺失的字段再传递给映射器。
+    private unsafe void CompleteFrameColorMetadata(Frame frame)
+    {
+        AVFrame* raw = frame;
+        var parameters = inVideoStream.Codecpar!;
+        if (raw->color_trc == AVColorTransferCharacteristic.AVCOL_TRC_UNSPECIFIED)
+            raw->color_trc = parameters.ColorTrc;
+        if (raw->color_primaries == AVColorPrimaries.AVCOL_PRI_UNSPECIFIED)
+            raw->color_primaries = parameters.ColorPrimaries;
+        if (raw->colorspace == AVColorSpace.AVCOL_SPC_UNSPECIFIED)
+            raw->colorspace = parameters.ColorSpace;
+        if (raw->color_range == AVColorRange.AVCOL_RANGE_UNSPECIFIED)
+            raw->color_range = parameters.ColorRange;
     }
 
     private static unsafe VideoDynamicRange GetVideoDynamicRange(Frame frame)

@@ -82,6 +82,9 @@ public partial class MainWindowViewModel : ViewModelBase
     private ScrubPreviewRequest? _pendingScrubPreview;
     private CancellationTokenSource? _activeScrubPreviewCancellation;
     private Task _scrubPreviewWorker = Task.CompletedTask;
+    private int activeDecodeOperations;
+    private TaskCompletionSource? decodeIdleCompletion;
+    private Task previewDisposalTask = Task.CompletedTask;
     private long _scrubPreviewGeneration;
     private bool _acceptScrubPreviews;
     private bool _scrubPreviewWorkerRunning;
@@ -91,6 +94,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _dialogService = dialogService;
         _configService = configService;
+        enableSdrToneMapping = configService.CurrentConfig.EnableSdrToneMapping;
+        preferHardwareDecodingForPreview = configService.CurrentConfig.PreferHardwareDecoding;
         _exportCurrentProgramOnly = configService.CurrentConfig.ExportCurrentProgramOnly;
         ExportQueue.CollectionChanged += (_, _) => NotifyQueueChanged();
         // 构造菜单项
@@ -113,6 +118,8 @@ public partial class MainWindowViewModel : ViewModelBase
             item.RefreshLocalizedText();
 
         OnPropertyChanged(nameof(ZoomFactorStr));
+        OnPropertyChanged(nameof(DecodeModeText));
+        OnPropertyChanged(nameof(ToneMappingStatusText));
         OnPropertyChanged(nameof(StatusInfoText));
         OnPropertyChanged(nameof(ToolsOnlyMessage));
         OnPropertyChanged(nameof(FilteredClipSizeStr));
@@ -1002,6 +1009,7 @@ public partial class MainWindowViewModel : ViewModelBase
         keyFrameOverviewWindow?.CloseWindow();
         var dialogViewModel = _dialogService.CreateViewModel<KeyFrameOverviewWindowViewModel>();
         dialogViewModel.FilePath = VideoPath;
+        dialogViewModel.EnableSdrToneMapping = EnableSdrToneMapping;
         dialogViewModel.StreamSelection = _activePreviewSelection;
         keyFrameOverviewWindow = dialogViewModel;
         try
@@ -1023,6 +1031,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var dialogViewModel = _dialogService.CreateViewModel<ThumbnailSheetWindowViewModel>();
         dialogViewModel.FilePath = VideoPath;
+        dialogViewModel.EnableSdrToneMapping = EnableSdrToneMapping;
         dialogViewModel.StreamSelection = _activePreviewSelection;
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
@@ -1032,6 +1041,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         var manager = _dialogService.CreateViewModel<FrameTemplateManagerWindowViewModel>();
         manager.FilePath = VideoPath;
+        manager.EnableSdrToneMapping = EnableSdrToneMapping;
         manager.CurrentTimeSeconds = CurrentTime;
         manager.SearchFromCurrent = CurrentTime > 0;
         await _dialogService.ShowDialogAsync(this, manager);
@@ -1039,6 +1049,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
         var search = _dialogService.CreateViewModel<FrameSearchWindowViewModel>();
         search.FilePath = VideoPath;
+        search.EnableSdrToneMapping = EnableSdrToneMapping;
         search.StreamSelection = _activePreviewSelection;
         search.Template = template;
         search.StartTime = manager.SearchFromCurrent
@@ -1355,21 +1366,21 @@ public partial class MainWindowViewModel : ViewModelBase
     public partial long DecodeCost { get; set; } = 0L;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusInfoText))]
+    [NotifyPropertyChangedFor(nameof(StatusInfoText), nameof(DecodeModeText))]
     public partial bool IsHardwareDecoding { get; set; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsDecoding))]
     public partial int DecodingOpCount { get; set; } = 0;
 
-    private string DecodeModeText => IsHardwareDecoding
+    public string DecodeModeText => IsHardwareDecoding
         ? LocalizationManager.Instance.String_Status_HardwareDecoding
         : LocalizationManager.Instance.String_Status_SoftwareDecoding;
 
     public string StatusInfoText => IsToolsOnly
         ? LocalizationManager.Instance.String_Status_ToolsOnly
         : IsVideoInitialized
-        ? $"{VideoInfoText}{(IsPreviewOnly ? $" | {LocalizationManager.Instance.String_PreviewOnly}" : string.Empty)} | {DecodeModeText} | {DecodeCost,3}ms"
+        ? $"{VideoInfoText}{(IsPreviewOnly ? $" | {LocalizationManager.Instance.String_PreviewOnly}" : string.Empty)} | {DecodeCost,3}ms"
         : PleaseLoadTip;
     public bool IsDecoding => DecodingOpCount > 0;
 
@@ -1473,7 +1484,8 @@ public partial class MainWindowViewModel : ViewModelBase
             try
             {
                 prepared = new VideoInstance(project.Source.Path,
-                    _configService.CurrentConfig.PreferHardwareDecoding, project.PreviewSelection);
+                    _configService.CurrentConfig.PreferHardwareDecoding, project.PreviewSelection,
+                    () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true);
                 await prepared.InitVideoAsync();
                 if (project.Clips.Count > 0 && !prepared.CanClip)
                     throw new InvalidDataException("Clips require a supported TS, M2TS, MP4 or MKV source file.");
@@ -1886,15 +1898,24 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public async Task SeekToTimeAndDrawFrameAsync(TimeSpan timeSpan)
     {
-        if (!IsVideoInitialized || IsDecoding)
+        if (!IsVideoInitialized || (IsDecoding && !toneMappingRefreshRunning))
             return;
+        var instance = _videoInstance!;
 
         try
         {
+            // 拖动结束的最终定位须等待映射刷新，不能因短暂忙碌而丢掉请求。
+            await toneMappingRefreshTask;
+            if (!ReferenceEquals(instance, _videoInstance) || IsDecoding) return;
             await RunDecodeOperationAsync(async () =>
             {
                 var stopwatch = Stopwatch.StartNew();
-                var decodeResult = await _videoInstance!.DecodeAtTimeAsync(timeSpan);
+                var decodeResult = await instance.DecodeAtTimeAsync(timeSpan);
+                if (!ReferenceEquals(instance, _videoInstance))
+                {
+                    DisposePreviewResult(decodeResult);
+                    return;
+                }
                 stopwatch.Stop();
                 DecodeCost = stopwatch.ElapsedMilliseconds;
                 ApplyDecodeResult(decodeResult);
@@ -1903,6 +1924,7 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception exception)
         {
             Console.WriteLine(exception);
+            if (!ReferenceEquals(instance, _videoInstance)) return;
             await ShowMessageAsync(
                 exception is MediaReadTimeoutException
                     ? LocalizationManager.Instance.String_MediaReadTimeout
@@ -2019,6 +2041,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ApplyDecodeResult(DecodeResult decodeResult)
     {
+        SetDisplayedVideoDynamicRange(decodeResult.VideoDynamicRange);
         _displayedFramePosition = decodeResult.FramePosition;
         _displayedFramePts = decodeResult.FramePts;
         _displayedFramePts90k = decodeResult.FramePts90k;
@@ -2072,9 +2095,15 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             DecodeCost = 0;
             var stopwatch = Stopwatch.StartNew();
-            var decodeResult = await _videoInstance!.DecodeNextFrameAsync(count);
+            var instance = _videoInstance!;
+            var decodeResult = await instance.DecodeNextFrameAsync(count);
+            if (!ReferenceEquals(instance, _videoInstance))
+            {
+                DisposePreviewResult(decodeResult);
+                return;
+            }
             DecodeCost = stopwatch.ElapsedMilliseconds;
-            Console.WriteLine($"PositionInFile: {_videoInstance.PositionInFile}");
+            Console.WriteLine($"PositionInFile: {instance.PositionInFile}");
             stopwatch.Stop();
             ApplyDecodeResult(decodeResult);
         }
@@ -2102,6 +2131,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ClearVars()
     {
+        SetDisplayedVideoDynamicRange(VideoDynamicRange.Standard);
         SetPreviewTrackChoices([], null);
         SetSubtitleTrackChoices([]);
         _currentFileSupportsTsTools = false;
@@ -2144,14 +2174,18 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             CancelClipEndScan();
             await CompleteScrubPreviewAsync();
+            await toneMappingRefreshTask;
+            await (decodeIdleCompletion?.Task ?? Task.CompletedTask);
             ClearVars();
+            ResetPreviewDefaults();
             SetProjectPath(null);
             _videoInstance?.Close();
             await RunDecodeOperationAsync(async () =>
             {
                 _videoInstance = prepared ?? new VideoInstance(
                     VideoPath,
-                    _configService.CurrentConfig.PreferHardwareDecoding);
+                    preferHardwareDecodingForPreview,
+                    enableSdrToneMapping: () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true);
                 if (prepared is null)
                     await _videoInstance.InitVideoAsync();
                 _remuxExportSettings = null;
@@ -2244,6 +2278,8 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private async Task RunDecodeOperationAsync(Func<Task> action)
     {
+        if (activeDecodeOperations++ == 0)
+            decodeIdleCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         DecodingOpCount++;
         try
         {
@@ -2251,6 +2287,12 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         finally
         {
+            if (--activeDecodeOperations == 0)
+            {
+                var completion = decodeIdleCompletion;
+                decodeIdleCompletion = null;
+                completion?.TrySetResult();
+            }
             DecodingOpCount = Math.Max(0, DecodingOpCount - 1);
         }
     }
@@ -2327,6 +2369,8 @@ public partial class MainWindowViewModel : ViewModelBase
         CancelClipEndScan();
         keyFrameOverviewWindow?.CloseWindow();
         keyFrameOverviewWindow = null;
+        toneMappingRefreshPending = false;
+        SetDisplayedVideoDynamicRange(VideoDynamicRange.Standard);
         Task scrubWorker;
         VideoInstance? videoInstance;
         lock (_scrubPreviewSync)
@@ -2337,9 +2381,14 @@ public partial class MainWindowViewModel : ViewModelBase
             _videoInstance = null;
         }
 
+        // 先释放界面持有的租约，原生解码器等待所有在途操作结束后再销毁。
+        SetDecodedBitmap(null);
+        DecodedGpuFrame?.Dispose();
+        DecodedGpuFrame = null;
         DisposeClipThumbnails();
         if (videoInstance is not null)
-            _ = DisposeVideoAfterScrubStopsAsync(scrubWorker, videoInstance);
+            previewDisposalTask = DisposeVideoAfterScrubStopsAsync(Task.WhenAll(scrubWorker, toneMappingRefreshTask,
+                decodeIdleCompletion?.Task ?? Task.CompletedTask), videoInstance);
         VideoPath = string.Empty;
     }
 
@@ -2348,6 +2397,11 @@ public partial class MainWindowViewModel : ViewModelBase
         try
         {
             await scrubWorker.ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            // 操作自身负责错误提示；关闭时只记录失败，仍须完成原生资源释放。
+            Console.WriteLine($"Preview operation ended while closing: {exception}");
         }
         finally
         {
@@ -2361,6 +2415,8 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
 
         IsHardwareDecoding = _videoInstance.IsHardwareDecoding;
+        OnPropertyChanged(nameof(CanToggleHardwareDecoding));
+        ToggleHardwareDecodingCommand.NotifyCanExecuteChanged();
     }
 
     // 文件工具独立读取源文件，拖动预览时仍可使用；换源加载期间才需要禁用。
@@ -2387,6 +2443,12 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         NotifyPreviewTrackChoicesChanged();
         OnPropertyChanged(nameof(IsVideoInitialized));
+        OnPropertyChanged(nameof(CanTogglePreviewOptions));
+        OnPropertyChanged(nameof(CanToggleHardwareDecoding));
+        OnPropertyChanged(nameof(CanToggleSdrToneMapping));
+        ToggleHardwareDecodingCommand.NotifyCanExecuteChanged();
+        ToggleSdrToneMappingCommand.NotifyCanExecuteChanged();
+        StartToneMappingRefresh();
         SaveFrameClickCommand.NotifyCanExecuteChanged();
         KeyFrameOverviewClickCommand.NotifyCanExecuteChanged();
         ThumbnailSheetClickCommand.NotifyCanExecuteChanged();

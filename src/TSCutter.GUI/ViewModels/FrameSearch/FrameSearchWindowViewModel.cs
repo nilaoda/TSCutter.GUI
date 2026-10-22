@@ -27,6 +27,8 @@ public sealed partial class FrameSearchWindowViewModel : ViewModelBase, IModalDi
     private TaskCompletionSource? resumeSearch;
     private bool started;
 
+    public bool EnableSdrToneMapping { get; set; } = true;
+
     public PreviewStreamSelection? StreamSelection { get; set; }
 
     public event Action? RequestClose;
@@ -78,7 +80,7 @@ public sealed partial class FrameSearchWindowViewModel : ViewModelBase, IModalDi
             using var stream = new MemoryStream(Template!.Jpeg, writable: false);
             ReferenceImage = new Bitmap(stream);
             await service.SearchAsync(FilePath, Template!.Jpeg, StartTime, ReceiveMatchAsync,
-                PauseAfterMatchAsync, progress, cancellation.Token, StreamSelection);
+                PauseAfterMatchAsync, progress, cancellation.Token, StreamSelection, EnableSdrToneMapping);
             if (cancellation.IsCancellationRequested) return;
             StatusText = Matches.Count == 0
                 ? LocalizationManager.Instance.String_FrameSearch_NoResults

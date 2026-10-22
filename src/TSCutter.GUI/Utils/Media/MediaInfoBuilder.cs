@@ -13,7 +13,7 @@ using TSCutter.GUI.Utils.TransportStream.Analysis;
 
 namespace TSCutter.GUI.Utils.Media;
 
-public static class MediaInfoBuilder
+public static partial class MediaInfoBuilder
 {
     public static string Build(string filePath)
     {
@@ -216,7 +216,9 @@ public static class MediaInfoBuilder
         else if (ts?.Streams.TryGetValue(stream.Id, out var definition) == true)
             AppendValues(sb, "Format profile", definition.Profiles);
 
-        AppendField(sb, "Codec ID", CodecId(cp, stream.Id, ts));
+        var dolbyVision = ReadDolbyVisionConfiguration(cp);
+        if (dolbyVision is not null) AppendField(sb, "HDR format", dolbyVision.Description);
+        AppendField(sb, "Codec ID", ts is null ? VideoCodecId(cp.CodecTag, cp.CodecId) : CodecId(cp, stream.Id, ts));
         AppendField(sb, "Duration", FormatDuration(stream));
 
         if (cp.BitRate > 0)
@@ -258,12 +260,25 @@ public static class MediaInfoBuilder
 
         if (cp.ColorRange != AVColorRange.AVCOL_RANGE_UNSPECIFIED)
             AppendField(sb, "Color range", cp.ColorRange == AVColorRange.AVCOL_RANGE_JPEG ? "Full" : "Limited");
-        if (cp.ColorPrimaries != AVColorPrimaries.AVCOL_PRI_UNSPECIFIED)
-            AppendField(sb, "Color primaries", cp.ColorPrimaries.ToString().Replace("AVCOL_PRI_", "").Replace("bt2020", "BT.2020"));
-        if (cp.ColorTrc != AVColorTransferCharacteristic.AVCOL_TRC_UNSPECIFIED)
-            AppendField(sb, "Transfer characteristics", cp.ColorTrc.ToString().Replace("AVCOL_TRC_", "").ToUpper());
-        if (cp.ColorSpace != AVColorSpace.AVCOL_SPC_UNSPECIFIED)
-            AppendField(sb, "Matrix coefficients", cp.ColorSpace.ToString().Replace("AVCOL_SPC_", "").Replace("bt2020nc", "BT.2020 non-constant"));
+        // Profile 5 使用 IPT-PQ-C2，不能将其标成普通 BT.2020 YUV 矩阵。
+        if (dolbyVision?.Profile == 5)
+        {
+            AppendField(sb, "Color primaries", "BT.2020");
+            AppendField(sb, "Transfer characteristics", "PQ");
+            AppendField(sb, "Matrix coefficients", "IPT-PQ-C2");
+        }
+        else
+        {
+            if (cp.ColorPrimaries != AVColorPrimaries.AVCOL_PRI_UNSPECIFIED)
+                AppendField(sb, "Color primaries", cp.ColorPrimaries == AVColorPrimaries.AVCOL_PRI_BT2020
+                    ? "BT.2020" : cp.ColorPrimaries.ToString().Replace("AVCOL_PRI_", ""));
+            if (cp.ColorTrc != AVColorTransferCharacteristic.AVCOL_TRC_UNSPECIFIED)
+                AppendField(sb, "Transfer characteristics", cp.ColorTrc == AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084
+                    ? "PQ" : cp.ColorTrc.ToString().Replace("AVCOL_TRC_", ""));
+            if (cp.ColorSpace != AVColorSpace.AVCOL_SPC_UNSPECIFIED)
+                AppendField(sb, "Matrix coefficients", cp.ColorSpace == AVColorSpace.AVCOL_SPC_BT2020_NCL
+                    ? "BT.2020 non-constant" : cp.ColorSpace.ToString().Replace("AVCOL_SPC_", ""));
+        }
 
         if (cp.BitRate > 0 && cp.Width > 0 && cp.Height > 0 && ValidRate(stream.AvgFrameRate))
         {

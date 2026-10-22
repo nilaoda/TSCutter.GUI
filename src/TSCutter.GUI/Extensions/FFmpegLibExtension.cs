@@ -100,9 +100,8 @@ public static unsafe class FFmpegLibExtension
     }
 
     /// <summary>
-    /// 只将像素数据传输到可复用的软件帧。这里故意不复制帧属性：
-    /// av_frame_copy_props 会向已有目标追加 side data，带有逐帧 HDR
-    /// 或类似元数据的流会因此持续增长内存。
+    /// 将像素和颜色属性传输到可复用的软件帧。每次先 Unref，
+    /// 再复制当前帧的 side data，保留 P5 重建参数且避免逐帧累积元数据。
     /// </summary>
     public static void TransferToSoftwareFrame(this Frame hardwareFrame, Frame softwareFrame)
     {
@@ -114,6 +113,8 @@ public static unsafe class FFmpegLibExtension
         AVFrame* destination = softwareFrame;
         av_hwframe_transfer_data(destination, source, 0)
             .ThrowIfError("Failed to transfer hardware frame to system memory.");
+        av_frame_copy_props(destination, source)
+            .ThrowIfError("Failed to copy hardware frame color metadata.");
     }
 
 }

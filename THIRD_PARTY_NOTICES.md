@@ -26,11 +26,13 @@ Multiple NuGet packages from the same project are grouped below. Versions are sp
 
 The font is Inter (SIL OFL 1.1); the shared runtime comes from FFmpegSharedLibraries (GPL v3). Internal dependencies are not listed individually.
 
-字幕渲染运行库包含 libass 0.17.4、FreeType 2.13.3、HarfBuzz 10.2.0、FriBidi 1.0.16、libunibreak 6.1；Linux 还包含 Fontconfig 2.16.0 和 Expat 2.6.4。源代码、版本及构建补丁见 [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries)。各项目的上游许可原文随本声明附带。
+字幕渲染静态合入 avfilter，包含 libass 0.17.4、FreeType 2.13.3、HarfBuzz 10.2.0、FriBidi 1.0.16、libunibreak 6.1；Linux 还包含 Fontconfig 2.16.0 和 Expat 2.6.4。源代码、版本及构建补丁见 [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries)。各项目的上游许可原文随本声明附带。
 
-The subtitle runtime includes libass 0.17.4, FreeType 2.13.3, HarfBuzz 10.2.0, FriBidi 1.0.16 and libunibreak 6.1; Linux also includes Fontconfig 2.16.0 and Expat 2.6.4. Source versions and build patches are available in [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries). Original upstream license texts are included with this notice. FriBidi uses LGPL 2.1 or later; the complete LGPL 2.1 text is included among the consolidated licenses.
+Subtitle rendering is linked statically into avfilter and includes libass 0.17.4, FreeType 2.13.3, HarfBuzz 10.2.0, FriBidi 1.0.16 and libunibreak 6.1; Linux also includes Fontconfig 2.16.0 and Expat 2.6.4. Source versions and build patches are available in [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries). Original upstream license texts are included with this notice. FriBidi uses LGPL 2.1 or later; the complete LGPL 2.1 text is included among the consolidated licenses.
 
 ## 参考代码 / Adapted code
 
 - **FFmpeg.AutoGen**：`FFmpeg/NativeMethods.cs` 的接口签名参考其[生成绑定](https://github.com/Ruslan-B/FFmpeg.AutoGen/tree/7ec3390be7216bd1f8482b824f90c27cb601cd89)，改为 `LibraryImport`，swscale 数组参数改为原生指针。/ NativeMethods signatures are adapted from the generated bindings to use LibraryImport and native pointers for swscale arrays.
 - **Sdcb.FFmpeg**：Copyright © sdcb, Ruslan Balanukhin 2022，LGPL-3.0-only。`FFmpeg/VideoFrameConverter.cs` 参考其[原始实现](https://github.com/sdcb/Sdcb.FFmpeg/tree/0cf0c27bd51427c9203b1cd3b6af78686f1b0c08)，改为直接传递原生帧的平面和步长；NuGet 依赖已移除。原始代码保存在源码仓库的 `design/reference/Sdcb.FFmpeg.VideoFrameConverter.cs.txt`，修改日期为 2026-10-04。/ VideoFrameConverter adapts the original implementation to pass native frame planes and strides directly. The NuGet dependency has been removed. Original code is preserved at design/reference/Sdcb.FFmpeg.VideoFrameConverter.cs.txt in the source repository; modified on 2026-10-04.
+
+- **libplacebo**（LGPL-2.1-or-later）：`Rendering/Colors` 中 P5 重建曲线、MMR 及颜色矩阵解释参考 [v7.351.0 的实现](https://github.com/haasn/libplacebo/tree/v7.351.0/src)，改为 C# CPU/SIMD 处理，并加入 SDR 色调及色域映射。修改日期为 2026-10-22；不依赖 libplacebo 动态库。/ P5 reconstruction and metadata interpretation are adapted to C# CPU/SIMD processing with SDR tone and gamut mapping; modified on 2026-10-22. No libplacebo runtime is distributed.
