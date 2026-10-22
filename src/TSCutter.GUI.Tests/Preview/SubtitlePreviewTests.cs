@@ -36,6 +36,22 @@ public sealed class SubtitlePreviewTests
         Assert.Equal(new Rect(-60, 100, 64, 32), rectangle);
     }
 
+    [Theory]
+    [InlineData(1.0)]
+    [InlineData(1.5)]
+    [InlineData(2.0)]
+    public void ActualSizeKeepsSubtitlePixelsAtOnePhysicalPixel(double dpiScale)
+    {
+        var canvas = new PixelSize(3840, 2160);
+        var rectangle = ImageViewer.GetSubtitlePartRect(
+            new Rect(0, 0, canvas.Width / dpiScale, canvas.Height / dpiScale), canvas,
+            new Rect(100, 200, 480, 84));
+        Assert.Equal(100, rectangle.X * dpiScale, 6);
+        Assert.Equal(200, rectangle.Y * dpiScale, 6);
+        Assert.Equal(480, rectangle.Width * dpiScale, 6);
+        Assert.Equal(84, rectangle.Height * dpiScale, 6);
+    }
+
     [Fact]
     public void DefaultTextStyleOnlyChangesTheGeneratedDefaultStyle()
     {
@@ -118,6 +134,35 @@ public sealed class SubtitlePreviewTests
             Assert.True(Avalonia.Media.FontManager.Current.TryGetGlyphTypeface(new Avalonia.Media.Typeface(family), out var font));
             Assert.True(font.TryGetGlyph('中', out _), family);
             Assert.True(font.TryGetGlyph('G', out _), family);
+        }, CancellationToken.None);
+    }
+
+    [NativeSubtitleFact]
+    public async Task TextSubtitlesRenderAtNativeResolutionAbove1080p()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            foreach (var name in new[] { "text.mp4", "animated.mkv" })
+            {
+                using var video = OpenVideo(name);
+                using var subtitles = Load(video, name);
+                using var original = subtitles.Render(2, new PixelSize(1920, 1080));
+                Assert.NotNull(original);
+                var originalHeight = GetVisibleHeight(original.Parts[0]);
+                foreach (var scale in new[] { 2, 4 })
+                {
+                    var size = new PixelSize(1920 * scale, 1080 * scale);
+                    using var overlay = subtitles.Render(2, size);
+                    Assert.NotNull(overlay);
+                    Assert.Equal(size, overlay.CanvasSize);
+                    Assert.InRange(GetVisibleHeight(overlay.Parts[0]),
+                        originalHeight * scale - 2 * scale, originalHeight * scale + 2 * scale);
+                }
+                using var restored = subtitles.Render(2, new PixelSize(1920, 1080));
+                Assert.NotNull(restored);
+                Assert.Equal(ReadPixels(original.Parts[0]), ReadPixels(restored.Parts[0]));
+            }
         }, CancellationToken.None);
     }
 
@@ -307,6 +352,14 @@ public sealed class SubtitlePreviewTests
 
     private static string SamplePath(string name) => Path.Combine(
         Environment.GetEnvironmentVariable("TSCUTTER_SUBTITLE_TEST_SAMPLES")!, name);
+
+    private static int GetVisibleHeight(SubtitleOverlayPart part)
+    {
+        var size = part.Bitmap.PixelSize;
+        var pixels = ReadPixels(part);
+        var mask = Enumerable.Range(0, pixels.Length / 4).Select(i => pixels[i * 4 + 3]).ToArray();
+        return SubtitlePreviewService.GetVisibleTextBounds(mask, size.Width, size.Height, size.Width, 255)!.Value.Height;
+    }
 
     private static unsafe byte[] ReadPixels(SubtitleOverlayPart part)
     {

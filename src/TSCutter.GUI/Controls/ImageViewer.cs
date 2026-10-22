@@ -550,13 +550,17 @@ public class ImageViewer : Control
                     backdrop.CornerRadius * destination.Width / overlay.CanvasSize.Width,
                     backdrop.CornerRadius * destination.Height / overlay.CanvasSize.Height);
         }
-        foreach (var part in overlay.Parts)
+        // 字幕独立使用高质量采样，缩小显示时保留字形边缘，不依赖视频的插值设置。
+        using (dc.PushRenderOptions(new RenderOptions { BitmapInterpolationMode = BitmapInterpolationMode.HighQuality }))
         {
-            var bounds = GetSubtitlePartRect(destination, overlay.CanvasSize,
-                new Rect(part.X, part.Y, part.Bitmap.PixelSize.Width, part.Bitmap.PixelSize.Height));
-            var clipped = visible.Intersect(bounds);
-            if (clipped is { Width: > 0, Height: > 0 })
-                dc.DrawImage(part.Bitmap, MapVisibleRectToBitmap(clipped, bounds, part.Bitmap.PixelSize), clipped);
+            foreach (var part in overlay.Parts)
+            {
+                var bounds = GetSubtitlePartRect(destination, overlay.CanvasSize,
+                    new Rect(part.X, part.Y, part.Bitmap.PixelSize.Width, part.Bitmap.PixelSize.Height));
+                var clipped = visible.Intersect(bounds);
+                if (clipped is { Width: > 0, Height: > 0 })
+                    dc.DrawImage(part.Bitmap, MapVisibleRectToBitmap(clipped, bounds, part.Bitmap.PixelSize), clipped);
+            }
         }
     }
 
