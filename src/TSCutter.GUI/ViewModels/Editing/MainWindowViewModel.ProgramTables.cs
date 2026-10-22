@@ -4,12 +4,17 @@ using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Classic.CommonControls.Dialogs;
+using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Utils.Application;
 
 namespace TSCutter.GUI.ViewModels.Editing;
 
 public partial class MainWindowViewModel
 {
+    private static string GetProgramTableClipLabel(PickedClip clip) => string.IsNullOrWhiteSpace(clip.Name)
+        ? $"{clip.DisplayName} · {clip.StartBoundaryTimeStr} – {clip.EndBoundaryTimeStr}"
+        : clip.DisplayName;
+
     private async Task<bool> PrepareProgramTableExportAsync(OutputWindowViewModel output,
         IReadOnlyList<string>? clips = null, Func<bool>? selectionUnchanged = null)
     {

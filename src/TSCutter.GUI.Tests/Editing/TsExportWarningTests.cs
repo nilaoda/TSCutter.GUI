@@ -260,6 +260,7 @@ public sealed class TsExportWarningTests
     [InlineData("original")]
     [InlineData("supplement")]
     [InlineData("complete")]
+    [InlineData("unnamed")]
     public async Task SingleExportConfirmsBeforePickingAPathAndKeepsTheChoice(string mode)
     {
         using var files = new TableProbeData.Files([.. TableProbeData.Section(0, TableProbeData.Pat()),
@@ -275,8 +276,10 @@ public sealed class TsExportWarningTests
             var dialogs = new DialogService(manager, viewModelFactory: type => Locator.Current.GetService(type));
             var locale = Locator.Current.GetService<ILocalizationService>()!;
             var main = new MainWindowViewModel(dialogs, new ConfigurationService(locale));
-            var clip = new PickedClip { InFileInfo = new FileInfo(files.Source), Name = "片段一",
+            var clip = new PickedClip { InFileInfo = new FileInfo(files.Source), Name = mode == "unnamed" ? " " : "片段一",
                 StartPosition = mode == "complete" ? 0 : 2 * 188, EndPosition = 6 * 188, StartTime = 1, EndTime = 2 };
+            stub.ExpectedClipLabel = mode == "unnamed"
+                ? $"#{clip.ClipID} · [ 00:00:01.000 – 00:00:02.000 ]" : clip.DisplayName;
             main.Clips.Add(clip);
             main.SelectedClip = clip;
             try
@@ -369,6 +372,7 @@ public sealed class TsExportWarningTests
 
 public class ProgramTableDialogManager : DispatchProxy
 {
+    public string ExpectedClipLabel { get; set; } = "";
     public string OutputPath { get; set; } = "";
     public string Mode { get; set; } = "";
     public List<string> Events { get; } = [];
@@ -387,7 +391,7 @@ public class ProgramTableDialogManager : DispatchProxy
         {
             Events.Add("warning");
             Assert.Single(Events);
-            Assert.Contains("片段一", warning.FileNames.Single());
+            Assert.Equal(ExpectedClipLabel, warning.FileNames.Single());
             Assert.False(File.Exists(OutputPath));
             warning.Select(Mode switch
             {

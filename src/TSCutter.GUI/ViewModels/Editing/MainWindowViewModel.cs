@@ -1099,7 +1099,7 @@ public partial class MainWindowViewModel : ViewModelBase
         var output = _dialogService.CreateViewModel<OutputWindowViewModel>();
         ConfigureMergeExportTask(output, snapshot, string.Empty);
         if (!await PrepareProgramTableExportAsync(output,
-                snapshot.Clips.Select(clip => clip.DisplayName).ToArray(),
+                snapshot.Clips.Select(GetProgramTableClipLabel).ToArray(),
                 () => IsMergeExportCurrent(snapshot))) return;
 
         var outputPath = await ChooseMergedOutputPathAsync(snapshot);
@@ -2447,7 +2447,7 @@ public partial class MainWindowViewModel : ViewModelBase
             clip.StartTime == dialogViewModel.StartSeconds &&
             (clip.EndPosition < 0 ? (double?)null : clip.EndTime) == dialogViewModel.EndSeconds;
         dialogViewModel.OutputPath = defaultName;
-        if (!await PrepareProgramTableExportAsync(dialogViewModel, [clip.DisplayName], ClipUnchanged)) return;
+        if (!await PrepareProgramTableExportAsync(dialogViewModel, [GetProgramTableClipLabel(clip)], ClipUnchanged)) return;
 
         var settings = new SaveFileDialogSettings
         {
