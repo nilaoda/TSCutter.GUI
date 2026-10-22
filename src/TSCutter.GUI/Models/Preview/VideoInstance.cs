@@ -35,6 +35,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan KeyFrameProbeTimeout = TimeSpan.FromSeconds(5);
     private MediaReadDeadline? activeReadDeadline;
+    private readonly Lock decoderSync = new();
+    private bool closed;
     private const int HardwareNoFrameFailureThreshold = 3;
     private const int MaximumEstimatedKeyFrames = 100_000;
     private const int AV_PKT_FLAG_KEY_FRAME = 0x0001;
@@ -113,6 +115,15 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     public void InitVideo() => InitVideo(CancellationToken.None);
 
     public void InitVideo(CancellationToken cancellationToken)
+    {
+        lock (decoderSync)
+        {
+            ObjectDisposedException.ThrowIf(closed, this);
+            InitVideoCore(cancellationToken);
+        }
+    }
+
+    private void InitVideoCore(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
         var probedBeforeOpening = TsScramblingProbe.ShouldProbeBeforeOpening(videoPath);
@@ -419,37 +430,31 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
 
     public void SeekFile(long pts)
     {
-        // if (lastSeekPts == pts)
-        //     return;
-        Console.WriteLine($"SeekFile lastSeekPts: {lastSeekPts}, targetPts: {pts}");
-        lastSeekPts = pts;
         RunReadOperation(() =>
         {
+            Console.WriteLine($"SeekFile lastSeekPts: {lastSeekPts}, targetPts: {pts}");
+            lastSeekPts = pts;
             inFc.SeekFrame(pts - keyFrameGap * 4, videoStreamIndex);
             activeReadDeadline!.ThrowIfInterrupted();
+            videoDecoder.FlushBuffers();
             return true;
         }, CancellationToken.None);
-        // flush
-        videoDecoder.FlushBuffers();
     }
 
     public void Seek(long pts, AVSEEK_FLAG flag = 0)
     {
-        // FLV 预览及 EOF 解码重试均从目标之前的关键帧开始，避免向前 seek 找不到帧。
-        if (flag == 0 && inFc.InputFormat?.Name is "flv" or "live_flv")
-            flag = AVSEEK_FLAG.Backward;
-        // if (lastSeekPts == pts)
-        //     return;
-        Console.WriteLine($"lastSeekPts: {lastSeekPts}, targetPts: {pts}, flag: {flag}");
-        lastSeekPts = pts;
         RunReadOperation(() =>
         {
+            // FLV 及 EOF 重试从目标之前的关键帧开始，避免向前定位找不到帧。
+            if (flag == 0 && inFc.InputFormat?.Name is "flv" or "live_flv")
+                flag = AVSEEK_FLAG.Backward;
+            Console.WriteLine($"lastSeekPts: {lastSeekPts}, targetPts: {pts}, flag: {flag}");
+            lastSeekPts = pts;
             inFc.SeekFrame(pts, videoStreamIndex, flag);
             activeReadDeadline!.ThrowIfInterrupted();
+            videoDecoder.FlushBuffers();
             return true;
         }, CancellationToken.None);
-        // flush
-        videoDecoder.FlushBuffers();
     }
 
     public async Task<DecodeResult> DecodeNextFrameAsync(int count = 1, CancellationToken cancellationToken = default)
@@ -891,7 +896,17 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         return (firstPts, gap);
     }
 
-    private unsafe T RunReadOperation<T>(Func<T> operation, CancellationToken cancellationToken, TimeSpan? timeout = null)
+    // 同一实例的定位、解码和缓存刷新共用原生状态，必须完整互斥；嵌套调用可重入。
+    private T RunReadOperation<T>(Func<T> operation, CancellationToken cancellationToken, TimeSpan? timeout = null)
+    {
+        lock (decoderSync)
+        {
+            ObjectDisposedException.ThrowIf(closed, this);
+            return RunReadOperationCore(operation, cancellationToken, timeout);
+        }
+    }
+
+    private unsafe T RunReadOperationCore<T>(Func<T> operation, CancellationToken cancellationToken, TimeSpan? timeout)
     {
         if (activeReadDeadline is not null)
         {
@@ -930,6 +945,16 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     }
 
     public void Close()
+    {
+        lock (decoderSync)
+        {
+            if (closed) return;
+            closed = true;
+            CloseCore();
+        }
+    }
+
+    private void CloseCore()
     {
         Inited = false;
         inFc?.Close();

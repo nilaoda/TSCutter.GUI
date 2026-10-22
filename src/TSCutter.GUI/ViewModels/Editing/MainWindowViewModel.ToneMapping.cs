@@ -134,12 +134,14 @@ public partial class MainWindowViewModel
             {
                 toneMappingRefreshPending = false;
                 instance = _videoInstance!;
+                var expectedPts = _displayedFramePts;
                 await RunDecodeOperationAsync(async () =>
                 {
                     var stopwatch = Stopwatch.StartNew();
-                    var result = await instance.RefreshCurrentFrameAsync(expectedPts: _displayedFramePts);
+                    var result = await instance.RefreshCurrentFrameAsync(expectedPts: expectedPts);
                     if (result is null) return;
-                    if (!ReferenceEquals(instance, _videoInstance))
+                    // 刷新期间若已有新画面发布，旧映射结果不能覆盖新的拖动位置。
+                    if (!ReferenceEquals(instance, _videoInstance) || _displayedFramePts != expectedPts)
                     {
                         DisposePreviewResult(result);
                         return;

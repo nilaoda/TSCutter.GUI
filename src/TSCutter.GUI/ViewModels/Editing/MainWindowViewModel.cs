@@ -1898,15 +1898,18 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public async Task SeekToTimeAndDrawFrameAsync(TimeSpan timeSpan)
     {
-        if (!IsVideoInitialized || IsDecoding)
+        if (!IsVideoInitialized || (IsDecoding && !toneMappingRefreshRunning))
             return;
+        var instance = _videoInstance!;
 
         try
         {
+            // 拖动结束的最终定位须等待映射刷新，不能因短暂忙碌而丢掉请求。
+            await toneMappingRefreshTask;
+            if (!ReferenceEquals(instance, _videoInstance) || IsDecoding) return;
             await RunDecodeOperationAsync(async () =>
             {
                 var stopwatch = Stopwatch.StartNew();
-                var instance = _videoInstance!;
                 var decodeResult = await instance.DecodeAtTimeAsync(timeSpan);
                 if (!ReferenceEquals(instance, _videoInstance))
                 {
@@ -1921,6 +1924,7 @@ public partial class MainWindowViewModel : ViewModelBase
         catch (Exception exception)
         {
             Console.WriteLine(exception);
+            if (!ReferenceEquals(instance, _videoInstance)) return;
             await ShowMessageAsync(
                 exception is MediaReadTimeoutException
                     ? LocalizationManager.Instance.String_MediaReadTimeout

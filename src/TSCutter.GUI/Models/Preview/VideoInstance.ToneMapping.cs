@@ -34,13 +34,17 @@ public partial class VideoInstance
     }
 
     // TS 的定位结果可能略晚于请求点，提前喂入关键帧再核对原始 PTS。
-    internal async Task<DecodeResult?> DecodePreviewFrameAtPtsAsync(long targetPts, CancellationToken cancellationToken = default)
+    internal Task<DecodeResult?> DecodePreviewFrameAtPtsAsync(long targetPts, CancellationToken cancellationToken = default)
+        => Task.Run(() => RunReadOperation(() => DecodePreviewFrameAtPts(targetPts, cancellationToken),
+            cancellationToken), cancellationToken);
+
+    private DecodeResult? DecodePreviewFrameAtPts(long targetPts, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        await Task.Run(() => Seek(Math.Max(firstFrameTimestamp, targetPts - keyFrameGap * 2), AVSEEK_FLAG.Backward), cancellationToken);
+        Seek(Math.Max(firstFrameTimestamp, targetPts - keyFrameGap * 2), AVSEEK_FLAG.Backward);
         for (var attempt = 0; attempt < 32; attempt++)
         {
-            var result = await DecodeNextFrameAsync(cancellationToken: cancellationToken);
+            var result = DecodeNextFrame(1, cancellationToken, 0, 0, isNavigation: true);
             if (result.FramePts == targetPts) return result;
             result.BitmapLease?.Dispose();
             if (result.BitmapLease is null) result.Bitmap?.Dispose();
@@ -52,12 +56,12 @@ public partial class VideoInstance
 
     public Task<DecodeResult?> RefreshCurrentFrameAsync(CancellationToken cancellationToken = default, long? expectedPts = null)
     {
-        // 被取消的拖动或失败的导航可能已推进缓存，以界面实际发布的 PTS 为准。
-        if (retainPreviewFrame && expectedPts is { } pts && retainedPreviewInfo?.FramePts != pts)
-            return DecodePreviewFrameAtPtsAsync(pts, cancellationToken);
-        return Task.Run(() =>
+        return Task.Run(() => RunReadOperation<DecodeResult?>(() =>
         {
             cancellationToken.ThrowIfCancellationRequested();
+            // 检查缓存和重新定位也属于同一次操作，避免中途被拖动预览推进。
+            if (retainPreviewFrame && expectedPts is { } pts && retainedPreviewInfo?.FramePts != pts)
+                return DecodePreviewFrameAtPts(pts, cancellationToken);
             if (retainedPreviewFrame is null || retainedPreviewInfo is null
                 || retainedPreviewInfo.VideoDynamicRange == VideoDynamicRange.Standard) return null;
             var bitmap = ConvertPreviewFrame(retainedPreviewFrame, retainedPreviewWidth, retainedPreviewHeight, out var lease);
@@ -71,7 +75,7 @@ public partial class VideoInstance
                 if (lease is not null) lease.Dispose(); else bitmap.Dispose();
                 throw;
             }
-        }, cancellationToken);
+        }, cancellationToken), cancellationToken);
     }
 
     private Bitmap ConvertPreviewFrame(Frame source, int maxWidth, int maxHeight, out IBitmapFrameLease? lease)

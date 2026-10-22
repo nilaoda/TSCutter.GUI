@@ -133,8 +133,12 @@ public sealed class PreviewOptionsTests
             var pending = new TaskCompletionSource();
             var operation = (Task)typeof(MainWindowViewModel).GetMethod("RunDecodeOperationAsync", flags)!
                 .Invoke(vm, [(Func<Task>)(() => pending.Task)])!;
+            typeof(MainWindowViewModel).GetField("toneMappingRefreshTask", flags)!.SetValue(vm, operation);
+            typeof(MainWindowViewModel).GetField("toneMappingRefreshRunning", flags)!.SetValue(vm, true);
+            var navigation = vm.SeekToTimeAndDrawFrameAsync(TimeSpan.FromSeconds(2));
             try
             {
+                Assert.False(navigation.IsCompleted);
                 vm.Close();
                 Assert.Null(vm.DecodedBitmap);
                 Assert.Equal(1, lease.ReturnCount);
@@ -147,6 +151,7 @@ public sealed class PreviewOptionsTests
             }
             if (failDecode) await Assert.ThrowsAsync<InvalidOperationException>(() => operation);
             else await operation;
+            await navigation;
             await (Task)typeof(MainWindowViewModel).GetField("previewDisposalTask", flags)!.GetValue(vm)!;
             Assert.False(video.Inited);
             return true;
@@ -238,6 +243,15 @@ public sealed class PreviewOptionsTests
                     await vm.ToggleHardwareDecodingCommand.ExecuteAsync(null);
                 Assert.Equal(pts, CurrentPts());
                 Assert.True(vm.IsVideoInitialized);
+                // 映射与拖动可同时提交，最终定位必须完成，旧映射结果不能把画面拉回。
+                var targetTime = Math.Min(20, vm.DurationMax * 0.75);
+                vm.ToggleSdrToneMappingCommand.Execute(null);
+                vm.BeginScrubPreview();
+                vm.RequestScrubPreview(targetTime, new PixelSize(320, 180));
+                await vm.CompleteScrubPreviewAsync();
+                await vm.SeekToTimeAndDrawFrameAsync(TimeSpan.FromSeconds(targetTime));
+                await (Task)typeof(MainWindowViewModel).GetField("toneMappingRefreshTask", flags)!.GetValue(vm)!;
+                Assert.InRange(vm.CurrentTime, targetTime - 3, targetTime + 3);
                 vm.ToggleSdrToneMappingCommand.Execute(null);
                 vm.Close();
                 await (Task)typeof(MainWindowViewModel).GetField("previewDisposalTask", flags)!.GetValue(vm)!;
