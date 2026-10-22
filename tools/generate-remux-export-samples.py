@@ -52,6 +52,13 @@ def main():
         "Dialogue: 0,0:00:01.00,0:00:05.00,Default,,0,0,0,,{\\fad(500,500)}Animated subtitle\n", encoding="utf-8")
     ffmpeg("-i", root / "multi.mp4", "-i", root / "animated.ass", "-map", "0:v:0", "-map", "0:a:0", "-map", "1:s:0",
            "-c", "copy", root / "animated.mkv")
+    (root / "overlapping.ass").write_text(
+        (root / "animated.ass").read_text(encoding="utf-8").split("Dialogue:")[0] +
+        "Dialogue: 0,0:00:00.00,0:02:00.00,Default,,0,0,0,,Long subtitle\n"
+        "Dialogue: 0,0:00:02.50,0:00:03.50,Default,,0,0,0,,Overlapping subtitle\n"
+        "Dialogue: 0,0:00:04.00,0:00:05.00,Default,,0,0,0,,After cut\n", encoding="utf-8")
+    ffmpeg("-i", root / "multi.mp4", "-i", root / "overlapping.ass", "-map", "0:v:0", "-map", "0:a:0", "-map", "1:s:0",
+           "-c", "copy", root / "overlapping.mkv")
     ffmpeg("-f", "lavfi", "-i", "testsrc2=size=128x72:rate=25:duration=4", "-pix_fmt", "yuv420p10le",
            "-c:v", "libx265", "-preset", "ultrafast", "-color_primaries", "bt2020", "-color_trc", "smpte2084",
            "-colorspace", "bt2020nc", "-x265-params",

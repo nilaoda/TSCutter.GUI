@@ -467,6 +467,9 @@ internal sealed unsafe class RemuxExportService
         AVFormatContext* rawInput = input;
         var map = Enumerable.Repeat(-1, checked((int)rawInput->nb_streams)).ToArray();
         for (var i = 0; i < item.Streams.Length; i++) map[item.Streams[i]] = i;
+        // MOV 可直接按索引跳过不再需要的轨道数据，避免为字幕读取整段音视频尾部。
+        for (var i = 0; i < map.Length; i++)
+            if (map[i] < 0) rawInput->streams[i]->discard = AVDiscard.AVDISCARD_ALL;
         var hasSubtitles = item.Streams.Any(index => input.Streams[index].Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_SUBTITLE);
         if (!hasSubtitles && item.Start > item.Segment.Settings.TimelineOriginSeconds + 0.001)
         {
@@ -479,9 +482,21 @@ internal sealed unsafe class RemuxExportService
         var packetsWritten = new int[item.Streams.Length];
         var nextSourceDts = item.StartDts.ToArray();
         var finished = new bool[item.Streams.Length];
-        foreach (var packet in input.ReadPackets())
+        var remainingStreams = item.Streams.Length;
+        for (var i = 0; i < item.Streams.Length; i++)
+        {
+            var stream = input.Streams[item.Streams[i]];
+            if (!stream.IsAttachedPicture && stream.Codecpar?.CodecType != AVMediaType.AVMEDIA_TYPE_ATTACHMENT) continue;
+            finished[i] = true;
+            remainingStreams--;
+            ((AVStream*)stream)->discard = AVDiscard.AVDISCARD_ALL;
+        }
+        // 各轨道独立确认终点；在读取下一包之前判断是否结束，避免 continue 绕过退出判断。
+        using var packets = input.ReadPackets().GetEnumerator();
+        while (remainingStreams > 0 && packets.MoveNext())
         {
             token.ThrowIfCancellationRequested();
+            var packet = packets.Current;
             AVPacket* raw = packet;
             if (raw->stream_index >= map.Length || map[raw->stream_index] < 0) continue;
             var index = map[raw->stream_index];
@@ -516,11 +531,26 @@ internal sealed unsafe class RemuxExportService
                         throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{stream->index}");
                     videoStarted[index] = true;
                 }
-                if (raw->dts >= item.EndDts[index]) { finished[index] = true; continue; }
+                if (raw->dts >= item.EndDts[index])
+                {
+                    finished[index] = true;
+                    remainingStreams--;
+                    stream->discard = AVDiscard.AVDISCARD_ALL;
+                    continue;
+                }
             }
             else if (type == AVMediaType.AVMEDIA_TYPE_SUBTITLE)
             {
-                if (end <= item.Start || !toEof && pts >= item.End) continue;
+                // 按轨道内的时间顺序读取；跨越终点的事件裁剪后仍继续接收重叠字幕，
+                // 直到读到起始时间已到终点的下一条事件。
+                if (!toEof && pts >= item.End)
+                {
+                    finished[index] = true;
+                    remainingStreams--;
+                    stream->discard = AVDiscard.AVDISCARD_ALL;
+                    continue;
+                }
+                if (end <= item.Start) continue;
                 var clippedStart = Math.Max(pts, item.Start);
                 var clippedEnd = toEof ? end : Math.Min(end, item.End);
                 if (stream->codecpar->codec_id is AVCodecID.AV_CODEC_ID_ASS or AVCodecID.AV_CODEC_ID_SSA &&
@@ -535,7 +565,13 @@ internal sealed unsafe class RemuxExportService
             else
             {
                 if (pts < item.Start) continue;
-                if (!toEof && pts >= item.End) { finished[index] = true; continue; }
+                if (!toEof && pts >= item.End)
+                {
+                    finished[index] = true;
+                    remainingStreams--;
+                    stream->discard = AVDiscard.AVDISCARD_ALL;
+                    continue;
+                }
             }
             var presentationDuration = Math.Max(0, Seconds(raw->duration, stream->time_base));
             if (toEof && presentationDuration == 0 && type == AVMediaType.AVMEDIA_TYPE_VIDEO)
@@ -559,10 +595,6 @@ internal sealed unsafe class RemuxExportService
             FFmpegException.Check(FF.av_interleaved_write_frame(output, raw));
             packetsWritten[index]++;
             report(Math.Clamp(pts - item.Start, 0, item.End - item.Start), size);
-            // 字幕事件的间隔没有固定上限，保留字幕时需要扫描至文件末尾。
-            if (!hasSubtitles && item.Streams.Select((streamIndex, slot) =>
-                input.Streams[streamIndex].IsAttachedPicture ||
-                input.Streams[streamIndex].Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_ATTACHMENT || finished[slot]).All(value => value)) break;
         }
         for (var i = 0; i < item.Streams.Length; i++)
         {

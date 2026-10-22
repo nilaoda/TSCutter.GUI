@@ -99,6 +99,39 @@ public sealed class RemuxExportServiceTests
     }
 
     [RemuxExportFact]
+    public async Task BoundedCutsWithoutSubtitlesKeepSelectedMediaAndAttachments()
+    {
+        foreach (var name in new[] { "multi.mp4", "multi.mkv", "cover.mp4" })
+        {
+            var source = Fixture(name);
+            using var original = Open(source);
+            var indices = original.Streams.Where(stream => stream.Codecpar!.CodecType is not
+                (AVMediaType.AVMEDIA_TYPE_SUBTITLE or AVMediaType.AVMEDIA_TYPE_DATA))
+                .Select(stream => stream.Index).ToArray();
+            var container = Path.GetExtension(source)[1..];
+            var origin = VideoStart(source);
+            var settings = Settings(container, indices);
+            settings.TimelineOriginSeconds = origin;
+            using var target = new TemporaryOutput(container);
+            await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path,
+                [new(source, 2, 4, settings)]));
+            using var exported = Open(target.Path);
+            Assert.DoesNotContain(exported.Streams, stream => stream.Codecpar!.CodecType == AVMediaType.AVMEDIA_TYPE_SUBTITLE);
+            Assert.Equal(indices.Length, exported.Streams.Count(stream => stream.Codecpar!.CodecType != AVMediaType.AVMEDIA_TYPE_DATA));
+            Assert.InRange(exported.Duration / 1e6, 1.99, 2.1);
+            for (var i = 0; i < indices.Length; i++)
+            {
+                var stream = original.Streams[indices[i]];
+                if (stream.IsAttachedPicture) AssertCover(stream, Assert.Single(exported.Streams, value => value.IsAttachedPicture));
+                else if (stream.Codecpar!.CodecType is AVMediaType.AVMEDIA_TYPE_VIDEO or AVMediaType.AVMEDIA_TYPE_AUDIO)
+                    Assert.Equal(HashPackets(source, 2 + origin, 4 + origin, indices[i]), HashPackets(target.Path, 0, 2, i));
+                else Assert.Equal(stream.Codecpar.CodecType, exported.Streams[i].Codecpar!.CodecType);
+            }
+            AssertMonotonicDts(target.Path, allowMissingInitialVideoDts: container == "mkv");
+        }
+    }
+
+    [RemuxExportFact]
     public async Task Mp4TrackNamesSurviveExportWithAndWithoutCoverArt()
     {
         foreach (var name in new[] { "multi.mp4", "cover.mp4" })
@@ -207,6 +240,36 @@ public sealed class RemuxExportServiceTests
         Assert.True(raw->nb_chapters > 0);
         var chapter = raw->chapters[raw->nb_chapters - 1];
         Assert.InRange(chapter->start * (double)chapter->time_base.num / chapter->time_base.den, seconds - 0.002, seconds + 0.002);
+    }
+
+    [RemuxExportFact]
+    public async Task LongSubtitleIsClippedWithoutLosingLaterOverlappingEvents()
+    {
+        var source = Fixture("overlapping.mkv");
+        using var target = new TemporaryOutput("mkv");
+        var settings = Settings("mkv", 0, 1, 2);
+        settings.TimelineOriginSeconds = VideoStart(source);
+        await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path, [new(source, 2, 4, settings)]));
+        AssertOverlappingSubtitleTimes(target.Path);
+    }
+
+    private static unsafe void AssertOverlappingSubtitleTimes(string path)
+    {
+        using var input = Open(path);
+        var times = new List<(double Start, double End)>();
+        foreach (var packet in input.ReadPackets())
+        {
+            var stream = input.Streams[packet.StreamIndex];
+            if (stream.Codecpar!.CodecType != AVMediaType.AVMEDIA_TYPE_SUBTITLE) continue;
+            AVPacket* raw = packet;
+            var scale = stream.TimeBase.num / (double)stream.TimeBase.den;
+            times.Add((raw->pts * scale, (raw->pts + raw->duration) * scale));
+        }
+        Assert.Equal(2, times.Count);
+        Assert.InRange(times[0].Start, 0, 0.002);
+        Assert.InRange(times[0].End, 1.998, 2.002);
+        Assert.InRange(times[1].Start, 0.498, 0.502);
+        Assert.InRange(times[1].End, 1.498, 1.502);
     }
 
     [RemuxExportFact]
@@ -533,13 +596,20 @@ public sealed class RemuxExportServiceTests
         Assert.Equal("eng", language);
     }
 
-    private static unsafe void AssertMonotonicDts(string path)
+    private static unsafe void AssertMonotonicDts(string path, bool allowMissingInitialVideoDts = false)
     {
         using var input = Open(path);
         var previous = Enumerable.Repeat(long.MinValue, input.Streams.Count).ToArray();
         foreach (var packet in input.ReadPackets())
         {
             AVPacket* raw = packet;
+            if (input.Streams[packet.StreamIndex].IsAttachedPicture) continue;
+            if (allowMissingInitialVideoDts && raw->dts == NativeMethods.AV_NOPTS_VALUE &&
+                input.Streams[packet.StreamIndex].Codecpar!.CodecType == AVMediaType.AVMEDIA_TYPE_VIDEO)
+            {
+                Assert.Equal(long.MinValue, previous[packet.StreamIndex]);
+                continue;
+            }
             if (input.Streams[packet.StreamIndex].Codecpar!.CodecType is not
                 (AVMediaType.AVMEDIA_TYPE_VIDEO or AVMediaType.AVMEDIA_TYPE_AUDIO)) continue;
             Assert.True(raw->dts > previous[packet.StreamIndex]);
