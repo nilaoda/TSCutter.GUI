@@ -35,6 +35,15 @@
     <x:String x:Key="String.NoVideoStream">The selected file does not contain a video track.</x:String>
     <x:String x:Key="String.MediaReadTimeout">Reading the video timed out. Try seeking to another position or check whether the file is encrypted or damaged.</x:String>
     <x:String x:Key="String.ScrambledTs">The file contains encrypted (scrambled) TS payload and cannot be previewed. Decrypt it to enable preview.</x:String>
+    <x:String x:Key="String.TsExport.Checking">Checking export clips…</x:String>
+    <x:String x:Key="String.TsExport.UpdatingResults">Updating export information…</x:String>
+    <x:String x:Key="String.TsExport.TablesWarningTitle">Program table warning</x:String>
+    <x:String x:Key="String.TsExport.TablesWarning">Complete program tables were not found near the start of the following clips. Players or media information tools may misidentify their tracks. Adding program tables before exporting is recommended.</x:String>
+    <x:String x:Key="String.TsExport.AdjustCut">Adjust cut points</x:String>
+    <x:String x:Key="String.TsExport.Continue">Export unchanged</x:String>
+    <x:String x:Key="String.TsExport.Supplement">Add tables and export</x:String>
+    <x:String x:Key="String.TsExport.SupplementHint">Copy nearby PAT/PMT tables to the file header. Audio and video are not re-encoded; a small number of table packets are added, so the output is not byte-identical to the selected range.</x:String>
+    <x:String x:Key="String.TsExport.TablesUnavailable">No complete program tables could be read near the cut point. Adjust the cut point or choose Export unchanged.</x:String>
     <x:String x:Key="String.SaveYourClip">Save Your Clip</x:String>
     <x:String x:Key="String.Menu.File">_File</x:String>
     <x:String x:Key="String.Menu.Edit">_Edit</x:String>

@@ -1,10 +1,13 @@
 using System.Reflection;
+using HanumanInstitute.MvvmDialogs;
+using HanumanInstitute.MvvmDialogs.Avalonia;
 using Avalonia.Headless;
 using Splat;
 using Xunit;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Tests.UI;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
@@ -52,6 +55,68 @@ public sealed class ExportedClipSizeTests
             }, CancellationToken.None);
         }
         finally { Directory.Delete(directory, true); }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MergedTsClipsKeepTheirRangeSizesWhileTheSelectionShowsTheActualTotal(bool remux)
+    {
+        using var files = new TableProbeData.Files(new byte[4096]);
+        File.WriteAllBytes(files.Output, new byte[512 + 1024 + 376]);
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            using var resolver = new ModernDependencyResolver();
+            using var scope = resolver.WithResolver();
+            var locale = new LocalizationService();
+            locale.SwitchLanguage("zh-CN");
+            Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+            new App().Initialize();
+            var dialogs = new DialogService(DispatchProxy.Create<IDialogManager, PreparationDialogManager>(),
+                viewModelFactory: type => Locator.Current.GetService(type));
+            var main = new MainWindowViewModel(dialogs, new ConfigurationService(locale));
+            var group = new MergedClipOutput(Guid.NewGuid().ToString("N"), 2);
+            var first = new PickedClip { InFileInfo = new FileInfo(files.Source), RequiresRemux = remux,
+                StartPosition = 0, EndPosition = 512, EndTime = 1, IsSelected = true,
+                MergedOutput = group, OutputFileInfo = new FileInfo(files.Output) };
+            var second = new PickedClip { InFileInfo = new FileInfo(files.Source), RequiresRemux = remux,
+                StartPosition = 1024, EndPosition = 2048, StartTime = 2, EndTime = 3, IsSelected = true,
+                MergedOutput = group, OutputFileInfo = new FileInfo(files.Output) };
+            main.Clips.Add(first);
+            main.Clips.Add(second);
+            main.SelectedClip = first;
+            try
+            {
+                var expectedFirst = remux ? LocalizationManager.Instance.String_Clips_Merged
+                    : LocalizationManager.Instance.String_SizePrefix + CommonUtil.FormatFileSize(512);
+                var expectedSecond = remux ? LocalizationManager.Instance.String_Clips_Merged
+                    : LocalizationManager.Instance.String_SizePrefix + CommonUtil.FormatFileSize(1024);
+                Assert.Equal(expectedFirst, first.EstimatedSizeStr);
+                Assert.Equal(expectedSecond, second.EstimatedSizeStr);
+                Assert.Equal(LocalizationManager.Instance.String_SizePrefix + CommonUtil.FormatFileSize(1912),
+                    main.SelectedClipEstimatedSizeStr);
+                main.SelectClip(first);
+                Assert.Equal(expectedFirst, main.SelectedClipEstimatedSizeStr);
+                first.ExportStatus = second.ExportStatus = ClipExportStatus.Done;
+                File.Delete(files.Output);
+                await (Task)typeof(MainWindowViewModel).GetMethod("ForgetMissingClipOutputsAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+                    .Invoke(main, [new[] { files.Output }])!;
+                Assert.All(new[] { first, second }, clip =>
+                {
+                    Assert.Null(clip.OutputFileInfo);
+                    Assert.Null(clip.MergedOutput);
+                    Assert.Equal(ClipExportStatus.Pending, clip.ExportStatus);
+                });
+                var project = (CutterProject)typeof(MainWindowViewModel)
+                    .GetMethod("CaptureProject", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [false])!;
+                project.Source = new ProjectSource { Path = files.Source };
+                CutterProjectService.PopulateSources(project);
+                Assert.Equal(2, CutterProjectService.Deserialize(CutterProjectService.Serialize(project)).Clips.Count);
+            }
+            finally { main.Close(); }
+            return true;
+        }, CancellationToken.None);
     }
 
     [Theory]

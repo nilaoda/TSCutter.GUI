@@ -41,6 +41,8 @@ public partial class App : Application
 
         SplatRegistrations.Register<MainWindowViewModel>();
         SplatRegistrations.Register<OutputWindowViewModel>();
+        SplatRegistrations.Register<TsExportWarningViewModel>();
+        SplatRegistrations.Register<ExportPreparationWindowViewModel>();
         SplatRegistrations.Register<RawCutterWindowViewModel>();
         SplatRegistrations.Register<TsCheckWindowViewModel>();
         SplatRegistrations.Register<TsBatchCheckWindowViewModel>();

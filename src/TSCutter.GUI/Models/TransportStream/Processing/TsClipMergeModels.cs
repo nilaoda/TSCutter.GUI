@@ -44,7 +44,8 @@ internal enum TsClipMergeErrorCode
     OutputMatchesSource,
     SourceChanged,
     NoSync,
-    InvalidRange
+    InvalidRange,
+    ProgramTablesUnavailable
 }
 
 internal sealed class TsClipMergeException(

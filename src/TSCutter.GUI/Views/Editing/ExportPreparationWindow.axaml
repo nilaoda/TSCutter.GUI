@@ -1,0 +1,19 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TSCutter.GUI.ViewModels.Editing"
+        x:Class="TSCutter.GUI.Views.Editing.ExportPreparationWindow"
+        x:DataType="vm:ExportPreparationWindowViewModel"
+        Width="420" SizeToContent="Height" CanResize="False"
+        CanMinimize="False" CanMaximize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" Title="{Binding Caption}">
+    <StackPanel Margin="16" Spacing="12">
+        <TextBlock Text="{Binding CurrentFileName}" TextTrimming="CharacterEllipsis" />
+        <ProgressBar Height="18" Minimum="0" Maximum="100" Value="{Binding Percent}"
+                     IsIndeterminate="{Binding IsIndeterminate}" />
+        <Grid ColumnDefinitions="*,Auto">
+            <TextBlock Text="{Binding ProgressText}" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}"
+                    IsVisible="{Binding CanCancel}" MinWidth="90" />
+        </Grid>
+    </StackPanel>
+</Window>

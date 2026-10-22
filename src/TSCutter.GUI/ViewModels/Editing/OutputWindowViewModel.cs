@@ -120,6 +120,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     [RelayCommand]
     private async Task OutputAsync()
     {
+        if (!await CheckProgramTablesAsync()) return;
         if (IsBatchMode)
         {
             await RunBatchAsync();
@@ -158,16 +159,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         try
         {
             CurrentFileName = Path.GetFileName(request.OutputPath);
-            var progress = new Progress<TsClipMergeProgress>(value =>
-            {
-                Percent = value.Percent;
-                Speed = value.BytesPerSecond;
-                RemainingSeconds = value.BytesPerSecond > 0
-                    ? Math.Max(0, value.TotalBytes - value.BytesProcessed) / value.BytesPerSecond
-                    : 0;
-            });
-            await Task.Run(() => new TsClipMergeService().MergeAsync(
-                request, progress, _cts.Token), _cts.Token).ConfigureAwait(true);
+            await ExportTsAsync(request, ++_copyGeneration, supplementOutput).ConfigureAwait(true);
             Percent = 100;
             RemainingSeconds = 0;
             DialogResult = true;
@@ -185,6 +177,19 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             DialogResult = false;
             RequestClose?.Invoke();
         }
+    }
+
+    private Task ExportTsAsync(TsClipMergeRequest request, int generation, bool addTables)
+    {
+        var progress = new Progress<TsClipMergeProgress>(value =>
+        {
+            if (DialogResult is not null || generation != _copyGeneration) return;
+            Percent = value.Percent;
+            Speed = value.BytesPerSecond;
+            RemainingSeconds = value.BytesPerSecond > 0
+                ? Math.Max(0, value.TotalBytes - value.BytesProcessed) / value.BytesPerSecond : 0;
+        });
+        return Task.Run(() => new TsClipMergeService().MergeAsync(request, progress, _cts.Token, addTables), _cts.Token);
     }
 
     private async Task RunSingleAsync()
@@ -205,7 +210,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         catch (OperationCanceledException)
         {
             Console.WriteLine("File copy was canceled.");
-            if (ProgramId is not null || RemuxSettings is not null)
+            if (ProgramId is not null || RemuxSettings is not null || AddsProgramTablesTo(OutputPath!))
             {
                 DialogResult = false;
                 RequestClose?.Invoke();
@@ -227,6 +232,12 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         if (task.RemuxSettings is { } settings)
             return ExportRemuxAsync(new RemuxExportRequest(task.DestinationPath,
                 [new RemuxExportSegment(task.SourcePath, task.StartSeconds, task.EndSeconds, settings)]), generation);
+        if (AddsProgramTablesTo(task.DestinationPath))
+            return ExportTsAsync(new TsClipMergeRequest
+            {
+                SourcePath = task.SourcePath, OutputPath = task.DestinationPath,
+                Ranges = [new(task.StartPosition, task.EndPosition, 0, 1)]
+            }, generation, true);
         if (task.ProgramId is { } programId)
         {
             var progress = new Progress<TsFilterProgress>(value =>
@@ -347,12 +358,16 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     {
         if (DialogResult is not null) return;
 
-        if (IsBatchMode)
+        if (checkingProgramTables)
+        {
+            _cts.Cancel();
+        }
+        else if (IsBatchMode)
         {
             _batchCancelled = true;
             _cts.Cancel();
         }
-        else if (IsMergeMode || ProgramId is not null || RemuxSettings is not null)
+        else if (IsMergeMode || ProgramId is not null || RemuxSettings is not null || HasProgramTableSupplement)
         {
             // 过滤和合并服务在取消后删除半成品；等待清理完成再关闭窗口，避免误报成功。
             _cts.Cancel();
@@ -367,7 +382,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     
     public void OnClosing(CancelEventArgs e)
     {
-        if ((IsMergeMode || ProgramId is not null || RemuxSettings is not null || _tasks.Exists(task => task.ProgramId is not null || task.RemuxSettings is not null)) &&
+        if ((checkingProgramTables || IsMergeMode || ProgramId is not null || RemuxSettings is not null || HasProgramTableSupplement || _tasks.Exists(task => task.ProgramId is not null || task.RemuxSettings is not null)) &&
             DialogResult is null)
             e.Cancel = true;
         CancelOutput();

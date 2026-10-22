@@ -1092,91 +1092,25 @@ public partial class MainWindowViewModel : ViewModelBase
     [RelayCommand(CanExecute = nameof(CanMergeSelectedClips))]
     private async Task MergeSelectedClipsAsync()
     {
-        var selected = Clips
-            .Where(clip => clip.IsSelected)
-            .OrderBy(clip => clip.StartPosition)
-            .ToArray();
-        if (selected.Length < 2)
-            return;
+        var snapshot = CaptureMergeExportSnapshot();
+        if (snapshot is null) return;
 
-        var sourcePath = selected[0].InFileInfo.FullName;
-        var programId = SelectedOutputProgramId;
-        var streamPids = _videoInstance!.GetMergeStreamPids(programId is not null);
-        var settings = new SaveFileDialogSettings
-        {
-            Title = LocalizationManager.Instance.String_MergeClips_Title,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(
-                Path.GetDirectoryName(sourcePath)!),
-            SuggestedFileName = Path.GetFileNameWithoutExtension(sourcePath) + "_merged." + ClipExtension,
-            Filters =
-            [
-                new(ExportFileFilterName, [ClipExtension]),
-                new(LocalizationManager.Instance.String_AllFiles, "*")
-            ],
-            DefaultExtension = ClipExtension
-        };
-        var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
-        if (result?.Path is null)
-            return;
+        // 节目表提示先于保存对话框；确认时尚未选路径，先用空路径准备同一份任务。
+        var output = _dialogService.CreateViewModel<OutputWindowViewModel>();
+        ConfigureMergeExportTask(output, snapshot, string.Empty);
+        if (!await PrepareProgramTableExportAsync(output,
+                snapshot.Clips.Select(clip => clip.DisplayName).ToArray(),
+                () => IsMergeExportCurrent(snapshot))) return;
 
-        var outputPath = result.Path.LocalPath;
-        if (PathsEqual(sourcePath, outputPath))
-        {
-            await ShowMessageAsync(
-                LocalizationManager.Instance.String_MergeClips_OutputMatchesSource,
-                LocalizationManager.Instance.String_Error,
-                MessageBoxIcon.Error);
-            return;
-        }
+        var outputPath = await ChooseMergedOutputPathAsync(snapshot);
+        if (outputPath is null) return;
+        ConfigureMergeExportTask(output, snapshot, outputPath);
+        await _dialogService.ShowDialogAsync(this, output);
+        await ForgetMissingClipOutputsAsync([outputPath]);
 
-        var request = new TsClipMergeRequest
-        {
-            SourcePath = sourcePath,
-            OutputPath = outputPath,
-            ProgramId = programId,
-            VideoPid = streamPids.VideoPid,
-            AudioPids = streamPids.AudioPids,
-            Ranges = selected.Select(clip => new TsClipMergeRange(
-                clip.StartPosition,
-                clip.EndPosition,
-                clip.StartTime,
-                clip.EndTime < 0 ? DurationMax : clip.EndTime)).ToArray()
-        };
-        var outputViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
-        if (IsRemuxExport)
-            outputViewModel.SetRemuxTask(new RemuxExportRequest(outputPath, CreateMergedRemuxSegments(selected)));
-        else
-            outputViewModel.SetMergeTask(request);
-        await _dialogService.ShowDialogAsync(this, outputViewModel).ConfigureAwait(true);
-        if (outputViewModel.Exception is not null)
-        {
-            await ShowMessageAsync(
-                FormatMergeError(outputViewModel.Exception),
-                LocalizationManager.Instance.String_Error,
-                MessageBoxIcon.Error);
-            return;
-        }
-
-        if (outputViewModel.DialogResult == true)
-        {
-            if (File.Exists(outputPath))
-            {
-                var group = new MergedClipOutput(Guid.NewGuid().ToString("N"), selected.Length);
-                foreach (var clip in selected)
-                {
-                    clip.MergedOutput = group;
-                    clip.OutputFileInfo = new FileInfo(outputPath);
-                    clip.ExportStatus = ClipExportStatus.Done;
-                }
-                OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
-            }
-            await ShowMessageAsync(
-                string.Format(
-                    LocalizationManager.Instance.String_MergeClips_Completed,
-                    outputPath),
-                LocalizationManager.Instance.String_MergeClips_Title,
-                MessageBoxIcon.Information);
-        }
+        // 异步等待期间若已切换源文件、片段或导出设置，不能把旧任务结果写回当前选择。
+        if (IsMergeExportCurrent(snapshot))
+            await CompleteMergedExportAsync(snapshot.Clips, outputPath, output);
     }
 
     private bool CanMergeSelectedClips => CanEditVideo && SelectedClipCount >= 2 &&
@@ -1211,6 +1145,8 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             TsClipMergeErrorCode.OutputMatchesSource =>
                 LocalizationManager.Instance.String_MergeClips_OutputMatchesSource,
+            TsClipMergeErrorCode.ProgramTablesUnavailable =>
+                LocalizationManager.Instance.String_TsExport_TablesUnavailable,
             TsClipMergeErrorCode.NoSync =>
                 LocalizationManager.Instance.String_MergeClips_NoSync,
             TsClipMergeErrorCode.InvalidRange =>
@@ -1745,6 +1681,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void NotifyQueueChanged()
     {
+        if (suppressQueueNotifications) return;
         OnPropertyChanged(nameof(HasExportQueue));
         OnPropertyChanged(nameof(HasRemuxQueue));
         OnPropertyChanged(nameof(ExportQueueCount));
@@ -2492,34 +2429,45 @@ public partial class MainWindowViewModel : ViewModelBase
     
     private async Task SaveVideoAsync()
     {
-        var defaultName = CreateClipOutputName(SelectedClip!);
+        var clip = SelectedClip!;
+        var video = _videoInstance;
+        var exportRevision = _exportSettingsRevision;
+        var extension = ClipExtension;
+        var defaultName = CreateClipOutputName(clip);
+        var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
+        dialogViewModel.SourceFilePath = clip.InFileInfo.FullName;
+        dialogViewModel.StartPosition = clip.StartPosition;
+        dialogViewModel.EndPosition = clip.EndPosition;
+        dialogViewModel.ProgramId = SelectedOutputProgramId;
+        dialogViewModel.RemuxSettings = CurrentRemuxSettings?.Snapshot();
+        dialogViewModel.StartSeconds = clip.StartTime;
+        dialogViewModel.EndSeconds = clip.EndPosition < 0 ? null : clip.EndTime;
+        bool ClipUnchanged() => _exportSettingsRevision == exportRevision && ReferenceEquals(_videoInstance, video) && ReferenceEquals(SelectedClip, clip) &&
+            clip.StartPosition == dialogViewModel.StartPosition && clip.EndPosition == dialogViewModel.EndPosition &&
+            clip.StartTime == dialogViewModel.StartSeconds &&
+            (clip.EndPosition < 0 ? (double?)null : clip.EndTime) == dialogViewModel.EndSeconds;
+        dialogViewModel.OutputPath = defaultName;
+        if (!await PrepareProgramTableExportAsync(dialogViewModel, [clip.DisplayName], ClipUnchanged)) return;
+
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_SaveYourClip,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(SelectedClip!.InFileInfo.FullName)!),
+            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(clip.InFileInfo.FullName)!),
             SuggestedFileName = defaultName,
             Filters = new List<FileFilter>()
             {
-                new(ExportFileFilterName, new[] { ClipExtension }),
+                new(ExportFileFilterName, new[] { extension }),
                 new(LocalizationManager.Instance.String_AllFiles, "*")
             },
-            DefaultExtension = ClipExtension
+            DefaultExtension = extension
         };
         var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
-        if (result is null) return;
-        
-        var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
-        dialogViewModel.SourceFilePath = SelectedClip!.InFileInfo.FullName;
-        dialogViewModel.StartPosition = SelectedClip!.StartPosition;
-        dialogViewModel.EndPosition = SelectedClip!.EndPosition;
-        dialogViewModel.OutputPath = result!.Path!.LocalPath;
-        dialogViewModel.ProgramId = SelectedOutputProgramId;
-        dialogViewModel.RemuxSettings = CurrentRemuxSettings?.Snapshot();
-        dialogViewModel.StartSeconds = SelectedClip.StartTime;
-        dialogViewModel.EndSeconds = SelectedClip.EndPosition < 0 ? null : SelectedClip.EndTime;
+        if (result?.Path is null || !ClipUnchanged()) return;
+
+        dialogViewModel.OutputPath = result.Path.LocalPath;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
-        if (dialogViewModel.ProgramId is not null || dialogViewModel.RemuxSettings is not null)
-            ForgetMissingClipOutput(SelectedClip!, dialogViewModel.OutputPath);
+        await ForgetMissingClipOutputsAsync([dialogViewModel.OutputPath]);
+        if (!ClipUnchanged()) return;
         if (dialogViewModel.Exception is not null)
         {
             await ShowMessageAsync(FormatMergeError(dialogViewModel.Exception), LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
@@ -2528,9 +2476,9 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         if (dialogViewModel.DialogResult == true && File.Exists(dialogViewModel.OutputPath))
         {
-            SelectedClip!.MergedOutput = null;
-            SelectedClip.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
-            SelectedClip.ExportStatus = ClipExportStatus.Done;
+            clip.MergedOutput = null;
+            clip.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
+            clip.ExportStatus = ClipExportStatus.Done;
         }
     }
 
@@ -2541,27 +2489,35 @@ public partial class MainWindowViewModel : ViewModelBase
         var confirmMsg = string.Format(LocalizationManager.Instance.String_ExportAllConfirm, Clips.Count, sourceDir);
         if (!await ShowConfirmAsync(confirmMsg)) return;
 
+        var clips = Clips.ToArray();
+        var video = _videoInstance;
+        var exportRevision = _exportSettingsRevision;
         var tasks = new List<BatchTask>();
         var reservedPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Path.GetFullPath(VideoPath) };
-        foreach (var clip in Clips)
+        foreach (var clip in clips)
         {
             var fileName = GenerateClipFileName(clip);
             var destPath = ClipOutputNaming.UniquePath(sourceDir, fileName, reservedPaths);
             tasks.Add(new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition, SelectedOutputProgramId,
                 CurrentRemuxSettings?.Snapshot(), clip.StartTime, clip.EndPosition < 0 ? null : clip.EndTime));
-            clip.ExportStatus = ClipExportStatus.Pending;
         }
 
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
         dialogViewModel.SetBatchTasks(tasks);
+        bool SourcesUnchanged() => ReferenceEquals(_videoInstance, video) && _exportSettingsRevision == exportRevision &&
+            Clips.SequenceEqual(clips) && clips.Select((clip, index) =>
+                clip.StartPosition == tasks[index].StartPosition && clip.EndPosition == tasks[index].EndPosition &&
+                clip.StartTime == tasks[index].StartSeconds &&
+                (clip.EndPosition < 0 ? (double?)null : clip.EndTime) == tasks[index].EndSeconds).All(matches => matches);
+        if (!await PrepareProgramTableExportAsync(dialogViewModel, selectionUnchanged: SourcesUnchanged)) return;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
 
         var completedSet = dialogViewModel.CompletedTaskIndices.ToHashSet();
+        await ForgetMissingClipOutputsAsync(tasks.Select(task => task.DestinationPath));
+        if (!SourcesUnchanged()) return;
         var failedSet = dialogViewModel.FailedTaskIndices.ToHashSet();
         for (int i = 0; i < Clips.Count; i++)
         {
-            if (tasks[i].ProgramId is not null || tasks[i].RemuxSettings is not null)
-                ForgetMissingClipOutput(Clips[i], tasks[i].DestinationPath);
             if (completedSet.Contains(i))
             {
                 Clips[i].ExportStatus = ClipExportStatus.Done;
@@ -2579,16 +2535,6 @@ public partial class MainWindowViewModel : ViewModelBase
         }
         if (dialogViewModel.Exception is { } exception)
             await ShowMessageAsync(FormatMergeError(exception), LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
-    }
-
-    private static void ForgetMissingClipOutput(PickedClip clip, string outputPath)
-    {
-        if (clip.OutputFileInfo is { } previous && PathsEqual(previous.FullName, outputPath) &&
-            !File.Exists(outputPath))
-        {
-            clip.OutputFileInfo = null;
-            clip.ExportStatus = ClipExportStatus.Pending;
-        }
     }
 
     private string ClipExtension => CurrentRemuxSettings?.Container ?? _videoInstance?.ClipExtension ?? "ts";
@@ -2706,39 +2652,18 @@ public partial class MainWindowViewModel : ViewModelBase
                 (clip.EndPosition > 0 ? clip.EndPosition : clip.InFileInfo.Length)
                 - clip.StartPosition),
         };
-        ExportQueue.Add(item);
         _lastQueueOutputDirectory = Path.GetDirectoryName(outputPath);
-        OnPropertyChanged(nameof(HasExportQueue));
-        OnPropertyChanged(nameof(HasRemuxQueue));
-        OnPropertyChanged(nameof(ExportQueueCount));
-        AddToQueueCommand.NotifyCanExecuteChanged();
-        ClearQueueCommand.NotifyCanExecuteChanged();
-        BatchExportQueueCommand.NotifyCanExecuteChanged();
+        ExportQueue.Add(item);
     }
 
     [RelayCommand]
     private void RemoveFromQueue(object? item)
     {
-        if (item is ExportQueueItem queueItem)
-        {
-            ExportQueue.Remove(queueItem);
-            OnPropertyChanged(nameof(HasExportQueue));
-            OnPropertyChanged(nameof(ExportQueueCount));
-            ClearQueueCommand.NotifyCanExecuteChanged();
-            BatchExportQueueCommand.NotifyCanExecuteChanged();
-        }
+        if (item is ExportQueueItem queueItem) ExportQueue.Remove(queueItem);
     }
 
     [RelayCommand(CanExecute = nameof(HasExportQueueItems))]
-    private void ClearQueue()
-    {
-        ExportQueue.Clear();
-        OnPropertyChanged(nameof(HasExportQueue));
-        OnPropertyChanged(nameof(HasRemuxQueue));
-        OnPropertyChanged(nameof(ExportQueueCount));
-        ClearQueueCommand.NotifyCanExecuteChanged();
-        BatchExportQueueCommand.NotifyCanExecuteChanged();
-    }
+    private void ClearQueue() => ExportQueue.Clear();
 
     private bool HasExportQueueItems => ExportQueue.Count > 0;
 
@@ -2766,41 +2691,19 @@ public partial class MainWindowViewModel : ViewModelBase
             ExportQueue.Count);
         if (!await ShowConfirmAsync(confirmMsg)) return;
 
-        var tasks = ExportQueue.Select(item =>
+        var submitted = ExportQueue.ToArray();
+        var tasks = submitted.Select(item =>
             new BatchTask(item.SourceFilePath, item.OutputFilePath, item.StartPosition, item.EndPosition, item.ProgramId,
                 item.RemuxSettings?.Snapshot(), item.StartTimeSeconds, item.EndPosition < 0 ? null : item.EndTimeSeconds)
         ).ToList();
 
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
         dialogViewModel.SetBatchTasks(tasks);
+        if (!await PrepareProgramTableExportAsync(dialogViewModel,
+                selectionUnchanged: () => ExportQueue.SequenceEqual(submitted))) return;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
 
-        // 更新导出队列中的状态为已完成
-        var completedSet = dialogViewModel.CompletedTaskIndices.ToHashSet();
-        var failedSet = dialogViewModel.FailedTaskIndices.ToHashSet();
-        for (int i = 0; i < ExportQueue.Count; i++)
-        {
-            var item = ExportQueue[i];
-            if (completedSet.Contains(i))
-            {
-                item.Status = ClipExportStatus.Done;
-            }
-            else if (failedSet.Contains(i))
-            {
-                item.Status = ClipExportStatus.Failed;
-            }
-        }
-        // 从导出队列中移除已完成项
-        for (int i = ExportQueue.Count - 1; i >= 0; i--)
-        {
-            if (ExportQueue[i].Status == ClipExportStatus.Done)
-                ExportQueue.RemoveAt(i);
-        }
-        OnPropertyChanged(nameof(HasExportQueue));
-        OnPropertyChanged(nameof(HasRemuxQueue));
-        OnPropertyChanged(nameof(ExportQueueCount));
-        ClearQueueCommand.NotifyCanExecuteChanged();
-        BatchExportQueueCommand.NotifyCanExecuteChanged();
+        await ApplyQueueExportResultsAsync(submitted, dialogViewModel);
         if (dialogViewModel.Exception is { } exception)
             await ShowMessageAsync(FormatMergeError(exception), LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
     }

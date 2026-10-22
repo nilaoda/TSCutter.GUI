@@ -26,7 +26,7 @@ internal sealed class TsClipMergeService
     public async Task<TsClipMergeResult> MergeAsync(
         TsClipMergeRequest request,
         IProgress<TsClipMergeProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, bool addProgramTables = false)
     {
         var sourcePath = Path.GetFullPath(request.SourcePath);
         var outputPath = Path.GetFullPath(request.OutputPath);
@@ -53,6 +53,10 @@ internal sealed class TsClipMergeService
         if (ranges.Count == 0)
             throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
 
+        var tables = addProgramTables && request.ProgramId is null
+            ? await TsExportProgramTableProbe.ReadTablesNearCutAsync(sourcePath, ranges[0].StartPosition, cancellationToken)
+                .ConfigureAwait(false) : null;
+
         using var splitHeaderReader = new TsSplitPesHeaderReader();
         var splitTimestampRewriter = new TsSplitPesTimestampRewriter();
         var totalBytes = ranges.Sum(item => item.EndPosition - item.StartPosition);
@@ -77,6 +81,7 @@ internal sealed class TsClipMergeService
         uint lastArrivalTimestamp = 0;
         var hasArrivalTimestamp = false;
         var outputCreated = false;
+        long prefixBytes = 0;
         try
         {
             await using var programOutput = request.ProgramId is { } programId
@@ -88,6 +93,21 @@ internal sealed class TsClipMergeService
                 buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan) : null;
             outputCreated = true;
             programOutput?.WriteInitialTables();
+
+            if (tables is not null)
+            {
+                uint arrivalHeader = 0;
+                if (layout.IsM2ts)
+                {
+                    source.Position = ranges[0].StartPosition;
+                    await source.ReadExactlyAsync(buffer.AsMemory(0, layout.PrefixSize), cancellationToken).ConfigureAwait(false);
+                    arrivalHeader = BinaryPrimitives.ReadUInt32BigEndian(buffer);
+                }
+                // 新增表包与原始表包的 CC 连续衔接，音视频载荷保持原样。
+                var prefix = TsProgramTablePacketizer.Create(tables, layout, arrivalHeader, lastPayloadContinuity);
+                await output!.WriteAsync(prefix, cancellationToken).ConfigureAwait(false);
+                prefixBytes = prefix.Length;
+            }
 
             for (var rangeIndex = 0; rangeIndex < ranges.Count; rangeIndex++)
             {
@@ -181,7 +201,7 @@ internal sealed class TsClipMergeService
                         // 每个后续片段对各 PID 只计算一次固定 CC 偏移。这样既能消除人为
                         // 剪切产生的接缝跳号，又会完整保留片段内部原有的跳号、重复包和 TEI。
                         rewrittenContinuityCount += RewriteContinuity(
-                            packet, rangeIndex, segmentContinuityOffsets, lastPayloadContinuity);
+                            packet, rangeIndex + (tables is null ? 0 : 1), segmentContinuityOffsets, lastPayloadContinuity);
                         if (layout.IsM2ts)
                         {
                             var header = buffer.AsSpan(offset, layout.PrefixSize);
@@ -234,7 +254,7 @@ internal sealed class TsClipMergeService
             return new TsClipMergeResult
             {
                 OutputPath = outputPath,
-                OutputBytes = programOutput?.BytesWritten ?? totalBytes,
+                OutputBytes = programOutput?.BytesWritten ?? totalBytes + prefixBytes,
                 SegmentCount = ranges.Count,
                 RewrittenPcrCount = rewrittenPcrCount,
                 RewrittenTimestampCount = rewrittenTimestampCount,
@@ -258,7 +278,7 @@ internal sealed class TsClipMergeService
         }
     }
 
-    private static List<NormalizedRange> NormalizeRanges(
+    internal static List<NormalizedRange> NormalizeRanges(
         IReadOnlyList<TsClipMergeRange> source,
         long fileLength, TsPacketLayout layout)
     {
@@ -449,7 +469,7 @@ internal sealed class TsClipMergeService
         }
     }
 
-    private readonly record struct NormalizedRange(
+    internal readonly record struct NormalizedRange(
         long StartPosition,
         long EndPosition,
         double StartTimeSeconds,
