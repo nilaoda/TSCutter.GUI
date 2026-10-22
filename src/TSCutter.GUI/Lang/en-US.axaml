@@ -1188,9 +1188,10 @@
     <x:String x:Key="String.RemuxExport.Container">Output container</x:String>
     <x:String x:Key="String.RemuxExport.Tracks">Tracks to keep</x:String>
     <x:String x:Key="String.RemuxExport.TrackHint">Source order · Current video required</x:String>
+    <x:String x:Key="String.RemuxExport.FastSubtitleSeek">Fast MKV subtitle seeking</x:String>
+    <x:String x:Key="String.RemuxExport.FastSubtitleSeekHint">Read from about 30 seconds before each cut. Subtitles starting earlier and spanning the cut may be omitted.</x:String>
     <x:String x:Key="String.RemuxExport.Notice">Container data is rewritten; output is not byte-for-byte lossless.</x:String>
     <x:String x:Key="String.RemuxExport.BoundaryHint">Audio/video is copied without re-encoding. Video cuts use keyframes.</x:String>
-    <x:String x:Key="String.RemuxExport.MergeQueue">Merge queue in order</x:String>
     <x:String x:Key="String.RemuxExport.Files">MP4 / MKV files</x:String>
     <x:String x:Key="String.RemuxExport.Error.Container">Choose the same output container for all segments and use its matching filename extension.</x:String>
     <x:String x:Key="String.RemuxExport.Error.Track">This track cannot be preserved in the selected container or safely cut. Choose a compatible container or deselect the track. Bitmap subtitles are not supported for packet-copy cutting.</x:String>

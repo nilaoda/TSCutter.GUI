@@ -1751,7 +1751,6 @@ public partial class MainWindowViewModel : ViewModelBase
         AddToQueueCommand.NotifyCanExecuteChanged();
         ClearQueueCommand.NotifyCanExecuteChanged();
         BatchExportQueueCommand.NotifyCanExecuteChanged();
-        MergeRemuxQueueCommand.NotifyCanExecuteChanged();
         SaveProjectCommand.NotifyCanExecuteChanged();
         SaveProjectAsCommand.NotifyCanExecuteChanged();
     }
@@ -2712,7 +2711,6 @@ public partial class MainWindowViewModel : ViewModelBase
         AddToQueueCommand.NotifyCanExecuteChanged();
         ClearQueueCommand.NotifyCanExecuteChanged();
         BatchExportQueueCommand.NotifyCanExecuteChanged();
-        MergeRemuxQueueCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand]
@@ -2725,7 +2723,6 @@ public partial class MainWindowViewModel : ViewModelBase
             OnPropertyChanged(nameof(ExportQueueCount));
             ClearQueueCommand.NotifyCanExecuteChanged();
             BatchExportQueueCommand.NotifyCanExecuteChanged();
-            MergeRemuxQueueCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -2738,7 +2735,6 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ExportQueueCount));
         ClearQueueCommand.NotifyCanExecuteChanged();
         BatchExportQueueCommand.NotifyCanExecuteChanged();
-        MergeRemuxQueueCommand.NotifyCanExecuteChanged();
     }
 
     private bool HasExportQueueItems => ExportQueue.Count > 0;
@@ -2802,7 +2798,6 @@ public partial class MainWindowViewModel : ViewModelBase
         OnPropertyChanged(nameof(ExportQueueCount));
         ClearQueueCommand.NotifyCanExecuteChanged();
         BatchExportQueueCommand.NotifyCanExecuteChanged();
-        MergeRemuxQueueCommand.NotifyCanExecuteChanged();
         if (dialogViewModel.Exception is { } exception)
             await ShowMessageAsync(FormatMergeError(exception), LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
     }

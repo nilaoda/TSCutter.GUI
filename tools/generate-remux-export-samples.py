@@ -59,6 +59,24 @@ def main():
         "Dialogue: 0,0:00:04.00,0:00:05.00,Default,,0,0,0,,After cut\n", encoding="utf-8")
     ffmpeg("-i", root / "multi.mp4", "-i", root / "overlapping.ass", "-map", "0:v:0", "-map", "0:a:0", "-map", "1:s:0",
            "-c", "copy", root / "overlapping.mkv")
+    (root / "seek.srt").write_text(
+        "1\n00:00:00,000 --> 00:02:00,000\nLong subtitle\n\n"
+        "2\n00:01:00,500 --> 00:01:01,500\nOverlapping subtitle\n\n"
+        "3\n00:01:02,000 --> 00:01:03,000\nAfter cut\n", encoding="utf-8")
+    (root / "sparse.srt").write_text(
+        "1\n00:00:00,000 --> 00:02:00,000\nSparse subtitle\n", encoding="utf-8")
+    ffmpeg("-f", "lavfi", "-i", "testsrc2=size=128x72:rate=25:duration=80",
+           "-i", root / "seek.srt", "-i", root / "sparse.srt", "-map", "0:v", "-map", "1:s", "-map", "2:s",
+           "-c:v", "libx264", "-preset", "ultrafast", "-g", "50", "-keyint_min", "50", "-sc_threshold", "0", "-bf", "2",
+           "-c:s", "mov_text", root / "seek-subtitles.mp4")
+    (root / "seek.ass").write_text(
+        (root / "animated.ass").read_text(encoding="utf-8").split("Dialogue:")[0] +
+        "Dialogue: 0,0:00:00.00,0:02:00.00,Default,,0,0,0,,Long subtitle\n"
+        "Dialogue: 0,0:00:45.00,0:01:05.00,Default,,0,0,0,,Recent subtitle\n"
+        "Dialogue: 0,0:01:00.50,0:01:01.50,Default,,0,0,0,,Overlapping subtitle\n"
+        "Dialogue: 0,0:01:02.00,0:01:03.00,Default,,0,0,0,,After cut\n", encoding="utf-8")
+    ffmpeg("-i", root / "seek-subtitles.mp4", "-i", root / "seek.ass", "-map", "0:v:0", "-map", "1:s:0",
+           "-c", "copy", root / "seek-subtitles.mkv")
     ffmpeg("-f", "lavfi", "-i", "testsrc2=size=128x72:rate=25:duration=4", "-pix_fmt", "yuv420p10le",
            "-c:v", "libx265", "-preset", "ultrafast", "-color_primaries", "bt2020", "-color_trc", "smpte2084",
            "-colorspace", "bt2020nc", "-x265-params",

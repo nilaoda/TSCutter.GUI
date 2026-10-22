@@ -15,15 +15,28 @@ public sealed class CutterProjectServiceTests
         var project = CreateProject(files.CreateSource());
         project.RemuxSettings = new RemuxExportSettings
         {
-            Container = "mkv", ReferenceVideoIndex = 0, TimelineOriginSeconds = 0.021, StreamIndices = [0, 1, 3]
+            Container = "mkv", ReferenceVideoIndex = 0, TimelineOriginSeconds = 0.021, StreamIndices = [0, 1, 3],
+            FastSubtitleSeek = true
         };
         project.Queue[0].RemuxSettings = project.RemuxSettings.Snapshot();
         project.RemuxSettings.StreamIndices.Remove(3);
+        project.RemuxSettings.FastSubtitleSeek = false;
         var restored = CutterProjectService.Deserialize(CutterProjectService.Serialize(project));
         Assert.Equal("mkv", restored.RemuxSettings!.Container);
         Assert.Equal(0.021, restored.RemuxSettings.TimelineOriginSeconds);
         Assert.Equal(new[] { 0, 1 }, restored.RemuxSettings.StreamIndices);
         Assert.Equal(new[] { 0, 1, 3 }, restored.Queue[0].RemuxSettings!.StreamIndices);
+        Assert.False(restored.RemuxSettings.FastSubtitleSeek);
+        Assert.True(restored.Queue[0].RemuxSettings!.FastSubtitleSeek);
+    }
+
+    [Fact]
+    public void ExportSettingsWithoutSubtitleOptionDefaultToFastSeeking()
+    {
+        var settings = JsonSerializer.Deserialize<RemuxExportSettings>(
+            """{"Container":"mkv","ReferenceVideoIndex":0,"StreamIndices":[0,1]}""");
+        Assert.True(settings!.IsValid);
+        Assert.True(settings.FastSubtitleSeek);
     }
 
     [Theory]

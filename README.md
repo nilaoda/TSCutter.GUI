@@ -31,12 +31,12 @@ TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. I
 ### MP4 / MKV remux editing and merging
 
 - Choose the output container and retained tracks in **MP4 / MKV export settings**. Track order, language, titles, and default/forced flags follow the source.
-- Export individual clips or batches, merge selected ranges from one source, or merge different sources in queue order. Overlapping selected clips are combined once; queue ranges are appended in full.
+- Export individual clips or batches, or merge selected ranges from one source. Overlapping selected clips are combined once.
 - Video cuts use keyframes and audio cuts use compressed packet boundaries. Compatible text subtitles, including MP4 mov_text and MKV ASS, and chapters are trimmed and retimed. MKV attachments and MP4 cover art can be retained.
 - Copy compressed audio/video and codec configuration, preserving container-supported color, HDR static data, and Dolby Vision configuration. Dynamic metadata in the bitstream travels with the packets.
 - Check codec and track compatibility, with clear errors when content cannot be safely cut or merged.
 
-**MP4/MKV export does not re-encode audio/video, but is not byte-for-byte lossless.** Container structures, timestamps, and metadata are rewritten, so file hashes and sizes change. Metadata fields depend on the output container. MP4 exports retaining cover art use standard metadata fields; other MP4 exports can write custom metadata. Keeping subtitles requires scanning the source for events spanning the start, which may take longer for large files. Failed or cancelled exports preserve existing destinations and remove temporary output.
+**MP4/MKV export does not re-encode audio/video, but is not byte-for-byte lossless.** Container structures, timestamps, and metadata are rewritten, so file hashes and sizes change. Metadata fields depend on the output container. MP4 exports retaining cover art use standard metadata fields; other MP4 exports can write custom metadata. Fast MKV subtitle seeking is enabled by default and reads from about 30 seconds before each cut. Earlier subtitles spanning the cut may be omitted; disable this option in export settings to retain them. Failed or cancelled exports preserve existing destinations and remove temporary output.
 
 ### TS tools
 

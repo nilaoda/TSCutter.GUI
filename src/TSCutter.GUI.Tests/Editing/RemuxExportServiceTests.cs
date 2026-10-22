@@ -5,6 +5,7 @@ using Xunit;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Utils.Media;
+using TSCutter.GUI.ViewModels.Editing;
 
 namespace TSCutter.GUI.Tests.Editing;
 
@@ -36,6 +37,33 @@ public sealed class RemuxExportServiceTests
         Assert.Equal(expected, settings.IsValid);
         settings.StreamIndices.Add(0);
         Assert.False(settings.IsValid);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void FastSubtitleOptionFollowsSourceAndSelectedSubtitles(bool isMatroskaSource)
+    {
+        var settings = Settings("mkv", 0, 1);
+        Assert.True(settings.FastSubtitleSeek);
+        var dialog = new RemuxExportOptionsViewModel();
+        dialog.Initialize(settings,
+            [new() { Index = 0, IsSelected = true, CanChange = false },
+             new() { Index = 1, IsSelected = true, IsSubtitle = true }], isMatroskaSource);
+        Assert.Equal(isMatroskaSource, dialog.CanUseFastSubtitleSeek);
+        dialog.Container = "mp4";
+        Assert.Equal(isMatroskaSource, dialog.CanUseFastSubtitleSeek);
+        var notified = false;
+        dialog.PropertyChanged += (_, args) => notified |= args.PropertyName == nameof(dialog.CanUseFastSubtitleSeek);
+        dialog.Tracks[1].IsSelected = false;
+        Assert.True(notified);
+        Assert.False(dialog.CanUseFastSubtitleSeek);
+        dialog.Tracks[1].IsSelected = true;
+        dialog.FastSubtitleSeek = false;
+        var updated = dialog.Apply(settings);
+        Assert.False(updated.FastSubtitleSeek);
+        Assert.True(settings.FastSubtitleSeek);
+        Assert.Equal(isMatroskaSource, dialog.CanUseFastSubtitleSeek);
     }
 
     [Fact]
@@ -201,20 +229,6 @@ public sealed class RemuxExportServiceTests
     }
 
     [RemuxExportFact]
-    public async Task QueueCanMergeSeparateCompatibleFiles()
-    {
-        var source = Fixture("multi.mp4");
-        using var part = new TemporaryOutput("mp4");
-        using var target = new TemporaryOutput("mp4");
-        var service = new RemuxExportService();
-        await service.ExportAsync(new RemuxExportRequest(part.Path, [new(source, 2, 4, Settings("mp4", 0, 1))]));
-        await service.ExportAsync(new RemuxExportRequest(target.Path,
-            [new(source, 0, 2, Settings("mp4", 0, 1)), new(part.Path, 0, null, Settings("mp4", 0, 1))]));
-        Assert.Equal(HashPackets(source, 0, 4), HashPackets(target.Path, 0, 4));
-        AssertMonotonicDts(target.Path);
-    }
-
-    [RemuxExportFact]
     public async Task EofKeepsLongerAudioAndMergeStartsAfterAllRetainedTracks()
     {
         var source = Fixture("long-audio.mp4");
@@ -243,14 +257,148 @@ public sealed class RemuxExportServiceTests
     }
 
     [RemuxExportFact]
+    public async Task Mp4SeekKeepsActiveEventsFromMultipleSubtitleTracks()
+    {
+        var source = Fixture("seek-subtitles.mp4");
+        using var target = new TemporaryOutput("mp4");
+        await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path,
+            [new(source, 60, 62, new RemuxExportSettings
+            {
+                Container = "mp4", ReferenceVideoIndex = 0, StreamIndices = [0, 1, 2], FastSubtitleSeek = true
+            })]));
+        Assert.Equal(HashPackets(source, 60, 62), HashPackets(target.Path, 0, 2));
+        var overlapping = ReadMovTextCues(target.Path, 1);
+        Assert.Equal(new[] { (0d, 0.5), (0.5, 1.5), (1.5, 2d) },
+            overlapping.Select(cue => (cue.Start, cue.End)).ToArray());
+        Assert.Contains("Long subtitle", overlapping[0].Text);
+        Assert.Contains("Overlapping subtitle", overlapping[1].Text);
+        Assert.Empty(overlapping[2].Text);
+        var sparse = Assert.Single(ReadMovTextCues(target.Path, 2));
+        Assert.Equal((0d, 2d), (sparse.Start, sparse.End));
+        Assert.Contains("Sparse subtitle", sparse.Text);
+    }
+
+    private static unsafe List<(double Start, double End, string Text)> ReadMovTextCues(string path, int index)
+    {
+        using var input = Open(path);
+        var stream = input.Streams[index];
+        var scale = stream.TimeBase.num / (double)stream.TimeBase.den;
+        var cues = new List<(double, double, string)>();
+        foreach (var packet in input.ReadPackets())
+        {
+            if (packet.StreamIndex != index) continue;
+            AVPacket* raw = packet;
+            if (raw->duration <= 0) continue;
+            var data = new ReadOnlySpan<byte>(raw->data, raw->size);
+            var length = System.Buffers.Binary.BinaryPrimitives.ReadUInt16BigEndian(data);
+            var text = System.Text.Encoding.UTF8.GetString(data.Slice(2, length));
+            cues.Add((Math.Round(raw->pts * scale, 3), Math.Round((raw->pts + raw->duration) * scale, 3), text));
+        }
+        return cues;
+    }
+
+    [RemuxExportFact]
+    public async Task Mp4LateRangesMergeWithSubtitleEventsAtEachBoundary()
+    {
+        var source = Fixture("seek-subtitles.mp4");
+        using var direct = new TemporaryOutput("mp4");
+        var service = new RemuxExportService();
+        await service.ExportAsync(new RemuxExportRequest(direct.Path,
+            [new(source, 54, 56, Settings("mp4", 0, 1, 2)), new(source, 60, 62, Settings("mp4", 0, 1, 2))]));
+        var expected = HashPackets(source, 54, 56).Concat(HashPackets(source, 60, 62)).ToArray();
+        Assert.Equal(expected, HashPackets(direct.Path, 0, 4));
+        AssertMonotonicDts(direct.Path);
+        using var output = Open(direct.Path);
+        Assert.InRange(output.Duration / 1e6, 3.99, 4.1);
+        Assert.Equal(new[] { (0d, 2d), (2d, 2.5), (2.5, 3.5), (3.5, 4d) },
+            ReadMovTextCues(direct.Path, 1).Select(cue => (cue.Start, cue.End)).ToArray());
+        Assert.Equal(new[] { (0d, 2d), (2d, 4d) },
+            ReadMovTextCues(direct.Path, 2).Select(cue => (cue.Start, cue.End)).ToArray());
+    }
+
+    [RemuxExportFact]
+    public async Task MkvSubtitleLookbackWorksForSingleCutsAndMergedRanges()
+    {
+        var source = Fixture("seek-subtitles.mkv");
+        foreach (var fast in new[] { false, true })
+        foreach (var merge in new[] { false, true })
+        {
+            var settings = Settings("mkv", 0, 1);
+            settings.TimelineOriginSeconds = VideoStart(source);
+            settings.FastSubtitleSeek = fast;
+            using var target = new TemporaryOutput("mkv");
+            List<RemuxExportSegment> segments = [new(source, 60, 62, settings)];
+            if (merge) segments.Insert(0, new(source, 54, 56, settings.Snapshot()));
+            await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path, segments));
+            var expected = HashPackets(source, 60, 62);
+            if (merge) expected = HashPackets(source, 54, 56).Concat(expected).ToArray();
+            Assert.Equal(expected, HashPackets(target.Path, 0, merge ? 4 : 2));
+            AssertMonotonicDts(target.Path, allowMissingInitialVideoDts: true);
+            using var output = Open(target.Path);
+            Assert.InRange(output.Duration / 1e6, merge ? 3.99 : 1.99, merge ? 4.03 : 2.03);
+            var cues = ReadAssCues(target.Path);
+            var offset = merge ? 2d : 0d;
+            var expectedCues = new List<(double, double, string)>();
+            if (merge)
+            {
+                if (!fast) expectedCues.Add((0, 2, "Long subtitle"));
+                expectedCues.Add((0, 2, "Recent subtitle"));
+            }
+            if (!fast) expectedCues.Add((offset, offset + 2, "Long subtitle"));
+            expectedCues.Add((offset, offset + 2, "Recent subtitle"));
+            expectedCues.Add((offset + 0.5, offset + 1.5, "Overlapping subtitle"));
+            Assert.Equal(expectedCues, cues);
+            AssertUniqueAssEvents(target.Path);
+        }
+    }
+
+    [RemuxExportFact]
+    public async Task FastMkvSeekHandlesAnEmptySubtitleTrackAndMergingThroughEof()
+    {
+        var source = Fixture("seek-subtitles.mkv");
+        var settings = Settings("mkv", 0, 1);
+        settings.TimelineOriginSeconds = VideoStart(source);
+        using var target = new TemporaryOutput("mkv");
+        await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path,
+            [new(source, 70, 72, settings), new(source, 74, null, settings.Snapshot())]));
+        Assert.Equal(HashPackets(source, 70, 72).Concat(HashPackets(source, 74, 80)).ToArray(),
+            HashPackets(target.Path, 0, 8));
+        Assert.Empty(ReadAssCues(target.Path));
+        using var output = Open(target.Path);
+        Assert.Contains(output.Streams, stream => stream.Codecpar!.CodecType == AVMediaType.AVMEDIA_TYPE_SUBTITLE);
+        Assert.InRange(output.Duration / 1e6, 7.99, 8.03);
+        AssertMonotonicDts(target.Path, allowMissingInitialVideoDts: true);
+    }
+
+    private static unsafe List<(double Start, double End, string Text)> ReadAssCues(string path)
+    {
+        using var input = Open(path);
+        var cues = new List<(double, double, string)>();
+        foreach (var packet in input.ReadPackets())
+        {
+            var stream = input.Streams[packet.StreamIndex];
+            if (stream.Codecpar!.CodecId != AVCodecID.AV_CODEC_ID_ASS) continue;
+            AVPacket* raw = packet;
+            var scale = stream.TimeBase.num / (double)stream.TimeBase.den;
+            var text = System.Text.Encoding.UTF8.GetString(new ReadOnlySpan<byte>(raw->data, raw->size)).Split(',', 9)[8];
+            cues.Add((Math.Round(raw->pts * scale, 3), Math.Round((raw->pts + raw->duration) * scale, 3), text));
+        }
+        return cues;
+    }
+
+    [RemuxExportFact]
     public async Task LongSubtitleIsClippedWithoutLosingLaterOverlappingEvents()
     {
         var source = Fixture("overlapping.mkv");
-        using var target = new TemporaryOutput("mkv");
-        var settings = Settings("mkv", 0, 1, 2);
-        settings.TimelineOriginSeconds = VideoStart(source);
-        await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path, [new(source, 2, 4, settings)]));
-        AssertOverlappingSubtitleTimes(target.Path);
+        foreach (var fast in new[] { false, true })
+        {
+            using var target = new TemporaryOutput("mkv");
+            var settings = Settings("mkv", 0, 1, 2);
+            settings.TimelineOriginSeconds = VideoStart(source);
+            settings.FastSubtitleSeek = fast;
+            await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path, [new(source, 2, 4, settings)]));
+            AssertOverlappingSubtitleTimes(target.Path);
+        }
     }
 
     private static unsafe void AssertOverlappingSubtitleTimes(string path)
@@ -356,7 +504,7 @@ public sealed class RemuxExportServiceTests
     }
 
     [RemuxExportFact("TSCUTTER_AV3A_TEST_SAMPLE")]
-    public async Task AudioVividRangesAndSeparateFilesMergeInRequestedOrder()
+    public async Task AudioVividRangesMergeInRequestedOrder()
     {
         var source = Environment.GetEnvironmentVariable("TSCUTTER_AV3A_TEST_SAMPLE")!;
         using var original = Open(source);
@@ -374,32 +522,17 @@ public sealed class RemuxExportServiceTests
         using var direct = new TemporaryOutput("mp4");
         await service.ExportAsync(new RemuxExportRequest(direct.Path, ranges.Select(range =>
             new RemuxExportSegment(source, range.Item1 - origin, range.Item2 - origin, settings)).ToArray()));
-        using var first = new TemporaryOutput("mp4");
-        using var second = new TemporaryOutput("mp4");
-        using var third = new TemporaryOutput("mp4");
-        var parts = new[] { first.Path, second.Path, third.Path };
-        for (var i = 0; i < parts.Length; i++)
-            await service.ExportAsync(new RemuxExportRequest(parts[i],
-                [new(source, ranges[i].Item1 - origin, ranges[i].Item2 - origin, settings)]));
-        using var queued = new TemporaryOutput("mp4");
-        var order = new[] { 2, 0, 1 };
-        await service.ExportAsync(new RemuxExportRequest(queued.Path, order.Select(index =>
-            new RemuxExportSegment(parts[index], 0, null, Settings("mp4", 0, 1))).ToArray()));
         for (var track = 0; track < 2; track++)
         {
             var sourceIndex = track == 0 ? video.Index : audio.Index;
             var hashes = ranges.Select(range => HashPackets(source, range.Item1, range.Item2, sourceIndex)).ToArray();
             Assert.Equal(hashes.SelectMany(value => value).ToArray(), HashPackets(direct.Path, 0, double.MaxValue, track));
-            Assert.Equal(order.SelectMany(index => hashes[index]).ToArray(), HashPackets(queued.Path, 0, double.MaxValue, track));
         }
-        foreach (var path in new[] { direct.Path, queued.Path })
-        {
-            using var output = Open(path);
-            var expectedDuration = ranges.Sum(range => range.Item2 - range.Item1);
-            Assert.InRange(output.Duration / 1e6, expectedDuration - 0.01, expectedDuration + 0.1);
-            AssertMonotonicDts(path);
-            AssertAv3aParameters(source, audio.Index, path);
-        }
+        using var output = Open(direct.Path);
+        var expectedDuration = ranges.Sum(range => range.Item2 - range.Item1);
+        Assert.InRange(output.Duration / 1e6, expectedDuration - 0.01, expectedDuration + 0.1);
+        AssertMonotonicDts(direct.Path);
+        AssertAv3aParameters(source, audio.Index, direct.Path);
     }
 
     private static unsafe double[] VideoKeyframeTimes(string path, int count)

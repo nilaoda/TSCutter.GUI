@@ -13,11 +13,13 @@ public sealed class RemuxExportSettings
     public int ReferenceVideoIndex { get; set; }
     public double TimelineOriginSeconds { get; set; }
     public List<int> StreamIndices { get; set; } = [];
+    public bool FastSubtitleSeek { get; set; } = true;
 
     public RemuxExportSettings Snapshot() => new()
     {
         Container = Container, ReferenceVideoIndex = ReferenceVideoIndex,
-        TimelineOriginSeconds = TimelineOriginSeconds, StreamIndices = [.. StreamIndices]
+        TimelineOriginSeconds = TimelineOriginSeconds, StreamIndices = [.. StreamIndices],
+        FastSubtitleSeek = FastSubtitleSeek
     };
 
     [JsonIgnore]

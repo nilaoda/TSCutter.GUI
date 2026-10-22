@@ -1,13 +1,10 @@
 using System;
 using System.Collections.Generic;
-using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
-using Classic.CommonControls.Dialogs;
 using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
-using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
-using HanumanInstitute.MvvmDialogs.FileSystem;
+using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Utils.Application;
 
@@ -36,17 +33,18 @@ public partial class MainWindowViewModel
         var video = _videoInstance;
         var settings = CurrentRemuxSettings!.Snapshot();
         var dialog = _dialogService.CreateViewModel<RemuxExportOptionsViewModel>();
-        dialog.Container = settings.Container;
-        dialog.Tracks.AddRange(video!.ExportTracks.Select(track => new RemuxExportTrackChoice
+        dialog.Initialize(settings, video!.ExportTracks.Select(track => new RemuxExportTrackChoice
         {
             Index = track.Index, Description = track.Description,
             CanChange = track.Index != settings.ReferenceVideoIndex,
+            IsSubtitle = track.Type == AVMediaType.AVMEDIA_TYPE_SUBTITLE,
             IsSelected = settings.StreamIndices.Contains(track.Index)
-        }));
+        }), video.ClipExtension == "mkv");
         await _dialogService.ShowDialogAsync(this, dialog);
         if (dialog.DialogResult != true || !ReferenceEquals(video, _videoInstance)) return;
         var updated = dialog.Apply(settings);
-        if (updated.Container != settings.Container || !updated.StreamIndices.SequenceEqual(settings.StreamIndices))
+        if (updated.Container != settings.Container || updated.FastSubtitleSeek != settings.FastSubtitleSeek ||
+            !updated.StreamIndices.SequenceEqual(settings.StreamIndices))
             InvalidateClipExports();
         _remuxExportSettings = updated;
         OnPropertyChanged(nameof(HasUnsavedProjectChanges));
@@ -72,36 +70,6 @@ public partial class MainWindowViewModel
     }
 
     public bool HasRemuxQueue => ExportQueue.Any(item => item.RemuxSettings is not null);
-
-    private bool CanMergeRemuxQueue => ExportQueue.Count >= 2 && ExportQueue.All(item => item.RemuxSettings is not null);
-
-    [RelayCommand(CanExecute = nameof(CanMergeRemuxQueue))]
-    private async Task MergeRemuxQueueAsync()
-    {
-        var items = ExportQueue.ToArray();
-        if (items.Length < 2) return;
-        var extension = items[0].RemuxSettings!.Container;
-        var settings = new SaveFileDialogSettings
-        {
-            Title = LocalizationManager.Instance.String_RemuxExport_MergeQueue,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(items[0].OutputFilePath)!),
-            SuggestedFileName = Path.GetFileNameWithoutExtension(items[0].SourceFileName) + "_merged." + extension,
-            DefaultExtension = extension,
-            Filters = [new(LocalizationManager.Instance.String_RemuxExport_Files, [extension])]
-        };
-        var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
-        if (result?.Path is null) return;
-        var dialog = _dialogService.CreateViewModel<OutputWindowViewModel>();
-        dialog.SetRemuxTask(new RemuxExportRequest(result.Path.LocalPath, items.Select(item =>
-            new RemuxExportSegment(item.SourceFilePath, item.StartTimeSeconds,
-                item.EndPosition < 0 ? null : item.EndTimeSeconds, item.RemuxSettings!.Snapshot())).ToArray()));
-        await _dialogService.ShowDialogAsync(this, dialog);
-        if (dialog.Exception is { } exception)
-            await ShowMessageAsync(FormatMergeError(exception), LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
-        else if (dialog.DialogResult == true)
-            await ShowMessageAsync(string.Format(LocalizationManager.Instance.String_MergeClips_Completed, result.Path.LocalPath),
-                LocalizationManager.Instance.String_RemuxExport_MergeQueue, MessageBoxIcon.Information);
-    }
 
     private static string FormatRemuxExportError(RemuxExportException exception)
     {
