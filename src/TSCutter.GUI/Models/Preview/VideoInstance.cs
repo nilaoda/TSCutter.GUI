@@ -23,7 +23,7 @@ namespace TSCutter.GUI.Models.Preview;
 
 public partial class VideoInstance(string filePath, bool enableHardwareDecoding = false,
     PreviewStreamSelection? streamSelection = null, Func<bool>? enableSdrToneMapping = null,
-    bool retainPreviewFrame = false) : IDisposable
+    bool retainPreviewFrame = false, bool probeHardwareDecoding = false) : IDisposable
 {
     private static readonly HashSet<string> HardwareTags = new() 
     { 
@@ -75,6 +75,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             AVMediaType.AVMEDIA_TYPE_SUBTITLE or AVMediaType.AVMEDIA_TYPE_ATTACHMENT).Select(stream => stream.Index).ToList()
     };
     public bool IsHardwareDecoding { get; private set; }
+    public bool IsHardwareDecodingAvailable { get; private set; }
     public bool IsGpuPresentation { get; private set; }
     public VideoPresentationMode PresentationMode { get; private set; } = VideoPresentationMode.SoftwareBitmap;
     private string hardwareDecoderName = string.Empty;
@@ -217,6 +218,12 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         UpdateTimelineDuration();
 
         var decoderOpened = preferHardwareDecoding && TryOpenHardwareDecoder();
+        if (!preferHardwareDecoding && probeHardwareDecoding)
+        {
+            // 主预览即使默认软解，也需确认设备及当前编码能否打开；探测上下文立即释放。
+            using var hardwareProbe = TryCreateHardwareDecoder(false, out _);
+            IsHardwareDecodingAvailable = hardwareProbe is not null;
+        }
         if (!decoderOpened)
             decoderOpened = TryOpenSoftwareDecoder();
 
@@ -253,6 +260,24 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
 
     private bool TryOpenHardwareDecoder(bool fullPacketDecoding = false)
     {
+        var candidate = TryCreateHardwareDecoder(fullPacketDecoding, out var deviceType);
+        IsHardwareDecodingAvailable = candidate is not null;
+        if (candidate is null) return false;
+        try { ReplaceVideoDecoder(candidate); }
+        catch { candidate.Dispose(); throw; }
+        hardwareDecoderOpened = true;
+        useFullPacketDecoding = fullPacketDecoding;
+        IsHardwareDecoding = true;
+        IsGpuPresentation = false;
+        PresentationMode = VideoPresentationMode.HardwareCpuTransfer;
+        hardwareDecoderName = GetHardwareDeviceDisplayName(deviceType);
+        Console.WriteLine($"Hardware decoder opened: {hardwareDecoderName} ("
+            + (fullPacketDecoding ? "full packets" : "key packets") + ")");
+        return true;
+    }
+
+    private CodecContext? TryCreateHardwareDecoder(bool fullPacketDecoding, out AVHWDeviceType selectedDevice)
+    {
         foreach (var deviceType in GetHardwareDeviceCandidates())
         {
             foreach (var decoder in softwareDecoders.AsEnumerable().Reverse())
@@ -270,18 +295,10 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                         candidate.SkipFrame = AVDiscard.AVDISCARD_NONKEY;
                     candidate.AttachHardwareDevice(deviceType);
                     candidate.Open();
-                    ReplaceVideoDecoder(candidate);
+                    var opened = candidate;
                     candidate = null;
-
-                    hardwareDecoderOpened = true;
-                    useFullPacketDecoding = fullPacketDecoding;
-                    IsHardwareDecoding = true;
-                    IsGpuPresentation = false;
-                    PresentationMode = VideoPresentationMode.HardwareCpuTransfer;
-                    hardwareDecoderName = GetHardwareDeviceDisplayName(deviceType);
-                    Console.WriteLine($"Hardware decoder opened: {decoder.Name} ({hardwareDecoderName}, "
-                        + (fullPacketDecoding ? "full packets" : "key packets") + ")");
-                    return true;
+                    selectedDevice = deviceType;
+                    return opened;
                 }
                 catch (Exception exception)
                 {
@@ -296,7 +313,13 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         }
 
         Console.WriteLine("No supported hardware decoder was available; falling back to software decoding.");
-        return false;
+        selectedDevice = AVHWDeviceType.AV_HWDEVICE_TYPE_NONE;
+        return null;
+    }
+
+    internal void MarkHardwareDecodingUnavailable()
+    {
+        lock (decoderSync) IsHardwareDecodingAvailable = false;
     }
 
     private bool TryOpenSoftwareDecoder(bool fullPacketDecoding = false)
@@ -389,6 +412,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
 
         keyFrameGap = 90000;
         AudioMode = true;
+        IsHardwareDecodingAvailable = false;
         hardwareDecoderOpened = false;
         IsHardwareDecoding = false;
         hardwareDecoderName = string.Empty;
@@ -598,6 +622,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             }
         }
 
+        if (hardwareDecoderOpened) IsHardwareDecodingAvailable = false;
         if (!TryOpenSoftwareDecoder(fullPacketDecoding: true))
             ThrowDecodeFailure();
         return DecodeFullPacketsFromTarget();
@@ -957,6 +982,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     private void CloseCore()
     {
         Inited = false;
+        IsHardwareDecodingAvailable = false;
         inFc?.Close();
         inFc?.Dispose();
         videoDecoder?.Close();
@@ -1076,6 +1102,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 // 此时解码器其实已经完成打开。
                 if (!AudioMode) CompleteFrameColorMetadata(frame);
                 var isHardwareFrame = !AudioMode && frame.HasHardwareFramesContext;
+                // 设备打开后仍可能只返回软件帧，状态栏以实际输出为准。
+                if (hardwareDecoderOpened) IsHardwareDecodingAvailable = isHardwareFrame;
                 var displayGeometry = AudioMode
                     ? default
                     : GetDisplayGeometry(frame);

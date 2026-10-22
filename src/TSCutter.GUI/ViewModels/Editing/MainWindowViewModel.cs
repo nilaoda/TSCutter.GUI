@@ -1485,7 +1485,7 @@ public partial class MainWindowViewModel : ViewModelBase
             {
                 prepared = new VideoInstance(project.Source.Path,
                     _configService.CurrentConfig.PreferHardwareDecoding, project.PreviewSelection,
-                    () => EnableSdrToneMapping, retainPreviewFrame: true);
+                    () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true);
                 await prepared.InitVideoAsync();
                 if (project.Clips.Count > 0 && !prepared.CanClip)
                     throw new InvalidDataException("Clips require a supported TS, M2TS, MP4 or MKV source file.");
@@ -2185,7 +2185,7 @@ public partial class MainWindowViewModel : ViewModelBase
                 _videoInstance = prepared ?? new VideoInstance(
                     VideoPath,
                     preferHardwareDecodingForPreview,
-                    enableSdrToneMapping: () => EnableSdrToneMapping, retainPreviewFrame: true);
+                    enableSdrToneMapping: () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true);
                 if (prepared is null)
                     await _videoInstance.InitVideoAsync();
                 _remuxExportSettings = null;
@@ -2415,6 +2415,8 @@ public partial class MainWindowViewModel : ViewModelBase
             return;
 
         IsHardwareDecoding = _videoInstance.IsHardwareDecoding;
+        OnPropertyChanged(nameof(CanToggleHardwareDecoding));
+        ToggleHardwareDecodingCommand.NotifyCanExecuteChanged();
     }
 
     // 文件工具独立读取源文件，拖动预览时仍可使用；换源加载期间才需要禁用。

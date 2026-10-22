@@ -44,7 +44,8 @@ public partial class MainWindowViewModel
     }
 
     public bool CanTogglePreviewOptions => IsVideoInitialized && !IsDecoding && !_isLoadingVideo && !_isResolvingClipEnd;
-    public bool CanToggleHardwareDecoding => CanTogglePreviewOptions && AppConfig.IsHardwareDecodingSupported;
+    public bool CanToggleHardwareDecoding => CanTogglePreviewOptions && AppConfig.IsHardwareDecodingSupported
+        && _videoInstance is { IsHardwareDecodingAvailable: true };
     public bool CanToggleSdrToneMapping => HasHdrPreview && CanTogglePreviewOptions;
 
     public string ToneMappingStatusText => EnableSdrToneMapping
@@ -78,7 +79,7 @@ public partial class MainWindowViewModel
             await toneMappingRefreshTask;
             var targetPts = _displayedFramePts;
             candidate = new VideoInstance(VideoPath, targetHardware, _activePreviewSelection,
-                () => EnableSdrToneMapping, retainPreviewFrame: true);
+                () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true);
             await candidate.InitVideoAsync();
             result = await candidate.DecodePreviewFrameAtPtsAsync(targetPts);
             if (result is null || result.FramePts != targetPts)
@@ -97,7 +98,11 @@ public partial class MainWindowViewModel
         {
             Console.WriteLine($"Decoder switch failed: {exception}");
             if (ReferenceEquals(previous, _videoInstance))
+            {
+                if (targetHardware && candidate is { Inited: true, IsHardwareDecodingAvailable: false })
+                    previous.MarkHardwareDecodingUnavailable();
                 await ShowMessageAsync(exception.Message);
+            }
         }
         finally
         {

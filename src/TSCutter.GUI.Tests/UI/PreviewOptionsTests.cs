@@ -107,6 +107,46 @@ public sealed class PreviewOptionsTests
         }, CancellationToken.None);
     }
 
+    [Fact]
+    public async Task HardwareSwitchRequiresCurrentStreamAvailabilityAndRefreshesAfterFallback()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            using var resolver = new ModernDependencyResolver();
+            using var scope = resolver.WithResolver();
+            Locator.CurrentMutable.RegisterConstant<ILocalizationService>(new LocalizationService());
+            var vm = new MainWindowViewModel(
+                new DialogService(DispatchProxy.Create<IDialogManager, UnusedDialogs>()), new MemoryConfiguration());
+            var video = new VideoInstance("unused.mp4");
+            typeof(VideoInstance).GetProperty(nameof(VideoInstance.Inited))!.SetValue(video, true);
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            typeof(MainWindowViewModel).GetField("_videoInstance", flags)!.SetValue(vm, video);
+            var window = new MainWindow { DataContext = vm };
+            try
+            {
+                window.Show();
+                var button = window.FindControl<Button>("HardwareDecodingToggle")!;
+                void Refresh() => typeof(MainWindowViewModel).GetMethod("UpdateDecodeMode", flags)!.Invoke(vm, null);
+                Refresh();
+                Assert.False(vm.ToggleHardwareDecodingCommand.CanExecute(null));
+                Assert.False(button.IsEffectivelyEnabled);
+                // 主动使用软解不会清除设备与当前编码的可用状态。
+                typeof(VideoInstance).GetProperty(nameof(VideoInstance.IsHardwareDecodingAvailable))!.SetValue(video, true);
+                Refresh();
+                Assert.False(vm.IsHardwareDecoding);
+                Assert.Equal(AppConfig.IsHardwareDecodingSupported, vm.ToggleHardwareDecodingCommand.CanExecute(null));
+                Assert.Equal(AppConfig.IsHardwareDecodingSupported, button.IsEffectivelyEnabled);
+                // 回退后即使 S/W 文案未变化，也须重新通知按钮不可点击。
+                video.MarkHardwareDecodingUnavailable();
+                Refresh();
+                Assert.False(vm.ToggleHardwareDecodingCommand.CanExecute(null));
+                Assert.False(button.IsEffectivelyEnabled);
+            }
+            finally { window.Close(); vm.Close(); }
+        }, CancellationToken.None);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -240,7 +280,11 @@ public sealed class PreviewOptionsTests
                 Assert.Equal(pts, CurrentPts());
                 Assert.Equal(original, Snapshot(vm.DecodedBitmap!));
                 if (vm.ToggleHardwareDecodingCommand.CanExecute(null))
+                {
                     await vm.ToggleHardwareDecodingCommand.ExecuteAsync(null);
+                    Assert.True(vm.ToggleHardwareDecodingCommand.CanExecute(null));
+                    await vm.ToggleHardwareDecodingCommand.ExecuteAsync(null);
+                }
                 Assert.Equal(pts, CurrentPts());
                 Assert.True(vm.IsVideoInitialized);
                 // 映射与拖动可同时提交，最终定位必须完成，旧映射结果不能把画面拉回。

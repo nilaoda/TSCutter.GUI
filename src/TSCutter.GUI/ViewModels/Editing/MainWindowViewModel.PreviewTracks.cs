@@ -152,7 +152,7 @@ public partial class MainWindowViewModel
             await CompleteScrubPreviewAsync();
             candidate = new VideoInstance(VideoPath,
                 preferHardwareDecodingForPreview, choice.Selection,
-                () => EnableSdrToneMapping, retainPreviewFrame: true);
+                () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true);
             await candidate.InitVideoAsync(cancellation.Token);
             var duration = candidate.GetVideoDurationInSeconds();
             if (CurrentTime > 0 && duration > 0)
