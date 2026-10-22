@@ -264,7 +264,7 @@ public static unsafe partial class NativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial AVPixFmtDescriptor* av_pix_fmt_desc_get(AVPixelFormat @pix_fmt);
 
-    [LibraryImport("tscutter.avutil", EntryPoint = "av_get_bits_per_sample", StringMarshalling = StringMarshalling.Utf8)]
+    [LibraryImport("tscutter.avcodec", EntryPoint = "av_get_bits_per_sample", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int av_get_bits_per_sample(AVCodecID @codec_id);
 

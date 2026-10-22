@@ -315,6 +315,47 @@ public sealed class PreviewOptionsTests
         }
     }
 
+    [Fact]
+    public async Task MissingVideoKeepsMediaInfoAvailableWithoutEnablingEditing()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            using var resolver = new ModernDependencyResolver();
+            using var scope = resolver.WithResolver();
+            Locator.CurrentMutable.RegisterConstant<ILocalizationService>(new LocalizationService());
+            var vm = new MainWindowViewModel(
+                new DialogService(DispatchProxy.Create<IDialogManager, UnusedDialogs>()), new MemoryConfiguration())
+                { VideoPath = "audio-only.mp4" };
+            try
+            {
+                var retain = typeof(MainWindowViewModel).GetMethod("TryRetainFileForToolsAsync",
+                    BindingFlags.Instance | BindingFlags.NonPublic)!;
+                Assert.True(await (Task<bool>)retain.Invoke(vm, [new NoVideoStreamException()])!);
+                Assert.Equal("audio-only.mp4", vm.VideoPath);
+                Assert.True(vm.IsToolsOnly);
+                Assert.True(vm.ShowMediaInfoClickCommand.CanExecute(null));
+                Assert.True(vm.CloseVideoClickCommand.CanExecute(null));
+                Assert.False(vm.CanUseCurrentFileTools);
+                Assert.False(vm.IsVideoInitialized);
+                Assert.False(vm.AddClipCommand.CanExecute(null));
+                Assert.False(vm.MarkClipStartCommand.CanExecute(null));
+                Assert.False(vm.MarkClipEndCommand.CanExecute(null));
+                Assert.False(vm.SaveVideoClickCommand.CanExecute(null));
+                Assert.False(vm.ExportAllCommand.CanExecute(null));
+                Assert.False(vm.MergeSelectedClipsCommand.CanExecute(null));
+                Assert.False(vm.RemuxExportOptionsCommand.CanExecute(null));
+                Assert.False(vm.SaveFrameClickCommand.CanExecute(null));
+                Assert.Contains(LocalizationManager.Instance.String_NoVideoStream, vm.ToolsOnlyMessage);
+                Assert.Contains(LocalizationManager.Instance.String_ToolsOnly_MediaHint, vm.ToolsOnlyMessage);
+                vm.Close();
+                Assert.False(vm.ShowMediaInfoClickCommand.CanExecute(null));
+            }
+            finally { vm.Close(); }
+            return true;
+        }, CancellationToken.None);
+    }
+
     private static void PublishFrame(MainWindowViewModel vm, VideoDynamicRange range) =>
         typeof(MainWindowViewModel).GetMethod("ApplyDecodeResult", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(vm, [new DecodeResult { VideoDynamicRange = range }]);

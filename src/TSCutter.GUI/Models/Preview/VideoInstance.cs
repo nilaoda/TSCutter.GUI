@@ -145,7 +145,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 return true;
             }, cancellationToken);
 
-            if (!inFc.Streams.Any(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_VIDEO))
+            if (!inFc.Streams.Any(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_VIDEO &&
+                                            !stream.IsAttachedPicture))
                 throw new NoVideoStreamException();
         }
 
