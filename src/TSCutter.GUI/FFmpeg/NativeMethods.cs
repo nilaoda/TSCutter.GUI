@@ -200,6 +200,10 @@ public static unsafe partial class NativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void av_frame_free(AVFrame** @frame);
 
+    [LibraryImport("tscutter.avutil", EntryPoint = "av_frame_ref")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_frame_ref(AVFrame* destination, AVFrame* source);
+
     [LibraryImport("tscutter.avutil", EntryPoint = "av_frame_unref", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void av_frame_unref(AVFrame* @frame);
@@ -207,6 +211,10 @@ public static unsafe partial class NativeMethods
     [LibraryImport("tscutter.avutil", EntryPoint = "av_frame_get_buffer", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int av_frame_get_buffer(AVFrame* @frame, int @align);
+
+    [LibraryImport("tscutter.avutil", EntryPoint = "av_frame_copy_props")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_frame_copy_props(AVFrame* destination, AVFrame* source);
 
     [LibraryImport("tscutter.avutil", EntryPoint = "av_frame_get_side_data", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

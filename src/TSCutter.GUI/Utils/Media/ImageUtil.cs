@@ -21,64 +21,45 @@ public static class ImageUtil
     // 每次都创建一张纯黑图片作为音频的图
     public static Bitmap BlankImage => CreateAudioBitmap();
 
-    // 缓存 VideoFrameConverter，避免每帧重新初始化 swscale 上下文
-    private static VideoFrameConverter? _cachedSws;
-    private static PixelSize _cachedSourceSize;
-    private static PixelSize _cachedDestinationSize;
-
-    public static unsafe Bitmap CreateBitmapFromFrame(Frame frame, int dpi = 96)
-        => CreateBitmapFromFrame(frame, new PixelSize(frame.Width, frame.Height), dpi);
+    public static unsafe Bitmap CreateBitmapFromFrame(Frame frame, int dpi = 96, bool enableSdrToneMapping = true)
+        => CreateBitmapFromFrame(frame, new PixelSize(frame.Width, frame.Height), dpi, enableSdrToneMapping);
 
     public static unsafe Bitmap CreateScaledBitmapFromFrame(
         Frame frame,
         int maxWidth,
         int maxHeight,
-        int dpi = 96)
+        int dpi = 96, bool enableSdrToneMapping = true)
     {
         var sourceSize = new PixelSize(frame.Width, frame.Height);
         var destinationSize = CalculateDecodeSize(sourceSize, new PixelSize(maxWidth, maxHeight));
-        return CreateBitmapFromFrame(frame, destinationSize, dpi);
+        return CreateBitmapFromFrame(frame, destinationSize, dpi, enableSdrToneMapping);
     }
 
-    private static unsafe Bitmap CreateBitmapFromFrame(Frame frame, PixelSize destinationSize, int dpi)
+    private static unsafe Bitmap CreateBitmapFromFrame(Frame frame, PixelSize destinationSize, int dpi, bool enableSdrToneMapping)
     {
-        var sourceSize = new PixelSize(frame.Width, frame.Height);
         var width = destinationSize.Width;
         var height = destinationSize.Height;
-
-        // swscale 直接输出 BGRA 格式，消除逐像素 BGR→BGRA 转换
-        if (_cachedSws == null || _cachedSourceSize != sourceSize || _cachedDestinationSize != destinationSize)
+        var bitmap = new WriteableBitmap(new PixelSize(width, height), new Vector(dpi, dpi),
+            PixelFormat.Bgra8888, AlphaFormat.Opaque);
+        try
         {
-            _cachedSws?.Dispose();
-            _cachedSws = new VideoFrameConverter();
-            _cachedSourceSize = sourceSize;
-            _cachedDestinationSize = destinationSize;
+            // 直接写入已锁定的位图，避免分配整张中间帧后再复制，也不共用跨线程转换器。
+            using var buffer = bitmap.Lock();
+            using var destination = new Frame();
+            destination.Width = width;
+            destination.Height = height;
+            destination.Format = (int)AVPixelFormat.AV_PIX_FMT_BGRA;
+            destination.Data[0] = (byte*)buffer.Address;
+            destination.Linesize[0] = buffer.RowBytes;
+            using var converter = new VideoFrameConverter { EnableSdrToneMapping = enableSdrToneMapping };
+            converter.ConvertFrame(frame, destination);
+            return bitmap;
         }
-
-        using Frame dest = Frame.CreateVideo(width, height, AVPixelFormat.AV_PIX_FMT_BGRA);
-        _cachedSws.ConvertFrame(frame, dest);
-
-        var writableBitmap = new WriteableBitmap(
-            new PixelSize(width, height),
-            new Vector(dpi, dpi),
-            PixelFormat.Bgra8888,
-            AlphaFormat.Opaque);
-
-        using var buffer = writableBitmap.Lock();
-        var srcData = dest.Data[0];
-        var srcStride = dest.Linesize[0];
-        var destRowBytes = buffer.RowBytes;
-
-        // swscale 已输出 BGRA，整行 MemoryCopy 替代逐字节 Marshal 操作
-        var copyBytesPerRow = Math.Min(srcStride, destRowBytes);
-        for (var y = 0; y < height; y++)
+        catch
         {
-            var srcPtr = srcData + y * srcStride;
-            var destPtr = buffer.Address + y * destRowBytes;
-            Buffer.MemoryCopy((void*)srcPtr, (void*)destPtr, destRowBytes, copyBytesPerRow);
+            bitmap.Dispose();
+            throw;
         }
-
-        return writableBitmap;
     }
 
     internal static PixelSize CalculateDecodeSize(PixelSize sourceSize, PixelSize maximumSize)

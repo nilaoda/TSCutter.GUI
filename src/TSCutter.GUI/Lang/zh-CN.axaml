@@ -178,8 +178,15 @@
     <x:String x:Key="String.Settings.ShowImageNavigatorTip">画面超出可视区域时显示导航缩略图，可点击或拖动定位。</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecoding">优先使用硬件解码</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecodingTip">Windows 和 macOS 在设备支持时可用；不支持的编码会自动使用软件解码。</x:String>
-    <x:String x:Key="String.Status.HardwareDecoding">HW</x:String>
-    <x:String x:Key="String.Status.SoftwareDecoding">SW</x:String>
+    <x:String x:Key="String.Settings.EnableSdrToneMapping">默认启用 HDR 到 SDR 预览映射</x:String>
+    <x:String x:Key="String.Settings.EnableSdrToneMappingTip">默认将 HDR10/PQ、HLG 和杜比视界 Profile 5 映射为 SDR。状态栏可临时切换当前文件的预览方式。</x:String>
+    <x:String x:Key="String.Status.SdrToneMappingOn">SDR 映射：开</x:String>
+    <x:String x:Key="String.Status.SdrToneMappingOff">SDR 映射：关</x:String>
+    <x:String x:Key="String.Status.ToggleSdrToneMappingTip">点击临时开关当前文件的 HDR 到 SDR 预览映射。</x:String>
+    <x:String x:Key="String.Status.ToggleHardwareDecodingTip">点击临时切换当前文件的硬件或软件解码。</x:String>
+    <x:String x:Key="String.Status.DecoderSwitchFailed">切换解码器时无法保持当前画面，已保留原预览。</x:String>
+    <x:String x:Key="String.Status.HardwareDecoding">H/W</x:String>
+    <x:String x:Key="String.Status.SoftwareDecoding">S/W</x:String>
     <x:String x:Key="String.Settings.Theme.ThemeVariantMode">主题模式</x:String>
     <x:String x:Key="String.Settings.Theme.AutoDetect">自动检测</x:String>
     <x:String x:Key="String.Settings.Theme.Light">浅色</x:String>

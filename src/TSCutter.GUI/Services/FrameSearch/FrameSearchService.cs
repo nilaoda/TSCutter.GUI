@@ -24,12 +24,12 @@ internal sealed class FrameSearchService
         string filePath, byte[] referenceJpeg, TimeSpan startTime,
         Func<FrameSearchMatch, bool, TimeSpan?, Task> onMatch,
         Func<CancellationToken, Task> pauseAfterMatch, IProgress<double>? progress,
-        CancellationToken token, PreviewStreamSelection? streamSelection = null)
+        CancellationToken token, PreviewStreamSelection? streamSelection = null, bool enableSdrToneMapping = true)
     {
         using var stream = new MemoryStream(referenceJpeg, writable: false);
         using var reference = new Bitmap(stream);
         var target = FrameVisualMatcher.Create(reference);
-        using var decoder = new VideoInstance(filePath, enableHardwareDecoding: false, streamSelection);
+        using var decoder = new VideoInstance(filePath, enableHardwareDecoding: false, streamSelection, () => enableSdrToneMapping);
         await decoder.InitVideoAsync(token).ConfigureAwait(false);
         var duration = decoder.GetVideoDurationInSeconds();
         if (!double.IsFinite(duration) || duration <= 0)
@@ -60,7 +60,7 @@ internal sealed class FrameSearchService
             token.ThrowIfCancellationRequested();
             if (previewDecoder is null && includeNearby && neighborhood is null)
             {
-                previewDecoder = new VideoInstance(filePath, enableHardwareDecoding: false, streamSelection);
+                previewDecoder = new VideoInstance(filePath, enableHardwareDecoding: false, streamSelection, () => enableSdrToneMapping);
                 await previewDecoder.InitVideoAsync(token).ConfigureAwait(false);
             }
             var match = await CreateMatchAsync(previewDecoder, scoredFrame, update,

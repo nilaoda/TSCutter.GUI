@@ -12,10 +12,10 @@ namespace TSCutter.GUI.Tests.FFmpeg;
 
 public sealed class NativeRuntimeFactAttribute : FactAttribute
 {
-    public NativeRuntimeFactAttribute()
+    public NativeRuntimeFactAttribute(string requiredVariable = "TSCUTTER_FFMPEG_TEST_SAMPLES")
     {
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("TSCUTTER_FFMPEG_TEST_SAMPLES")))
-            Skip = "需要设置 TSCUTTER_FFMPEG_TEST_SAMPLES 和 FFmpeg 9 运行时目录。";
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(requiredVariable)))
+            Skip = "需要设置 " + requiredVariable + " 和 FFmpeg 9 运行时目录。";
     }
 }
 
@@ -45,6 +45,80 @@ public sealed class FFmpeg9InteropTests(ITestOutputHelper output)
         Assert.Equal(188, FramePacketPosition.Resolve(&frame));
         Assert.Equal(-1, FramePacketPosition.Resolve(&frame, FramePacketPositionSource.DecoderMetadata));
         Assert.Equal(-1, FramePacketPosition.Resolve(&frame, FramePacketPositionSource.Unknown));
+    }
+
+    [NativeRuntimeFact]
+    public unsafe void UnsupportedHdrLayoutsKeepTheRegularPreviewConversion()
+    {
+        foreach (var format in new[] { AVPixelFormat.AV_PIX_FMT_GBRP10LE, AVPixelFormat.AV_PIX_FMT_YUVA420P10LE })
+        {
+            using var source = Frame.CreateVideo(16, 8, format);
+            AVFrame* raw = source;
+            raw->color_trc = AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084;
+            raw->color_primaries = AVColorPrimaries.AVCOL_PRI_BT2020;
+            raw->colorspace = format == AVPixelFormat.AV_PIX_FMT_GBRP10LE
+                ? AVColorSpace.AVCOL_SPC_RGB : AVColorSpace.AVCOL_SPC_BT2020_NCL;
+            var descriptor = FF.av_pix_fmt_desc_get(format);
+            for (uint c = 0; c < descriptor->nb_components; c++)
+            {
+                var info = descriptor->comp[c];
+                var chroma = format != AVPixelFormat.AV_PIX_FMT_GBRP10LE && c is 1 or 2;
+                var width = source.Width >> (chroma ? descriptor->log2_chroma_w : 0);
+                var height = source.Height >> (chroma ? descriptor->log2_chroma_h : 0);
+                for (var y = 0; y < height; y++)
+                for (var x = 0; x < width; x++)
+                    *(ushort*)(raw->data[(uint)info.plane] + y * raw->linesize[(uint)info.plane]
+                        + x * info.step + info.offset) = (ushort)(128 + c * 256);
+            }
+            using var expected = Frame.CreateVideo(16, 8, AVPixelFormat.AV_PIX_FMT_BGRA);
+            using var actual = Frame.CreateVideo(16, 8, AVPixelFormat.AV_PIX_FMT_BGRA);
+            using var original = new VideoFrameConverter { EnableSdrToneMapping = false };
+            using var enabled = new VideoFrameConverter();
+            original.ConvertFrame(source, expected);
+            enabled.ConvertFrame(source, actual);
+            for (var y = 0; y < source.Height; y++)
+                Assert.True(new ReadOnlySpan<byte>(expected.Data[0] + y * expected.Linesize[0], 16 * 4)
+                    .SequenceEqual(new ReadOnlySpan<byte>(actual.Data[0] + y * actual.Linesize[0], 16 * 4)), format.ToString());
+        }
+    }
+
+    [NativeRuntimeFact]
+    public unsafe void HdrConversionRecoversFromInvalidBuffersAndResolutionChanges()
+    {
+        using var reused = new VideoFrameConverter();
+        foreach (var (width, height, format) in new[]
+        {
+            (641, 401, AVPixelFormat.AV_PIX_FMT_YUV420P10LE),
+            (33, 19, AVPixelFormat.AV_PIX_FMT_P010LE),
+            (641, 401, AVPixelFormat.AV_PIX_FMT_YUV444P10LE),
+            (16, 8, AVPixelFormat.AV_PIX_FMT_YUV420P)
+        })
+        {
+            using var source = Frame.CreateVideo(width, height, format);
+            AVFrame* raw = source;
+            raw->color_trc = AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084;
+            raw->color_primaries = AVColorPrimaries.AVCOL_PRI_BT2020;
+            raw->colorspace = AVColorSpace.AVCOL_SPC_BT2020_NCL;
+            var descriptor = FF.av_pix_fmt_desc_get(format);
+            for (uint component = 0; component < 3; component++)
+            {
+                var info = descriptor->comp[component];
+                var rows = component == 0 ? height : (height + (1 << descriptor->log2_chroma_h) - 1) >> descriptor->log2_chroma_h;
+                new Span<byte>(raw->data[(uint)info.plane], raw->linesize[(uint)info.plane] * rows).Fill(128);
+            }
+            using var expected = Frame.CreateVideo(width, height, AVPixelFormat.AV_PIX_FMT_BGRA);
+            using var actual = Frame.CreateVideo(width, height, AVPixelFormat.AV_PIX_FMT_BGRA);
+            var stride = source.Linesize[0];
+            source.Linesize[0] = 0;
+            try { Assert.Throws<InvalidOperationException>(() => reused.ConvertFrame(source, actual)); }
+            finally { source.Linesize[0] = stride; }
+            using var fresh = new VideoFrameConverter();
+            fresh.ConvertFrame(source, expected);
+            reused.ConvertFrame(source, actual);
+            for (var row = 0; row < height; row++)
+                Assert.True(new ReadOnlySpan<byte>(expected.Data[0] + row * expected.Linesize[0], width * 4)
+                    .SequenceEqual(new ReadOnlySpan<byte>(actual.Data[0] + row * actual.Linesize[0], width * 4)));
+        }
     }
 
     [NativeRuntimeFact]

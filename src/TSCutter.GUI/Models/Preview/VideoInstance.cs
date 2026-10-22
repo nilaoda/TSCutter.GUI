@@ -21,8 +21,9 @@ using TSCutter.GUI.Utils.TransportStream.Packets;
 
 namespace TSCutter.GUI.Models.Preview;
 
-public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
-    PreviewStreamSelection? streamSelection = null) : IDisposable
+public partial class VideoInstance(string filePath, bool enableHardwareDecoding = false,
+    PreviewStreamSelection? streamSelection = null, Func<bool>? enableSdrToneMapping = null,
+    bool retainPreviewFrame = false) : IDisposable
 {
     private static readonly HashSet<string> HardwareTags = new() 
     { 
@@ -939,6 +940,9 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
         reusableSoftwareFrame = null;
         reusableDecodeFrame?.Dispose();
         reusableDecodeFrame = null;
+        retainedPreviewFrame?.Dispose();
+        retainedPreviewFrame = null;
+        retainedPreviewInfo = null;
         hostFramePresenter.Dispose();
     }
 
@@ -1045,6 +1049,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                 // 成功打开硬件解码器并不代表当前编码器一定输出了硬件帧。
                 // VideoToolbox/D3D11 的部分失败只会在首帧初始化时才报告，
                 // 此时解码器其实已经完成打开。
+                if (!AudioMode) CompleteFrameColorMetadata(frame);
                 var isHardwareFrame = !AudioMode && frame.HasHardwareFramesContext;
                 var displayGeometry = AudioMode
                     ? default
@@ -1127,32 +1132,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                         }
                         else
                         {
-                            try
-                            {
-                                hostFramePresenter.TryConvert(
-                                    softwareFrame ?? frame,
-                                    maxWidth,
-                                    maxHeight,
-                                    out bitmapLease);
-                            }
-                            catch (Exception hostException)
-                            {
-                                Console.WriteLine($"Host bitmap reuse unavailable; using allocation fallback: {hostException.Message}");
-                            }
-
-                            if (bitmapLease is not null)
-                            {
-                                bitmap = bitmapLease.Bitmap;
-                            }
-                            else
-                            {
-                                bitmap = maxWidth > 0 && maxHeight > 0
-                                    ? ImageUtil.CreateScaledBitmapFromFrame(
-                                        softwareFrame ?? frame,
-                                        maxWidth,
-                                        maxHeight)
-                                    : ImageUtil.CreateBitmapFromFrame(softwareFrame ?? frame);
-                            }
+                            bitmap = ConvertPreviewFrame(softwareFrame ?? frame, maxWidth, maxHeight, out bitmapLease);
                         }
                     }
                     catch (Exception exception)
@@ -1164,7 +1144,7 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                         Console.WriteLine(exception);
                         return null;
                     }
-                    return new DecodeResult()
+                    var result = new DecodeResult()
                     {
                         Bitmap = bitmap,
                         BitmapLease = bitmapLease,
@@ -1182,6 +1162,17 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
                         FrameEndSignature = FindKeyPacketBoundary(pktPosition, pts),
                         PresentationMode = PresentationMode,
                     };
+                    try
+                    {
+                        RetainPreviewFrame(softwareFrame ?? frame, result);
+                        return result;
+                    }
+                    catch
+                    {
+                        bitmapLease?.Dispose();
+                        if (bitmapLease is null) bitmap.Dispose();
+                        throw;
+                    }
                 }
             }
         }
@@ -1206,6 +1197,21 @@ public class VideoInstance(string filePath, bool enableHardwareDecoding = false,
         if (!receiveOnly && !isSearchScan)
             Console.WriteLine("no frames were successfully processed");
         return null;
+    }
+
+    // 部分解码器只在流参数中报告色彩信息，补齐帧上缺失的字段再传递给映射器。
+    private unsafe void CompleteFrameColorMetadata(Frame frame)
+    {
+        AVFrame* raw = frame;
+        var parameters = inVideoStream.Codecpar!;
+        if (raw->color_trc == AVColorTransferCharacteristic.AVCOL_TRC_UNSPECIFIED)
+            raw->color_trc = parameters.ColorTrc;
+        if (raw->color_primaries == AVColorPrimaries.AVCOL_PRI_UNSPECIFIED)
+            raw->color_primaries = parameters.ColorPrimaries;
+        if (raw->colorspace == AVColorSpace.AVCOL_SPC_UNSPECIFIED)
+            raw->colorspace = parameters.ColorSpace;
+        if (raw->color_range == AVColorRange.AVCOL_RANGE_UNSPECIFIED)
+            raw->color_range = parameters.ColorRange;
     }
 
     private static unsafe VideoDynamicRange GetVideoDynamicRange(Frame frame)

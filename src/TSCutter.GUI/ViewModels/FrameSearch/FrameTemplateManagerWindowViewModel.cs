@@ -26,6 +26,8 @@ public sealed partial class FrameTemplateManagerWindowViewModel : ViewModelBase,
     private bool initialized;
     private bool closed;
 
+    public bool EnableSdrToneMapping { get; set; } = true;
+
     public event Action? RequestClose;
     public bool? DialogResult { get; private set; }
     public SavedFrameTemplate? ChosenTemplate { get; private set; }
@@ -138,7 +140,7 @@ public sealed partial class FrameTemplateManagerWindowViewModel : ViewModelBase,
         try
         {
             await using var decoder = new KeyFrameOverviewService();
-            await decoder.OpenAsync(FilePath, cancellation.Token);
+            await decoder.OpenAsync(FilePath, cancellation.Token, enableSdrToneMapping: EnableSdrToneMapping);
             using var bitmap = await decoder.DecodeThumbnailAsync(
                 new KeyFrameIndexEntry(0, 0, TimeSpan.FromSeconds(CurrentTimeSeconds), -1),
                 320, 180, cancellation.Token);

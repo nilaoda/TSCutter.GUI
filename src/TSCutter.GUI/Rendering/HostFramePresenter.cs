@@ -1,7 +1,6 @@
 using TSCutter.GUI.FFmpeg;
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Avalonia;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
@@ -29,7 +28,8 @@ public sealed unsafe class HostFramePresenter : IDisposable
         Frame source,
         int maxWidth,
         int maxHeight,
-        out IBitmapFrameLease? lease)
+        out IBitmapFrameLease? lease,
+        bool enableSdrToneMapping = true)
     {
         lock (sync)
         {
@@ -57,6 +57,7 @@ public sealed unsafe class HostFramePresenter : IDisposable
                 using var framebuffer = slot.Bitmap!.Lock();
                 ConfigureDestinationFrame(targetSize, framebuffer);
                 converter ??= new VideoFrameConverter();
+                converter.EnableSdrToneMapping = enableSdrToneMapping;
                 converter.ConvertFrame(source, destinationFrame!);
 
                 lease = new BitmapFrameLease(this, slot);
@@ -72,8 +73,17 @@ public sealed unsafe class HostFramePresenter : IDisposable
 
     private BufferSlot? AcquireBuffer(PixelSize size)
     {
-        var slot = buffers.FirstOrDefault(candidate => !candidate.IsLeased && candidate.Size == size)
-            ?? buffers.FirstOrDefault(candidate => !candidate.IsLeased);
+        BufferSlot? slot = null;
+        foreach (var candidate in buffers)
+        {
+            if (candidate.IsLeased) continue;
+            slot ??= candidate;
+            if (candidate.Size == size)
+            {
+                slot = candidate;
+                break;
+            }
+        }
 
         if (slot is null)
         {
@@ -87,6 +97,7 @@ public sealed unsafe class HostFramePresenter : IDisposable
         if (slot.Size != size || slot.Bitmap is null)
         {
             slot.Bitmap?.Dispose();
+            slot.Bitmap = null;
             slot.Bitmap = CreateBitmap(size);
             slot.Size = size;
         }
@@ -135,8 +146,9 @@ public sealed unsafe class HostFramePresenter : IDisposable
                 return;
 
             disposed = true;
-            foreach (var slot in buffers.Where(slot => !slot.IsLeased))
+            foreach (var slot in buffers)
             {
+                if (slot.IsLeased) continue;
                 slot.Bitmap?.Dispose();
                 slot.Bitmap = null;
             }

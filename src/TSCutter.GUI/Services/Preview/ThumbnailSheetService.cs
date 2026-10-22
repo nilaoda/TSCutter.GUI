@@ -29,13 +29,13 @@ internal sealed class ThumbnailSheetService : IAsyncDisposable
     /// （音频模式或时长缺失时返回 false，此时抽帧会得到占位图）。
     /// </summary>
     public async Task<bool> OpenAsync(string filePath, CancellationToken cancellationToken = default,
-        PreviewStreamSelection? streamSelection = null)
+        PreviewStreamSelection? streamSelection = null, bool enableSdrToneMapping = true)
     {
         await DisposeAsync().ConfigureAwait(false);
 
         // 与总览一致：只走软件解码。缩略图很小，而硬件帧回读到主机内存前
         // 仍需要完整的 native surface，保持软件解码可以限制显存/纹理占用。
-        decoder = new VideoInstance(filePath, enableHardwareDecoding: false, streamSelection);
+        decoder = new VideoInstance(filePath, enableHardwareDecoding: false, streamSelection, () => enableSdrToneMapping);
         try
         {
             await decoder.InitVideoAsync(cancellationToken).ConfigureAwait(false);

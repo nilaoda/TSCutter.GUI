@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Xunit;
 using TSCutter.GUI.Utils.Media;
 
@@ -19,6 +20,27 @@ public class FFmpegNativeBootstrapperTests
         finally
         {
             Directory.Delete(directory);
+        }
+    }
+
+    [NativeRuntimeFact]
+    public void UnsupportedSubtitleLibraryReportsItsPathAndMissingEntryPoint()
+    {
+        var root = Environment.GetEnvironmentVariable("TSCUTTER_FFMPEG_ROOT")!;
+        var libraries = FFmpegNativeBootstrapper.LoadDirectory(root);
+        try
+        {
+            var path = Path.Combine(root, FFmpegNativeBootstrapper.LibraryFileName("avfilter", 12));
+            // 使用没有字幕接口的原生库，验证缺失接口不会被误报为缺少单独的 DLL。
+            var error = Assert.Throws<DllNotFoundException>(() =>
+                FFmpegNativeBootstrapper.ValidateSubtitleSupport(libraries["avutil"], path));
+            Assert.Contains(path, error.Message);
+            Assert.Contains("ass_library_version", error.Message);
+            Assert.Contains("complete matching subtitle-enabled", error.Message);
+        }
+        finally
+        {
+            foreach (var handle in libraries.Values.Reverse()) NativeLibrary.Free(handle);
         }
     }
 

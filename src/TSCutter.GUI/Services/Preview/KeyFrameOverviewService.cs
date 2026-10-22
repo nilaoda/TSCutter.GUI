@@ -15,13 +15,13 @@ internal sealed class KeyFrameOverviewService : IAsyncDisposable
     public async Task<IReadOnlyList<KeyFrameIndexEntry>> OpenAsync(
         string filePath,
         CancellationToken cancellationToken = default,
-        PreviewStreamSelection? streamSelection = null)
+        PreviewStreamSelection? streamSelection = null, bool enableSdrToneMapping = true)
     {
         await DisposeAsync().ConfigureAwait(false);
         // 总览只使用软件解码。缩略图尺寸很小，而硬件帧在回读到主机内存前
         // 仍需要完整的 4K/8K surface。保持软件解码可以限制 native surface
         // 的占用，同时不影响主预览使用硬件解码。
-        decoder = new VideoInstance(filePath, enableHardwareDecoding: false, streamSelection);
+        decoder = new VideoInstance(filePath, enableHardwareDecoding: false, streamSelection, () => enableSdrToneMapping);
         try
         {
             await decoder.InitVideoAsync(cancellationToken).ConfigureAwait(false);

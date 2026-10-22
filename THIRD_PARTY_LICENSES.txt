@@ -6018,13 +6018,13 @@ ON AN "AS IS" BASIS, AND THE COPYRIGHT HOLDER HAS NO OBLIGATION TO
 PROVIDE MAINTENANCE, SUPPORT, UPDATES, ENHANCEMENTS, OR MODIFICATIONS.
 
 ============================================================
-FFmpegSharedLibraries: FriBidi
+FFmpegSharedLibraries: FriBidi; TSCutter.GUI: adapted libplacebo code
 ============================================================
 
 GNU Lesser General Public License, version 2.1 or later.
 
 The complete LGPL 2.1 text appears above in SkiaSharp/THIRD-PARTY-NOTICES.txt,
-under "# libmicrohttpd". That license text also applies to FriBidi.
+under "# libmicrohttpd". That license text also applies to FriBidi and the adapted libplacebo code.
 
 ============================================================
 FFmpegSharedLibraries: libunibreak

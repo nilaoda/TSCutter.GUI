@@ -26,6 +26,7 @@ public static class FFmpegNativeBootstrapper
     private static readonly object SyncRoot = new();
     private static readonly Dictionary<string, IntPtr> Handles = new(StringComparer.Ordinal);
     private static bool initialized;
+    private static bool subtitlesValidated;
     private static string diagnosticSummary = "FFmpeg bootstrap has not run yet.";
 
     // 启动时仅保存搜索路径，首次调用原生接口时再加载并校验运行库，避免阻塞首屏。
@@ -72,17 +73,23 @@ public static class FFmpegNativeBootstrapper
         lock (SyncRoot)
         {
             if (!initialized) Initialize();
-            if (Handles.TryGetValue(component, out var handle)) return handle;
             if (initialized && component == "ass")
-                throw new DllNotFoundException(
-                    $"Subtitle rendering requires '{LibraryFileName("ass", 9)}' (libass 0.17.4 or later) in '{runtimeDirectory}'. "
-                    + "This runtime does not provide it. Restore the complete subtitle-enabled runtime package.");
+            {
+                var filter = Handles["avfilter"];
+                if (!subtitlesValidated)
+                {
+                    ValidateSubtitleSupport(filter, Path.Combine(runtimeDirectory!, LibraryFileName("avfilter", 12)));
+                    subtitlesValidated = true;
+                }
+                return filter;
+            }
+            if (Handles.TryGetValue(component, out var handle)) return handle;
             throw new DllNotFoundException(diagnosticSummary);
         }
     }
 
     internal static string LibraryFileName(string component, int major) => OperatingSystem.IsWindows()
-        ? $"{(component == "ass" ? "libass" : component)}-{major}.dll" : OperatingSystem.IsMacOS()
+        ? $"{component}-{major}.dll" : OperatingSystem.IsMacOS()
         ? $"lib{component}.{major}.dylib" : $"lib{component}.so.{major}";
 
     internal static Dictionary<string, IntPtr> LoadDirectory(string directory)
@@ -96,17 +103,6 @@ public static class FFmpegNativeBootstrapper
         var currentFile = "";
         try
         {
-            // 新运行库的 avfilter 依赖 libass，必须先从同一目录加载并校验它。
-            // 旧运行库仍可用于已有功能；请求字幕渲染时另行报告缺少 libass。
-            var subtitleFile = Path.Combine(directory, LibraryFileName("ass", 9));
-            if (File.Exists(subtitleFile))
-            {
-                currentFile = subtitleFile;
-                var handle = NativeLibrary.Load(currentFile);
-                loaded.Add("ass", handle);
-                ValidateVersion(handle, "ass", 9);
-                foreach (var symbol in SubtitleExports) RequireExport(handle, symbol);
-            }
             foreach (var library in Libraries)
             {
                 currentFile = Path.Combine(directory, LibraryFileName(library.Name, library.Major));
@@ -122,11 +118,25 @@ public static class FFmpegNativeBootstrapper
             var detail = exception is BadImageFormatException
                 ? "The file is damaged or targets a different operating system or CPU architecture. " + exception.Message
                 : exception.Message;
-            if (Path.GetFileName(currentFile) == LibraryFileName("avfilter", 12) &&
-                !File.Exists(Path.Combine(directory, LibraryFileName("ass", 9))))
-                detail += $" '{LibraryFileName("ass", 9)}' is also missing; subtitle-enabled runtimes require this dependency.";
             throw new DllNotFoundException($"Unable to load '{currentFile}': {detail} "
                 + "Restore the complete matching runtime package; avoid mixing libraries from different builds.", exception);
+        }
+    }
+
+    // 字幕接口静态合入 avfilter。按需验证，普通预览无需依赖字幕接口是否存在。
+    internal static void ValidateSubtitleSupport(IntPtr handle, string libraryPath)
+    {
+        try
+        {
+            ValidateVersion(handle, "ass", 0);
+            foreach (var symbol in SubtitleExports) RequireExport(handle, symbol);
+        }
+        catch (Exception exception) when (exception is EntryPointNotFoundException or InvalidOperationException)
+        {
+            throw new DllNotFoundException(
+                $"Subtitle rendering is unavailable in '{libraryPath}': {exception.Message} "
+                + "This avfilter must export the embedded libass API (0.17.4 or later). "
+                + "Restore the complete matching subtitle-enabled FFmpegSharedLibraries runtime package.", exception);
         }
     }
 

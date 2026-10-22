@@ -178,8 +178,15 @@
     <x:String x:Key="String.Settings.ShowImageNavigatorTip">Show a navigation thumbnail when the image extends beyond the view. Click or drag to move the visible area.</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecoding">Prefer hardware decoding</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecodingTip">Available on Windows and macOS when a compatible device is present. Unsupported codecs automatically use software decoding.</x:String>
-    <x:String x:Key="String.Status.HardwareDecoding">HW</x:String>
-    <x:String x:Key="String.Status.SoftwareDecoding">SW</x:String>
+    <x:String x:Key="String.Settings.EnableSdrToneMapping">Default to HDR to SDR preview mapping</x:String>
+    <x:String x:Key="String.Settings.EnableSdrToneMappingTip">Map HDR10/PQ, HLG and Dolby Vision Profile 5 to SDR by default. The status bar temporarily overrides this for the current file.</x:String>
+    <x:String x:Key="String.Status.SdrToneMappingOn">SDR mapping: On</x:String>
+    <x:String x:Key="String.Status.SdrToneMappingOff">SDR mapping: Off</x:String>
+    <x:String x:Key="String.Status.ToggleSdrToneMappingTip">Click to toggle HDR to SDR preview mapping for this file.</x:String>
+    <x:String x:Key="String.Status.ToggleHardwareDecodingTip">Click to switch hardware/software decoding for this file.</x:String>
+    <x:String x:Key="String.Status.DecoderSwitchFailed">Could not retain the current frame while switching decoders.</x:String>
+    <x:String x:Key="String.Status.HardwareDecoding">H/W</x:String>
+    <x:String x:Key="String.Status.SoftwareDecoding">S/W</x:String>
     <x:String x:Key="String.Settings.Theme.ThemeVariantMode">Theme mode</x:String>
     <x:String x:Key="String.Settings.Theme.AutoDetect">Auto detect</x:String>
     <x:String x:Key="String.Settings.Theme.Light">Light</x:String>

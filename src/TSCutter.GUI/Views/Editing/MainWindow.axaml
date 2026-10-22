@@ -27,6 +27,29 @@
 
     <Window.Resources>
         <converters:SecondsToStringConverter x:Key="SecondsConverter" />
+        <!-- 临时预览状态使用纯文字，解码忙碌时禁用点击也不改变颜色，避免闪烁。 -->
+        <ControlTheme x:Key="PreviewStatusTextTheme" TargetType="Button">
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Padding" Value="4,0" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Height" Value="20" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static commonControls:SystemColors.ControlTextBrushKey}}" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <TextBlock x:Name="StatusText" Text="{TemplateBinding Content}"
+                               Foreground="{TemplateBinding Foreground}" Padding="{TemplateBinding Padding}"
+                               VerticalAlignment="Center" />
+                </ControlTemplate>
+            </Setter>
+            <Style Selector="^:pointerover /template/ TextBlock#StatusText">
+                <Setter Property="TextDecorations" Value="Underline" />
+            </Style>
+            <Style Selector="^:focus-visible /template/ TextBlock#StatusText">
+                <Setter Property="TextDecorations" Value="Underline" />
+            </Style>
+        </ControlTheme>
         <ControlTheme x:Key="ClipEditButtonTheme" TargetType="Button">
             <Setter Property="Width" Value="22" />
             <Setter Property="Height" Value="20" />
@@ -292,6 +315,20 @@
                                VerticalAlignment="Center"
                                Text="{Binding StatusInfoText}">
                     </TextBlock>
+                </commonControls:StatusBarItem>
+                <commonControls:StatusBarItem>
+                    <Button x:Name="HardwareDecodingToggle" Classes="desktop-template-button"
+                            Theme="{StaticResource PreviewStatusTextTheme}"
+                            Content="{Binding DecodeModeText}"
+                            Command="{Binding ToggleHardwareDecodingCommand}"
+                            ToolTip.Tip="{DynamicResource String.Status.ToggleHardwareDecodingTip}" />
+                </commonControls:StatusBarItem>
+                <commonControls:StatusBarItem IsVisible="{Binding HasHdrPreview}">
+                    <Button x:Name="ToneMappingToggle" Classes="desktop-template-button"
+                            Theme="{StaticResource PreviewStatusTextTheme}"
+                            Content="{Binding ToneMappingStatusText}"
+                            Command="{Binding ToggleSdrToneMappingCommand}"
+                            ToolTip.Tip="{DynamicResource String.Status.ToggleSdrToneMappingTip}" />
                 </commonControls:StatusBarItem>
                 <commonControls:StatusBarItem commonControls:StatusBar.Size="*">
                     <Button Command="{Binding OpenFileInExplorerCommand}"
