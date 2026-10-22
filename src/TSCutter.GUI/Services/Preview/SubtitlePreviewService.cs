@@ -373,7 +373,9 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
             {
                 if (renderer != 0)
                 {
-                    var size = ImageUtil.CalculateDecodeSize(displaySize, new PixelSize(1920, 1080));
+                    // 画布按视频显示像素渲染；限制到 1080p 会使 4K/8K 在 1:1 下放大字幕位图。
+                    // 显示层已将物理像素换算为界面坐标，这里无需额外乘 DPI 缩放。
+                    var size = displaySize;
                     FF.ass_set_frame_size(renderer, size.Width, size.Height);
                     FF.ass_set_storage_size(renderer, codedSize.Width, codedSize.Height);
                     FF.ass_set_pixel_aspect(renderer, size.Width / (double)size.Height /
