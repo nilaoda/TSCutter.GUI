@@ -27,10 +27,12 @@ internal static class MediaFileUtil
     private static string CanonicalDirectory(string path)
     {
         var directory = new DirectoryInfo(path);
+        var parent = directory.Parent;
+        // Windows 的盘符根目录和 UNC 共享根目录不能按普通目录查询链接目标。
+        if (parent is null) return directory.FullName;
         if (directory.Exists && directory.ResolveLinkTarget(true) is { } target)
             return CanonicalDirectory(target.FullName);
-        return directory.Parent is { } parent
-            ? Path.Combine(CanonicalDirectory(parent.FullName), directory.Name) : directory.FullName;
+        return Path.Combine(CanonicalDirectory(parent.FullName), directory.Name);
     }
 
     /// <summary>
