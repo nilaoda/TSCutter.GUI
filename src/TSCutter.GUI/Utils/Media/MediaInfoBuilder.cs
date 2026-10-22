@@ -321,7 +321,7 @@ public static partial class MediaInfoBuilder
             AppendField(sb, "Bit rate", FormatDecimal(cp.BitRate / 1000.0) + " kb/s");
         }
 
-        if (cp.ChLayout.nb_channels > 0)
+        if (!WriteAv3aChannels(sb, cp) && cp.ChLayout.nb_channels > 0)
         {
             AppendField(sb, "Channel(s)", cp.ChLayout.nb_channels + " channels");
             AppendField(sb, "Channel layout", GetChannelLayoutDescription(cp.ChLayout));

@@ -12,6 +12,51 @@ namespace TSCutter.GUI.Tests.Preview;
 public sealed class MediaInfoBuilderTests
 {
     [Fact]
+    public void AudioVividSeparates714BedFromFourObjects()
+    {
+        var text = new StringBuilder();
+        Assert.True(MediaInfoBuilder.WriteAv3aChannels(text, [2, 2, 1, 2, 10, 4, 0, 1, 6, 64]));
+        var result = text.ToString();
+        Assert.Contains("Channels + Objects", result);
+        Assert.Contains("Channel(s)                         : 12 channels", result);
+        Assert.Contains("Channel layout                     : 7.1.4", result);
+        Assert.Contains("Number of objects                  : 4", result);
+        Assert.DoesNotContain("16 channels", result);
+    }
+
+    [Fact]
+    public void AudioVividDistinguishesSpeakersObjectsAndAmbisonics()
+    {
+        var text = new StringBuilder();
+        Assert.True(MediaInfoBuilder.WriteAv3aChannels(text, [2, 2, 0, 0, 8, 0, 0, 1, 1, 128]));
+        Assert.Contains("5.1.4", text.ToString());
+        Assert.DoesNotContain("objects", text.ToString());
+        text.Clear();
+        Assert.True(MediaInfoBuilder.WriteAv3aChannels(text, [2, 2, 1, 1, 0, 4, 0, 1, 1, 128]));
+        Assert.Contains("Number of objects                  : 4", text.ToString());
+        Assert.DoesNotContain("Channel layout", text.ToString());
+        text.Clear();
+        Assert.True(MediaInfoBuilder.WriteAv3aChannels(text, [2, 2, 0, 3, 0, 0, 3, 1, 1, 128]));
+        Assert.Contains("16 channels", text.ToString());
+        Assert.Contains("Ambisonics (order 3)", text.ToString());
+    }
+
+    [Fact]
+    public void InvalidAudioVividConfigurationLeavesGenericChannelInfoAvailable()
+    {
+        var text = new StringBuilder();
+        byte[] valid = [2, 2, 1, 2, 10, 4, 0, 1, 6, 64];
+        Assert.False(MediaInfoBuilder.WriteAv3aChannels(text, valid.AsSpan(0, 9)));
+        foreach (var (index, value) in new[] { (0, 3), (3, 4), (4, 11), (5, 0), (7, 3) })
+        {
+            var invalid = (byte[])valid.Clone();
+            invalid[index] = (byte)value;
+            Assert.False(MediaInfoBuilder.WriteAv3aChannels(text, invalid));
+        }
+        Assert.Empty(text.ToString());
+    }
+
+    [Fact]
     public void DolbyVisionProfile5MatchesItsConfigurationRecord()
     {
         var info = MediaInfoBuilder.ParseDolbyVisionConfiguration([1, 0, 5, 7, 1, 0, 1, 0, 0], AVCodecID.AV_CODEC_ID_HEVC);
