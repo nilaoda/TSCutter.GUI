@@ -4,24 +4,25 @@
   <p><strong>English</strong> | <a href="README_CN.md">中文版</a></p>
 </div>
 
-TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It combines fast keyframe-based cutting with stream inspection, extraction, filtering, structural editing, repair, merging, and packet analysis tools, without transcoding the original audio or video.
+TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. It supports keyframe-based TS/M2TS cutting and MP4/MKV remux exports, along with stream inspection, extraction, filtering, structural editing, repair, merging, and packet analysis, without re-encoding the original audio or video.
 
-> TSCutter.GUI is now in public **Beta**, starting with version **0.1.0**. Download the [latest release](https://github.com/nilaoda/TSCutter.GUI/releases/latest) and report problems through [GitHub Issues](https://github.com/nilaoda/TSCutter.GUI/issues). The software is still under development and may contain bugs.
+> TSCutter.GUI is in public **Beta**. Download the [latest release](https://github.com/nilaoda/TSCutter.GUI/releases/latest) and report problems through [GitHub Issues](https://github.com/nilaoda/TSCutter.GUI/issues). The software is still under development and may contain bugs.
 
 ## Features
 
 ### Editing workflow
 
 - **Keyframe-accurate cutting**: Preview and navigate nearby keyframes or jump to a specific time before marking clip boundaries.
+- **Keyframe overview and frame search**: Browse keyframe thumbnails, manage saved frame templates, and search the video for similar images.
 - **Zoomable timeline**: Continuously zoom, pan, or return to a full-file overview for accurate navigation in long recordings.
 - **Multiple clip management**: Create and edit several clip ranges, view their positions on the timeline, and compare duration and estimated size.
 - **Clip labels and output names**: Give clips names, notes, and colors; retain them in projects and queued exports. Configure a filename template with a live preview.
 - **Editing projects**: Save the current source, clip ranges, timeline view, and cross-file export queue in a `.tscut` file for later editing. Projects can reopen recordings that have grown since saving.
 - **Program and video track selection**: Switch previews in files with multiple programs or video tracks. Keyframe overviews, thumbnail sheets, and frame searches follow the selected track. Multi-program TS exports can preserve all programs or keep only the current program. The selection area also appears when embedded subtitles are available.
 - **Embedded subtitle preview**: Select text or bitmap subtitles in MP4, MKV and TS. ASS styles, animations and MKV font attachments are supported. Subtitles follow the displayed frame when seeking, zooming or panning; export tracks remain controlled by export settings.
-- **HDR to SDR preview mapping**: Use CPU/SIMD processing for HDR10/PQ, HLG and Dolby Vision Profile 5. Temporarily toggle mapping and hardware/software decoding in the status bar; Settings stores defaults. Mapping applies to previews, while exports preserve the compressed audio and video.
+- **HDR to SDR preview mapping**: Use CPU/SIMD processing for HDR10/PQ, HLG and Dolby Vision Profile 5. Temporarily toggle mapping and hardware/software decoding in the status bar; Settings stores defaults. Mapping applies to previews and captured images; audio and video are not re-encoded on export.
 - **Flexible output**: Save one clip immediately, add clips to a batch export queue, or merge multiple selected clips into one file.
-- **Lossless media copy**: Preserve the original encoded audio and video without transcoding.
+- **Export without transcoding**: Copy the original compressed audio and video packets.
 - **Frame capture and media information**: Save or copy the current preview frame and inspect the opened file's stream information.
 - **Image navigator**: Locate the visible region of a zoomed image with a floating overview in the main preview and thumbnail sheets. Click or drag to navigate; disable it in Settings.
 - **High-resolution thumbnail sheets**: Generate configurable N×M contact sheets up to 12,000 pixels wide, preview them with zoom and pan, and export PNG or JPEG images with timestamps and labeled video, audio, and subtitle metadata, including language and HDR, HLG, or Dolby Vision indicators.
@@ -31,7 +32,7 @@ TSCutter.GUI is a cross-platform MPEG-TS editing and diagnostic toolkit. It comb
 
 - Choose the output container and retained tracks in **MP4 / MKV export settings**. Track order, language, titles, and default/forced flags follow the source.
 - Export individual clips or batches, merge selected ranges from one source, or merge different sources in queue order. Overlapping selected clips are combined once; queue ranges are appended in full.
-- Video cuts use keyframes and audio cuts use compressed packet boundaries. Text subtitles, including MP4 mov_text and MKV ASS, and chapters are trimmed and retimed. MKV attachments and MP4 cover art can be retained.
+- Video cuts use keyframes and audio cuts use compressed packet boundaries. Compatible text subtitles, including MP4 mov_text and MKV ASS, and chapters are trimmed and retimed. MKV attachments and MP4 cover art can be retained.
 - Copy compressed audio/video and codec configuration, preserving container-supported color, HDR static data, and Dolby Vision configuration. Dynamic metadata in the bitstream travels with the packets.
 - Check codec and track compatibility, with clear errors when content cannot be safely cut or merged.
 
@@ -99,7 +100,15 @@ Use **View → Theme** to switch families. In **Tools → Settings**, choose lig
 4. Save the current clip, add it to the export queue, or select multiple clips and merge them.
 5. Use the File menu to save a `.tscut` project and reopen it later to restore clips and queued exports. A growing source is accepted when verification of its saved portion succeeds.
 
-Files with multiple programs or video tracks show selectors above the preview. After confirmation, switching tracks clears current clips and undo history; queued tasks retain their original program choice. “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks. New projects use version 4 and can read version 1, 2 and 3 projects; older app versions cannot open new projects.
+Files with multiple programs, video tracks, or embedded subtitles show selectors above the preview. Subtitles are off by default and loaded in the background when selected; they can be changed or switched off at any time. After confirmation, switching the program or video track clears current clips and undo history; queued tasks retain their original program and track choices. For multi-program TS, “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks. New projects use version 4 and can read version 1, 2 and 3 projects; older app versions cannot open new projects.
+
+### Preview options
+
+In **Tools → Settings**, choose the default HDR to SDR mapping and hardware decoding preferences for newly opened files. The status bar temporarily overrides these preferences for the current file.
+
+- The **SDR mapping** control appears only when an HDR frame is detected. The selected mapping is also used when opening keyframe overviews, thumbnail sheets, and frame searches.
+- **H/W / S/W** shows the current decoding mode. Switching is available on Windows and macOS when the current video and device support hardware decoding; the control is disabled when hardware decoding is unavailable or has failed and fallen back to software.
+- Mapping and decoder switches preserve the displayed frame and clip boundaries.
 
 ### Clip labels and output filenames
 
