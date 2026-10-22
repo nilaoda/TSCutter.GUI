@@ -210,9 +210,11 @@ internal sealed unsafe class RemuxExportService
                 var stream = raw->streams[indices[i]];
                 if (stream->codecpar->codec_type == AVMediaType.AVMEDIA_TYPE_VIDEO && (stream->disposition & 1024) == 0)
                 {
-                    var start = FindBoundary(input, stream->index, startBoundary.Time, false, token);
+                    var start = stream->index == reference->index ? startBoundary :
+                        FindBoundary(input, stream->index, startBoundary.Time, false, token);
                     var finish = endBoundary.Dts == long.MaxValue ? endBoundary :
-                        FindBoundary(input, stream->index, endBoundary.Time, true, token);
+                        stream->index == reference->index ? endBoundary :
+                            FindBoundary(input, stream->index, endBoundary.Time, true, token);
                     if (Math.Abs(start.Time - startBoundary.Time) > 0.002 || Math.Abs(finish.Time - endBoundary.Time) > 0.002)
                         throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{stream->index}");
                     ValidateGopBoundary(input, stream->index, start.Time, token);
@@ -461,20 +463,50 @@ internal sealed unsafe class RemuxExportService
     private static double CopyPackets(AVFormatContext* output, PreparedSegment item, double offset, long[] lastDts,
         long[] subtitleOrder, CancellationToken token, Action<double, int> report)
     {
-        // 选择字幕时从文件开头重新读取，以保留跨越剪辑起点的字幕事件。
-        using var input = InterruptibleInputFormatContext.Open(item.Segment.SourcePath, () => token.IsCancellationRequested);
-        input.LoadStreamInfo();
+        var hasSubtitles = item.Streams.Any(index =>
+            item.Input.Streams[index].Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_SUBTITLE);
+        // MOV 默认按各轨道索引分别向前定位，能保留跨起点的 mov_text 字幕。
+        // Matroska 快速模式只回看约 30 秒；关闭后从头读取以保留长字幕。
+        // 起点不足 30 秒时仍从头读取，避免定位到首个视频关键帧后漏掉开头字幕。
+        var isMatroska = item.Input.InputFormat!.Name.Split(',').Contains("matroska");
+        var fastSubtitleSeek = hasSubtitles && isMatroska && item.Segment.Settings.FastSubtitleSeek &&
+            item.Start - item.Segment.Settings.TimelineOriginSeconds > 30;
+        var scanSubtitles = hasSubtitles && isMatroska && !fastSubtitleSeek;
+        using var scanInput = scanSubtitles
+            ? InterruptibleInputFormatContext.Open(item.Segment.SourcePath, () => token.IsCancellationRequested) : null;
+        // 可定位的输入复用准备阶段的上下文，避免再次打开文件和探测轨道。
+        var input = scanInput ?? item.Input;
         AVFormatContext* rawInput = input;
+        if (scanInput is not null)
+        {
+            AVFormatContext* preparedInput = item.Input;
+            if (rawInput->nb_streams != preparedInput->nb_streams)
+                input.LoadStreamInfo();
+            else
+            {
+                // Matroska 文件头已包含轨道列表；复用已探测的参数和帧率，
+                // 避免字幕扫描前再次读取音视频来猜测这些信息。
+                for (var i = 0; i < rawInput->nb_streams; i++)
+                {
+                    var stream = rawInput->streams[i];
+                    var prepared = preparedInput->streams[i];
+                    if (stream->codecpar->codec_type == AVMediaType.AVMEDIA_TYPE_ATTACHMENT) continue;
+                    FFmpegException.Check(FF.avcodec_parameters_copy(stream->codecpar, prepared->codecpar));
+                    stream->avg_frame_rate = prepared->avg_frame_rate;
+                    stream->r_frame_rate = prepared->r_frame_rate;
+                }
+            }
+        }
         var map = Enumerable.Repeat(-1, checked((int)rawInput->nb_streams)).ToArray();
         for (var i = 0; i < item.Streams.Length; i++) map[item.Streams[i]] = i;
         // MOV 可直接按索引跳过不再需要的轨道数据，避免为字幕读取整段音视频尾部。
         for (var i = 0; i < map.Length; i++)
             if (map[i] < 0) rawInput->streams[i]->discard = AVDiscard.AVDISCARD_ALL;
-        var hasSubtitles = item.Streams.Any(index => input.Streams[index].Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_SUBTITLE);
-        if (!hasSubtitles && item.Start > item.Segment.Settings.TimelineOriginSeconds + 0.001)
+        if (!scanSubtitles)
         {
-            AVStream* reference = input.Streams[item.Segment.Settings.ReferenceVideoIndex];
-            input.SeekFrame(Ticks(item.Start, reference->time_base), reference->index);
+            var reference = rawInput->streams[item.Segment.Settings.ReferenceVideoIndex];
+            var seekStart = fastSubtitleSeek ? item.Start - 30 : item.Start;
+            input.SeekFrame(Ticks(seekStart, reference->time_base), reference->index);
         }
         var toEof = item.Segment.EndSeconds is null;
         var actualEnd = item.Start;
@@ -485,11 +517,11 @@ internal sealed unsafe class RemuxExportService
         var remainingStreams = item.Streams.Length;
         for (var i = 0; i < item.Streams.Length; i++)
         {
-            var stream = input.Streams[item.Streams[i]];
-            if (!stream.IsAttachedPicture && stream.Codecpar?.CodecType != AVMediaType.AVMEDIA_TYPE_ATTACHMENT) continue;
+            var stream = rawInput->streams[item.Streams[i]];
+            if ((stream->disposition & 1024) == 0 && stream->codecpar->codec_type != AVMediaType.AVMEDIA_TYPE_ATTACHMENT) continue;
             finished[i] = true;
             remainingStreams--;
-            ((AVStream*)stream)->discard = AVDiscard.AVDISCARD_ALL;
+            stream->discard = AVDiscard.AVDISCARD_ALL;
         }
         // 各轨道独立确认终点；在读取下一包之前判断是否结束，避免 continue 绕过退出判断。
         using var packets = input.ReadPackets().GetEnumerator();
@@ -501,7 +533,7 @@ internal sealed unsafe class RemuxExportService
             if (raw->stream_index >= map.Length || map[raw->stream_index] < 0) continue;
             var index = map[raw->stream_index];
             if (finished[index]) continue;
-            AVStream* stream = input.Streams[raw->stream_index];
+            var stream = rawInput->streams[raw->stream_index];
             var type = stream->codecpar->codec_type;
             if (type == AVMediaType.AVMEDIA_TYPE_ATTACHMENT || (stream->disposition & 1024) != 0) continue;
             if (raw->pts == FF.AV_NOPTS_VALUE)
@@ -598,7 +630,7 @@ internal sealed unsafe class RemuxExportService
         }
         for (var i = 0; i < item.Streams.Length; i++)
         {
-            AVStream* stream = input.Streams[item.Streams[i]];
+            var stream = rawInput->streams[item.Streams[i]];
             if (stream->codecpar->codec_type == AVMediaType.AVMEDIA_TYPE_VIDEO &&
                 (stream->disposition & 1024) == 0 && packetsWritten[i] == 0)
                 throw new RemuxExportException(RemuxExportError.NoPackets, $"#{stream->index}");

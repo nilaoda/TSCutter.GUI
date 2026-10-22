@@ -31,6 +31,12 @@
             </ScrollViewer>
         </Grid>
         <StackPanel Grid.Row="2" Spacing="6">
+            <StackPanel Spacing="4" Margin="0,0,0,6" IsVisible="{Binding CanUseFastSubtitleSeek}">
+                <CheckBox Content="{DynamicResource String.RemuxExport.FastSubtitleSeek}"
+                          IsChecked="{Binding FastSubtitleSeek, Mode=TwoWay}" />
+                <TextBlock Text="{DynamicResource String.RemuxExport.FastSubtitleSeekHint}"
+                           TextWrapping="Wrap" Opacity="0.7" />
+            </StackPanel>
             <Separator Margin="0,0,0,6" />
             <TextBlock Text="{DynamicResource String.RemuxExport.BoundaryHint}" TextWrapping="Wrap" />
             <TextBlock Text="{DynamicResource String.RemuxExport.Notice}" TextWrapping="Wrap" Opacity="0.7" />

@@ -202,8 +202,6 @@
                                   Command="{Binding MergeSelectedClipsCommand}" />
                         <MenuItem Header="{DynamicResource String.RemuxExport.Options}"
                                   IsVisible="{Binding IsRemuxExport}" Command="{Binding RemuxExportOptionsCommand}" />
-                        <MenuItem Header="{DynamicResource String.RemuxExport.MergeQueue}"
-                                  Command="{Binding MergeRemuxQueueCommand}" IsVisible="{Binding HasRemuxQueue}" />
                         <MenuItem Header="{DynamicResource String.Menu.ExportQueue}"
                                   Command="{Binding BatchExportQueueCommand}" />
                         <Separator />
@@ -726,7 +724,6 @@
                                                 <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,0">
                                                     <TextBlock Text="{DynamicResource String.RemuxExport.Notice}" TextWrapping="Wrap"
                                                                FontSize="11" IsVisible="{Binding HasRemuxQueue}" />
-                                                    <Button Content="{DynamicResource String.RemuxExport.MergeQueue}" Command="{Binding MergeRemuxQueueCommand}" IsVisible="{Binding HasRemuxQueue}" />
                                                 </StackPanel>
                                                 <!-- 底部按钮 -->
                                                 <Grid DockPanel.Dock="Bottom"
