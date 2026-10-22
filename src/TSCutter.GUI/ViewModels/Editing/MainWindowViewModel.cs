@@ -2247,9 +2247,12 @@ public partial class MainWindowViewModel : ViewModelBase
         {
             if (failure is NotSupportedException)
                 return false;
-            // 仅在预览失败后做有界探测，确认文件可读及 TS 工具支持的包结构。
-            var probe = await Task.Run(() => TsScramblingProbe.Probe(VideoPath));
-            if (!probe.IsSupportedTransportStream && failure is not VideoDecoderUnavailableException)
+            // 无视频轨道的文件已完成媒体探测，仅保留媒体信息入口。
+            // 其他预览失败仍做有界探测，确认 TS 工具支持的包结构。
+            var probe = failure is NoVideoStreamException ? default :
+                await Task.Run(() => TsScramblingProbe.Probe(VideoPath));
+            if (!probe.IsSupportedTransportStream &&
+                failure is not (VideoDecoderUnavailableException or NoVideoStreamException))
                 return false;
 
             _currentFileSupportsTsTools = probe.IsSupportedTransportStream;
