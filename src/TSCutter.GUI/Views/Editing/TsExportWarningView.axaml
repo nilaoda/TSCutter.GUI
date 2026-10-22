@@ -1,0 +1,32 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="TSCutter.GUI.Views.Editing.TsExportWarningView"
+        Width="580" SizeToContent="Height" CanResize="False"
+        CanMinimize="False" CanMaximize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" Title="{DynamicResource String.TsExport.TablesWarningTitle}">
+    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="16">
+        <TextBlock Text="{DynamicResource String.TsExport.TablesWarning}" TextWrapping="Wrap" />
+        <ScrollViewer Grid.Row="1" MaxHeight="160" HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl Name="FilesList">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                        <TextBlock Text="{Binding}" TextWrapping="Wrap" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+        <TextBlock Grid.Row="2" Text="{DynamicResource String.TsExport.SupplementHint}"
+                   TextWrapping="Wrap" Opacity="0.7" />
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Name="ReturnButton" Content="{DynamicResource String.TsExport.AdjustCut}"
+                    Click="ReturnClick" IsCancel="True" MinWidth="100" />
+            <Button Name="ContinueButton" Content="{DynamicResource String.TsExport.Continue}"
+                    Click="ContinueClick" MinWidth="100" />
+            <Button Name="SupplementButton" Content="{DynamicResource String.TsExport.Supplement}"
+                    Click="SupplementClick" IsDefault="True" MinWidth="160" />
+        </StackPanel>
+    </Grid>
+</Window>

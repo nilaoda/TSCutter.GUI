@@ -302,16 +302,21 @@ public sealed class TsClipMergeServiceTests
         }
     }
 
-    [Fact]
-    public async Task CancelledMergeDeletesIncompleteOutput()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CancelledMergeDeletesIncompleteOutput(bool addTables)
     {
         var sourcePath = Path.Combine(Path.GetTempPath(), $"ts-merge-{Guid.NewGuid():N}.ts");
         var outputPath = sourcePath + ".cancelled.ts";
         try
         {
             const int packetCount = 10_000;
-            await File.WriteAllBytesAsync(sourcePath, Enumerable.Range(0, packetCount)
-                .SelectMany(index => CreatePacket(index, index * 900L)).ToArray());
+            byte[] tables = addTables
+                ? [.. TableProbeData.Section(0, TableProbeData.Pat()), .. TableProbeData.Section(0x1000, TableProbeData.Pmt())]
+                : [];
+            await File.WriteAllBytesAsync(sourcePath, [.. tables, .. Enumerable.Range(0, packetCount)
+                .SelectMany(index => CreatePacket(index, index * 900L))]);
             using var cancellation = new CancellationTokenSource();
             var progress = new InlineProgress<TsClipMergeProgress>(_ => cancellation.Cancel());
 
@@ -320,8 +325,8 @@ public sealed class TsClipMergeServiceTests
                 {
                     SourcePath = sourcePath,
                     OutputPath = outputPath,
-                    Ranges = [new TsClipMergeRange(0, packetCount * PacketSize, 0, 100)]
-                }, progress, cancellation.Token));
+                    Ranges = [new TsClipMergeRange(tables.Length, tables.Length + packetCount * PacketSize, 0, 100)]
+                }, progress, cancellation.Token, addProgramTables: addTables));
             Assert.False(File.Exists(outputPath));
         }
         finally

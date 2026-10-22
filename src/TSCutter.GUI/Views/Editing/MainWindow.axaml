@@ -760,7 +760,10 @@
                                                     <!-- Queue cards -->
                                                     <ScrollViewer HorizontalScrollBarVisibility="Disabled"
                                                                   IsVisible="{Binding HasExportQueue}">
-                                                        <ItemsControl ItemsSource="{Binding ExportQueue}">
+                                                        <ItemsControl Name="ExportQueueList" ItemsSource="{Binding ExportQueue}">
+                                                        <ItemsControl.ItemsPanel>
+                                                            <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+                                                        </ItemsControl.ItemsPanel>
                                                         <ItemsControl.ItemTemplate>
                                                             <DataTemplate x:DataType="models:ExportQueueItem">
                                                                 <Border Margin="0,0,0,4"

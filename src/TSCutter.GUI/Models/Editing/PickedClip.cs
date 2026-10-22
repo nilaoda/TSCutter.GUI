@@ -111,11 +111,10 @@ public partial class PickedClip : ObservableObject, IDisposable
         ? LocalizationManager.Instance.String_Clips_Merged
         : LocalizationManager.Instance.String_SizePrefix
           + (OutputFileSizeStr ?? LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport);
-    public string? EstimatedSizeStr => MergedOutput is not null && OutputFileInfo is { Exists: true }
-        ? ExportSizeStr : LocalizationManager.Instance.String_SizePrefix
-        + (OutputFileSizeStr ?? (RequiresRemux ? LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport : CommonUtil.FormatFileSize(
-            Math.Max(0, (EndPosition > 0 ? EndPosition : InFileInfo.Length) - StartPosition)
-        )));
+    // TS 合并后仍显示各片段的字节范围大小；共享输出的总大小由主界面汇总显示。
+    public string? EstimatedSizeStr => RequiresRemux ? ExportSizeStr : LocalizationManager.Instance.String_SizePrefix
+        + ((MergedOutput is null ? OutputFileSizeStr : null) ?? CommonUtil.FormatFileSize(
+            Math.Max(0, (EndPosition > 0 ? EndPosition : InFileInfo.Length) - StartPosition)));
 
     public bool HasExportStatus => ExportStatus != ClipExportStatus.Pending;
 
