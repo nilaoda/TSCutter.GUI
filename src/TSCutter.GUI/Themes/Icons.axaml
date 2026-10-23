@@ -14,12 +14,12 @@
         </ResourceDictionary>
         <ResourceDictionary x:Key="{x:Static local:CustomTheme.MacOS}">
             <ResourceDictionary.MergedDictionaries>
-                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Windows11.axaml" />
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/MacOS.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
         <ResourceDictionary x:Key="{x:Static local:CustomTheme.MacOSDark}">
             <ResourceDictionary.MergedDictionaries>
-                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Windows11Dark.axaml" />
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/MacOSDark.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Default">

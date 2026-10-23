@@ -2,12 +2,14 @@ using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Windows.Input;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
 using Avalonia.Input;
 using Avalonia.LogicalTree;
+using Avalonia.Threading;
 
 namespace TSCutter.GUI.Themes;
 
@@ -42,15 +44,24 @@ internal sealed class MacOSMenuBar : IDisposable
 
     private void Update()
     {
-        var active = CustomTheme.UsesNativeTitleBar(_window.ActualThemeVariant);
+        var active = OperatingSystem.IsMacOS();
         // Avalonia.Native 11.3 的导出器固定持有首次导出的根菜单，只能更新条目，不能替换根对象。
         if (active && _projection == null)
             _projection = new MenuProjection(_sourceMenu, _windowMenu);
         else if (!active)
             RestoreMenu();
-        // 仅在系统接管菜单后隐藏整行，包括旧主题的边框和拖动柄。
+        if (_projection is { } projection)
+        {
+            // 主题通知早于旧弹出模板清理；等模板切换完成后再恢复源菜单的逻辑树。
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (ReferenceEquals(_projection, projection)) projection.RefreshSource();
+            }, DispatcherPriority.Loaded);
+        }
+        // macOS 外观由系统菜单接管整行；Windows 系列主题同时保留窗口内的完整菜单栏。
         _menuFrame.SetCurrentValue(Visual.IsVisibleProperty,
-            !active || !NativeMenu.GetIsNativeMenuExported(_window));
+            !CustomTheme.UsesNativeTitleBar(_window.ActualThemeVariant) ||
+            !NativeMenu.GetIsNativeMenuExported(_window));
     }
 
     public void Dispose()
@@ -164,7 +175,9 @@ internal sealed class MacOSMenuBar : IDisposable
                 _command = _source.Command;
                 if (_command != null) _command.CanExecuteChanged += CommandCanExecuteChanged;
             }
-            Item.Header = _source.Header?.ToString();
+            // 原生菜单不使用 Windows 助记键；保留英文下划线转义，由 Avalonia 导出器处理。
+            var header = _source.Header?.ToString();
+            Item.Header = header is null ? null : Regex.Replace(header, @"\(_[A-Za-z0-9]\)", "");
             Item.Gesture = _source.InputGesture;
             Item.IsVisible = _source.IsVisible;
             Item.ToggleType = (NativeMenuItemToggleType)_source.ToggleType;

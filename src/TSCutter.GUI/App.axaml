@@ -5,6 +5,13 @@
              Name="TSCutter.GUI">
     <!-- "Default" ThemeVariant follows system theme variant. "Dark" or "Light" are other available options. -->
 
+    <NativeMenu.Menu>
+        <NativeMenu>
+            <NativeMenuItem Header="{DynamicResource String.Menu.AboutApp}"
+                            Click="ApplicationAboutMenu_OnClick" />
+        </NativeMenu>
+    </NativeMenu.Menu>
+
     <Application.DataTemplates>
         <local:ViewLocator />
     </Application.DataTemplates>

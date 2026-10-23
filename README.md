@@ -79,6 +79,8 @@ Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilao
 
 Six Windows-inspired theme families are available on Windows, Linux, and macOS, with light and dark palettes.
 
+On macOS, all themes provide the system menu bar, while Windows theme families also retain their in-window menu bars.
+
 On macOS an additional **macOS** appearance keeps native traffic lights, corners and shadow, blends the title into the top of the content, and moves menus to the system menu bar while keeping the Fluent control palette. It is listed in the theme menu only on macOS.
 
 <a href="docs/THEMES.md">

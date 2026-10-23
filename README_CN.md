@@ -79,6 +79,8 @@ TSCutter.GUI 是一个跨平台的视频剪辑与 MPEG-TS 诊断工具。它支�
 
 提供六个 Windows 风格的主题系列及各自的深浅配色，均可在 Windows、Linux 和 macOS 上使用。
 
+macOS 上所有主题均提供系统菜单栏，Windows 系列主题同时保留窗口内菜单栏。
+
 在 macOS 上还会额外提供 **macOS** 外观：窗口保留系统红黄绿、圆角和阴影，标题融入内容顶部，菜单使用屏幕顶部的系统菜单栏；控件沿用 Fluent 配色，只在 macOS 上出现在主题菜单中。
 
 <a href="docs/THEMES_CN.md">

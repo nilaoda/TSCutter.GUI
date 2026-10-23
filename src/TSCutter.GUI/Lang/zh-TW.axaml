@@ -107,6 +107,7 @@
     <x:String x:Key="String.Menu.Help">說明(_H)</x:String>
     <x:String x:Key="String.Menu.CheckUpdate">檢查更新(_C)</x:String>
     <x:String x:Key="String.Menu.About">關於(_A)...</x:String>
+    <x:String x:Key="String.Menu.AboutApp">關於 TSCutter.GUI</x:String>
     <x:String x:Key="String.ToolBar.OpenVideoTip">開啟影片...</x:String>
     <x:String x:Key="String.ToolBar.Open">開啟</x:String>
     <x:String x:Key="String.ToolBar.ZoomIn">放大</x:String>
