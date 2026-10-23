@@ -38,6 +38,8 @@ public partial class MainWindowViewModel
         {
             if (!SetProperty(ref enableSdrToneMapping, value)) return;
             OnPropertyChanged(nameof(ToneMappingStatusText));
+            ResetKeyFrameStrip();
+            RequestKeyFrameStrip(CurrentTime);
             toneMappingRefreshPending = true;
             StartToneMappingRefresh();
         }

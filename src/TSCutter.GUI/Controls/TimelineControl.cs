@@ -180,6 +180,7 @@ public sealed class TimelineControl : Control
 
     public event EventHandler<double>? SeekRequested;
     public event EventHandler? ScrubStarted;
+    public event EventHandler<double>? ScrubPositionChanged;
     public event EventHandler<double>? ScrubPreviewRequested;
     public event EventHandler? ScrubCanceled;
     public event EventHandler<double>? PanRequested;
@@ -400,6 +401,7 @@ public sealed class TimelineControl : Control
                 _hasDragValue = true;
                 _lastScrubPreviewTimestamp = Stopwatch.GetTimestamp();
                 ScrubStarted?.Invoke(this, EventArgs.Empty);
+                ScrubPositionChanged?.Invoke(this, _dragValue);
                 break;
             case HitPart.Viewport:
                 _dragMode = DragMode.Pan;
@@ -440,7 +442,10 @@ public sealed class TimelineControl : Control
         var point = e.GetPosition(this);
         if (_dragMode == DragMode.Seek)
         {
-            _dragValue = MainXToTime(point.X);
+            var nextValue = MainXToTime(point.X);
+            if (nextValue != _dragValue)
+                ScrubPositionChanged?.Invoke(this, nextValue);
+            _dragValue = nextValue;
             _hasDragValue = true;
             var now = Stopwatch.GetTimestamp();
             if (Stopwatch.GetElapsedTime(_lastScrubPreviewTimestamp, now) >= ScrubPreviewInterval)

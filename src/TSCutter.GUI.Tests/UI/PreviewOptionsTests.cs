@@ -10,6 +10,7 @@ using Classic.Avalonia.Theme;
 using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.Avalonia;
 using Splat;
+using TSCutter.GUI.Controls;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Rendering;
@@ -68,7 +69,8 @@ public sealed class PreviewOptionsTests
                     var mappingControl = window.FindControl<Button>("ToneMappingToggle")!;
                     Assert.False(Assert.IsAssignableFrom<Control>(mappingControl.Parent).IsVisible);
                     PublishFrame(vm, VideoDynamicRange.Hdr);
-                    foreach (var theme in new[] { ClassicTheme.Standard, CustomTheme.Windows11, CustomTheme.Windows11Dark })
+                    foreach (var theme in new[] { ClassicTheme.Standard, CustomTheme.Windows10, CustomTheme.Windows10Dark,
+                                 CustomTheme.Windows11, CustomTheme.Windows11Dark, CustomTheme.MacOS, CustomTheme.MacOSDark })
                     {
                         Avalonia.Application.Current!.RequestedThemeVariant = theme;
                         Dispatcher.UIThread.RunJobs();
@@ -95,15 +97,93 @@ public sealed class PreviewOptionsTests
                             button.Command = command;
                             button.ClearValue(InputElement.IsEnabledProperty);
                         }
-                        var setting = settingsWindow.GetVisualDescendants().OfType<CheckBox>()
-                            .Single(box => box.Content?.ToString() == LocalizationManager.Instance.String_Settings_EnableSdrToneMapping);
-                        var bottom = setting.TranslatePoint(new Point(0, setting.Bounds.Height), settingsWindow)!.Value.Y;
-                        Assert.InRange(bottom, 1, settingsWindow.Bounds.Height - 40);
+                        foreach (var content in new[] { LocalizationManager.Instance.String_Settings_ShowKeyFrameStrip,
+                                     LocalizationManager.Instance.String_Settings_EnableSdrToneMapping })
+                        {
+                            var setting = settingsWindow.GetVisualDescendants().OfType<CheckBox>()
+                                .Single(box => box.Content?.ToString() == content);
+                            Assert.True(setting.IsEffectivelyVisible);
+                            var bottom = setting.TranslatePoint(new Point(0, setting.Bounds.Height), settingsWindow)!.Value.Y;
+                            Assert.InRange(bottom, 1, settingsWindow.Bounds.Height - 40);
+                        }
                     }
                 }
                 finally { settingsWindow.Close(); window.Close(); }
             }
             finally { vm.Close(); }
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task PreviewVisibilitySettingsShareMenuStateAndRespectApplyAndCancel()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            using var resolver = new ModernDependencyResolver();
+            using var scope = resolver.WithResolver();
+            var locale = new LocalizationService();
+            locale.SwitchLanguage("zh-CN");
+            Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+            var config = new MemoryConfiguration();
+            var vm = new MainWindowViewModel(
+                new DialogService(DispatchProxy.Create<IDialogManager, UnusedDialogs>()), config);
+            var window = new MainWindow { DataContext = vm };
+            try
+            {
+                window.Show();
+                var menu = window.FindControl<Menu>("AppMenu")!;
+                var view = menu.Items.OfType<MenuItem>()
+                    .Single(item => item.Header?.ToString() == LocalizationManager.Instance.String_Menu_View);
+                var navigator = view.Items.OfType<MenuItem>()
+                    .Single(item => item.Header?.ToString() == LocalizationManager.Instance.String_Menu_ImageNavigator);
+                var strip = view.Items.OfType<MenuItem>()
+                    .Single(item => item.Header?.ToString() == LocalizationManager.Instance.String_Menu_KeyFrameStrip);
+                var viewer = window.FindControl<ImageViewer>("ImageViewer")!;
+                Assert.True(navigator.IsChecked);
+                Assert.True(strip.IsChecked);
+                Assert.True(viewer.ShowNavigator);
+                var settings = new SettingsWindowViewModel(config, locale);
+                Assert.True(settings.ShowImageNavigator);
+                Assert.True(settings.ShowKeyFrameStrip);
+                settings.ShowImageNavigator = false;
+                settings.ShowKeyFrameStrip = false;
+                settings.CancelCommand.Execute(null);
+                Assert.True(vm.ShowImageNavigator);
+                Assert.True(vm.ShowKeyFrameStrip);
+                Assert.Equal(0, config.SaveCount);
+
+                settings.ApplyCommand.Execute(null);
+                Assert.False(navigator.IsChecked);
+                Assert.False(strip.IsChecked);
+                Assert.False(viewer.ShowNavigator);
+                Assert.False(vm.ShowKeyFrameStrip);
+                Assert.Equal(1, config.SaveCount);
+                // 原生菜单的勾选操作也必须回写绑定，并且每次只保存一次。
+                using var projection = new MacOSMenuBar.MenuProjection(menu);
+                var nativeView = Assert.IsType<NativeMenuItem>(projection.Menu.Items[menu.Items.IndexOf(view)]);
+                foreach (var item in nativeView.Menu!.Items.OfType<NativeMenuItem>()
+                             .Where(item => item.ToggleType == NativeMenuItemToggleType.CheckBox))
+                    item.Command!.Execute(null);
+                Assert.True(vm.ShowImageNavigator);
+                Assert.True(vm.ShowKeyFrameStrip);
+                Assert.True(viewer.ShowNavigator);
+                Assert.Equal(3, config.SaveCount);
+                settings = new SettingsWindowViewModel(config, locale);
+                Assert.True(settings.ShowImageNavigator);
+                Assert.True(settings.ShowKeyFrameStrip);
+
+                // 关闭文件不应解除配置监听，随后打开文件仍然使用同一窗口。
+                vm.Close();
+                settings.ShowImageNavigator = false;
+                settings.ShowKeyFrameStrip = false;
+                settings.OkCommand.Execute(null);
+                Assert.False(navigator.IsChecked);
+                Assert.False(strip.IsChecked);
+                Assert.False(viewer.ShowNavigator);
+                Assert.Equal(4, config.SaveCount);
+            }
+            finally { window.Close(); vm.Close(); }
         }, CancellationToken.None);
     }
 

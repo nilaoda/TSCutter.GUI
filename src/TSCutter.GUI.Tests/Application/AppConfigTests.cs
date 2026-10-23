@@ -34,6 +34,20 @@ public class AppConfigTests
     }
 
     [Fact]
+    public void KeyFrameStripDefaultsToEnabledAndKeepsDisabledPreference()
+    {
+        var config = JsonSerializer.Deserialize("{}", AppJsonContext.Default.AppConfig)!;
+        Assert.True(config.ShowKeyFrameStrip);
+        string? changedProperty = null;
+        config.PropertyChanged += (_, args) => changedProperty = args.PropertyName;
+        config.ShowKeyFrameStrip = false;
+        Assert.Equal(nameof(AppConfig.ShowKeyFrameStrip), changedProperty);
+        var json = JsonSerializer.Serialize(config, AppJsonContext.Default.AppConfig);
+        var restored = JsonSerializer.Deserialize(json, AppJsonContext.Default.AppConfig)!;
+        Assert.False(restored.ShowKeyFrameStrip);
+    }
+
+    [Fact]
     public void ImageNavigatorDefaultsToEnabledForExistingConfigurations()
     {
         var config = JsonSerializer.Deserialize("{}", AppJsonContext.Default.AppConfig)!;

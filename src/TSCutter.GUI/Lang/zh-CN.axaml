@@ -1,6 +1,8 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <x:String x:Key="String.Preview.KeyFrameSeekFailed">无法定位到所选关键帧。</x:String>
+    <x:String x:Key="String.Menu.ImageNavigator">图像导航小地图</x:String>
+    <x:String x:Key="String.Menu.KeyFrameStrip">关键帧预览条</x:String>
     <x:String x:Key="String.Window.Minimize">最小化</x:String>
     <x:String x:Key="String.Window.Maximize">最大化</x:String>
     <x:String x:Key="String.Window.Restore">还原</x:String>
@@ -187,6 +189,8 @@
     <x:String x:Key="String.Settings.AutoCheckForUpdates">程序启动后自动检查更新</x:String>
     <x:String x:Key="String.Settings.ShowImageNavigator">显示图像导航小地图</x:String>
     <x:String x:Key="String.Settings.ShowImageNavigatorTip">画面超出可视区域时显示导航缩略图，可点击或拖动定位。</x:String>
+    <x:String x:Key="String.Settings.ShowKeyFrameStrip">显示关键帧预览条</x:String>
+    <x:String x:Key="String.Settings.ShowKeyFrameStripTip">在时间轴上方显示指针附近的关键帧缩略图，点击可跳转到对应画面。</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecoding">优先使用硬件解码</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecodingTip">Windows 和 macOS 在设备支持时可用；不支持的编码会自动使用软件解码。</x:String>
     <x:String x:Key="String.Settings.EnableSdrToneMapping">默认启用 HDR 到 SDR 预览映射</x:String>

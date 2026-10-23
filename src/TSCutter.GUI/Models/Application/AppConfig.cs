@@ -10,6 +10,7 @@ namespace TSCutter.GUI.Models.Application;
 public class AppConfig : ObservableObject
 {
     private bool _showImageNavigator = true;
+    private bool _showKeyFrameStrip = true;
     private bool _enableSdrToneMapping = true;
     private bool _preferHardwareDecoding = IsHardwareDecodingSupported;
 
@@ -31,6 +32,11 @@ public class AppConfig : ObservableObject
     {
         get => _showImageNavigator;
         set => SetProperty(ref _showImageNavigator, value);
+    }
+    public bool ShowKeyFrameStrip
+    {
+        get => _showKeyFrameStrip;
+        set => SetProperty(ref _showKeyFrameStrip, value);
     }
     public bool EnableSdrToneMapping
     {

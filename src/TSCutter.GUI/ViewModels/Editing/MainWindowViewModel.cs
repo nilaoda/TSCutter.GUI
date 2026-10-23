@@ -13,6 +13,7 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
 using Avalonia.Media.Imaging;
+using Avalonia.Utilities;
 using Classic.CommonControls.Dialogs;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -45,7 +46,7 @@ using TSCutter.GUI.Views.Editing;
 
 namespace TSCutter.GUI.ViewModels.Editing;
 
-public partial class MainWindowViewModel : ViewModelBase
+public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<PropertyChangedEventArgs>
 {
     private const int DefaultScrubPreviewWidth = 1280;
     private const int DefaultScrubPreviewHeight = 720;
@@ -94,6 +95,8 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         _dialogService = dialogService;
         _configService = configService;
+        // 配置监听覆盖整个窗口生命周期，关闭或重新打开视频时仍需保持同步。
+        WeakEvents.ThreadSafePropertyChanged.Subscribe(_configService.CurrentConfig, this);
         enableSdrToneMapping = configService.CurrentConfig.EnableSdrToneMapping;
         preferHardwareDecodingForPreview = configService.CurrentConfig.PreferHardwareDecoding;
         _exportCurrentProgramOnly = configService.CurrentConfig.ExportCurrentProgramOnly;
@@ -1267,6 +1270,26 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public AppConfig ViewerPreferences => _configService.CurrentConfig;
 
+    public bool ShowImageNavigator
+    {
+        get => ViewerPreferences.ShowImageNavigator;
+        set
+        {
+            if (value == ShowImageNavigator)
+                return;
+            ViewerPreferences.ShowImageNavigator = value;
+            _configService.Save();
+        }
+    }
+
+    void IWeakEventSubscriber<PropertyChangedEventArgs>.OnEvent(object? sender, WeakEvent ev, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(AppConfig.ShowImageNavigator))
+            OnPropertyChanged(nameof(ShowImageNavigator));
+        else if (e.PropertyName == nameof(AppConfig.ShowKeyFrameStrip))
+            OnKeyFrameStripPreferenceChanged();
+    }
+
     public double MaxZoomFactor => 3.0;
     public double MinZoomFactor => 0.1;
 
@@ -1286,7 +1309,12 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private bool decodedFrameRequiresSampleAspectRatioCorrection;
 
-    partial void OnCurrentTimeChanged(double value) => TimelineViewport.SetPlayhead(value);
+    partial void OnCurrentTimeChanged(double value)
+    {
+        TimelineViewport.SetPlayhead(value);
+        if (!keyFrameStripScrubbing && !_isLoadingVideo)
+            RequestKeyFrameStrip(value, currentPts: _displayedFramePts);
+    }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusInfoText))]
@@ -1825,12 +1853,16 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public Task SeekToKeyFrameAndDrawFrameAsync(long pts)
     {
+        if (_videoInstance is { Inited: true } video && (!IsDecoding || toneMappingRefreshRunning))
+            RequestKeyFrameStrip(video.PtsToTimeSpan(pts).TotalSeconds, immediate: true, currentPts: pts);
         return SeekAndDrawFrameAsync(async instance => await instance.DecodeKeyFrameAtPtsAsync(pts)
             ?? throw new InvalidOperationException(LocalizationManager.Instance.String_Preview_KeyFrameSeekFailed));
     }
 
     public Task SeekToTimeAndDrawFrameAsync(TimeSpan timeSpan)
     {
+        if (IsVideoInitialized && (!IsDecoding || toneMappingRefreshRunning))
+            RequestKeyFrameStrip(timeSpan.TotalSeconds, immediate: true);
         return SeekAndDrawFrameAsync(instance => instance.DecodeAtTimeAsync(timeSpan));
     }
 
@@ -1873,6 +1905,8 @@ public partial class MainWindowViewModel : ViewModelBase
         finally
         {
             UpdateDecodeMode();
+            if (ReferenceEquals(instance, _videoInstance))
+                RequestKeyFrameStrip(CurrentTime, immediate: true, currentPts: _displayedFramePts);
         }
     }
 
@@ -2024,7 +2058,17 @@ public partial class MainWindowViewModel : ViewModelBase
     public async Task DrawNextFrameAsync(int count = 1)
     {
         if (!IsVideoInitialized || IsDecoding) return;
-        await RunDecodeOperationAsync(() => DrawNextFrameCoreAsync(count));
+        if ((count is 1 or -1) && ShowKeyFrameStrip)
+            KeyFrameStrip.PreviewStep(count);
+        try
+        {
+            await RunDecodeOperationAsync(() => DrawNextFrameCoreAsync(count));
+        }
+        finally
+        {
+            // 以主解码器实际结果确认导航；失败、跳帧或到达文件尾时撤回预移位。
+            RequestKeyFrameStrip(CurrentTime, currentPts: _displayedFramePts);
+        }
     }
 
     private async Task DrawNextFrameCoreAsync(int count = 1, bool propagateFailure = false)
@@ -2069,6 +2113,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     private void ClearVars()
     {
+        ResetKeyFrameStrip();
         SetDisplayedVideoDynamicRange(VideoDynamicRange.Standard);
         SetPreviewTrackChoices([], null);
         SetSubtitleTrackChoices([]);
@@ -2146,6 +2191,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
                 // decode
                 await DrawNextFrameCoreAsync(1, propagateFailure: true);
+                RequestKeyFrameStrip(CurrentTime, immediate: true, currentPts: _displayedFramePts);
                 // 发送消息通知 View 执行 FitCommand
                 WeakReferenceMessenger.Default.Send(new FitMessage());
             });
@@ -2304,6 +2350,7 @@ public partial class MainWindowViewModel : ViewModelBase
 
     public void Close()
     {
+        ResetKeyFrameStrip();
         _previewSelectionCancellation?.Cancel();
         SetPreviewTrackChoices([], null);
         SetSubtitleTrackChoices([]);
@@ -2384,6 +2431,7 @@ public partial class MainWindowViewModel : ViewModelBase
     {
         NotifyPreviewTrackChoicesChanged();
         OnPropertyChanged(nameof(IsVideoInitialized));
+        OnPropertyChanged(nameof(IsKeyFrameStripVisible));
         OnPropertyChanged(nameof(CanTogglePreviewOptions));
         OnPropertyChanged(nameof(CanToggleHardwareDecoding));
         OnPropertyChanged(nameof(CanToggleSdrToneMapping));

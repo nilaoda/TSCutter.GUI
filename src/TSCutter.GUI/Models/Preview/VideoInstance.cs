@@ -91,6 +91,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     private (long Position, long Pts, PacketEndSignature Signature)[] keyPacketBoundaries = [];
     private int keyPacketBoundaryCount;
     private int nextKeyPacketBoundary;
+    private readonly (long Pts, string? Type)[] keyFrameTypes = new (long, string?)[32];
+    private int nextKeyFrameType;
     private List<Codec> softwareDecoders = [];
     
     private FormatContext inFc;
@@ -480,6 +482,16 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         return null;
     }
 
+    internal Task SeekBeforeTimeAsync(TimeSpan time, CancellationToken cancellationToken) =>
+        Task.Run(() => RunReadOperation(() =>
+        {
+            var target = Math.Clamp(TimeSpanToPts(time), firstFrameTimestamp, Math.Max(firstFrameTimestamp, maxPts - 1));
+            // 带 B 帧的 TS 在首帧 PTS 处 seek 也可能越过首个 GOP，需允许向片头之前预读。
+            Seek(target == firstFrameTimestamp ? target - Math.Max(1, keyFrameGap * 2) : target,
+                AVSEEK_FLAG.Backward);
+            return true;
+        }, cancellationToken), cancellationToken);
+
     public void SeekToTime(TimeSpan timeSpan)
     {
         var targetTimestamp = TimeSpanToPts(timeSpan);
@@ -500,6 +512,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             inFc.SeekFrame(pts - keyFrameGap * 4, videoStreamIndex);
             activeReadDeadline!.ThrowIfInterrupted();
             videoDecoder.FlushBuffers();
+            Array.Clear(keyFrameTypes);
+            nextKeyFrameType = 0;
             return true;
         }, CancellationToken.None);
     }
@@ -516,6 +530,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             inFc.SeekFrame(pts, videoStreamIndex, flag);
             activeReadDeadline!.ThrowIfInterrupted();
             videoDecoder.FlushBuffers();
+            Array.Clear(keyFrameTypes);
+            nextKeyFrameType = 0;
             return true;
         }, CancellationToken.None);
     }
@@ -1169,7 +1185,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         return (long)(timeSpan.TotalSeconds * t) + firstFrameTimestamp;
     }
 
-    private TimeSpan PtsToTimeSpan(long pts)
+    internal TimeSpan PtsToTimeSpan(long pts)
     {
         var t = (double)timeBase.den / timeBase.num;
         return TimeSpan.FromSeconds((pts - firstFrameTimestamp) / t);
@@ -1222,6 +1238,12 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             cancellationToken.ThrowIfCancellationRequested();
             if (keyPacketBoundaries.Length > 0 && !isSearchScan && packet is { Position: >= 0 } && (packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0)
                 RememberKeyPacketBoundary(packet);
+            if (isSearchScan && packet is not null && (packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0)
+            {
+                // 包与输出画面可能错开，按原始 PTS 保存类型，不把当前输入包的类型套到延迟输出上。
+                keyFrameTypes[nextKeyFrameType] = (packet.Pts, KeyFrameTypeReader.Read(packet, inVideoStream.Codecpar!));
+                nextKeyFrameType = (nextKeyFrameType + 1) % keyFrameTypes.Length;
+            }
             reusableDecodeFrame ??= new Frame();
             var destRef = reusableDecodeFrame;
             // 1 packet -> 0..N frame
@@ -1291,6 +1313,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                                 VideoDynamicRange = videoDynamicRange,
                                 FrameTimestamp = PtsToTimeSpan(pts),
                                 FramePts = pts,
+                                KeyFrameType = isSearchScan ? GetKeyFrameType(frame, pts) : null,
                                 FramePts90k = pts == FF.AV_NOPTS_VALUE ? FF.AV_NOPTS_VALUE
                                     : (long)Math.Round(pts * (double)timeBase.num * 90_000 / timeBase.den),
                                 FramePosition = PositionInFile,
@@ -1368,6 +1391,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                         VideoDynamicRange = videoDynamicRange,
                         FrameTimestamp = PtsToTimeSpan(pts),
                         FramePts = pts,
+                        KeyFrameType = isSearchScan ? GetKeyFrameType(frame, pts) : null,
                         FramePts90k = pts == FF.AV_NOPTS_VALUE ? FF.AV_NOPTS_VALUE
                             : (long)Math.Round(pts * (double)timeBase.num * 90_000 / timeBase.den),
                         FramePosition = PositionInFile,
@@ -1491,6 +1515,25 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         return new Avalonia.PixelSize(
             Math.Max(1, (int)Math.Round(displayWidth)),
             codedHeight);
+    }
+
+    private unsafe string GetKeyFrameType(Frame frame, long pts)
+    {
+        foreach (var entry in keyFrameTypes)
+            if (entry.Pts == pts && entry.Type is { } type)
+                return type;
+        // I 帧并不一定是 IDR；没有可靠 NAL 类型时只报告解码器确认的画面类型。
+        AVFrame* raw = frame;
+        return raw->pict_type switch
+        {
+            AVPictureType.AV_PICTURE_TYPE_I => "I",
+            AVPictureType.AV_PICTURE_TYPE_P => "P",
+            AVPictureType.AV_PICTURE_TYPE_B => "B",
+            AVPictureType.AV_PICTURE_TYPE_SI => "SI",
+            AVPictureType.AV_PICTURE_TYPE_SP => "SP",
+            AVPictureType.AV_PICTURE_TYPE_BI => "BI",
+            _ => "KEY"
+        };
     }
 
     private sealed class HardwareDecodeException(
