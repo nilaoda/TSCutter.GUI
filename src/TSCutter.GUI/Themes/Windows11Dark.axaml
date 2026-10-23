@@ -112,6 +112,9 @@
     <SolidColorBrush x:Key="Windows11SurfaceBrush" Color="#2C2C2C" />
     <SolidColorBrush x:Key="Windows11MenuBrush" Color="#2C2C2C" />
     <SolidColorBrush x:Key="Windows11StrokeBrush" Color="#12FFFFFF" />
+    <!-- 材质上的时间轴用淡底色与独立描边界定操作范围，保留下层背景。 -->
+    <SolidColorBrush x:Key="Windows11TimelineTrackBrush" Color="#0AFFFFFF" />
+    <SolidColorBrush x:Key="Windows11TimelineStrokeBrush" Color="#47FFFFFF" />
     <SolidColorBrush x:Key="Windows11InputActiveBrush" Color="#B31E1E1E" />
     <SolidColorBrush x:Key="Windows11SubtleBrush" Color="#0FFFFFFF" />
     <SolidColorBrush x:Key="Windows11SubtlePressedBrush" Color="#0AFFFFFF" />

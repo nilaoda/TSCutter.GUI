@@ -2711,9 +2711,11 @@ public partial class MainWindowViewModel : ViewModelBase
     private void BuildThemeMenuItems()
     {
         ThemeMenuItems.Clear();
-        foreach (var themeName in new[] { "Classic", "Luna Blue", "Windows 7 Aero", "Windows 8", "Windows 10", "Windows 11" })
+        // 保留各系列的原有预设；macOS 外观只在当前平台支持时加入菜单。
+        foreach (var themeName in new[] { "Classic", "Luna Blue", "Windows 7 Aero", "Windows 8", "Windows 10", "Windows 11", "macOS" })
         {
-            var lightTheme = ThemeModel.AllThemes.Single(theme => theme.Name == themeName);
+            var lightTheme = ThemeModel.AllThemes.SingleOrDefault(theme => theme.Name == themeName);
+            if (lightTheme is null) continue;
             var darkTheme = ThemeModel.AllDarkThemes.Single(theme => theme.Family == lightTheme.Family);
             var menuItem = new MenuItem
             {

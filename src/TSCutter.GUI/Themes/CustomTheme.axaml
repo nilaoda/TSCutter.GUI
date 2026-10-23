@@ -37,6 +37,7 @@
         <Setter Property="BorderBrush" Value="#808080" />
     </Style>
     <Style Selector="controls|TimelineControl">
+        <Setter Property="BackgroundBrush" Value="{DynamicResource {x:Static common:SystemColors.ControlColorKey}}" />
         <Setter Property="TrackBrush" Value="{DynamicResource AppTimelineTrackBrush}" />
         <Setter Property="EmptyTrackBrush" Value="{DynamicResource AppTimelineEmptyTrackBrush}" />
         <Setter Property="BorderDarkBrush" Value="{DynamicResource {x:Static common:SystemColors.ControlDarkDarkColorKey}}" />
@@ -69,6 +70,7 @@
     <StyleInclude Source="avares://TSCutterGUI/Themes/Windows10Styles.axaml" />
     <StyleInclude Source="avares://TSCutterGUI/Themes/Windows10ControlStyles.axaml" />
     <StyleInclude Source="avares://TSCutterGUI/Themes/Windows11Styles.axaml" />
+    <StyleInclude Source="avares://TSCutterGUI/Themes/MacOSStyles.axaml" />
     <!-- 旧 Windows 不保留会在最大化时露出的系统标题栏；BorderOnly 仍保留原生缩放边框。 -->
     <Style Selector=":is(classic|ClassicWindow).desktop-theme.windows-legacy-frame">
         <Setter Property="SystemDecorations" Value="BorderOnly" />

@@ -7,6 +7,22 @@ namespace TSCutter.GUI.Tests.Application;
 
 public class AppConfigTests
 {
+    [Theory]
+    [InlineData("Removed Theme", "Removed Dark Theme")]
+    [InlineData("macOS", "macOS (Dark)")]
+    public void UnavailableThemesFallBackWithoutDiscardingSavedNames(string light, string dark)
+    {
+        var config = new AppConfig { ThemeName = light, DarkThemeName = dark };
+        var defaults = new AppConfig();
+        var nativeAvailable = OperatingSystem.IsMacOS() && light == "macOS";
+        Assert.Equal(nativeAvailable ? light : defaults.ThemeName, config.ThemeModel.Name);
+        Assert.Equal(nativeAvailable ? dark : defaults.DarkThemeName, config.DarkThemeModel.Name);
+        var restored = JsonSerializer.Deserialize(JsonSerializer.Serialize(config, AppJsonContext.Default.AppConfig),
+            AppJsonContext.Default.AppConfig)!;
+        Assert.Equal(light, restored.ThemeName);
+        Assert.Equal(dark, restored.DarkThemeName);
+    }
+
     [Fact]
     public void SdrMappingDefaultsToEnabledAndDisabledPreferenceSurvivesSerialization()
     {

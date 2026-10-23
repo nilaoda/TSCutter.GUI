@@ -2,11 +2,13 @@
 
 [中文版](THEMES_CN.md) | [Back to README](../README.md)
 
-Six theme families. Classic shows one light palette and Standard (Dark). Switch families with **View → Theme**, or choose light and dark palettes independently in **Tools → Settings**. **Auto detect** follows the system appearance.
+Six Windows theme families, plus a macOS appearance on macOS. Classic shows one light palette and Standard (Dark). Switch families with **View → Theme**, or choose light and dark palettes independently in **Tools → Settings**. **Auto detect** follows the system appearance.
 
 Previews use the same Settings window, dimensions, and English interface. Click an image for its original size. Aero and Windows 11 show the solid-background fallback; blur and Mica depend on platform support. Dark palettes include this application's adaptations of classic Windows styles.
 
 Window corners depend on the host system: Aero and Windows 11 themes retain rounded windows on Windows 11 (build 22000 or later) and use square windows on older Windows versions.
+
+The macOS appearance is listed only on macOS. It keeps native traffic lights, window corners and shadow, blends the title into the top of the content, and uses the system menu bar, with sidebar blur when available, while control colors follow the Windows 11 Fluent palette. On other platforms the entry is hidden; a macOS theme name in a shared config is ignored there.
 
 ## Windows Classic
 

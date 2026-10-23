@@ -1,0 +1,14 @@
+<ResourceDictionary xmlns="https://github.com/avaloniaui"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceInclude Source="avares://TSCutterGUI/Themes/Windows11.axaml" />
+    </ResourceDictionary.MergedDictionaries>
+    <SolidColorBrush x:Key="MacOSWindowSurfaceBrush" Color="#F5F5F7" />
+
+    <Color x:Key="AppAccentColor">#007AFF</Color>
+    <Color x:Key="AppAccentHoverColor">#0066D6</Color>
+    <Color x:Key="AppSelectionColor">#B3D7FF</Color>
+    <Color x:Key="SystemAccentColor">#007AFF</Color>
+    <Color x:Key="DesktopFocusBorderColor">#007AFF</Color>
+    <SolidColorBrush x:Key="Windows11BackdropTintBrush" Color="#66F2F2F7" />
+</ResourceDictionary>

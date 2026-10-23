@@ -22,22 +22,28 @@ public class CustomTheme : Styles
         InputElement.PointerPressedEvent.AddClassHandler<ClassicWindow>(DesktopWindowMenu.OnOutsidePointerPressed,
             RoutingStrategies.Tunnel, handledEventsToo: true);
         InputElement.PointerPressedEvent.AddClassHandler<ClassicWindow>(DesktopWindowMenu.OnPointerPressed);
+        InputElement.PointerPressedEvent.AddClassHandler<ClassicWindow>(MacOSWindowHeader.OnPointerPressed);
 
         // 随控件自身主题更新共用及各主题样式类；类处理器不持有控件实例。
         static void UpdateThemeClasses(Control control)
         {
             var variant = control.ActualThemeVariant;
+            // macOS 外观沿用 Fluent 的控件配色与模板，只替换窗口外壳。
+            var fluent = IsWindows11(variant) || IsMacOS(variant);
             control.Classes.Set("desktop-theme", IsDesktopTheme(variant));
             control.Classes.Set("luna", IsLuna(variant));
             control.Classes.Set("aero", IsAero(variant));
             control.Classes.Set("windows8", IsWindows8(variant));
             control.Classes.Set("windows10", IsWindows10(variant));
             control.Classes.Set("windows11", IsWindows11(variant));
-            control.Classes.Set("modern-caption", IsWindows10(variant) || IsWindows11(variant));
-            control.Classes.Set("flat-theme", IsWindows8(variant) || IsWindows10(variant) || IsWindows11(variant));
+            control.Classes.Set("fluent", fluent);
+            control.Classes.Set("macos", IsMacOS(variant));
+            control.Classes.Set("modern-caption", IsWindows10(variant) || fluent);
+            control.Classes.Set("flat-theme", IsWindows8(variant) || IsWindows10(variant) || fluent);
             if (control is ClassicWindow window)
             {
                 WindowsLegacyWindowChrome.Update(window);
+                window.Classes.Set("macos-native-titlebar", UsesNativeTitleBar(variant));
                 window.Classes.Set("windows11-snap", IsWindows11(variant) &&
                     OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000));
                 UpdateGlassClass(window);
@@ -47,22 +53,36 @@ public class CustomTheme : Styles
         // 只有系统实际提供背景模糊时才启用半透明绘制，单纯透明仍使用实色回退。
         static void UpdateGlassClass(ClassicWindow window)
         {
+            MacOsBackdropClip.RefreshTransparency(window);
             WindowsWindowCorners.Update(window);
-            var modern = IsWindows11(window.ActualThemeVariant);
-            var glass = (IsAero(window.ActualThemeVariant) || modern) &&
+            var variant = window.ActualThemeVariant;
+            // macOS 外观使用系统标题栏和系统材质，与 Windows 11 的 Mica 分支分开处理。
+            var nativeTitleBar = UsesNativeTitleBar(variant);
+            var modern = IsWindows11(variant);
+            var glass = (IsAero(variant) || modern || nativeTitleBar) &&
                 (window.ActualTransparencyLevel == WindowTransparencyLevel.Blur ||
                  window.ActualTransparencyLevel == WindowTransparencyLevel.AcrylicBlur ||
                  window.ActualTransparencyLevel == WindowTransparencyLevel.Mica);
-            window.Classes.Set("aero-glass", glass && !modern);
+            window.Classes.Set("aero-glass", glass && !modern && !nativeTitleBar);
             window.Classes.Set("windows11-backdrop", glass && modern);
+            window.Classes.Set("macos-backdrop", glass && nativeTitleBar);
             // Avalonia 的控件裁剪不会裁到独立的系统模糊层，需同步原生容器圆角。
-            double? radius = glass ? 0 : null;
-            if (glass && window.WindowState is not (WindowState.Maximized or WindowState.FullScreen) &&
+            // 原生标题栏窗口已由 AppKit 统一裁剪，重复设置会让边缘透明度相乘。
+            double? radius = glass || nativeTitleBar ? 0 : null;
+            if (glass && !nativeTitleBar &&
+                window.WindowState is not (WindowState.Maximized or WindowState.FullScreen) &&
                 window.TryFindResource("DesktopWindowCornerRadius", window.ActualThemeVariant, out var resource) &&
                 resource is CornerRadius corners)
                 radius = corners.TopLeft;
-            MacOsBackdropClip.Update(window, radius, useAeroMaterial: !modern);
+            // 原生标题栏只有在拿到系统模糊层时才让窗口透明；仅有透明模式时保持系统实色底，否则整窗不可见。
+            MacOsBackdropClip.Update(window, radius,
+                useAeroMaterial: !modern && !nativeTitleBar,
+                clearWindowBackground: !nativeTitleBar || glass,
+                useNativeFrame: nativeTitleBar);
         }
+
+        Window.WindowOpenedEvent.AddClassHandler<ClassicWindow>((window, _) => MacOSWindowPlacement.Prepare(window));
+        TopLevel.FrameSizeProperty.Changed.AddClassHandler<ClassicWindow>((window, _) => MacOSWindowPlacement.Complete(window));
 
         Control.LoadedEvent.AddClassHandler<ClassicWindow>((window, _) =>
         {
@@ -169,8 +189,20 @@ public class CustomTheme : Styles
 
     public static bool IsWindows11(ThemeVariant variant) => variant == Windows11 || variant == Windows11Dark;
 
+    // macOS 外观只在 macOS 上使用原生标题栏，其他平台按 Fluent 实色窗口绘制。
+    // 显式声明明暗基准：主题字典本身按变体键取值，缺省继承会让深色外观拿到浅色色板。
+    public static ThemeVariant MacOS { get; } = new("MacOS", ThemeVariant.Light);
+
+    public static ThemeVariant MacOSDark { get; } = new("MacOSDark", ThemeVariant.Dark);
+
+    public static bool IsMacOS(ThemeVariant variant) => variant == MacOS || variant == MacOSDark;
+
     public static bool IsDesktopTheme(ThemeVariant variant) =>
-        IsLuna(variant) || IsAero(variant) || IsWindows8(variant) || IsWindows10(variant) || IsWindows11(variant);
+        IsLuna(variant) || IsAero(variant) || IsWindows8(variant) || IsWindows10(variant) || IsWindows11(variant) ||
+        IsMacOS(variant);
+
+    /// <summary>macOS 外观是否使用系统原生标题栏（红绿灯、双击缩放、全屏由 AppKit 提供）。</summary>
+    public static bool UsesNativeTitleBar(ThemeVariant variant) => OperatingSystem.IsMacOS() && IsMacOS(variant);
 
     public static ThemeVariant DarkStandard { get; } = new("DarkStandard", ThemeVariant.Dark);
 }

@@ -18,15 +18,17 @@ public sealed class ThemePickerItem
     public static IReadOnlyList<ThemePickerItem> Create(IEnumerable<ThemeModel> themes)
     {
         // 分组标题只用于展示，实际选中值仍是原有主题，保持配置兼容。
+        // macOS 外观排在首位，因为它在 macOS 上是唯一使用系统标题栏的选项。
         return themes.GroupBy(theme => theme.Family)
             .OrderBy(group => group.Key switch
             {
-                "Windows 11" => 0,
-                "Windows 10" => 1,
-                "Windows 8" => 2,
-                "Windows 7" => 3,
-                "Windows XP" => 4,
-                _ => 5
+                "macOS" => 0,
+                "Windows 11" => 1,
+                "Windows 10" => 2,
+                "Windows 8" => 3,
+                "Windows 7" => 4,
+                "Windows XP" => 5,
+                _ => 6
             })
             .SelectMany(group => new[] { new ThemePickerItem(group.Key) }
                 .Concat(group.Select(theme => new ThemePickerItem(theme.Name, theme))))

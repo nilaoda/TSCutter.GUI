@@ -17,9 +17,9 @@ public class AppConfig : ObservableObject
     [JsonIgnore]
     public static bool IsSystemDarkMode { get; set; }
     [JsonIgnore]
-    public ThemeModel ThemeModel => ThemeModel.AllThemes.FirstOrDefault(x => x.Name == ThemeName)!;
+    public ThemeModel ThemeModel => ThemeModel.AllThemes.FirstOrDefault(x => x.Name == ThemeName) ?? ThemeModel.AllThemes[0];
     [JsonIgnore]
-    public ThemeModel DarkThemeModel => ThemeModel.AllDarkThemes.FirstOrDefault(x => x.Name == DarkThemeName)!;
+    public ThemeModel DarkThemeModel => ThemeModel.AllDarkThemes.FirstOrDefault(x => x.Name == DarkThemeName) ?? ThemeModel.AllDarkThemes[0];
 
     public string Language { get; set; } = "en-US";
     public string ThemeName { get; set; } = ThemeModel.AllThemes[0].Name;

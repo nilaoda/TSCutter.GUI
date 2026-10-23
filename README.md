@@ -56,7 +56,7 @@ Lossless clipping supports 188-byte TS and 192-byte M2TS based on the actual pac
 
 - **Multi-platform support**: Available for Windows, Linux, and macOS.
 - **Multilingual interface**: English, Simplified Chinese, and Traditional Chinese.
-- **Desktop themes**: Windows Classic, XP, 7, 8, 10, and 11 styles, with independent light and dark palettes and automatic switching.
+- **Desktop themes**: Windows Classic, XP, 7, 8, 10, and 11 styles, with independent light and dark palettes and automatic switching; on macOS a macOS appearance additionally uses the native title bar.
 - **Independent tool windows**: Open multiple tools or scans at the same time for comparison.
 - **Bounded resource usage**: Large-file tools use streaming or on-demand reads instead of loading complete media files into memory.
 
@@ -78,6 +78,8 @@ Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilao
 ### Desktop themes
 
 Six Windows-inspired theme families are available on Windows, Linux, and macOS, with light and dark palettes.
+
+On macOS an additional **macOS** appearance keeps native traffic lights, corners and shadow, blends the title into the top of the content, and moves menus to the system menu bar while keeping the Fluent control palette. It is listed in the theme menu only on macOS.
 
 <a href="docs/THEMES.md">
   <picture>

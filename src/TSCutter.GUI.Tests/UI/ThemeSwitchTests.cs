@@ -54,9 +54,10 @@ public sealed class ThemeSwitchTests
                 }
                 foreach (var theme in new[]
                          {
-                             ClassicTheme.Standard, CustomTheme.Windows11, CustomTheme.Windows11Dark,
-                             CustomTheme.LunaBlue, CustomTheme.Aero, CustomTheme.Windows10, ClassicTheme.Standard
-                         })
+                             ClassicTheme.Standard, CustomTheme.DarkStandard, CustomTheme.LunaBlue, CustomTheme.LunaDark,
+                             CustomTheme.Aero, CustomTheme.AeroDark, CustomTheme.Windows8, CustomTheme.Windows8Dark,
+                             CustomTheme.Windows10, CustomTheme.Windows10Dark, CustomTheme.Windows11, CustomTheme.Windows11Dark
+                         }.SelectMany(theme => new[] { CustomTheme.MacOS, theme, CustomTheme.MacOSDark, theme }))
                 {
                     app.RequestedThemeVariant = theme;
                     Flush();
