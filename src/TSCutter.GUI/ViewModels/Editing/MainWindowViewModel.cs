@@ -398,19 +398,11 @@ public partial class MainWindowViewModel : ViewModelBase
         }
     }
 
-    private async Task JumpToTimeAsync(long time)
+    private async Task JumpToTimeAsync(long pts)
     {
         if (!IsVideoInitialized || IsDecoding) return;
-        await RunDecodeOperationAsync(async () =>
-        {
-            await SeekFileAsync(time, true);
-            // 解码至目标关键帧
-            await DrawNextFrameCoreAsync(1);
-            while (CurrentPts < time)
-            {
-                await DrawNextFrameCoreAsync(1);
-            }
-        });
+        await CompleteScrubPreviewAsync();
+        await SeekToKeyFrameAndDrawFrameAsync(pts);
     }
     
     [RelayCommand]
@@ -441,8 +433,7 @@ public partial class MainWindowViewModel : ViewModelBase
         
         if (CommonUtil.TryParseFormattedTime(vm.InputText, out var newTime) && newTime < DurationMax)
         {
-            await SeekToTimeAsync(TimeSpan.FromSeconds(Math.Max(0, newTime - 1)));
-            await DrawNextFrameAsync(1);
+            await SeekToTimeAndDrawFrameAsync(TimeSpan.FromSeconds(Math.Max(0, newTime - 1)));
             return;
         }
 
@@ -1832,7 +1823,18 @@ public partial class MainWindowViewModel : ViewModelBase
         await worker;
     }
 
-    public async Task SeekToTimeAndDrawFrameAsync(TimeSpan timeSpan)
+    public Task SeekToKeyFrameAndDrawFrameAsync(long pts)
+    {
+        return SeekAndDrawFrameAsync(async instance => await instance.DecodeKeyFrameAtPtsAsync(pts)
+            ?? throw new InvalidOperationException(LocalizationManager.Instance.String_Preview_KeyFrameSeekFailed));
+    }
+
+    public Task SeekToTimeAndDrawFrameAsync(TimeSpan timeSpan)
+    {
+        return SeekAndDrawFrameAsync(instance => instance.DecodeAtTimeAsync(timeSpan));
+    }
+
+    private async Task SeekAndDrawFrameAsync(Func<VideoInstance, Task<DecodeResult>> decodeFrame)
     {
         if (!IsVideoInitialized || (IsDecoding && !toneMappingRefreshRunning))
             return;
@@ -1846,7 +1848,7 @@ public partial class MainWindowViewModel : ViewModelBase
             await RunDecodeOperationAsync(async () =>
             {
                 var stopwatch = Stopwatch.StartNew();
-                var decodeResult = await instance.DecodeAtTimeAsync(timeSpan);
+                var decodeResult = await decodeFrame(instance);
                 if (!ReferenceEquals(instance, _videoInstance))
                 {
                     DisposePreviewResult(decodeResult);
