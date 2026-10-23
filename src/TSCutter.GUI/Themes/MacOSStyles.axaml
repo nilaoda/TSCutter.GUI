@@ -1,0 +1,72 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:classic="clr-namespace:Classic.Avalonia.Theme;assembly=Classic.Avalonia.Theme"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        xmlns:local="using:TSCutter.GUI.Themes">
+    <Styles.Resources>
+        <!-- 内容延伸到系统装饰区；保留原生红黄绿，标题在同一背景上由应用呈现。 -->
+        <ControlTemplate x:Key="MacOSWindowTemplate" TargetType="classic:ClassicWindow">
+            <Panel Background="Transparent">
+                <Border Name="PART_TransparencyFallback" IsHitTestVisible="False" />
+                <Border Name="MacOSSurface" Background="{TemplateBinding Background}" IsHitTestVisible="False" />
+                <VisualLayerManager>
+                    <Grid RowDefinitions="Auto,*">
+                        <Border Name="MacOSHeader" Height="28" Background="Transparent">
+                            <TextBlock Text="{TemplateBinding Title}" Margin="84,0"
+                                       HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                       TextAlignment="Center" TextTrimming="CharacterEllipsis"
+                                       FontWeight="SemiBold" IsHitTestVisible="False" />
+                        </Border>
+                        <ContentPresenter Grid.Row="1" Name="PART_ContentPresenter"
+                                      Margin="{TemplateBinding Padding}"
+                                      Content="{TemplateBinding Content}"
+                                      ContentTemplate="{TemplateBinding ContentTemplate}"
+                                      HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                      VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                    </Grid>
+                </VisualLayerManager>
+            </Panel>
+        </ControlTemplate>
+    </Styles.Resources>
+
+    <!-- Apply material before swapping templates; native chrome changes must not renegotiate it. -->
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme.macos">
+        <Setter Property="TransparencyLevelHint" Value="AcrylicBlur,Blur" />
+    </Style>
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme.macos.macos-native-titlebar">
+        <!-- 首次布局时就应用完整装饰，避免显示后再切换引起闪动。 -->
+        <Setter Property="SystemDecorations" Value="Full" />
+        <Setter Property="ExtendClientAreaToDecorationsHint" Value="True" />
+        <Setter Property="ExtendClientAreaChromeHints" Value="PreferSystemChrome" />
+        <!-- 清除 Avalonia 额外绘制的标题材质与分隔线，红黄绿仍由 AppKit 保留。 -->
+        <Setter Property="ExtendClientAreaTitleBarHeightHint" Value="0" />
+        <Setter Property="Template" Value="{StaticResource MacOSWindowTemplate}" />
+        <Setter Property="Background" Value="{DynamicResource MacOSWindowSurfaceBrush}" />
+        <Style Selector="^ /template/ Border#MacOSSurface">
+            <Setter Property="Background" Value="{DynamicResource MacOSWindowSurfaceBrush}" />
+        </Style>
+        <!-- AppKit clips the native window, including its material and shadow. -->
+        <Style Selector="^ /template/ Panel">
+            <Setter Property="(local:DesktopWindowChrome.CornerRadius)" Value="0" />
+        </Style>
+    </Style>
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme.macos.macos-native-titlebar:fullscreen /template/ Border#MacOSHeader">
+        <Setter Property="IsVisible" Value="False" />
+    </Style>
+    <Style Selector=":is(classic|ClassicWindow).desktop-theme.macos.macos-native-titlebar.macos-backdrop">
+        <Setter Property="Background" Value="{DynamicResource Windows11BackdropTintBrush}" />
+        <Style Selector="^ /template/ Border#MacOSSurface">
+            <Setter Property="Background" Value="{DynamicResource Windows11BackdropTintBrush}" />
+        </Style>
+        <!-- MainWindow's section frames and tab host otherwise cover the material with solid surfaces. -->
+        <Style Selector="^ classic|ClassicBorderDecorator.app-section-frame, ^ classic|ClassicBorderDecorator.app-preview-frame">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="^ TabControl">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="^ Menu, ^ common|ToolBar, ^ common|StatusBarItem">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+    </Style>
+</Styles>

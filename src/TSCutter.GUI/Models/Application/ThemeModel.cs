@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using Classic.Avalonia.Theme;
@@ -16,7 +17,8 @@ public class ThemeModel
 {
     public string Name { get; set; }
     public bool IsDarkTheme { get; set; }
-    public string Family => CustomTheme.IsWindows11(Variant) ? "Windows 11" :
+    public string Family => CustomTheme.IsMacOS(Variant) ? "macOS" :
+        CustomTheme.IsWindows11(Variant) ? "Windows 11" :
         CustomTheme.IsWindows10(Variant) ? "Windows 10" :
         CustomTheme.IsWindows8(Variant) ? "Windows 8" :
         CustomTheme.IsLuna(Variant) ? "Windows XP" :
@@ -37,6 +39,8 @@ public class ThemeModel
     }
 
     private static ThemeModel DarkTheme { get; } = new("Standard (Dark)", CustomTheme.DarkStandard, true);
+    // macOS 外观只在 macOS 上提供，其他平台没有原生标题栏可依附。
+    private static bool ShowMacOSFamily => OperatingSystem.IsMacOS();
     public static List<ThemeModel> AllThemes { get; } =
         [
             .. ClassicTheme.AllVariants.Select(x => new ThemeModel(x)),
@@ -46,7 +50,8 @@ public class ThemeModel
             new("Windows 7 Aero", CustomTheme.Aero, false),
             new("Windows 8", CustomTheme.Windows8, false),
             new("Windows 10", CustomTheme.Windows10, false),
-            new("Windows 11", CustomTheme.Windows11, false)
+            new("Windows 11", CustomTheme.Windows11, false),
+            .. ShowMacOSFamily ? [new("macOS", CustomTheme.MacOS, false)] : Array.Empty<ThemeModel>()
         ];
     public static List<ThemeModel> AllDarkThemes { get; } =
         [
@@ -55,6 +60,7 @@ public class ThemeModel
             new("Windows 7 Aero (Dark)", CustomTheme.AeroDark, true),
             new("Windows 8 (Dark)", CustomTheme.Windows8Dark, true),
             new("Windows 10 (Dark)", CustomTheme.Windows10Dark, true),
-            new("Windows 11 (Dark)", CustomTheme.Windows11Dark, true)
+            new("Windows 11 (Dark)", CustomTheme.Windows11Dark, true),
+            .. ShowMacOSFamily ? [new("macOS (Dark)", CustomTheme.MacOSDark, true)] : Array.Empty<ThemeModel>()
         ];
 }

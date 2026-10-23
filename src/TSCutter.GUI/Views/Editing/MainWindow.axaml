@@ -174,10 +174,10 @@
                                  Color="{DynamicResource {x:Static commonControls:SystemColors.ActiveCaptionTextColorKey}}" />
             </ResourceDictionary>
         </Grid.Resources>
-        <ClassicBorderDecorator Grid.Row="0" DockPanel.Dock="Top" Classes="app-section-frame app-menu-frame" BorderStyle="Etched">
+        <ClassicBorderDecorator x:Name="AppMenuFrame" Grid.Row="0" DockPanel.Dock="Top" Classes="app-section-frame app-menu-frame" BorderStyle="Etched">
             <DockPanel Margin="0, 2">
                 <commonControls:RebarHandle />
-                <Menu>
+                <Menu x:Name="AppMenu">
                     <MenuItem Header="{DynamicResource String.Menu.File}">
                         <MenuItem Header="{DynamicResource String.Menu.OpenVideo}"
                                   Command="{Binding LoadVideoClickCommand}"
@@ -848,7 +848,6 @@
                                                   PanRequested="Timeline_OnPanRequested"
                                                   ZoomRequested="Timeline_OnZoomRequested"
                                                   FitRequested="Timeline_OnFitRequested"
-                                                  BackgroundBrush="{DynamicResource {x:Static commonControls:SystemColors.ControlColorKey}}"
                                                   TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
                                                   MutedTextBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
                                                   ClipBrush="{DynamicResource AppStatusSuccessForegroundBrush}"

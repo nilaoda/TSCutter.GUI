@@ -7,6 +7,7 @@ using Avalonia.Threading;
 using Classic.Avalonia.Theme;
 using CommunityToolkit.Mvvm.Messaging;
 using TSCutter.GUI.Controls;
+using TSCutter.GUI.Themes;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.ViewModels.Editing;
@@ -28,6 +29,12 @@ public partial class MainWindow : ClassicWindow
     public MainWindow()
     {
         InitializeComponent();
+
+        if (OperatingSystem.IsMacOS())
+        {
+            var menuBar = new MacOSMenuBar(this, AppMenu, AppMenuFrame);
+            Closed += (_, _) => menuBar.Dispose();
+        }
 
         WeakReferenceMessenger.Default.Register<FitMessage>(this, (r, m) =>
         {

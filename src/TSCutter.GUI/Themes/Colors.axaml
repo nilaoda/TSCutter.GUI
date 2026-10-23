@@ -7,6 +7,16 @@
                 <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Windows11.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.MacOS}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/MacOS.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static theme:CustomTheme.MacOSDark}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/MacOSDark.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
         <ResourceDictionary x:Key="{x:Static theme:CustomTheme.Windows11Dark}">
             <ResourceDictionary.MergedDictionaries>
                 <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Windows11Dark.axaml" />

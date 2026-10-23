@@ -12,6 +12,16 @@
                 <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Windows11Dark.axaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.MacOS}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Windows11.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+        <ResourceDictionary x:Key="{x:Static local:CustomTheme.MacOSDark}">
+            <ResourceDictionary.MergedDictionaries>
+                <MergeResourceInclude Source="avares://TSCutterGUI/Themes/Icons/Windows11Dark.axaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
         <ResourceDictionary x:Key="Default">
             <Bitmap x:Key="Icon.open">avares://TSCutterGUI/Assets/directory_movie-3.png</Bitmap>
             <Bitmap x:Key="Icon.zoom-in">avares://TSCutterGUI/Assets/magnifying_glass_4-zoom-in.png</Bitmap>

@@ -14,7 +14,7 @@
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Styles.Resources>
-    <Style Selector=":is(classic|ClassicWindow).windows11">
+    <Style Selector=":is(classic|ClassicWindow).fluent">
         <Setter Property="Background" Value="Transparent" />
         <Style Selector="^.windows-legacy-frame /template/ classic|ClassicBorderDecorator#Bd">
             <Setter Property="(local:DesktopWindowChrome.FramePalette)" Value="{DynamicResource Windows11LegacyInactiveFramePalette}" />
@@ -555,8 +555,12 @@
         </Style>
     </Style>
     <!-- 只有实际获得系统材质才清除实色底层，透明模式本身不触发材质样式。 -->
-    <Style Selector=":is(classic|ClassicWindow).windows11.windows11-backdrop">
+    <Style Selector=":is(classic|ClassicWindow).fluent.windows11-backdrop">
         <Setter Property="Background" Value="Transparent" />
+        <!-- 时间轴的外层主区域也要透明，避免其底色盖住下层 Mica。 -->
+        <Style Selector="^ classic|ClassicBorderDecorator.app-section-frame:not(.app-sidebar-frame)">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
         <Style Selector="^ /template/ Panel > Border:not(#PART_TransparencyFallback)">
             <Setter Property="Background" Value="{x:Null}" />
         </Style>
@@ -575,11 +579,19 @@
             <Setter Property="Background" Value="{DynamicResource {x:Static common:SystemColors.ControlBrushKey}}" />
         </Style>
     </Style>
+    <!-- 材质上的轨道使用淡底色和较清晰的平面描边，区分时间轴、总览与缩放槽。 -->
+    <Style Selector=":is(classic|ClassicWindow).fluent.windows11-backdrop controls|TimelineControl, :is(classic|ClassicWindow).macos.macos-backdrop controls|TimelineControl">
+        <Setter Property="BackgroundBrush" Value="Transparent" />
+        <Setter Property="TrackBrush" Value="{DynamicResource Windows11TimelineTrackBrush}" />
+        <Setter Property="EmptyTrackBrush" Value="{DynamicResource Windows11TimelineTrackBrush}" />
+        <Setter Property="BorderDarkBrush" Value="{DynamicResource Windows11TimelineStrokeBrush}" />
+        <Setter Property="BorderLightBrush" Value="{DynamicResource Windows11TimelineStrokeBrush}" />
+    </Style>
     <!-- 菜单和提示使用独立弹出根的主题，切换后可恢复原来的模板。 -->
-    <Style Selector="ContextMenu.windows11, MenuFlyoutPresenter.windows11">
+    <Style Selector="ContextMenu.fluent, MenuFlyoutPresenter.fluent">
         <Setter Property="Template" Value="{StaticResource Windows11MenuTemplate}" />
     </Style>
-    <Style Selector="MenuItem.windows11:not(:separator)">
+    <Style Selector="MenuItem.fluent:not(:separator)">
         <Setter Property="Template" Value="{StaticResource Windows11MenuItemTemplate}" />
         <Setter Property="Height" Value="NaN" />
         <Setter Property="MinHeight" Value="28" />
@@ -587,39 +599,39 @@
         <Setter Property="Margin" Value="{StaticResource Windows11MenuItemMargin}" />
         <Setter Property="CornerRadius" Value="4" />
     </Style>
-    <Style Selector="Menu.windows11 > MenuItem:not(:separator)">
+    <Style Selector="Menu.fluent > MenuItem:not(:separator)">
         <Setter Property="Template" Value="{StaticResource Windows11TopMenuItemTemplate}" />
         <Setter Property="Height" Value="26" />
         <Setter Property="MinHeight" Value="0" />
         <Setter Property="Padding" Value="8,0" />
         <Setter Property="Margin" Value="0" />
     </Style>
-    <Style Selector="MenuItem.windows11 /template/ Border#root">
+    <Style Selector="MenuItem.fluent /template/ Border#root">
         <Setter Property="CornerRadius" Value="4" />
     </Style>
-    <Style Selector="MenuItem.windows11:pointerover /template/ Border#root, MenuItem.windows11[IsSubMenuOpen=True] /template/ Border#root">
+    <Style Selector="MenuItem.fluent:pointerover /template/ Border#root, MenuItem.fluent[IsSubMenuOpen=True] /template/ Border#root">
         <Setter Property="Background" Value="{DynamicResource Windows11SubtleBrush}" />
     </Style>
-    <Style Selector="MenuItem.windows11:pressed:pointerover /template/ Border#root">
+    <Style Selector="MenuItem.fluent:pressed:pointerover /template/ Border#root">
         <Setter Property="Background" Value="{DynamicResource Windows11SubtlePressedBrush}" />
     </Style>
-    <Style Selector="MenuItem.windows11:icon /template/ ContentControl#PART_IconPresenter">
+    <Style Selector="MenuItem.fluent:icon /template/ ContentControl#PART_IconPresenter">
         <Setter Property="IsVisible" Value="True" />
     </Style>
-    <Style Selector="MenuItem.windows11 /template/ TextBlock#PART_InputGestureText, MenuItem.windows11:selected /template/ TextBlock#PART_InputGestureText">
+    <Style Selector="MenuItem.fluent /template/ TextBlock#PART_InputGestureText, MenuItem.fluent:selected /template/ TextBlock#PART_InputGestureText">
         <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
     </Style>
-    <Style Selector="MenuItem.windows11:disabled /template/ TextBlock#PART_InputGestureText">
+    <Style Selector="MenuItem.fluent:disabled /template/ TextBlock#PART_InputGestureText">
         <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
     </Style>
-    <Style Selector="MenuItem.windows11 /template/ Path#rightArrow, MenuItem.windows11:selected /template/ Path#rightArrow">
+    <Style Selector="MenuItem.fluent /template/ Path#rightArrow, MenuItem.fluent:selected /template/ Path#rightArrow">
         <Setter Property="Fill" Value="Transparent" />
         <Setter Property="Stroke" Value="{DynamicResource AppSecondaryTextBrush}" />
     </Style>
-    <Style Selector="MenuItem.windows11:disabled /template/ Path#rightArrow">
+    <Style Selector="MenuItem.fluent:disabled /template/ Path#rightArrow">
         <Setter Property="Stroke" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
     </Style>
-    <Style Selector="ContextMenu.windows11 Separator, MenuFlyoutPresenter.windows11 Separator, MenuItem.windows11 Separator">
+    <Style Selector="ContextMenu.fluent Separator, MenuFlyoutPresenter.fluent Separator, MenuItem.fluent Separator">
         <Setter Property="Height" Value="1" />
         <Setter Property="Margin" Value="8,4" />
         <Setter Property="Template">
@@ -628,11 +640,11 @@
             </ControlTemplate>
         </Setter>
     </Style>
-    <Style Selector="ToolTip.windows11 /template/ ContentPresenter#PART_ContentPresenter">
+    <Style Selector="ToolTip.fluent /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Margin" Value="6,4,6,8" />
         <Setter Property="BoxShadow" Value="0 3 8 0 #26000000" />
     </Style>
-    <Style Selector="FlyoutPresenter.windows11">
+    <Style Selector="FlyoutPresenter.fluent">
         <Setter Property="Template" Value="{StaticResource Windows11FlyoutTemplate}" />
         <Setter Property="Background" Value="{DynamicResource Windows11MenuBrush}" />
         <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
