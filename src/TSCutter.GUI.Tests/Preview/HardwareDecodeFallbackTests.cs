@@ -5,7 +5,7 @@ namespace TSCutter.GUI.Tests.Preview;
 
 public class HardwareDecodeFallbackTests
 {
-    [TSCutter.GUI.Tests.FFmpeg.NativeRuntimeFact]
+    [TSCutter.GUI.Tests.FFmpeg.NativeRuntimeFact("TSCUTTER_FFMPEG_TEST_SAMPLES")]
     public async Task UnsupportedCodecsDisableHardwareSwitchWithEitherDefault()
     {
         var directory = Environment.GetEnvironmentVariable("TSCUTTER_FFMPEG_TEST_SAMPLES")!;

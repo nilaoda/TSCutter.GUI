@@ -135,7 +135,7 @@ macOS 上所有主题均提供系统菜单栏，Windows 系列主题同时保留
 
 ## 设计文档
 
-TS 工具的设计说明位于 [docs](docs/README.md)，源码目录与命名空间约定位于 [src/README.md](src/README.md)。
+TS 工具的设计说明位于 [docs](docs/README.md)，源码目录与命名空间约定位于 [src/README_CN.md](src/README_CN.md)。
 
 ## 致谢
 此项目灵感来自一个出色的DVB视频剪辑软件 [VidePub](https://sourceforge.net/projects/videpub/)。

@@ -20,3 +20,6 @@
 .composer
 .amazonq
 .qwen
+
+# Generated integration test media
+/artifacts/test-media/

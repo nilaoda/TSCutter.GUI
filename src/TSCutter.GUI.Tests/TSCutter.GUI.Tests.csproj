@@ -19,4 +19,9 @@
     <ItemGroup>
         <ProjectReference Include="../TSCutter.GUI/TSCutter.GUI.csproj" />
     </ItemGroup>
+    <ItemGroup>
+        <None Include="../../artifacts/test-media/**/*"
+              Link="TestAssets/%(RecursiveDir)%(Filename)%(Extension)"
+              CopyToOutputDirectory="PreserveNewest" />
+    </ItemGroup>
 </Project>

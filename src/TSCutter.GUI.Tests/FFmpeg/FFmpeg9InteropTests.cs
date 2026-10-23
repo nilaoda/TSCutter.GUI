@@ -10,15 +10,6 @@ using TSCutter.GUI.Utils.Media;
 
 namespace TSCutter.GUI.Tests.FFmpeg;
 
-public sealed class NativeRuntimeFactAttribute : FactAttribute
-{
-    public NativeRuntimeFactAttribute(string requiredVariable = "TSCUTTER_FFMPEG_TEST_SAMPLES")
-    {
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(requiredVariable)))
-            Skip = "需要设置 " + requiredVariable + " 和 FFmpeg 9 运行时目录。";
-    }
-}
-
 public sealed class FFmpeg9InteropTests(ITestOutputHelper output)
 {
     [Theory]
@@ -121,7 +112,7 @@ public sealed class FFmpeg9InteropTests(ITestOutputHelper output)
         }
     }
 
-    [NativeRuntimeFact]
+    [NativeRuntimeFact("TSCUTTER_FFMPEG_TEST_SAMPLES")]
     public unsafe void MissingPositionExtensionStillDecodesButCannotProvideCutPositions()
     {
         var directory = Environment.GetEnvironmentVariable("TSCUTTER_FFMPEG_TEST_SAMPLES")!;
@@ -163,7 +154,7 @@ public sealed class FFmpeg9InteropTests(ITestOutputHelper output)
         }
     }
 
-    [NativeRuntimeFact]
+    [NativeRuntimeFact("TSCUTTER_FFMPEG_TEST_SAMPLES")]
     public unsafe void ReorderedFramesRetainPacketPositionAcrossSeekAndDrain()
     {
         var directory = Environment.GetEnvironmentVariable("TSCUTTER_FFMPEG_TEST_SAMPLES")!;
@@ -259,10 +250,10 @@ public sealed class FFmpeg9InteropTests(ITestOutputHelper output)
         Assert.Equal(-1, frame.PacketPosition);
     }
 
-    [NativeRuntimeFact]
+    [NativeMediaFact("keyframes")]
     public void InterruptCallbackSurvivesCollectionAndCancelsNativeInput()
     {
-        var path = Path.Combine(Environment.GetEnvironmentVariable("TSCUTTER_FFMPEG_TEST_SAMPLES")!, "1080i.ts");
+        var path = Path.Combine(NativeTestEnvironment.FixtureDirectory("keyframes"), "fixed.ts");
         var callbackCount = 0;
         using (var input = InterruptibleInputFormatContext.Open(path, () => { callbackCount++; return false; }))
         {
@@ -364,10 +355,10 @@ public sealed class FFmpeg9InteropTests(ITestOutputHelper output)
         Assert.Equal(10, parameters.ChLayout.nb_channels);
     }
 
-    [NativeRuntimeFact]
+    [NativeMediaFact("keyframes")]
     public async Task LateProgramTablesExpandOnlyTheTsProbe()
     {
-        var source = Path.Combine(Environment.GetEnvironmentVariable("TSCUTTER_FFMPEG_TEST_SAMPLES")!, "1080i.ts");
+        var source = Path.Combine(NativeTestEnvironment.FixtureDirectory("keyframes"), "fixed.ts");
         using (var ordinary = FormatContext.OpenInputUrl(source))
         {
             long originalProbeSize;

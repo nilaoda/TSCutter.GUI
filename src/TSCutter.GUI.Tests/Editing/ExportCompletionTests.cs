@@ -22,7 +22,7 @@ public sealed class ExportCompletionTests
     [RemuxExportFact]
     public async Task MergeCompletionPublishesSharedOutputSizeAndSingleExportReplacesItsMarker()
     {
-        var source = Path.Combine(Environment.GetEnvironmentVariable("TSCUTTER_REMUX_TEST_SAMPLES")!, "multi.mp4");
+        var source = Path.Combine(TSCutter.GUI.Tests.FFmpeg.NativeTestEnvironment.FixtureDirectory("remux"), "multi.mp4");
         var merged = Path.Combine(Path.GetDirectoryName(source)!, "ui-merged.mp4");
         var single = Path.Combine(Path.GetDirectoryName(source)!, "ui-single.mp4");
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));

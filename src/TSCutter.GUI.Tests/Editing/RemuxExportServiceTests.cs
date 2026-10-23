@@ -9,19 +9,15 @@ using TSCutter.GUI.ViewModels.Editing;
 
 namespace TSCutter.GUI.Tests.Editing;
 
-public sealed class RemuxExportFactAttribute : FactAttribute
+public sealed class RemuxExportFactAttribute : TSCutter.GUI.Tests.FFmpeg.NativeMediaFactAttribute
 {
     public RemuxExportFactAttribute(string? requiredVariable = null)
-    {
-        var sampleVariable = requiredVariable ?? "TSCUTTER_REMUX_TEST_SAMPLES";
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(sampleVariable)))
-            Skip = "需要设置 " + sampleVariable + " 和 FFmpeg 9 运行库目录。";
-    }
+        : base(requiredVariable is null ? "remux" : null, requiredVariable) { }
 }
 
 public sealed class RemuxExportServiceTests
 {
-    private static string Fixture(string name) => Path.Combine(Environment.GetEnvironmentVariable("TSCUTTER_REMUX_TEST_SAMPLES")!, name);
+    private static string Fixture(string name) => Path.Combine(TSCutter.GUI.Tests.FFmpeg.NativeTestEnvironment.FixtureDirectory("remux"), name);
     private static RemuxExportSettings Settings(string container, params int[] indices) => new()
     {
         Container = container, ReferenceVideoIndex = 0, TimelineOriginSeconds = 0, StreamIndices = [.. indices]
