@@ -44,7 +44,8 @@ internal sealed class MacOsBackdropClip : AvaloniaObject
     public static void Update(Window window, double? radius, bool useAeroMaterial = true, bool clearWindowBackground = true,
         bool useNativeFrame = false)
     {
-        if (!OperatingSystem.IsMacOS() || !window.IsLoaded ||
+        // Loaded 可能晚于首帧；原生句柄和图层就绪后立即设置材质，避免先显示系统默认材质再跳变。
+        if (!OperatingSystem.IsMacOS() ||
             window.TryGetPlatformHandle() is not { HandleDescriptor: "NSWindow" } handle)
         {
             window.Classes.Remove("macos-native-corners");
