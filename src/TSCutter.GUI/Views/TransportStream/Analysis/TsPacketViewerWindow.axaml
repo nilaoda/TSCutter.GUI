@@ -27,7 +27,7 @@
             <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
             <Setter Property="FontWeight" Value="SemiBold" />
         </Style>
-        <!-- 选中异常包时继续使用系统选择色，避免状态色与选择色叠加后看不清文字。 -->
+        <!-- 选中异常包时跟随整行的选择配色，文字随表格焦点切换，避免失焦后白字落在浅色背景上。 -->
         <Style Selector="DataGridRow.errorRow:selected DataGridCell">
             <Setter Property="Background" Value="Transparent" />
         </Style>
@@ -36,11 +36,11 @@
         </Style>
         <Style Selector="DataGridRow.errorRow:selected TextBlock">
             <Setter Property="Foreground"
-                    Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
+                    Value="{Binding $parent[DataGridRow].Foreground}" />
         </Style>
         <Style Selector="DataGridRow.warningRow:selected TextBlock">
             <Setter Property="Foreground"
-                    Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
+                    Value="{Binding $parent[DataGridRow].Foreground}" />
         </Style>
     </Window.Styles>
     <Grid Margin="12" RowDefinitions="Auto,Auto,8*,5,12*,Auto" RowSpacing="7">

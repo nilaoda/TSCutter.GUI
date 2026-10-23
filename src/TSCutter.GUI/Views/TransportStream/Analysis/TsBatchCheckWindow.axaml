@@ -19,7 +19,7 @@
             <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
         </Style>
         <Style Selector="DataGridRow:selected TextBlock">
-            <Setter Property="Foreground" Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightTextBrushKey}}" />
+            <Setter Property="Foreground" Value="{Binding $parent[DataGridRow].Foreground}" />
         </Style>
     </Window.Styles>
     <Grid Margin="12" RowDefinitions="Auto,Auto,*,Auto,Auto,Auto" RowSpacing="8">

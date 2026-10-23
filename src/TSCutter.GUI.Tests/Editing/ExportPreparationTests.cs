@@ -65,10 +65,26 @@ public sealed class ExportPreparationTests
             };
             try
             {
-                window.FindControl<TabControl>("RightTabControl")!.SelectedIndex = 1;
+                var tabs = window.FindControl<TabControl>("RightTabControl")!;
                 window.Show();
                 Flush(window);
+                double FooterBottom(object command)
+                {
+                    var button = window.GetVisualDescendants().OfType<Button>()
+                        .Single(control => ReferenceEquals(control.Command, command));
+                    return button.TranslatePoint(new Point(0, button.Bounds.Height), window)!.Value.Y;
+                }
+                var clipsFooter = FooterBottom(main.SelectAllClipsCommand);
+                tabs.SelectedIndex = 1;
+                Flush(window);
+                Assert.Equal(clipsFooter, FooterBottom(main.ClearQueueCommand), 6);
+                Assert.Equal(clipsFooter, FooterBottom(main.BatchExportQueueCommand), 6);
                 CheckList(window.FindControl<ItemsControl>("ExportQueueList")!, window);
+                main.ExportQueue.Clear();
+                typeof(MainWindowViewModel).GetMethod("MarkProjectCheckpoint", PrivateInstance)!.Invoke(main, null);
+                Flush(window);
+                Assert.Equal(clipsFooter, FooterBottom(main.ClearQueueCommand), 6);
+                Assert.Equal(clipsFooter, FooterBottom(main.BatchExportQueueCommand), 6);
                 warning.Show();
                 Flush(warning);
                 CheckList(warning.FindControl<ItemsControl>("FilesList")!, warning);
