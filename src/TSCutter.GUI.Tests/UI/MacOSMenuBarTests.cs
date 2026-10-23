@@ -6,6 +6,7 @@ using Avalonia.Interactivity;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 using Classic.Avalonia.Theme;
+using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Themes;
 using Xunit;
 
@@ -14,6 +15,87 @@ namespace TSCutter.GUI.Tests.UI;
 [Collection("Avalonia UI")]
 public sealed class MacOSMenuBarTests
 {
+    [MacOSMenuFact]
+    public async Task LanguageSwitchRefreshesNativeTopLevelTitlesAndKeepsRootAndCommands()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var languages = new LocalizationService();
+            languages.SwitchLanguage("en-US");
+            var executions = 0;
+            var open = new MenuItem
+            {
+                Command = new RelayCommand(() => executions++),
+                InputGesture = new KeyGesture(Key.O, KeyModifiers.Meta)
+            };
+            var file = new MenuItem { Items = { open } };
+            var undo = new MenuItem { IsEnabled = false };
+            var edit = new MenuItem { Items = { undo } };
+            foreach (var (item, key) in new[]
+                     {
+                         (file, "String.Menu.File"), (open, "String.Menu.OpenVideo"),
+                         (edit, "String.Menu.Edit"), (undo, "String.Menu.Undo")
+                     })
+                item.Bind(MenuItem.HeaderProperty,
+                    new Avalonia.Markup.Xaml.MarkupExtensions.DynamicResourceExtension(key));
+            var source = new Menu { Items = { file, edit } };
+            var frame = new Border { Child = source };
+            var window = new ClassicWindow { Content = frame };
+            void Flush()
+            {
+                Dispatcher.UIThread.RunJobs();
+                window.UpdateLayout();
+                Dispatcher.UIThread.RunJobs();
+            }
+            try
+            {
+                window.Show();
+                using var menuBar = new MacOSMenuBar(window, source, frame);
+                Flush();
+                var root = NativeMenu.GetMenu(window)!;
+                foreach (var theme in new[] { CustomTheme.MacOS, CustomTheme.Windows11, CustomTheme.MacOSDark })
+                {
+                    window.RequestedThemeVariant = theme;
+                    Flush();
+                    foreach (var (code, fileHeader, editHeader, undoHeader) in new[]
+                             {
+                                 ("zh-CN", "文件", "编辑", "撤销"),
+                                 ("zh-TW", "檔案", "編輯", "復原"),
+                                 ("en-US", "_File", "_Edit", "_Undo")
+                             })
+                    {
+                        var previous = Assert.IsType<NativeMenuItem>(root.Items[0]);
+                        var previousOpen = Assert.IsType<NativeMenuItem>(Assert.Single(previous.Menu!.Items));
+                        languages.SwitchLanguage(code);
+                        Flush();
+                        Assert.Same(root, NativeMenu.GetMenu(window));
+                        var nativeFile = Assert.IsType<NativeMenuItem>(root.Items[0]);
+                        var nativeEdit = Assert.IsType<NativeMenuItem>(root.Items[1]);
+                        // 新条目使 Avalonia 重新创建 NSMenu，刷新菜单栏实际使用的子菜单标题。
+                        Assert.NotSame(previous, nativeFile);
+                        Assert.Null(previousOpen.Command);
+                        Assert.Equal(fileHeader, nativeFile.Header);
+                        Assert.Equal(editHeader, nativeEdit.Header);
+                        var nativeOpen = Assert.IsType<NativeMenuItem>(Assert.Single(nativeFile.Menu!.Items));
+                        var nativeUndo = Assert.IsType<NativeMenuItem>(Assert.Single(nativeEdit.Menu!.Items));
+                        Assert.Equal(undoHeader, nativeUndo.Header);
+                        Assert.False(nativeUndo.IsEnabled);
+                        Assert.Equal(open.InputGesture, nativeOpen.Gesture);
+                        nativeOpen.Command!.Execute(null);
+                    }
+                }
+                Assert.Equal(9, executions);
+                languages.SwitchLanguage("zh-CN");
+                menuBar.Dispose();
+                Flush();
+                Assert.Same(root, NativeMenu.GetMenu(window));
+                Assert.Empty(root.Items);
+            }
+            finally { window.Close(); }
+        }, CancellationToken.None);
+    }
+
     [MacOSMenuFact]
     public async Task BoundThemeSubmenuSurvivesSwitchingFromAnOpenDesktopMenu()
     {
