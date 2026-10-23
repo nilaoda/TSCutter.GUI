@@ -8,7 +8,7 @@
         x:Class="TSCutter.GUI.Views.Preview.CaptureFrameView"
         d:DataContext="{x:Static local:App.CaptureFrameDialog}"
         x:DataType="viewModels:CaptureFrameViewModel"
-        Width="320" Height="240"
+        Width="320" SizeToContent="Height"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         Title="{DynamicResource String.CaptureFrame.Title}">
