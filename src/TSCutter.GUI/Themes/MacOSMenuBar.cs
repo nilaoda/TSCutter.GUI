@@ -47,7 +47,7 @@ internal sealed class MacOSMenuBar : IDisposable
         var active = OperatingSystem.IsMacOS();
         // Avalonia.Native 11.3 的导出器固定持有首次导出的根菜单，只能更新条目，不能替换根对象。
         if (active && _projection == null)
-            _projection = new MenuProjection(_sourceMenu, _windowMenu);
+            _projection = new MenuProjection(_sourceMenu, _windowMenu, recreateOnHeaderChange: true);
         else if (!active)
             RestoreMenu();
         if (_projection is { } projection)
@@ -84,14 +84,18 @@ internal sealed class MacOSMenuBar : IDisposable
     {
         private readonly ItemsControl _source;
         private readonly List<ItemProjection> _children = [];
+        private readonly bool _recreateOnHeaderChange;
+        private bool _rebuildQueued;
+        private bool _disposed;
         public NativeMenu Menu { get; }
 
-        public MenuProjection(ItemsControl source, NativeMenu? target = null)
+        public MenuProjection(ItemsControl source, NativeMenu? target = null, bool recreateOnHeaderChange = false)
         {
             // 隐藏的菜单不会参与布局，主动生成条目容器，让子项获得逻辑父级、资源和 DataContext。
             source.ApplyTemplate();
             source.Presenter?.ApplyTemplate();
             _source = source;
+            _recreateOnHeaderChange = recreateOnHeaderChange;
             Menu = target ?? new NativeMenu();
             source.Items.CollectionChanged += ItemsChanged;
             Menu.NeedsUpdate += MenuNeedsUpdate;
@@ -110,6 +114,21 @@ internal sealed class MacOSMenuBar : IDisposable
 
         private void ItemsChanged(object? sender, NotifyCollectionChangedEventArgs e) => Rebuild();
 
+        private void QueueRebuild()
+        {
+            if (_disposed || _rebuildQueued)
+                return;
+            _rebuildQueued = true;
+            // Avalonia 11.3 只更新 NSMenuItem 的文字，NSMenu 标题仍是首次导出时的值。
+            // 等语言资源全部更新后重建顶层条目，使菜单栏标题同步；根菜单保持不变。
+            Dispatcher.UIThread.Post(() =>
+            {
+                _rebuildQueued = false;
+                if (!_disposed)
+                    Rebuild();
+            }, DispatcherPriority.Loaded);
+        }
+
         private void Rebuild()
         {
             foreach (var child in _children) child.Dispose();
@@ -119,7 +138,7 @@ internal sealed class MacOSMenuBar : IDisposable
             {
                 if (item is MenuItem source)
                 {
-                    var child = new ItemProjection(source);
+                    var child = new ItemProjection(source, _recreateOnHeaderChange ? QueueRebuild : null);
                     _children.Add(child);
                     Menu.Add(child.Item);
                 }
@@ -130,6 +149,7 @@ internal sealed class MacOSMenuBar : IDisposable
 
         public void Dispose()
         {
+            _disposed = true;
             _source.Items.CollectionChanged -= ItemsChanged;
             Menu.NeedsUpdate -= MenuNeedsUpdate;
             foreach (var child in _children) child.Dispose();
@@ -142,12 +162,14 @@ internal sealed class MacOSMenuBar : IDisposable
     {
         private readonly MenuItem _source;
         private readonly MenuProjection _children;
+        private readonly Action? _headerChanged;
         private ICommand? _command;
         public NativeMenuItem Item { get; } = new();
 
-        public ItemProjection(MenuItem source)
+        public ItemProjection(MenuItem source, Action? headerChanged = null)
         {
             _source = source;
+            _headerChanged = headerChanged;
             _children = new MenuProjection(source);
             source.PropertyChanged += SourcePropertyChanged;
             source.Items.CollectionChanged += ItemsChanged;
@@ -163,7 +185,11 @@ internal sealed class MacOSMenuBar : IDisposable
                 e.Property == MenuItem.IsCheckedProperty || e.Property == MenuItem.ToggleTypeProperty ||
                 e.Property == Visual.IsVisibleProperty || e.Property == InputElement.IsEffectivelyEnabledProperty ||
                 e.Property == MenuItem.CommandProperty || e.Property == MenuItem.CommandParameterProperty)
+            {
                 Synchronize();
+                if (e.Property == MenuItem.HeaderProperty)
+                    _headerChanged?.Invoke();
+            }
         }
 
         private void Synchronize()
