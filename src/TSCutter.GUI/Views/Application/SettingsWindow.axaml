@@ -9,8 +9,8 @@
         xmlns:models="clr-namespace:TSCutter.GUI.Models.Application"
         xmlns:app="using:TSCutter.GUI"
         mc:Ignorable="d"
-        d:DesignWidth="380" d:DesignHeight="458"
-        Width="380" Height="458"
+        d:DesignWidth="380" d:DesignHeight="490"
+        Width="380" Height="490"
         x:Class="TSCutter.GUI.Views.Application.SettingsWindow"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
@@ -138,6 +138,9 @@
                     <CheckBox IsChecked="{Binding ShowImageNavigator}"
                               Content="{DynamicResource String.Settings.ShowImageNavigator}"
                               ToolTip.Tip="{DynamicResource String.Settings.ShowImageNavigatorTip}" />
+                    <CheckBox IsChecked="{Binding ShowKeyFrameStrip}"
+                              Content="{DynamicResource String.Settings.ShowKeyFrameStrip}"
+                              ToolTip.Tip="{DynamicResource String.Settings.ShowKeyFrameStripTip}" />
                     <CheckBox IsChecked="{Binding PreferHardwareDecoding}"
                               IsEnabled="{Binding IsHardwareDecodingAvailable}"
                               Content="{DynamicResource String.Settings.PreferHardwareDecoding}"

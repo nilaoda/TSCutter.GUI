@@ -36,6 +36,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     [ObservableProperty]
     private bool _showImageNavigator;
     [ObservableProperty]
+    private bool _showKeyFrameStrip;
+    [ObservableProperty]
     private bool _preferHardwareDecoding;
     [ObservableProperty]
     private bool _enableSdrToneMapping;
@@ -63,6 +65,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         AutoDetectLanguage = _configService.CurrentConfig.AutoDetectLanguage;
         AutoCheckForUpdates = _configService.CurrentConfig.AutoCheckForUpdates;
         ShowImageNavigator = _configService.CurrentConfig.ShowImageNavigator;
+        ShowKeyFrameStrip = _configService.CurrentConfig.ShowKeyFrameStrip;
         PreferHardwareDecoding = _configService.CurrentConfig.PreferHardwareDecoding;
         EnableSdrToneMapping = _configService.CurrentConfig.EnableSdrToneMapping;
         SelectedTheme = _configService.CurrentConfig.ThemeModel;
@@ -103,6 +106,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.CurrentConfig.AutoDetectLanguage = AutoDetectLanguage;
         _configService.CurrentConfig.AutoCheckForUpdates = AutoCheckForUpdates;
         _configService.CurrentConfig.ShowImageNavigator = ShowImageNavigator;
+        _configService.CurrentConfig.ShowKeyFrameStrip = ShowKeyFrameStrip;
         _configService.CurrentConfig.PreferHardwareDecoding = PreferHardwareDecoding;
         _configService.CurrentConfig.EnableSdrToneMapping = EnableSdrToneMapping;
         _configService.CurrentConfig.ThemeVariantMode = SelectedThemeVariantMode;

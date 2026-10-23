@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Specialized;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -11,6 +12,7 @@ using TSCutter.GUI.Themes;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.ViewModels.Editing;
+using TSCutter.GUI.ViewModels.Preview;
 
 namespace TSCutter.GUI.Views.Editing;
 
@@ -29,6 +31,11 @@ public partial class MainWindow : ClassicWindow
     public MainWindow()
     {
         InitializeComponent();
+
+        // Windows 平面主题的窗口内菜单和标题区占用更多高度，启动时为 16:9 预览补足空间。
+        if (CustomTheme.IsWindows8(ActualThemeVariant) || CustomTheme.IsWindows10(ActualThemeVariant) ||
+            CustomTheme.IsWindows11(ActualThemeVariant))
+            Height = 772;
 
         if (OperatingSystem.IsMacOS())
         {
@@ -49,6 +56,8 @@ public partial class MainWindow : ClassicWindow
             if (DataContext is MainWindowViewModel vm)
             {
                 vm.Clips.CollectionChanged += OnClipsCollectionChanged;
+                if (KeyFrameStripView.Bounds.Width >= 24)
+                    vm.KeyFrameStrip.SetVisibleCount(KeyFrameStripView.VisibleCapacity);
             }
         };
         Activated += MainWindow_OnActivated;
@@ -154,7 +163,10 @@ public partial class MainWindow : ClassicWindow
         }
     }
 
-    private async void Timeline_OnSeekRequested(object? sender, double time)
+    private async void Timeline_OnSeekRequested(object? sender, double time) =>
+        await SeekPreviewAsync(time, () => ViewModel.SeekToTimeAndDrawFrameAsync(TimeSpan.FromSeconds(time)));
+
+    private async Task SeekPreviewAsync(double time, Func<Task> seek)
     {
         if (!ViewModel.IsVideoInitialized)
         {
@@ -165,8 +177,10 @@ public partial class MainWindow : ClassicWindow
         try
         {
             MainTimeline.IsEnabled = false;
+            ViewModel.BeginKeyFrameStripScrub();
+            ViewModel.RequestKeyFrameStrip(time, immediate: true);
             await ViewModel.CompleteScrubPreviewAsync();
-            await ViewModel.SeekToTimeAndDrawFrameAsync(TimeSpan.FromSeconds(time));
+            await seek();
         }
         catch (Exception ex)
         {
@@ -174,19 +188,41 @@ public partial class MainWindow : ClassicWindow
         }
         finally
         {
+            ViewModel.EndKeyFrameStripScrub(ViewModel.CurrentTime);
             MainTimeline.CompletePendingSeek();
             MainTimeline.IsEnabled = true;
         }
     }
 
-    private void Timeline_OnScrubStarted(object? sender, EventArgs e) =>
+    private void Timeline_OnScrubStarted(object? sender, EventArgs e)
+    {
+        ViewModel.BeginKeyFrameStripScrub();
         ViewModel.BeginScrubPreview();
+    }
+
+    private void Timeline_OnScrubPositionChanged(object? sender, double time) =>
+        ViewModel.RequestKeyFrameStrip(time);
+
+    private void KeyFrameStrip_OnSizeChanged(object? sender, SizeChangedEventArgs e)
+    {
+        if (DataContext is MainWindowViewModel vm && KeyFrameStripView.Bounds.Width >= 24)
+            vm.KeyFrameStrip.SetVisibleCount(KeyFrameStripView.VisibleCapacity);
+    }
+
+    private async void KeyFrameStrip_OnSeekRequested(object? sender, KeyFrameStripItem frame)
+    {
+        if (MainTimeline.IsEffectivelyEnabled && !ViewModel.IsDecoding && ViewModel.CanTogglePreviewOptions)
+            await SeekPreviewAsync(frame.Timestamp.TotalSeconds, () => ViewModel.SeekToKeyFrameAndDrawFrameAsync(frame.Pts));
+    }
 
     private void Timeline_OnScrubPreviewRequested(object? sender, double time) =>
         ViewModel.RequestScrubPreview(time, ImageViewer.GetDecodeTargetSize());
 
-    private void Timeline_OnScrubCanceled(object? sender, EventArgs e) =>
+    private void Timeline_OnScrubCanceled(object? sender, EventArgs e)
+    {
+        ViewModel.EndKeyFrameStripScrub(ViewModel.CurrentTime);
         ViewModel.CancelScrubPreview();
+    }
 
     private void Timeline_OnPanRequested(object? sender, double start) =>
         ViewModel.TimelineViewport.ViewStart = start;

@@ -173,6 +173,7 @@ public partial class MainWindowViewModel
             SetPreviewTrackChoices(_videoInstance.PreviewPrograms, _videoInstance.StreamSelection);
             SetSubtitleTrackChoices(_videoInstance.PreviewSubtitleTracks);
             ApplyDecodeResult(frame);
+            RequestKeyFrameStrip(CurrentTime, immediate: true, currentPts: _displayedFramePts);
             frame = null;
             UpdateDecodeMode();
             WeakReferenceMessenger.Default.Send(new FitMessage());

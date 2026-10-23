@@ -12,7 +12,7 @@
         xmlns:modelsPreview="clr-namespace:TSCutter.GUI.Models.Preview"
         xmlns:commonControls="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
         mc:Ignorable="d"
-        Width="940" Height="650"
+        Width="1040" Height="740"
         MinWidth="670" MinHeight="400"
         x:Class="TSCutter.GUI.Views.Editing.MainWindow"
         x:DataType="vm:MainWindowViewModel"
@@ -264,6 +264,10 @@
                         <MenuItem Header="{DynamicResource String.Menu.OriginalSize}" Command="{Binding ZoomNoneCommand}"/>
                         <MenuItem Header="{DynamicResource String.Menu.Fit}" Command="{Binding FitCommand, ElementName=ImageViewer}"/>
                         <Separator />
+                        <MenuItem Header="{DynamicResource String.Menu.ImageNavigator}"
+                                  ToggleType="CheckBox" IsChecked="{Binding ShowImageNavigator, Mode=TwoWay}" />
+                        <MenuItem Header="{DynamicResource String.Menu.KeyFrameStrip}"
+                                  ToggleType="CheckBox" IsChecked="{Binding ShowKeyFrameStrip, Mode=TwoWay}" />
                         <MenuItem Header="{DynamicResource String.Menu.Theme}" ItemsSource="{Binding ThemeMenuItems}" />
                     </MenuItem>
                     <MenuItem Header="{DynamicResource String.Menu.Help}">
@@ -827,39 +831,55 @@
                             </ClassicBorderDecorator>
                         </Grid>
                         <!-- 时间刻度、剪辑范围、播放头、总览与缩放共用同一套坐标换算。 -->
-                        <controls:TimelineControl Grid.Row="1"
-                                                  Name="MainTimeline"
-                                                  IsEnabled="{Binding IsVideoInitialized}"
-                                                  Focusable="True"
-                                                  Height="48"
-                                                  Margin="0,2"
-                                                  HorizontalAlignment="Stretch"
-                                                  Minimum="0"
-                                                  Maximum="{Binding DurationMax}"
-                                                  Value="{Binding CurrentTime}"
-                                                  ViewportStart="{Binding TimelineViewport.ViewStart}"
-                                                  ViewportEnd="{Binding TimelineViewport.ViewEnd}"
-                                                  ZoomLevel="{Binding TimelineViewport.ZoomLevel}"
-                                                  Ranges="{Binding SelectedClipRanges}"
-                                                  ScrubStarted="Timeline_OnScrubStarted"
-                                                  ScrubPreviewRequested="Timeline_OnScrubPreviewRequested"
-                                                  ScrubCanceled="Timeline_OnScrubCanceled"
-                                                  SeekRequested="Timeline_OnSeekRequested"
-                                                  PanRequested="Timeline_OnPanRequested"
-                                                  ZoomRequested="Timeline_OnZoomRequested"
-                                                  FitRequested="Timeline_OnFitRequested"
-                                                  TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
-                                                  MutedTextBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
-                                                  ClipBrush="{DynamicResource AppStatusSuccessForegroundBrush}"
-                                                  AccentBrush="{DynamicResource AppRepairMapSelectionBrush}"
-                                                  ViewportBrush="{DynamicResource AppRepairMapSelectionBrush}"
-                                                  FitTip="{DynamicResource String.Timeline.FitTip}"
-                                                  ZoomTip="{DynamicResource String.Timeline.ZoomTip}"
-                                                  ScrollTip="{DynamicResource String.Timeline.ScrollTip}" />
+                        <StackPanel Grid.Row="1">
+                            <controls:KeyFrameStripControl Name="KeyFrameStripView" Items="{Binding KeyFrameStrip.Items}"
+                                                          TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
+                                                          BorderBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
+                                                          AccentBrush="{DynamicResource AppRepairMapSelectionBrush}"
+                                                          IsVisible="{Binding IsKeyFrameStripVisible}"
+                                                          IsEnabled="{Binding IsVideoInitialized}"
+                                                          SizeChanged="KeyFrameStrip_OnSizeChanged"
+                                                          SeekRequested="KeyFrameStrip_OnSeekRequested" />
+                            <controls:TimelineControl
+                                                      Name="MainTimeline"
+                                                      IsEnabled="{Binding IsVideoInitialized}"
+                                                      Focusable="True"
+                                                      Height="48"
+                                                      Margin="0,2"
+                                                      HorizontalAlignment="Stretch"
+                                                      Minimum="0"
+                                                      Maximum="{Binding DurationMax}"
+                                                      Value="{Binding CurrentTime}"
+                                                      ViewportStart="{Binding TimelineViewport.ViewStart}"
+                                                      ViewportEnd="{Binding TimelineViewport.ViewEnd}"
+                                                      ZoomLevel="{Binding TimelineViewport.ZoomLevel}"
+                                                      Ranges="{Binding SelectedClipRanges}"
+                                                      ScrubStarted="Timeline_OnScrubStarted"
+                                                      ScrubPositionChanged="Timeline_OnScrubPositionChanged"
+                                                      ScrubPreviewRequested="Timeline_OnScrubPreviewRequested"
+                                                      ScrubCanceled="Timeline_OnScrubCanceled"
+                                                      SeekRequested="Timeline_OnSeekRequested"
+                                                      PanRequested="Timeline_OnPanRequested"
+                                                      ZoomRequested="Timeline_OnZoomRequested"
+                                                      FitRequested="Timeline_OnFitRequested"
+                                                      TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
+                                                      MutedTextBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
+                                                      ClipBrush="{DynamicResource AppStatusSuccessForegroundBrush}"
+                                                      AccentBrush="{DynamicResource AppRepairMapSelectionBrush}"
+                                                      ViewportBrush="{DynamicResource AppRepairMapSelectionBrush}"
+                                                      FitTip="{DynamicResource String.Timeline.FitTip}"
+                                                      ZoomTip="{DynamicResource String.Timeline.ZoomTip}"
+                                                      ScrollTip="{DynamicResource String.Timeline.ScrollTip}" />
+                        </StackPanel>
                         <!-- 导航等控制键的一行 -->
                         <Grid Grid.Row="2" ColumnDefinitions="*, Auto, *" Margin="0,2,0,0"
                               IsEnabled="{Binding IsVideoInitialized}">
                             <Grid.Styles>
+                                <!-- 底部操作提示固定在按钮上方，避免最大化时被屏幕边界挤回鼠标位置。 -->
+                                <Style Selector="Button">
+                                    <Setter Property="ToolTip.Placement" Value="Top" />
+                                    <Setter Property="ToolTip.VerticalOffset" Value="-6" />
+                                </Style>
                                 <Style Selector="Button.LeftBtn">
                                     <Setter Property="Width" Value="30" />
                                     <Setter Property="FontSize" Value="14" />

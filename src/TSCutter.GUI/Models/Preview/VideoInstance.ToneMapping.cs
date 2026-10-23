@@ -97,6 +97,7 @@ public partial class VideoInstance
         RequiresSampleAspectRatioCorrection = source.RequiresSampleAspectRatioCorrection,
         VideoDynamicRange = source.VideoDynamicRange, FrameTimestamp = source.FrameTimestamp,
         FramePts = source.FramePts, FramePts90k = source.FramePts90k, FramePosition = source.FramePosition,
+        KeyFrameType = source.KeyFrameType,
         FrameEndSignature = source.FrameEndSignature, PresentationMode = source.PresentationMode
     };
 }

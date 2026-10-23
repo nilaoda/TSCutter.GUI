@@ -1,6 +1,8 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <x:String x:Key="String.Preview.KeyFrameSeekFailed">Unable to locate the selected keyframe.</x:String>
+    <x:String x:Key="String.Menu.ImageNavigator">Image navigator</x:String>
+    <x:String x:Key="String.Menu.KeyFrameStrip">Keyframe strip</x:String>
     <x:String x:Key="String.Window.Minimize">Minimize</x:String>
     <x:String x:Key="String.Window.Maximize">Maximize</x:String>
     <x:String x:Key="String.Window.Restore">Restore</x:String>
@@ -187,6 +189,8 @@
     <x:String x:Key="String.Settings.AutoCheckForUpdates">Auto check for updates after app started</x:String>
     <x:String x:Key="String.Settings.ShowImageNavigator">Show image navigator</x:String>
     <x:String x:Key="String.Settings.ShowImageNavigatorTip">Show a navigation thumbnail when the image extends beyond the view. Click or drag to move the visible area.</x:String>
+    <x:String x:Key="String.Settings.ShowKeyFrameStrip">Show keyframe strip</x:String>
+    <x:String x:Key="String.Settings.ShowKeyFrameStripTip">Show nearby keyframe thumbnails above the timeline. Click a thumbnail to seek to that frame.</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecoding">Prefer hardware decoding</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecodingTip">Available on Windows and macOS when a compatible device is present. Unsupported codecs automatically use software decoding.</x:String>
     <x:String x:Key="String.Settings.EnableSdrToneMapping">Default to HDR to SDR preview mapping</x:String>
