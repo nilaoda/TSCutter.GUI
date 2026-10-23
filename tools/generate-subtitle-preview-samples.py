@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
-"""生成字幕预览的小型测试素材；将输出目录设为 TSCUTTER_SUBTITLE_TEST_SAMPLES。"""
+"""生成字幕预览测试素材，默认输出到已被 Git 忽略的 artifacts/test-media/subtitles。"""
 import argparse
+import json
 from pathlib import Path
 import struct
 import subprocess
@@ -8,12 +9,15 @@ import subprocess
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=Path)
+    parser.add_argument("directory", nargs="?", type=Path,
+                        default=Path(__file__).resolve().parents[1] / "artifacts/test-media/subtitles")
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--font", type=Path)
     args = parser.parse_args()
     root = args.directory.resolve()
     root.mkdir(parents=True, exist_ok=True)
+    manifest = root / "manifest.json"
+    manifest.unlink(missing_ok=True)
 
     def ffmpeg(*values):
         subprocess.run([args.ffmpeg, "-hide_banner", "-loglevel", "error", "-y", *map(str, values)], check=True)
@@ -66,6 +70,7 @@ def main():
            "-c", "copy", root / "bitmap.mkv")
     ffmpeg("-fix_sub_duration", "-i", root / "bitmap.mkv", "-map", "0:v", "-map", "0:s", "-c:v", "copy", "-c:s", "dvbsub",
            "-f", "mpegts", root / "bitmap.ts")
+    manifest.write_text(json.dumps({"formatVersion": 1}, indent=2) + "\n", encoding="utf-8")
     print(root)
 
 

@@ -1,21 +1,21 @@
 #!/usr/bin/env python3
-"""使用 ffmpeg 为 RemuxExportServiceTests 生成小型合成测试素材。
-
-用法：python3 tools/generate-remux-export-samples.py /tmp/tscutter-media-fixtures
-运行 dotnet test 时，将 TSCUTTER_REMUX_TEST_SAMPLES 设置为上述目录。
-"""
+"""生成封装导出测试素材，默认输出到已被 Git 忽略的 artifacts/test-media/remux。"""
 import argparse
+import json
 from pathlib import Path
 import subprocess
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("directory", type=Path)
+    parser.add_argument("directory", nargs="?", type=Path,
+                        default=Path(__file__).resolve().parents[1] / "artifacts/test-media/remux")
     parser.add_argument("--ffmpeg", default="ffmpeg")
     args = parser.parse_args()
     root = args.directory.resolve()
     root.mkdir(parents=True, exist_ok=True)
+    manifest = root / "manifest.json"
+    manifest.unlink(missing_ok=True)
     (root / "events.srt").write_text(
         "1\n00:00:01,000 --> 00:00:05,000\nSpanning subtitle\n\n"
         "2\n00:00:05,500 --> 00:00:07,500\nSecond subtitle\n", encoding="utf-8")
@@ -92,6 +92,7 @@ def main():
            "-c", "copy", "-disposition:v:1", "attached_pic",
            "-metadata:s:a:0", "title=English", "-metadata:s:a:1", "title=Japanese",
            "-metadata:s:s:0", "title=简体中文字幕", root / "cover.mp4")
+    manifest.write_text(json.dumps({"formatVersion": 1}, indent=2) + "\n", encoding="utf-8")
     print(root)
 
 

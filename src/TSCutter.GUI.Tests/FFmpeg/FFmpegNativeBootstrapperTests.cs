@@ -26,7 +26,7 @@ public class FFmpegNativeBootstrapperTests
     [NativeRuntimeFact]
     public void UnsupportedSubtitleLibraryReportsItsPathAndMissingEntryPoint()
     {
-        var root = Environment.GetEnvironmentVariable("TSCUTTER_FFMPEG_ROOT")!;
+        var root = NativeTestEnvironment.RuntimeDirectory!;
         var libraries = FFmpegNativeBootstrapper.LoadDirectory(root);
         try
         {

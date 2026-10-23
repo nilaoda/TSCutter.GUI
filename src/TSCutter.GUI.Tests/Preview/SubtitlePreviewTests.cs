@@ -15,14 +15,10 @@ using TSCutter.GUI.ViewModels.Editing;
 
 namespace TSCutter.GUI.Tests.Preview;
 
-public sealed class NativeSubtitleFactAttribute : FactAttribute
+public sealed class NativeSubtitleFactAttribute : TSCutter.GUI.Tests.FFmpeg.NativeMediaFactAttribute
 {
     public NativeSubtitleFactAttribute(string? requiredVariable = null)
-    {
-        var sampleVariable = requiredVariable ?? "TSCUTTER_SUBTITLE_TEST_SAMPLES";
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(sampleVariable)))
-            Skip = "需要设置 " + sampleVariable + " 和包含 libass 的 FFmpeg 运行库目录。";
-    }
+        : base(requiredVariable is null ? "subtitles" : null, requiredVariable) { }
 }
 
 [Collection("Avalonia UI")]
@@ -351,7 +347,7 @@ public sealed class SubtitlePreviewTests
             video.CodedVideoSize, video.TimelineOriginSeconds, video.GetVideoDurationInSeconds(), video.TsSyncOffset, CancellationToken.None);
 
     private static string SamplePath(string name) => Path.Combine(
-        Environment.GetEnvironmentVariable("TSCUTTER_SUBTITLE_TEST_SAMPLES")!, name);
+        TSCutter.GUI.Tests.FFmpeg.NativeTestEnvironment.FixtureDirectory("subtitles"), name);
 
     private static int GetVisibleHeight(SubtitleOverlayPart part)
     {
