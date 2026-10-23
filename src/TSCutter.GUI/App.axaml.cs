@@ -76,6 +76,15 @@ public partial class App : Application
 
     public override void OnFrameworkInitializationCompleted()
     {
+        if (OperatingSystem.IsMacOS() &&
+            ApplicationLifetime is IClassicDesktopStyleApplicationLifetime macDesktop)
+        {
+            var shutdownHandler = new MacOSShutdownHandler(
+                action => Avalonia.Threading.Dispatcher.UIThread.Post(action),
+                () => macDesktop.TryShutdown());
+            macDesktop.ShutdownRequested += shutdownHandler.OnShutdownRequested;
+        }
+
         // 自动模式既读取启动时的系统外观，也监听运行期间的变化。
         var configService = Locator.Current.GetService<IConfigurationService>()!;
         if (PlatformSettings is { } platformSettings)
