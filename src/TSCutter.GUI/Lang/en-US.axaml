@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <x:String x:Key="String.Preview.KeyFrameSeekFailed">Unable to locate the selected keyframe.</x:String>
     <x:String x:Key="String.Window.Minimize">Minimize</x:String>
     <x:String x:Key="String.Window.Maximize">Maximize</x:String>
     <x:String x:Key="String.Window.Restore">Restore</x:String>

@@ -87,6 +87,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     private readonly HostFramePresenter hostFramePresenter = new();
     private Frame? reusableSoftwareFrame;
     private Frame? reusableDecodeFrame;
+    private Packet? avs2KeyFrameBoundaryPacket;
     private (long Position, long Pts, PacketEndSignature Signature)[] keyPacketBoundaries = [];
     private int keyPacketBoundaryCount;
     private int nextKeyPacketBoundary;
@@ -254,7 +255,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         maxPts = timelineDurationPts + firstFrameTimestamp;
         keyFrameGap = gap;
         Console.WriteLine($"keyFrameGap: {keyFrameGap}");
-        RunReadOperation(() => { Seek(firstFrameTimestamp); return true; }, cancellationToken);
+        RunReadOperation(() => { SeekToTime(TimeSpan.Zero); return true; }, cancellationToken);
         
         Inited = true;
     }
@@ -446,11 +447,48 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         }, cancellationToken), cancellationToken);
     }
 
+    // 缩略图保留了原始 PTS，点击时不再经过秒数和 TimeSpan 的往返换算。
+    internal Task<DecodeResult?> DecodeKeyFrameAtPtsAsync(long targetPts, CancellationToken cancellationToken = default) =>
+        Task.Run(() => RunReadOperation(() => DecodeKeyFrameAtPts(targetPts, cancellationToken),
+            cancellationToken), cancellationToken);
+
+    private DecodeResult? DecodeKeyFrameAtPts(long targetPts, CancellationToken cancellationToken)
+    {
+        Seek(targetPts, AVSEEK_FLAG.Backward);
+        var result = DecodeNextFrame(1, cancellationToken, 0, 0, isNavigation: false);
+        if (result.FramePts == targetPts)
+            return result;
+        result.BitmapLease?.Dispose();
+        if (result.BitmapLease is null)
+            result.Bitmap?.Dispose();
+        result.GpuFrame?.Dispose();
+        // TS 索引可能落到目标之后；提前预读，并逐帧核对原始 PTS。
+        // 片头允许 seek 到首帧之前，避免带 B 帧的 TS 漏掉第一个 GOP。
+        Seek(targetPts - Math.Max(1, keyFrameGap * 2), AVSEEK_FLAG.Backward);
+        for (var attempt = 0; attempt < 32; attempt++)
+        {
+            result = DecodeNextFrame(1, cancellationToken, 0, 0, isNavigation: false);
+            if (result.FramePts == targetPts)
+                return result;
+            result.BitmapLease?.Dispose();
+            if (result.BitmapLease is null)
+                result.Bitmap?.Dispose();
+            result.GpuFrame?.Dispose();
+            if (result.FramePts > targetPts)
+                break;
+        }
+        return null;
+    }
+
     public void SeekToTime(TimeSpan timeSpan)
     {
         var targetTimestamp = TimeSpanToPts(timeSpan);
         targetTimestamp = Math.Min(maxPts, targetTimestamp);
-        Seek(targetTimestamp);
+        // TS 在首帧 PTS 处向前 seek 可能越过首个 GOP，片头须允许从其之前预读。
+        if (targetTimestamp <= firstFrameTimestamp)
+            Seek(firstFrameTimestamp - Math.Max(1, keyFrameGap * 2), AVSEEK_FLAG.Backward);
+        else
+            Seek(targetTimestamp);
     }
 
     public void SeekFile(long pts)
@@ -543,7 +581,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             if (!useFullPacketDecoding && !isKeyPacket)
                 continue;
 
-            var result = DecodePacket(packet, cancellationToken, maxWidth, maxHeight, preserveRemainingOutput: true);
+            var result = DecodeKeyFramePacket(packet, cancellationToken, maxWidth, maxHeight, preserveRemainingOutput: true);
             if (result is not null)
                 return result;
             if (!isKeyPacket)
@@ -561,6 +599,55 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         return DecodePacket(null, cancellationToken, maxWidth, maxHeight, preserveRemainingOutput: true);
     }
 
+    private DecodeResult? DecodeKeyFramePacket(Packet packet, CancellationToken cancellationToken,
+        int maxWidth, int maxHeight, bool preserveRemainingOutput = false)
+    {
+        var result = DecodePacket(packet, cancellationToken, maxWidth, maxHeight, preserveRemainingOutput: preserveRemainingOutput);
+        // HEVC 和 AVS2 仅喂关键包时会积压延迟输出；HEVC 还可能因跳过 POC 回绕而误判重复画面。
+        // 每个关键包独立排空并重置解码状态，避免误回退为整个 GOP 的完整解码。
+        if (!useFullPacketDecoding && !hardwareDecoderOpened
+            && inVideoStream.Codecpar!.CodecId is AVCodecID.AV_CODEC_ID_HEVC or AVCodecID.AV_CODEC_ID_AVS2)
+        {
+            try
+            {
+                // libdavs2 缓存最后一个输入包；直接排空会跳过该包的防伪码移除，导致首帧丢失或画面损坏。
+                // 先送独立的序列结束边界，让关键包经过正常处理，再取出延迟画面；不解码中间的 P/B 帧。
+                if (inVideoStream.Codecpar.CodecId == AVCodecID.AV_CODEC_ID_AVS2)
+                    result ??= DecodePacket(GetAvs2KeyFrameBoundaryPacket(), cancellationToken, maxWidth, maxHeight,
+                        preserveRemainingOutput: preserveRemainingOutput);
+                // 发送空包进入排空流程，取出仍缓存在解码器中的延迟画面。
+                result ??= DecodePacket(null, cancellationToken, maxWidth, maxHeight, preserveRemainingOutput: preserveRemainingOutput);
+            }
+            finally
+            {
+                // 清理排空和重排状态，恢复接收下一个关键包，无需重新打开解码器。
+                videoDecoder.FlushBuffers();
+            }
+        }
+        return result;
+    }
+
+    private unsafe Packet GetAvs2KeyFrameBoundaryPacket()
+    {
+        if (avs2KeyFrameBoundaryPacket is not null)
+            return avs2KeyFrameBoundaryPacket;
+        var packet = new Packet();
+        try
+        {
+            AVPacket* raw = packet;
+            FFmpegException.Check(FF.av_new_packet(raw, 4));
+            raw->data[0] = raw->data[1] = 0;
+            raw->data[2] = 1;
+            raw->data[3] = 0xB1; // AVS2 sequence_end_code，仅用于结束独立关键帧的解码，不修改输入文件。
+            return avs2KeyFrameBoundaryPacket = packet;
+        }
+        catch
+        {
+            packet.Dispose();
+            throw;
+        }
+    }
+
     private DecodeResult DecodeNextFrame(
         int count,
         CancellationToken cancellationToken,
@@ -572,6 +659,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         var anchorPts = currentKeyFramePts;
         try
         {
+            if (count < 0 && isNavigation)
+                return DecodePreviousKeyFrame(count, anchorPts, cancellationToken);
             return DecodeNextFrame(
                 count,
                 anchorPts,
@@ -595,6 +684,71 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             return DecodeWithFullPacketFallback(
                 count, anchorPts, isNavigation, cancellationToken, maxWidth, maxHeight);
         }
+    }
+
+    private DecodeResult DecodePreviousKeyFrame(int count, long anchorPts, CancellationToken token)
+    {
+        var steps = Math.Abs(count);
+        var distance = Math.Max(1, keyFrameGap) * (steps + 1);
+        long? selected = null;
+        var scanMode = isSearchScan;
+        try
+        {
+            isSearchScan = true;
+            for (var attempt = 0; attempt < 8; attempt++)
+            {
+                var start = Math.Max(firstFrameTimestamp, anchorPts - distance);
+                Seek(start == firstFrameTimestamp ? start - Math.Max(1, keyFrameGap * 2) : start,
+                    AVSEEK_FLAG.Backward);
+                var preceding = new SortedSet<long>();
+                var reachedAnchor = false;
+                long? lastPts = null;
+                long observedGap = 0;
+                for (var index = 0; index < Math.Max(48, steps * 4); index++)
+                {
+                    token.ThrowIfCancellationRequested();
+                    var frame = DecodeNextSearchFrame(320, 180, token);
+                    if (frame is null)
+                    {
+                        reachedAnchor = true;
+                        break;
+                    }
+                    var pts = frame.FramePts;
+                    frame.BitmapLease?.Dispose();
+                    if (frame.BitmapLease is null)
+                        frame.Bitmap?.Dispose();
+                    frame.GpuFrame?.Dispose();
+                    if (pts >= anchorPts)
+                    {
+                        reachedAnchor = true;
+                        break;
+                    }
+                    if (pts >= firstFrameTimestamp)
+                    {
+                        preceding.Add(pts);
+                        if (preceding.Count > steps)
+                            preceding.Remove(preceding.Min);
+                        if (lastPts is { } previous && pts > previous)
+                            observedGap = pts - previous;
+                        lastPts = pts;
+                    }
+                }
+                // seek 只是预读起点，必须扫描到原位置，再按实际 PTS 选择最近的前 N 个关键帧。
+                // 直接返回预读后第一帧会把“向前一帧”变成跳过两帧甚至更多。
+                if (reachedAnchor && (preceding.Count >= steps || start == firstFrameTimestamp))
+                {
+                    selected = preceding.Count > 0 ? preceding.Min : anchorPts;
+                    break;
+                }
+                distance = reachedAnchor ? distance * 2
+                    : Math.Max(1, observedGap > 0 ? observedGap : keyFrameGap) * (steps + 2);
+            }
+        }
+        finally { isSearchScan = scanMode; }
+        // 扫描结束时游标已到原位置，重新精确解码选中帧，保证随后的“下一帧”也相邻。
+        if (selected is { } target && DecodeKeyFrameAtPts(target, token) is { } result)
+            return result;
+        throw new InvalidOperationException("Unable to locate the previous keyframe.");
     }
 
     private DecodeResult DecodeWithFullPacketFallback(
@@ -630,6 +784,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
 
         DecodeResult DecodeFullPacketsFromTarget()
         {
+            if (count < 0 && isNavigation)
+                return DecodePreviousKeyFrame(count, anchorPts, cancellationToken);
             var prerollPts = Math.Max(0, targetPts - keyFrameGap * 2);
             Seek(prerollPts, AVSEEK_FLAG.Backward);
             return DecodeNextFrame(
@@ -694,7 +850,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             // PositionInFile = packet.Position;
             // Console.WriteLine($"Current packet positon: {packet.Position}");
 
-            var result = DecodePacket(packet, cancellationToken, maxWidth, maxHeight);
+            var result = DecodeKeyFramePacket(packet, cancellationToken, maxWidth, maxHeight);
             if (result != null)
             {
                 if (IsDecodedFrameAtRequestedSide(
@@ -992,6 +1148,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         reusableSoftwareFrame = null;
         reusableDecodeFrame?.Dispose();
         reusableDecodeFrame = null;
+        avs2KeyFrameBoundaryPacket?.Dispose();
+        avs2KeyFrameBoundaryPacket = null;
         retainedPreviewFrame?.Dispose();
         retainedPreviewFrame = null;
         retainedPreviewInfo = null;

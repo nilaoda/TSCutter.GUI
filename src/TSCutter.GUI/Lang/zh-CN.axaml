@@ -1,5 +1,6 @@
 <ResourceDictionary xmlns="https://github.com/avaloniaui"
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <x:String x:Key="String.Preview.KeyFrameSeekFailed">无法定位到所选关键帧。</x:String>
     <x:String x:Key="String.Window.Minimize">最小化</x:String>
     <x:String x:Key="String.Window.Maximize">最大化</x:String>
     <x:String x:Key="String.Window.Restore">还原</x:String>
