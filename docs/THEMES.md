@@ -8,7 +8,9 @@ Previews use the same Settings window, dimensions, and English interface. Click 
 
 Window corners depend on the host system: Aero and Windows 11 themes retain rounded windows on Windows 11 (build 22000 or later) and use square windows on older Windows versions.
 
-The macOS appearance is listed only on macOS. It keeps native traffic lights, window corners and shadow, blends the title into the top of the content, and uses the system menu bar, with sidebar blur when available, while control colors follow the Windows 11 Fluent palette. On other platforms the entry is hidden; a macOS theme name in a shared config is ignored there.
+On macOS, every theme provides the native system menu bar. Windows theme families also retain their in-window menu bars for their complete appearance; the macOS appearance hides the in-window menu when the system menu is available. Both menus share commands, shortcuts, translations and checked states.
+
+The macOS appearance is listed only on macOS. It keeps native traffic lights, window corners and shadow, blends the title into the top of the content, and uses the system menu bar, with sidebar blur when available, while control colors follow the Windows 11 Fluent palette and the toolbar uses its own monochrome vector icons. On other platforms the entry is hidden; a macOS theme name in a shared config is ignored there.
 
 ## Windows Classic
 

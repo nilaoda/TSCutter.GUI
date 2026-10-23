@@ -107,6 +107,7 @@
     <x:String x:Key="String.Menu.Help">_Help</x:String>
     <x:String x:Key="String.Menu.CheckUpdate">_Check Update</x:String>
     <x:String x:Key="String.Menu.About">_About...</x:String>
+    <x:String x:Key="String.Menu.AboutApp">About TSCutter.GUI</x:String>
     <x:String x:Key="String.ToolBar.OpenVideoTip">Open Video...</x:String>
     <x:String x:Key="String.ToolBar.Open">Open</x:String>
     <x:String x:Key="String.ToolBar.ZoomIn">Zoom In</x:String>

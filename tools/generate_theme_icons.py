@@ -21,6 +21,8 @@ PALETTES = {
     "Windows10Dark": ("flat", "#60CDFF"),
     "Windows11": ("fluent", "#1A1A1A"),
     "Windows11Dark": ("fluent", "#FFFFFF"),
+    "MacOS": ("macos", "#484A50"),
+    "MacOSDark": ("macos", "#ECECEF"),
 }
 
 

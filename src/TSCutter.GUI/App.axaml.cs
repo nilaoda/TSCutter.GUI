@@ -105,6 +105,15 @@ public partial class App : Application
         base.OnFrameworkInitializationCompleted();
     }
     
+    private void ApplicationAboutMenu_OnClick(object? sender, EventArgs e)
+    {
+        // 从已显示的窗口取得视图模型，确保对话框服务能找到实际的所有者。
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop &&
+            desktop.MainWindow?.DataContext is MainWindowViewModel viewModel &&
+            viewModel.ShowAboutDialogCommand.CanExecute(null))
+            viewModel.ShowAboutDialogCommand.Execute(null);
+    }
+
     private async Task CheckUpdatesAsync()
     {
         await Task.Delay(1000);
