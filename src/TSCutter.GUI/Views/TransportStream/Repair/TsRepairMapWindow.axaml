@@ -36,7 +36,7 @@
         <!-- 窗口级状态样式优先级高于应用主题，因此选中态也必须在同一作用域覆盖。 -->
         <Style Selector="DataGridRow:selected TextBlock">
             <Setter Property="Foreground"
-                    Value="{DynamicResource {x:Static common:SystemColors.HighlightTextBrushKey}}" />
+                    Value="{Binding $parent[DataGridRow].Foreground}" />
         </Style>
     </Window.Styles>
     <Grid Margin="12" RowDefinitions="Auto,*,Auto,Auto" RowSpacing="8">

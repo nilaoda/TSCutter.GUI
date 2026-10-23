@@ -31,7 +31,7 @@
         </Style>
         <Style Selector="DataGridRow:selected TextBlock">
             <Setter Property="Foreground"
-                    Value="{DynamicResource {x:Static common:SystemColors.HighlightTextBrushKey}}" />
+                    Value="{Binding $parent[DataGridRow].Foreground}" />
         </Style>
     </Window.Styles>
 

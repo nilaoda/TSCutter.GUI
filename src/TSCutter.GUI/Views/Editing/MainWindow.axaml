@@ -721,9 +721,9 @@
                                                 </StackPanel>
                                             </TabItem.Header>
                                             <DockPanel>
-                                                <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,0">
+                                                <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,0" IsVisible="{Binding HasRemuxQueue}">
                                                     <TextBlock Text="{DynamicResource String.RemuxExport.Notice}" TextWrapping="Wrap"
-                                                               FontSize="11" IsVisible="{Binding HasRemuxQueue}" />
+                                                               FontSize="11" />
                                                 </StackPanel>
                                                 <!-- 底部按钮 -->
                                                 <Grid DockPanel.Dock="Bottom"
