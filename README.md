@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="src/TSCutter.GUI/Assets/logo.png" alt="TSCutter.GUI" width="112">
+  <img src="design/icons/app/logo.svg" alt="TSCutter.GUI" width="112">
   <h1>TSCutter.GUI</h1>
   <p><strong>English</strong> | <a href="README_CN.md">中文版</a></p>
 </div>

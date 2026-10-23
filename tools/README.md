@@ -1,5 +1,21 @@
 # Release tools
 
+## Application icons
+
+The SVG source is [design/icons/app/logo.svg](../design/icons/app/logo.svg).
+With CairoSVG and Pillow installed, generate the platform resources from the
+repository root:
+
+```sh
+python3 tools/generate_app_icons.py --output-dir /tmp/tscutter-icons
+```
+
+Copy `logo.png`, `logo.ico`, and `logo.icns` into `src/TSCutter.GUI/Assets/`.
+The generator renders at 2048 pixels and downsamples with premultiplied alpha
+to preserve fine outlines at small sizes. It also exports individual PNG sizes
+and a standard macOS iconset. Generated platform resources are checked in;
+ordinary builds and CI packaging do not require Python or SVG rendering.
+
 ## Third-party notices
 
 `generate_third_party_notices.py` combines `THIRD_PARTY_NOTICES.md`,

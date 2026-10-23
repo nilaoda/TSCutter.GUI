@@ -197,7 +197,7 @@ jobs:
           CONTENTS_DIR="$APP_ROOT/Contents"
           MACOS_DIR="$CONTENTS_DIR/MacOS"
           RESOURCES_DIR="$CONTENTS_DIR/Resources"
-          ICON_SOURCE="$GITHUB_WORKSPACE/src/TSCutter.GUI/Assets/logo.png"
+          ICON_SOURCE="$GITHUB_WORKSPACE/src/TSCutter.GUI/Assets/logo.icns"
           APP_VERSION="${{ needs.release-info.outputs.version }}"
 
           rm -rf "$APP_ROOT"
@@ -208,7 +208,7 @@ jobs:
           unzip -o "$RUNNER_TEMP/ffmpeg-runtime-osx-arm64.zip" -d "$MACOS_DIR"
           find "$MACOS_DIR" -maxdepth 1 -name '*.dSYM' -prune -exec rm -rf {} +
 
-          sips -s format icns "$ICON_SOURCE" --out "$RESOURCES_DIR/logo.icns" >/dev/null
+          cp "$ICON_SOURCE" "$RESOURCES_DIR/logo.icns"
 
           cat > "$CONTENTS_DIR/Info.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
