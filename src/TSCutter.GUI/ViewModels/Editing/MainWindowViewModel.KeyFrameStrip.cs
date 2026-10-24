@@ -1,3 +1,6 @@
+using System.Collections.Generic;
+using System.Linq;
+using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Preview;
 using TSCutter.GUI.ViewModels.Preview;
 
@@ -9,6 +12,17 @@ public partial class MainWindowViewModel
     public KeyFrameStripViewModel KeyFrameStrip { get; } = new();
 
     public bool IsKeyFrameStripVisible => ShowKeyFrameStrip && IsVideoInitialized;
+
+    public IReadOnlyList<KeyFrameRetentionRange> KeyFrameStripRanges => Clips
+        .Select(clip => new KeyFrameRetentionRange(
+            clip.StartTime,
+            clip.EndPosition < 0 ? double.PositiveInfinity : clip.EndTime,
+            clip.StartPts is 0 or long.MinValue ? null : clip.StartPts,
+            clip.EndPosition < 0 || clip.EndPts is 0 or long.MinValue ? null : clip.EndPts,
+            // TS 复制终点已向后解析以包含标记帧；重封装以终点关键帧为排他边界。
+            IncludesEnd: !clip.RequiresRemux,
+            IsActive: ReferenceEquals(clip, SelectedClip), clip.Color))
+        .ToArray();
 
     public bool ShowKeyFrameStrip
     {
