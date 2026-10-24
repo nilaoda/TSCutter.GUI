@@ -32,7 +32,7 @@ TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. I
 
 - Choose the output container and retained tracks in **MP4 / MKV export settings**. Track order, language, titles, and default/forced flags follow the source.
 - Export individual clips or batches, or merge selected ranges from one source. Overlapping selected clips are combined once.
-- Video cuts use keyframes and audio cuts use compressed packet boundaries. Compatible text subtitles, including MP4 mov_text and MKV ASS, and chapters are trimmed and retimed. MKV attachments and MP4 cover art can be retained.
+- Video cuts use keyframes and include the marked end frame; audio cuts use compressed packet boundaries. Compatible text subtitles, including MP4 mov_text and MKV ASS, and chapters are trimmed and retimed. MKV attachments and MP4 cover art can be retained.
 - Copy compressed audio/video and codec configuration, preserving container-supported color, HDR static data, and Dolby Vision configuration. Dynamic metadata in the bitstream travels with the packets.
 - Check codec and track compatibility, with clear errors when content cannot be safely cut or merged.
 

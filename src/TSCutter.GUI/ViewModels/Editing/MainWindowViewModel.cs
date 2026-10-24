@@ -302,6 +302,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         OnPropertyChanged(nameof(ClipOutputText));
         OnPropertyChanged(nameof(ClipOutputToolTip));
         OnPropertyChanged(nameof(SelectedClipRanges));
+        OnPropertyChanged(nameof(KeyFrameStripRanges));
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
         OnPropertyChanged(nameof(SelectedClipsSummaryStr));
         SelectAllClipsCommand.NotifyCanExecuteChanged();

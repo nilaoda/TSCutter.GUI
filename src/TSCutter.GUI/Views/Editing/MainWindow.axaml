@@ -833,6 +833,8 @@
                         <!-- 时间刻度、剪辑范围、播放头、总览与缩放共用同一套坐标换算。 -->
                         <StackPanel Grid.Row="1">
                             <controls:KeyFrameStripControl Name="KeyFrameStripView" Items="{Binding KeyFrameStrip.Items}"
+                                                          Ranges="{Binding KeyFrameStripRanges}"
+                                                          ClipBrush="{DynamicResource AppStatusSuccessForegroundBrush}"
                                                           TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
                                                           BorderBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
                                                           AccentBrush="{DynamicResource AppRepairMapSelectionBrush}"

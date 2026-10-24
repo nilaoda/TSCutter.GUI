@@ -87,6 +87,16 @@ def main():
            "-preset", "ultrafast", "-x265-params",
            "pools=1:log-level=error:keyint=50:min-keyint=50:scenecut=0:open-gop=1:bframes=4",
            root / "open-gop.mp4")
+    # 后半段改为 10 fps，验证截止帧时长不能从平均帧率推算。
+    ffmpeg("-f", "lavfi", "-i", "testsrc2=size=128x72:rate=25:duration=6",
+           "-vf", "settb=1/1000,setpts='if(lt(N,50),N*40,2000+(N-50)*100)'",
+           "-fps_mode", "vfr", "-enc_time_base", "1/1000",
+           "-c:v", "libx264", "-g", "25", "-keyint_min", "25", "-sc_threshold", "0", "-bf", "2",
+           root / "vfr.mp4")
+    # 文件最后一张恰好是关键帧，没有后继画面可用于推导其时长。
+    ffmpeg("-f", "lavfi", "-i", "testsrc2=size=128x72:rate=25:duration=4.04",
+           "-c:v", "libx264", "-g", "50", "-keyint_min", "50", "-sc_threshold", "0", "-bf", "2",
+           root / "last-keyframe.mp4")
     ffmpeg("-f", "lavfi", "-i", "color=c=blue:size=64x64", "-frames:v", "1", root / "cover.jpg")
     ffmpeg("-i", root / "multi.mp4", "-i", root / "cover.jpg", "-map", "0:v:0", "-map", "0:a", "-map", "0:s", "-map", "1:v",
            "-c", "copy", "-disposition:v:1", "attached_pic",
