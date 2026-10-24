@@ -91,6 +91,7 @@ internal sealed unsafe class RemuxExportService
             var timer = Stopwatch.StartNew();
             var lastReport = TimeSpan.Zero;
             var lastDts = Enumerable.Repeat(FF.AV_NOPTS_VALUE, first.Streams.Length).ToArray();
+            var initialCompositionOffsets = Enumerable.Repeat(FF.AV_NOPTS_VALUE, first.Streams.Length).ToArray();
             double offset = 0;
             long bytes = 0;
             var subtitleOrder = new long[first.Streams.Length];
@@ -99,7 +100,7 @@ internal sealed unsafe class RemuxExportService
                 var item = prepared[segmentIndex];
                 token.ThrowIfCancellationRequested();
                 EnsureUnchanged(item);
-                var actualEnd = CopyPackets(output, item, offset, lastDts, subtitleOrder, token, (time, size) =>
+                var actualEnd = CopyPackets(output, item, offset, lastDts, initialCompositionOffsets, subtitleOrder, token, (time, size) =>
                 {
                     bytes += size;
                     if (timer.Elapsed - lastReport < TimeSpan.FromMilliseconds(100)) return;
@@ -162,7 +163,7 @@ internal sealed unsafe class RemuxExportService
     }
 
     private sealed record PreparedSegment(RemuxExportSegment Segment, FormatContext Input, int[] Streams,
-        double Start, double End, long[] StartDts, long[] EndDts, long Length, DateTime Modified);
+        double Start, double End, long[] StartDts, long[] EndDts, long[] EndDurations, long Length, DateTime Modified);
 
     private static PreparedSegment Prepare(RemuxExportSegment segment, CancellationToken token)
     {
@@ -203,8 +204,10 @@ internal sealed unsafe class RemuxExportService
                 : FindBoundary(input, reference->index, requestedEnd, true, token);
             if (endBoundary.Time <= startBoundary.Time)
                 throw new RemuxExportException(RemuxExportError.InvalidBoundary);
+            var endTime = endBoundary.Time;
             var starts = new long[indices.Length];
             var ends = Enumerable.Repeat(long.MaxValue, indices.Length).ToArray();
+            var endDurations = new long[indices.Length];
             for (var i = 0; i < indices.Length; i++)
             {
                 var stream = raw->streams[indices[i]];
@@ -217,8 +220,16 @@ internal sealed unsafe class RemuxExportService
                             FindBoundary(input, stream->index, endBoundary.Time, true, token);
                     if (Math.Abs(start.Time - startBoundary.Time) > 0.002 || Math.Abs(finish.Time - endBoundary.Time) > 0.002)
                         throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{stream->index}");
-                    ValidateGopBoundary(input, stream->index, start.Time, token);
-                    if (finish.Dts != long.MaxValue) ValidateGopBoundary(input, stream->index, finish.Time, token);
+                    InspectGopBoundary(input, stream->index, start.Time, token);
+                    if (finish.Dts != long.MaxValue)
+                    {
+                        // 标记终点的关键帧也要写入；音频、字幕和章节延伸到该帧显示结束。
+                        var frameEnd = InspectGopBoundary(input, stream->index, finish.Time, token);
+                        if (!double.IsFinite(frameEnd) || frameEnd <= finish.Time)
+                            throw new RemuxExportException(RemuxExportError.MissingTimestamp, $"#{stream->index}");
+                        endTime = Math.Max(endTime, frameEnd);
+                        endDurations[i] = Ticks(frameEnd - finish.Time, stream->time_base);
+                    }
                     starts[i] = start.Dts;
                     ends[i] = finish.Dts;
                 }
@@ -228,8 +239,8 @@ internal sealed unsafe class RemuxExportService
                         AVCodecID.AV_CODEC_ID_SSA or AVCodecID.AV_CODEC_ID_SUBRIP or AVCodecID.AV_CODEC_ID_TEXT or AVCodecID.AV_CODEC_ID_WEBVTT))
                     throw new RemuxExportException(RemuxExportError.UnsupportedTrack, $"#{stream->index}: {stream->codecpar->codec_id}");
             }
-            var result = new PreparedSegment(segment, input, indices, startBoundary.Time, endBoundary.Time,
-                starts, ends, length, modified);
+            var result = new PreparedSegment(segment, input, indices, startBoundary.Time, endTime,
+                starts, ends, endDurations, length, modified);
             input = null!;
             return result;
         }
@@ -288,33 +299,45 @@ internal sealed unsafe class RemuxExportService
         return !next && previous is { } last ? last : throw new RemuxExportException(RemuxExportError.InvalidBoundary);
     }
 
-    private static void ValidateGopBoundary(FormatContext input, int index, double boundary, CancellationToken token)
+    private static double InspectGopBoundary(FormatContext input, int index, double boundary, CancellationToken token)
     {
         AVStream* stream = input.Streams[index];
         input.SeekFrame(Ticks(boundary, stream->time_base), index);
         var found = false;
+        var nextTime = double.PositiveInfinity;
+        var packetEnd = double.NaN;
         foreach (var packet in input.ReadPackets())
         {
             token.ThrowIfCancellationRequested();
-            if (packet.StreamIndex != index) continue;
+            if (packet.StreamIndex != index)
+                continue;
             AVPacket* raw = packet;
             if (raw->pts == FF.AV_NOPTS_VALUE)
                 throw new RemuxExportException(RemuxExportError.MissingTimestamp, $"#{index}");
             var pts = Seconds(raw->pts, stream->time_base);
             if (!found)
             {
-                if ((raw->flags & 1) == 0 || Math.Abs(pts - boundary) > 0.002) continue;
+                if ((raw->flags & 1) == 0 || Math.Abs(pts - boundary) > 0.002)
+                    continue;
                 found = true;
+                if (raw->duration > 0)
+                    packetEnd = pts + Seconds(raw->duration, stream->time_base);
                 continue;
             }
-            if ((raw->flags & 1) != 0 && pts > boundary + 0.002) return;
-            // 开放 GOP 随机访问点之后的前导画面属于前一段显示区间。
-            // 在片段末尾丢弃该访问点会丢帧，
-            // 在拼接点保留它则会产生时间重叠。
+            if (pts > boundary)
+                nextTime = Math.Min(nextTime, pts);
+            if ((raw->flags & 1) != 0 && pts > boundary + 0.002)
+                break;
+            // 开放 GOP 的前导画面可能排在访问点之后、显示时间却更早。
+            // 只保留访问点会丢掉这些画面，起点使用该访问点也可能缺少参考帧。
             if (pts < boundary - 0.002)
                 throw new RemuxExportException(RemuxExportError.UnsafeGop, $"#{index}");
         }
-        if (!found) throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{index}");
+        if (!found)
+            throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{index}");
+        // 先按播放顺序找下一帧，兼容 B 帧重排序和可变帧率，不能按平均帧率补一帧。
+        // 文件末帧没有后继画面时，使用压缩包记录的时长。
+        return double.IsFinite(nextTime) ? nextTime : packetEnd;
     }
 
     private static void CreateStreams(AVFormatContext* output, PreparedSegment first)
@@ -461,7 +484,7 @@ internal sealed unsafe class RemuxExportService
     }
 
     private static double CopyPackets(AVFormatContext* output, PreparedSegment item, double offset, long[] lastDts,
-        long[] subtitleOrder, CancellationToken token, Action<double, int> report)
+        long[] initialCompositionOffsets, long[] subtitleOrder, CancellationToken token, Action<double, int> report)
     {
         var hasSubtitles = item.Streams.Any(index =>
             item.Input.Streams[index].Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_SUBTITLE);
@@ -510,6 +533,7 @@ internal sealed unsafe class RemuxExportService
         }
         var toEof = item.Segment.EndSeconds is null;
         var actualEnd = item.Start;
+        var previousDts = lastDts.ToArray();
         var videoStarted = new bool[item.Streams.Length];
         var packetsWritten = new int[item.Streams.Length];
         var nextSourceDts = item.StartDts.ToArray();
@@ -554,6 +578,7 @@ internal sealed unsafe class RemuxExportService
             var pts = Seconds(raw->pts, stream->time_base);
             var packetDuration = Math.Max(0, Seconds(raw->duration, stream->time_base));
             var end = pts + packetDuration;
+            var isEndFrame = type == AVMediaType.AVMEDIA_TYPE_VIDEO && raw->dts == item.EndDts[index];
             if (type == AVMediaType.AVMEDIA_TYPE_VIDEO)
             {
                 if (!videoStarted[index])
@@ -563,13 +588,17 @@ internal sealed unsafe class RemuxExportService
                         throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{stream->index}");
                     videoStarted[index] = true;
                 }
-                if (raw->dts >= item.EndDts[index])
+                // EndDts 对应用户标记的终点帧；仅在它之后停止，避免漏掉该帧。
+                if (raw->dts > item.EndDts[index])
                 {
                     finished[index] = true;
                     remainingStreams--;
                     stream->discard = AVDiscard.AVDISCARD_ALL;
                     continue;
                 }
+                // VFR 压缩包的解码时长可能不同于显示时长；终点帧须完整显示后再结束。
+                if (isEndFrame)
+                    raw->duration = item.EndDurations[index];
             }
             else if (type == AVMediaType.AVMEDIA_TYPE_SUBTITLE)
             {
@@ -617,6 +646,32 @@ internal sealed unsafe class RemuxExportService
             raw->pts = Ticks(Seconds(raw->pts, stream->time_base) - item.Start + offset, timeBase);
             raw->dts = Ticks(Seconds(raw->dts, stream->time_base) - item.Start + offset, timeBase);
             raw->duration = Ticks(Seconds(raw->duration, stream->time_base), timeBase);
+            if (type == AVMediaType.AVMEDIA_TYPE_VIDEO && previousDts[index] != FF.AV_NOPTS_VALUE)
+            {
+                var firstDts = Ticks(Seconds(item.StartDts[index], stream->time_base) - item.Start + offset, timeBase);
+                var splice = Ticks(offset, timeBase);
+                if (firstDts <= previousDts[index] && raw->dts < splice)
+                {
+                    // 不同帧率或重排序延迟会让下一段预滚与上一段 DTS 重叠。
+                    // 将这段预滚压入拼接前的可用间隔，保留 PTS 和压缩包内容。
+                    var firstAvailable = previousDts[index] + 1;
+                    if (firstAvailable >= splice)
+                        throw new RemuxExportException(RemuxExportError.NonMonotonicTimestamp, $"#{stream->index}");
+                    raw->dts = Math.Max(lastDts[index] + 1, firstAvailable + (long)Math.Floor(
+                        (raw->dts - firstDts) / (double)(splice - firstDts) * (splice - firstAvailable)));
+                    if (raw->dts >= splice || raw->dts > raw->pts)
+                        throw new RemuxExportException(RemuxExportError.NonMonotonicTimestamp, $"#{stream->index}");
+                }
+            }
+            if (type == AVMediaType.AVMEDIA_TYPE_VIDEO)
+            {
+                if (initialCompositionOffsets[index] == FF.AV_NOPTS_VALUE)
+                    initialCompositionOffsets[index] = raw->pts - raw->dts;
+                // MP4 的媒体时长按 DTS 计算。末端重排序延迟增大时，需同步推进终点 DTS，
+                // 否则文件报告的时长可能短于截止帧的播放时间；PTS 和帧显示时长保持不变。
+                if (isEndFrame && item.Segment.Settings.Container == "mp4")
+                    raw->dts = Math.Max(raw->dts, raw->pts - initialCompositionOffsets[index]);
+            }
             if (lastDts[index] != FF.AV_NOPTS_VALUE && (raw->dts < lastDts[index] ||
                 raw->dts == lastDts[index] && type is AVMediaType.AVMEDIA_TYPE_VIDEO or AVMediaType.AVMEDIA_TYPE_AUDIO))
                 throw new RemuxExportException(RemuxExportError.NonMonotonicTimestamp, $"#{stream->index}");

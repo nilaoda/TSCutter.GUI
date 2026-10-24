@@ -104,6 +104,96 @@ public sealed class RemuxExportServiceTests
     }
 
     [RemuxExportFact]
+    public async Task MarkedEndFrameSurvivesDecodingInBothContainers()
+    {
+        foreach (var name in new[] { "multi.mp4", "multi.mkv", "hdr.mp4", "vfr.mp4", "last-keyframe.mp4" })
+        {
+            var source = Fixture(name);
+            var origin = VideoStart(source);
+            var end = name switch { "hdr.mp4" => 2d, "vfr.mp4" => 7d, _ => 4d };
+            var frameEnd = end + (name == "vfr.mp4" ? 0.1 : 0.04);
+            var expected = DecodeVideoFrames(source).Where(frame => frame.Time <= origin + end + 0.002).ToArray();
+            Assert.InRange(expected[^1].Time, origin + end - 0.002, origin + end + 0.002);
+            foreach (var container in new[] { "mp4", "mkv" })
+            {
+                var settings = Settings(container, 0);
+                settings.TimelineOriginSeconds = origin;
+                using var target = new TemporaryOutput(container);
+                await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path,
+                    [new(source, 0, end, settings)]));
+                var actual = DecodeVideoFrames(target.Path);
+                Assert.Equal(expected.Select(frame => frame.Hash), actual.Select(frame => frame.Hash));
+                Assert.InRange(actual[^1].Time, end - 0.002, end + 0.002);
+                using var output = Open(target.Path);
+                Assert.InRange(output.Duration / 1e6, frameEnd - 0.002, frameEnd + 0.002);
+                AssertMonotonicDts(target.Path, allowMissingInitialVideoDts: container == "mkv");
+            }
+        }
+    }
+
+    [RemuxExportFact]
+    public async Task VariableFrameRateRangesMergeWithDifferentDecoderPreroll()
+    {
+        var source = Fixture("vfr.mp4");
+        var frames = DecodeVideoFrames(source);
+        var expected = frames.Where(frame => frame.Time <= 2.002)
+            .Concat(frames.Where(frame => frame.Time >= 4.498 && frame.Time <= 7.002)
+                .Select(frame => (Time: frame.Time - 4.5 + 2.1, frame.Hash))).ToArray();
+        foreach (var container in new[] { "mp4", "mkv" })
+        {
+            using var target = new TemporaryOutput(container);
+            await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path,
+                [new(source, 0, 2, Settings(container, 0)), new(source, 4.5, 7, Settings(container, 0))]));
+            var actual = DecodeVideoFrames(target.Path);
+            Assert.Equal(expected.Select(frame => frame.Hash), actual.Select(frame => frame.Hash));
+            Assert.Equal(expected.Select(frame => Math.Round(frame.Time, 3)),
+                actual.Select(frame => Math.Round(frame.Time, 3)));
+            using var output = Open(target.Path);
+            Assert.InRange(output.Duration / 1e6, 4.698, 4.702);
+            AssertMonotonicDts(target.Path, allowMissingInitialVideoDts: container == "mkv");
+        }
+    }
+
+    private static unsafe List<(double Time, string Hash)> DecodeVideoFrames(string path)
+    {
+        using var input = Open(path);
+        var stream = input.GetVideoStream();
+        using var decoder = new CodecContext(Codec.FindDecoderById(stream.Codecpar!.CodecId));
+        decoder.FillParameters(stream.Codecpar);
+        decoder.PacketTimeBase = stream.TimeBase;
+        decoder.Open();
+        using var frame = new Frame();
+        var frames = new List<(double, string)>();
+        foreach (var packet in input.ReadPackets())
+        {
+            if (packet.StreamIndex != stream.Index)
+                continue;
+            foreach (var decoded in decoder.DecodePacket(packet, frame))
+                AddFrame(decoded);
+        }
+        foreach (var decoded in decoder.DecodePacket(null, frame))
+            AddFrame(decoded);
+        return frames;
+
+        void AddFrame(Frame decoded)
+        {
+            Assert.Contains((AVPixelFormat)decoded.Format,
+                new[] { AVPixelFormat.AV_PIX_FMT_YUV420P, AVPixelFormat.AV_PIX_FMT_YUV420P10LE });
+            using var hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256);
+            var bytes = decoded.Format == (int)AVPixelFormat.AV_PIX_FMT_YUV420P10LE ? 2 : 1;
+            for (var plane = 0; plane < 3; plane++)
+            {
+                var width = plane == 0 ? decoded.Width : (decoded.Width + 1) / 2;
+                var height = plane == 0 ? decoded.Height : (decoded.Height + 1) / 2;
+                for (var row = 0; row < height; row++)
+                    hash.AppendData(new ReadOnlySpan<byte>(decoded.Data[(uint)plane] + row * decoded.Linesize[(uint)plane], width * bytes));
+            }
+            frames.Add((decoded.Pts * (double)stream.TimeBase.num / stream.TimeBase.den,
+                Convert.ToHexString(hash.GetHashAndReset())));
+        }
+    }
+
+    [RemuxExportFact]
     public async Task Mp4CutPreservesCompressedVideoMultipleAudioAndClippedSubtitles()
     {
         var source = Fixture("multi.mp4");
@@ -113,12 +203,12 @@ public sealed class RemuxExportServiceTests
         using var input = Open(target.Path);
         Assert.Equal(4, input.Streams.Count(stream => stream.Codecpar!.CodecType != AVMediaType.AVMEDIA_TYPE_DATA));
         Assert.Equal(2, input.Streams.Count(stream => stream.Codecpar!.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO));
-        Assert.InRange(input.Duration / 1e6, 1.99, 2.1);
-        Assert.Equal(HashPackets(source, 2, 4), HashPackets(target.Path, 0, 2));
-        Assert.Equal(HashPackets(source, 2, 4, 1), HashPackets(target.Path, 0, 2, 1));
-        Assert.Equal(HashPackets(source, 2, 4, 2), HashPackets(target.Path, 0, 2, 2));
-        AssertSubtitleRange(target.Path, 0, 2);
-        AssertMetadataAndChapters(input, "Export regression", 2);
+        Assert.InRange(input.Duration / 1e6, 2.039, 2.1);
+        Assert.Equal(HashPackets(source, 2, 4.04), HashPackets(target.Path, 0, double.MaxValue));
+        Assert.Equal(HashPackets(source, 2, 4.04, 1), HashPackets(target.Path, 0, double.MaxValue, 1));
+        Assert.Equal(HashPackets(source, 2, 4.04, 2), HashPackets(target.Path, 0, double.MaxValue, 2));
+        AssertSubtitleRange(target.Path, 0, 2.04);
+        AssertMetadataAndChapters(input, "Export regression", 2.04);
         AssertMonotonicDts(target.Path);
     }
 
@@ -142,13 +232,13 @@ public sealed class RemuxExportServiceTests
             using var exported = Open(target.Path);
             Assert.DoesNotContain(exported.Streams, stream => stream.Codecpar!.CodecType == AVMediaType.AVMEDIA_TYPE_SUBTITLE);
             Assert.Equal(indices.Length, exported.Streams.Count(stream => stream.Codecpar!.CodecType != AVMediaType.AVMEDIA_TYPE_DATA));
-            Assert.InRange(exported.Duration / 1e6, 1.99, 2.1);
+            Assert.InRange(exported.Duration / 1e6, 2.039, 2.1);
             for (var i = 0; i < indices.Length; i++)
             {
                 var stream = original.Streams[indices[i]];
                 if (stream.IsAttachedPicture) AssertCover(stream, Assert.Single(exported.Streams, value => value.IsAttachedPicture));
                 else if (stream.Codecpar!.CodecType is AVMediaType.AVMEDIA_TYPE_VIDEO or AVMediaType.AVMEDIA_TYPE_AUDIO)
-                    Assert.Equal(HashPackets(source, 2 + origin, 4 + origin, indices[i]), HashPackets(target.Path, 0, 2, i));
+                    Assert.Equal(HashPackets(source, 2 + origin, 4.04 + origin, indices[i]), HashPackets(target.Path, 0, double.MaxValue, i));
                 else Assert.Equal(stream.Codecpar.CodecType, exported.Streams[i].Codecpar!.CodecType);
             }
             AssertMonotonicDts(target.Path, allowMissingInitialVideoDts: container == "mkv");
@@ -199,13 +289,13 @@ public sealed class RemuxExportServiceTests
         Assert.True(input.Streams[3].Metadata.TryGetValue("title", out var subtitleTitle));
         Assert.Equal("简体中文字幕", subtitleTitle);
         Assert.Contains(input.Streams, stream => stream.Codecpar!.CodecType == AVMediaType.AVMEDIA_TYPE_ATTACHMENT);
-        Assert.Equal(HashPackets(source, 2 + origin, 4 + origin), HashPackets(target.Path, 0, 2));
-        AssertSubtitleRange(target.Path, 0, 2);
-        AssertMetadataAndChapters(input, "Export regression", 2);
+        Assert.Equal(HashPackets(source, 2 + origin, 4.04 + origin), HashPackets(target.Path, 0, double.MaxValue));
+        AssertSubtitleRange(target.Path, 0, 2.04);
+        AssertMetadataAndChapters(input, "Export regression", 2.04);
         using var merged = new TemporaryOutput("mkv");
         await new RemuxExportService().ExportAsync(new RemuxExportRequest(merged.Path,
             [new(source, 0, 2, settings), new(source, 4, 6, settings)]));
-        AssertSubtitleRange(merged.Path, 0, 4);
+        AssertSubtitleRange(merged.Path, 0, 4.08);
         AssertUniqueAssEvents(merged.Path);
     }
 
@@ -217,11 +307,15 @@ public sealed class RemuxExportServiceTests
         await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path,
             [new(source, 0, 2, Settings("mp4", 0, 1, 2, 3)), new(source, 4, 6, Settings("mp4", 0, 1, 2, 3))]));
         using var input = Open(target.Path);
-        Assert.InRange(input.Duration / 1e6, 3.99, 4.1);
-        var expected = HashPackets(source, 0, 2).Concat(HashPackets(source, 4, 6)).ToArray();
-        Assert.Equal(expected, HashPackets(target.Path, 0, 4));
+        Assert.InRange(input.Duration / 1e6, 4.079, 4.15);
+        var expected = HashPackets(source, 0, 2.04).Concat(HashPackets(source, 4, 6.04)).ToArray();
+        Assert.Equal(expected, HashPackets(target.Path, 0, double.MaxValue));
+        var decoded = DecodeVideoFrames(source);
+        var expectedFrames = decoded.Where(frame => frame.Time <= 2.002)
+            .Concat(decoded.Where(frame => frame.Time >= 3.998 && frame.Time <= 6.002));
+        Assert.Equal(expectedFrames.Select(frame => frame.Hash), DecodeVideoFrames(target.Path).Select(frame => frame.Hash));
         AssertMonotonicDts(target.Path);
-        AssertSubtitleRange(target.Path, 0, 4);
+        AssertSubtitleRange(target.Path, 0, 4.08);
     }
 
     [RemuxExportFact]
@@ -232,7 +326,7 @@ public sealed class RemuxExportServiceTests
         await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path,
             [new(source, 0, null, Settings("mp4", 0, 1)), new(source, 0, 2, Settings("mp4", 0, 1))]));
         using var output = Open(target.Path);
-        Assert.InRange(output.Duration / 1e6, 11.99, 12.03);
+        Assert.InRange(output.Duration / 1e6, 12.039, 12.1);
         Assert.Equal(HashPackets(source, 0, double.MaxValue, 1), HashPackets(target.Path, 0, 10, 1));
         AssertLastChapterStarts(output, 10);
         AssertMonotonicDts(target.Path);
@@ -262,15 +356,15 @@ public sealed class RemuxExportServiceTests
             {
                 Container = "mp4", ReferenceVideoIndex = 0, StreamIndices = [0, 1, 2], FastSubtitleSeek = true
             })]));
-        Assert.Equal(HashPackets(source, 60, 62), HashPackets(target.Path, 0, 2));
+        Assert.Equal(HashPackets(source, 60, 62.04), HashPackets(target.Path, 0, double.MaxValue));
         var overlapping = ReadMovTextCues(target.Path, 1);
-        Assert.Equal(new[] { (0d, 0.5), (0.5, 1.5), (1.5, 2d) },
+        Assert.Equal(new[] { (0d, 0.5), (0.5, 1.5), (1.5, 2d), (2d, 2.04) },
             overlapping.Select(cue => (cue.Start, cue.End)).ToArray());
         Assert.Contains("Long subtitle", overlapping[0].Text);
         Assert.Contains("Overlapping subtitle", overlapping[1].Text);
         Assert.Empty(overlapping[2].Text);
         var sparse = Assert.Single(ReadMovTextCues(target.Path, 2));
-        Assert.Equal((0d, 2d), (sparse.Start, sparse.End));
+        Assert.Equal((0d, 2.04), (sparse.Start, sparse.End));
         Assert.Contains("Sparse subtitle", sparse.Text);
     }
 
@@ -301,14 +395,14 @@ public sealed class RemuxExportServiceTests
         var service = new RemuxExportService();
         await service.ExportAsync(new RemuxExportRequest(direct.Path,
             [new(source, 54, 56, Settings("mp4", 0, 1, 2)), new(source, 60, 62, Settings("mp4", 0, 1, 2))]));
-        var expected = HashPackets(source, 54, 56).Concat(HashPackets(source, 60, 62)).ToArray();
-        Assert.Equal(expected, HashPackets(direct.Path, 0, 4));
+        var expected = HashPackets(source, 54, 56.04).Concat(HashPackets(source, 60, 62.04)).ToArray();
+        Assert.Equal(expected, HashPackets(direct.Path, 0, double.MaxValue));
         AssertMonotonicDts(direct.Path);
         using var output = Open(direct.Path);
-        Assert.InRange(output.Duration / 1e6, 3.99, 4.1);
-        Assert.Equal(new[] { (0d, 2d), (2d, 2.5), (2.5, 3.5), (3.5, 4d) },
+        Assert.InRange(output.Duration / 1e6, 4.079, 4.15);
+        Assert.Equal(new[] { (0d, 2.04), (2.04, 2.54), (2.54, 3.54), (3.54, 4.04), (4.04, 4.08) },
             ReadMovTextCues(direct.Path, 1).Select(cue => (cue.Start, cue.End)).ToArray());
-        Assert.Equal(new[] { (0d, 2d), (2d, 4d) },
+        Assert.Equal(new[] { (0d, 2.04), (2.04, 4.08) },
             ReadMovTextCues(direct.Path, 2).Select(cue => (cue.Start, cue.End)).ToArray());
     }
 
@@ -326,23 +420,24 @@ public sealed class RemuxExportServiceTests
             List<RemuxExportSegment> segments = [new(source, 60, 62, settings)];
             if (merge) segments.Insert(0, new(source, 54, 56, settings.Snapshot()));
             await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path, segments));
-            var expected = HashPackets(source, 60, 62);
-            if (merge) expected = HashPackets(source, 54, 56).Concat(expected).ToArray();
-            Assert.Equal(expected, HashPackets(target.Path, 0, merge ? 4 : 2));
+            var expected = HashPackets(source, 60, 62.04);
+            if (merge) expected = HashPackets(source, 54, 56.04).Concat(expected).ToArray();
+            Assert.Equal(expected, HashPackets(target.Path, 0, double.MaxValue));
             AssertMonotonicDts(target.Path, allowMissingInitialVideoDts: true);
             using var output = Open(target.Path);
-            Assert.InRange(output.Duration / 1e6, merge ? 3.99 : 1.99, merge ? 4.03 : 2.03);
+            Assert.InRange(output.Duration / 1e6, merge ? 4.079 : 2.039, merge ? 4.11 : 2.07);
             var cues = ReadAssCues(target.Path);
-            var offset = merge ? 2d : 0d;
+            var offset = merge ? 2.04 : 0d;
             var expectedCues = new List<(double, double, string)>();
             if (merge)
             {
-                if (!fast) expectedCues.Add((0, 2, "Long subtitle"));
-                expectedCues.Add((0, 2, "Recent subtitle"));
+                if (!fast) expectedCues.Add((0, 2.04, "Long subtitle"));
+                expectedCues.Add((0, 2.04, "Recent subtitle"));
             }
-            if (!fast) expectedCues.Add((offset, offset + 2, "Long subtitle"));
-            expectedCues.Add((offset, offset + 2, "Recent subtitle"));
+            if (!fast) expectedCues.Add((offset, offset + 2.04, "Long subtitle"));
+            expectedCues.Add((offset, offset + 2.04, "Recent subtitle"));
             expectedCues.Add((offset + 0.5, offset + 1.5, "Overlapping subtitle"));
+            expectedCues.Add((offset + 2, offset + 2.04, "After cut"));
             Assert.Equal(expectedCues, cues);
             AssertUniqueAssEvents(target.Path);
         }
@@ -357,12 +452,12 @@ public sealed class RemuxExportServiceTests
         using var target = new TemporaryOutput("mkv");
         await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path,
             [new(source, 70, 72, settings), new(source, 74, null, settings.Snapshot())]));
-        Assert.Equal(HashPackets(source, 70, 72).Concat(HashPackets(source, 74, 80)).ToArray(),
-            HashPackets(target.Path, 0, 8));
+        Assert.Equal(HashPackets(source, 70, 72.04).Concat(HashPackets(source, 74, 80)).ToArray(),
+            HashPackets(target.Path, 0, double.MaxValue));
         Assert.Empty(ReadAssCues(target.Path));
         using var output = Open(target.Path);
         Assert.Contains(output.Streams, stream => stream.Codecpar!.CodecType == AVMediaType.AVMEDIA_TYPE_SUBTITLE);
-        Assert.InRange(output.Duration / 1e6, 7.99, 8.03);
+        Assert.InRange(output.Duration / 1e6, 8.039, 8.07);
         AssertMonotonicDts(target.Path, allowMissingInitialVideoDts: true);
     }
 
@@ -409,11 +504,13 @@ public sealed class RemuxExportServiceTests
             var scale = stream.TimeBase.num / (double)stream.TimeBase.den;
             times.Add((raw->pts * scale, (raw->pts + raw->duration) * scale));
         }
-        Assert.Equal(2, times.Count);
+        Assert.Equal(3, times.Count);
         Assert.InRange(times[0].Start, 0, 0.002);
-        Assert.InRange(times[0].End, 1.998, 2.002);
+        Assert.InRange(times[0].End, 2.038, 2.042);
         Assert.InRange(times[1].Start, 0.498, 0.502);
         Assert.InRange(times[1].End, 1.498, 1.502);
+        Assert.InRange(times[2].Start, 1.998, 2.002);
+        Assert.InRange(times[2].End, 2.038, 2.042);
     }
 
     [RemuxExportFact]
@@ -451,7 +548,7 @@ public sealed class RemuxExportServiceTests
         var source = Fixture("hdr.mp4");
         using var target = new TemporaryOutput("mp4");
         await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path, [new(source, 0, 2, Settings("mp4", 0))]));
-        Assert.Equal(HashPackets(source, 0, 2), HashPackets(target.Path, 0, 2));
+        Assert.Equal(HashPackets(source, 0, 2.04), HashPackets(target.Path, 0, double.MaxValue));
         AssertVideoParameters(source, target.Path);
     }
 
@@ -521,14 +618,34 @@ public sealed class RemuxExportServiceTests
         for (var track = 0; track < 2; track++)
         {
             var sourceIndex = track == 0 ? video.Index : audio.Index;
-            var hashes = ranges.Select(range => HashPackets(source, range.Item1, range.Item2, sourceIndex)).ToArray();
+            var hashes = ranges.Select(range => HashPackets(source, range.Item1,
+                VideoPacketEnd(source, range.Item2), sourceIndex)).ToArray();
             Assert.Equal(hashes.SelectMany(value => value).ToArray(), HashPackets(direct.Path, 0, double.MaxValue, track));
         }
         using var output = Open(direct.Path);
-        var expectedDuration = ranges.Sum(range => range.Item2 - range.Item1);
+        var expectedDuration = ranges.Sum(range => VideoPacketEnd(source, range.Item2) - range.Item1);
         Assert.InRange(output.Duration / 1e6, expectedDuration - 0.01, expectedDuration + 0.1);
         AssertMonotonicDts(direct.Path);
         AssertAv3aParameters(source, audio.Index, direct.Path);
+    }
+
+    private static unsafe double VideoPacketEnd(string path, double time)
+    {
+        using var input = Open(path);
+        var video = input.GetVideoStream();
+        input.SeekFrame((long)Math.Round(time * video.TimeBase.den / video.TimeBase.num), video.Index);
+        foreach (var packet in input.ReadPackets())
+        {
+            if (packet.StreamIndex != video.Index)
+                continue;
+            AVPacket* raw = packet;
+            var pts = raw->pts * (double)video.TimeBase.num / video.TimeBase.den;
+            if (Math.Abs(pts - time) > 0.002)
+                continue;
+            Assert.True(raw->duration > 0);
+            return (raw->pts + raw->duration) * (double)video.TimeBase.num / video.TimeBase.den;
+        }
+        throw new InvalidOperationException("Missing boundary frame.");
     }
 
     private static unsafe double[] VideoKeyframeTimes(string path, int count)

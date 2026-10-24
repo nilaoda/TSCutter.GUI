@@ -19,8 +19,6 @@ public partial class MainWindowViewModel
             clip.EndPosition < 0 ? double.PositiveInfinity : clip.EndTime,
             clip.StartPts is 0 or long.MinValue ? null : clip.StartPts,
             clip.EndPosition < 0 || clip.EndPts is 0 or long.MinValue ? null : clip.EndPts,
-            // TS 复制终点已向后解析以包含标记帧；重封装以终点关键帧为排他边界。
-            IncludesEnd: !clip.RequiresRemux,
             IsActive: ReferenceEquals(clip, SelectedClip), clip.Color))
         .ToArray();
 

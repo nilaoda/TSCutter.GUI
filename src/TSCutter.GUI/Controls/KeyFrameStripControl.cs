@@ -124,26 +124,16 @@ public sealed class KeyFrameStripControl : Control
         var markers = new List<(Rect Bounds, bool IsStart, IBrush Brush)>();
         foreach (var range in (Ranges ?? []).OrderBy(range => range.IsActive))
         {
-            if (range.End < range.Start || range.End == range.Start && !range.IncludesEnd)
+            if (range.End < range.Start)
                 continue;
             var brush = string.IsNullOrEmpty(range.Color) ? ClipBrush ?? Brushes.Green : ClipLabels.Brush(range.Color);
-            for (var index = 0; index < tiles.Count; index++)
+            foreach (var (item, bounds) in tiles)
             {
-                var (item, bounds) = tiles[index];
                 if (MatchesBoundary(item, range.StartPts, range.Start))
                     markers.Add((new Rect(bounds.Left + 4, bounds.Bottom - 18, 4, 15), true, brush));
                 if (!MatchesBoundary(item, range.EndPts, range.End))
                     continue;
-                var atLeft = !range.IncludesEnd;
-                // 重封装终点帧被排除；前一帧已知时，将右括号放在最后保留帧上。
-                if (atLeft && index > 0 && !tiles[index - 1].Item.IsPlaceholder &&
-                    range.Contains(tiles[index - 1].Item.Pts, tiles[index - 1].Item.Timestamp.TotalSeconds))
-                {
-                    bounds = tiles[index - 1].Bounds;
-                    atLeft = false;
-                }
-                // 终点恰在可见区左侧时，标记留在卡片内，避免被控件边缘裁掉。
-                var x = atLeft ? bounds.Left : bounds.Right - 8;
+                var x = bounds.Right - 8;
                 markers.Add((new Rect(x, bounds.Bottom - 18, 4, 15), false, brush));
             }
         }

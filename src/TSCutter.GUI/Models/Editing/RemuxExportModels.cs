@@ -29,6 +29,7 @@ public sealed class RemuxExportSettings
         new HashSet<int>(StreamIndices).Count == StreamIndices.Count && StreamIndices.Contains(ReferenceVideoIndex);
 }
 
+// EndSeconds 为包含式终点关键帧；null 表示保留到文件末尾。
 internal sealed record RemuxExportSegment(string SourcePath, double StartSeconds, double? EndSeconds,
     RemuxExportSettings Settings);
 

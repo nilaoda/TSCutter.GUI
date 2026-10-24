@@ -35,7 +35,7 @@ public sealed class KeyFrameStripTests
         await session.Dispatch(() =>
         {
             var strip = new KeyFrameStripControl { BorderBrush = Brushes.Gray, ClipBrush = Brushes.Green };
-            var range = new KeyFrameRetentionRange(1, 3, 180_000, 360_000, true, false, "blue");
+            var range = new KeyFrameRetentionRange(1, 3, 180_000, 360_000, false, "blue");
             // 用非零 PTS 起点和略有舍入偏差的时间，确认判断依据是原始 PTS。
             var first = new KeyFrameStripItem(180_000, TimeSpan.FromSeconds(0.9999999), null, false);
             var last = new KeyFrameStripItem(360_000, TimeSpan.FromSeconds(2.9999999), null, false);
@@ -43,19 +43,15 @@ public sealed class KeyFrameStripTests
             strip.Measure(new Size(448, 80));
             strip.Arrange(new Rect(0, 0, 448, 80));
             var tiles = strip.GetTiles();
-            foreach (var includesEnd in new[] { true, false })
-            {
-                strip.Ranges = [range with { IncludesEnd = includesEnd }];
-                Assert.Same(ClipLabels.Brush("blue"), strip.GetRetentionBrush(first));
-                Assert.Same(includesEnd ? ClipLabels.Brush("blue") : Brushes.Gray, strip.GetRetentionBrush(last));
-                Assert.Same(Brushes.Gray, strip.GetRetentionBrush(first with { Pts = 179_999 }));
-                Assert.Same(Brushes.Gray, strip.GetRetentionBrush(last with { Pts = 360_001 }));
-                var markers = strip.GetBoundaryMarkers(tiles);
-                Assert.Equal(2, markers.Count);
-                Assert.Equal(tiles[1].Bounds.Left + 4, Assert.Single(markers, marker => marker.IsStart).Bounds.Left);
-                Assert.Equal(tiles[includesEnd ? 2 : 1].Bounds.Right - 4,
-                    Assert.Single(markers, marker => !marker.IsStart).Bounds.Right);
-            }
+            strip.Ranges = [range];
+            Assert.Same(ClipLabels.Brush("blue"), strip.GetRetentionBrush(first));
+            Assert.Same(ClipLabels.Brush("blue"), strip.GetRetentionBrush(last));
+            Assert.Same(Brushes.Gray, strip.GetRetentionBrush(first with { Pts = 179_999 }));
+            Assert.Same(Brushes.Gray, strip.GetRetentionBrush(last with { Pts = 360_001 }));
+            var markers = strip.GetBoundaryMarkers(tiles);
+            Assert.Equal(2, markers.Count);
+            Assert.Equal(tiles[1].Bounds.Left + 4, Assert.Single(markers, marker => marker.IsStart).Bounds.Left);
+            Assert.Equal(tiles[2].Bounds.Right - 4, Assert.Single(markers, marker => !marker.IsStart).Bounds.Right);
             strip.Ranges = [range, range with { IsActive = true, Color = "red" }, range with { Color = "purple" }];
             Assert.Same(ClipLabels.Brush("red"), strip.GetRetentionBrush(first));
             strip.Ranges = [range with { End = double.PositiveInfinity, EndPts = null, Color = "" }];
@@ -64,14 +60,14 @@ public sealed class KeyFrameStripTests
             strip.Ranges = [range with { StartPts = 1, EndPts = 900_000 }];
             Assert.Empty(strip.GetBoundaryMarkers(tiles)); // 可见区边缘不是剪辑边界。
             // 旧项目没有 PTS 时仍按时间判断；未知帧不提前声称被保留或丢弃。
-            strip.Ranges = [range with { StartPts = null, EndPts = null, IncludesEnd = false }];
+            strip.Ranges = [range with { StartPts = null, EndPts = null }];
             Assert.Same(Brushes.Gray, strip.GetRetentionBrush(first));
             Assert.Same(ClipLabels.Brush("blue"), strip.GetRetentionBrush(first with { Timestamp = TimeSpan.FromSeconds(1) }));
-            Assert.Same(Brushes.Gray, strip.GetRetentionBrush(last with { Timestamp = TimeSpan.FromSeconds(3) }));
+            Assert.Same(ClipLabels.Brush("blue"), strip.GetRetentionBrush(last with { Timestamp = TimeSpan.FromSeconds(3) }));
             Assert.Null(strip.GetRetentionBrush(first with { Pts = long.MinValue }));
             strip.Ranges = [];
             Assert.Same(Brushes.Gray, strip.GetRetentionBrush(first));
-            strip.Ranges = [range with { IncludesEnd = false }];
+            strip.Ranges = [range];
             strip.Items = [last, last with { Pts = 360_001 }];
             var edgeTiles = strip.GetTiles();
             var edgeMarker = Assert.Single(strip.GetBoundaryMarkers(edgeTiles));
@@ -388,7 +384,7 @@ public sealed class KeyFrameStripTests
                 Assert.False(clip.IsSelected);
                 Assert.Single(vm.KeyFrameStripRanges);
                 vm.SelectClip(clip);
-                Assert.True(Assert.Single(strip.Ranges!).IncludesEnd);
+                Assert.True(Assert.Single(strip.Ranges!).Contains(endFrame.Pts, endFrame.Timestamp.TotalSeconds));
                 vm.UpdateClipDetails(clip, "", "", "purple");
                 Assert.Same(ClipLabels.Brush("purple"), strip.GetRetentionBrush(startFrame));
                 Assert.Same(ClipLabels.Brush("purple"), strip.GetRetentionBrush(endFrame));
