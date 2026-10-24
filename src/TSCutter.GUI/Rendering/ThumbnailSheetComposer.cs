@@ -142,9 +142,12 @@ public static class ThumbnailSheetComposer
         IReadOnlyList<ThumbnailSheetCell> cells,
         IReadOnlyList<ThumbnailSheetHeaderLine> headerLines,
         bool showCaption,
-        bool showIndex)
+        bool showIndex,
+        Color? backgroundColor = null,
+        Bitmap? previousSheet = null)
     {
         ArgumentNullException.ThrowIfNull(layout);
+        var brushes = SheetBrushes.Create(backgroundColor ?? SheetBrushes.DefaultBackground);
 
         var width = layout.Width;
         var height = layout.Height;
@@ -158,12 +161,12 @@ public static class ThumbnailSheetComposer
         {
             using (var context = target.CreateDrawingContext(true))
             {
-                DrawBackground(context, width, height);
+                context.FillRectangle(brushes.Background, new Rect(0, 0, width, height));
 
                 if (layout.HeaderHeight > 0)
-                    DrawHeader(context, layout, headerLines);
+                    DrawHeader(context, layout, headerLines, brushes);
 
-                DrawGrid(context, layout, cells, showCaption, showIndex);
+                DrawGrid(context, layout, cells, showCaption, showIndex, brushes, previousSheet);
             }
 
             return target;
@@ -175,15 +178,11 @@ public static class ThumbnailSheetComposer
         }
     }
 
-    private static void DrawBackground(DrawingContext context, int width, int height)
-    {
-        context.FillRectangle(SheetBrushes.Background, new Rect(0, 0, width, height));
-    }
-
     private static void DrawHeader(
         DrawingContext context,
         ThumbnailSheetLayout layout,
-        IReadOnlyList<ThumbnailSheetHeaderLine> headerLines)
+        IReadOnlyList<ThumbnailSheetHeaderLine> headerLines,
+        SheetBrushes brushes)
     {
         var left = Padding;
         var top = Padding;
@@ -200,11 +199,12 @@ public static class ThumbnailSheetComposer
                 headerLines[0].Text,
                 new Point(left, top),
                 titleSize,
-                SheetBrushes.HeaderPrimary,
+                brushes.HeaderPrimary,
                 SheetFonts.Header,
                 maxWidth: layout.Width - Padding * 2,
                 accentStart: headerLines[0].AccentStart,
-                accentLength: headerLines[0].AccentLength);
+                accentLength: headerLines[0].AccentLength,
+                accentBrush: brushes.HeaderAccent);
             top += HeaderTitleLineHeight * scale;
         }
 
@@ -216,11 +216,12 @@ public static class ThumbnailSheetComposer
                 headerLines[index].Text,
                 new Point(left, top),
                 infoSize,
-                SheetBrushes.HeaderSecondary,
+                brushes.HeaderSecondary,
                 SheetFonts.Mono,
                 maxWidth: layout.Width - Padding * 2,
                 accentStart: headerLines[index].AccentStart,
-                accentLength: headerLines[index].AccentLength);
+                accentLength: headerLines[index].AccentLength,
+                accentBrush: brushes.HeaderAccent);
             top += HeaderInfoLineHeight * scale;
         }
     }
@@ -251,7 +252,9 @@ public static class ThumbnailSheetComposer
         ThumbnailSheetLayout layout,
         IReadOnlyList<ThumbnailSheetCell> cells,
         bool showCaption,
-        bool showIndex)
+        bool showIndex,
+        SheetBrushes brushes,
+        Bitmap? previousSheet)
     {
         var originX = Padding;
         var originY = Padding + layout.HeaderHeight;
@@ -274,14 +277,19 @@ public static class ThumbnailSheetComposer
                         imageRect.Height - CalculateCaptionHeight(layout.CellWidth));
 
                 var thumbnail = cell.Thumbnail;
-                if (thumbnail is not null)
+                if (previousSheet is not null && cell.State == ThumbnailSheetCellState.Ready)
+                {
+                    // 换底色时直接复用已合成图中的画面区域，不重新解码或保留各格位图。
+                    context.DrawImage(previousSheet, imageRect, imageRect);
+                }
+                else if (thumbnail is not null)
                 {
                     // 位图在抽帧时已按目标尺寸 letterbox 好，这里直接铺满。
                     context.DrawImage(thumbnail, new Rect(thumbnail.Size), imageRect);
                 }
                 else
                 {
-                    context.FillRectangle(SheetBrushes.CellPlaceholder, imageRect);
+                    context.FillRectangle(brushes.CellPlaceholder, imageRect);
                 }
 
                 if (!showCaption)
@@ -296,7 +304,7 @@ public static class ThumbnailSheetComposer
                         captionText,
                         new Point(x, captionTop),
                         CalculateCaptionFontSize(layout.CellWidth),
-                        SheetBrushes.Caption,
+                        brushes.Caption,
                         SheetFonts.Mono,
                         maxWidth: layout.CellWidth);
                 }
@@ -324,7 +332,8 @@ public static class ThumbnailSheetComposer
         Typeface typeface,
         double maxWidth,
         int accentStart = -1,
-        int accentLength = 0)
+        int accentLength = 0,
+        IBrush? accentBrush = null)
     {
         if (string.IsNullOrEmpty(text) || maxWidth <= 0)
             return;
@@ -359,9 +368,10 @@ public static class ThumbnailSheetComposer
 
         if (accentStart >= 0
             && accentLength > 0
-            && accentStart + accentLength <= displayText.Length)
+            && accentStart + accentLength <= displayText.Length
+            && accentBrush is not null)
         {
-            formatted.SetForegroundBrush(SheetBrushes.HeaderAccent, accentStart, accentLength);
+            formatted.SetForegroundBrush(accentBrush, accentStart, accentLength);
         }
 
         context.DrawText(formatted, alignedOrigin);
@@ -411,14 +421,55 @@ public sealed record ThumbnailSheetLayout(
     int Columns,
     int Rows);
 
-internal static class SheetBrushes
+internal sealed record SheetBrushes(
+    IBrush Background, IBrush CellPlaceholder, IBrush HeaderPrimary,
+    IBrush HeaderSecondary, IBrush HeaderAccent, IBrush Caption)
 {
-    public static readonly IBrush Background = new SolidColorBrush(Color.FromRgb(24, 25, 28));
-    public static readonly IBrush CellPlaceholder = new SolidColorBrush(Color.FromRgb(46, 48, 53));
-    public static readonly IBrush HeaderPrimary = new SolidColorBrush(Color.FromRgb(240, 241, 244));
-    public static readonly IBrush HeaderSecondary = new SolidColorBrush(Color.FromRgb(168, 172, 180));
-    public static readonly IBrush HeaderAccent = new SolidColorBrush(Color.FromRgb(245, 158, 66));
-    public static readonly IBrush Caption = new SolidColorBrush(Color.FromRgb(178, 182, 190));
+    internal static readonly Color DefaultBackground = Color.FromRgb(24, 25, 28);
+    private static readonly SheetBrushes Default = new(
+        new SolidColorBrush(DefaultBackground),
+        new SolidColorBrush(Color.FromRgb(46, 48, 53)),
+        new SolidColorBrush(Color.FromRgb(240, 241, 244)),
+        new SolidColorBrush(Color.FromRgb(168, 172, 180)),
+        new SolidColorBrush(Color.FromRgb(245, 158, 66)),
+        new SolidColorBrush(Color.FromRgb(178, 182, 190)));
+
+    internal static SheetBrushes Create(Color background)
+    {
+        if (background == DefaultBackground)
+            return Default;
+        var lightText = Luminance(background) < 0.179;
+        var foreground = lightText ? Avalonia.Media.Colors.White : Avalonia.Media.Colors.Black;
+        var secondary = Mix(background, foreground, 0.8);
+        if (Contrast(background, secondary) < 4.5)
+            secondary = foreground;
+        var accent = lightText ? Color.FromRgb(245, 158, 66) : Color.FromRgb(138, 67, 0);
+        if (Contrast(background, accent) < 4.5)
+            accent = foreground;
+        return new SheetBrushes(new SolidColorBrush(background),
+            new SolidColorBrush(Mix(background, foreground, 0.08)),
+            new SolidColorBrush(foreground), new SolidColorBrush(secondary),
+            new SolidColorBrush(accent), new SolidColorBrush(secondary));
+    }
+
+    private static Color Mix(Color background, Color foreground, double amount) => Color.FromRgb(
+        (byte)Math.Round(background.R * (1 - amount) + foreground.R * amount),
+        (byte)Math.Round(background.G * (1 - amount) + foreground.G * amount),
+        (byte)Math.Round(background.B * (1 - amount) + foreground.B * amount));
+
+    private static double Contrast(Color first, Color second)
+    {
+        var a = Luminance(first);
+        var b = Luminance(second);
+        return (Math.Max(a, b) + 0.05) / (Math.Min(a, b) + 0.05);
+    }
+
+    private static double Luminance(Color color)
+    {
+        static double Linear(byte value) => value / 255d <= 0.04045
+            ? value / 255d / 12.92 : Math.Pow((value / 255d + 0.055) / 1.055, 2.4);
+        return 0.2126 * Linear(color.R) + 0.7152 * Linear(color.G) + 0.0722 * Linear(color.B);
+    }
 }
 
 /// <summary>

@@ -907,6 +907,10 @@
     <x:String x:Key="String.ThumbnailSheet.Sampling.Interval">固定間隔</x:String>
     <x:String x:Key="String.ThumbnailSheet.Interval">間隔：</x:String>
     <x:String x:Key="String.ThumbnailSheet.SecondsUnit">秒</x:String>
+    <x:String x:Key="String.ThumbnailSheet.Background">圖集背景：</x:String>
+    <x:String x:Key="String.ThumbnailSheet.Background.Dark">深色</x:String>
+    <x:String x:Key="String.ThumbnailSheet.Background.Light">淺色</x:String>
+    <x:String x:Key="String.ThumbnailSheet.Background.Custom">自訂</x:String>
     <x:String x:Key="String.ThumbnailSheet.ShowHeader">表頭</x:String>
     <x:String x:Key="String.ThumbnailSheet.ShowCaption">時間碼</x:String>
     <x:String x:Key="String.ThumbnailSheet.ShowIndex">序號</x:String>

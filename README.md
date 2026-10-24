@@ -25,7 +25,7 @@ TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. I
 - **Export without transcoding**: Copy the original compressed audio and video packets.
 - **Frame capture and media information**: Save or copy the current preview frame and inspect the opened file's stream information.
 - **Image navigator**: Locate the visible region of a zoomed image with a floating overview in the main preview and thumbnail sheets. Click or drag to navigate; disable it in Settings.
-- **High-resolution thumbnail sheets**: Generate configurable N×M contact sheets up to 12,000 pixels wide, preview them with zoom and pan, and export PNG or JPEG images with timestamps and labeled video, audio, and subtitle metadata, including language and HDR, HLG, or Dolby Vision indicators.
+- **High-resolution thumbnail sheets**: Generate configurable N×M contact sheets up to 12,000 pixels wide, preview them with zoom and pan, and export PNG or JPEG images with timestamps and labeled video, audio, and subtitle metadata, including language and HDR, HLG, or Dolby Vision indicators. Choose a dark, light, or custom background with automatic text contrast.
 - **General video preview**: Open MP4, MKV, MOV, WebM, and other FFmpeg-supported video files for preview, seeking, screenshots, and media information. MP4/MOV and MKV/WebM inputs can be exported to MP4 or MKV; other non-TS formats are preview-only.
 
 ### MP4 / MKV remux editing and merging

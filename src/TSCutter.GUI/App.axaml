@@ -30,6 +30,7 @@
     <Application.Styles>
         <ClassicTheme FontAliasing="False"/>
         <StyleInclude Source="avares://Classic.Avalonia.Theme.DataGrid/Classic.axaml"/>
+        <StyleInclude Source="avares://Classic.Avalonia.Theme.ColorPicker/Classic.axaml"/>
         <!-- 自定义主题 -->
         <StyleInclude Source="avares://TSCutterGUI/Themes/CustomTheme.axaml" />
     </Application.Styles>
