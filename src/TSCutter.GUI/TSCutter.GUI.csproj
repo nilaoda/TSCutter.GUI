@@ -32,6 +32,7 @@
         <PackageReference Include="Avalonia" Version="11.3.12" />
         <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
         <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
+        <PackageReference Include="Avalonia.Controls.ColorPicker" Version="11.3.12" />
         <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.3.12" />
         <PackageReference Include="Avalonia.ReactiveUI" Version="11.3.8" />
     </ItemGroup>
@@ -40,6 +41,7 @@
         <PackageReference Include="Avalonia.Xaml.Behaviors" Version="11.3.0.6" />
         <PackageReference Include="Classic.Avalonia.Theme" Version="11.3.0.3" />
         <PackageReference Include="Classic.Avalonia.Theme.DataGrid" Version="11.3.0.3" />
+        <PackageReference Include="Classic.Avalonia.Theme.ColorPicker" Version="11.3.0.3" />
         <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.0" />
         <PackageReference Include="HanumanInstitute.MvvmDialogs" Version="2.2.0" />
         <PackageReference Include="HanumanInstitute.MvvmDialogs.Avalonia" Version="2.2.0" />

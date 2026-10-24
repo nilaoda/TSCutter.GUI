@@ -907,6 +907,10 @@
     <x:String x:Key="String.ThumbnailSheet.Sampling.Interval">Fixed interval</x:String>
     <x:String x:Key="String.ThumbnailSheet.Interval">Interval:</x:String>
     <x:String x:Key="String.ThumbnailSheet.SecondsUnit">s</x:String>
+    <x:String x:Key="String.ThumbnailSheet.Background">Background:</x:String>
+    <x:String x:Key="String.ThumbnailSheet.Background.Dark">Dark</x:String>
+    <x:String x:Key="String.ThumbnailSheet.Background.Light">Light</x:String>
+    <x:String x:Key="String.ThumbnailSheet.Background.Custom">Custom</x:String>
     <x:String x:Key="String.ThumbnailSheet.ShowHeader">Header</x:String>
     <x:String x:Key="String.ThumbnailSheet.ShowCaption">Timecode</x:String>
     <x:String x:Key="String.ThumbnailSheet.ShowIndex">Index</x:String>

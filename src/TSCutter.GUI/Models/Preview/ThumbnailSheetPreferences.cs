@@ -1,5 +1,12 @@
 namespace TSCutter.GUI.Models.Preview;
 
+public enum ThumbnailSheetBackground
+{
+    Dark,
+    Light,
+    Custom
+}
+
 /// <summary>缩略图图集窗口上次使用的选项。</summary>
 public sealed record ThumbnailSheetPreferences
 {
@@ -13,4 +20,6 @@ public sealed record ThumbnailSheetPreferences
     public bool ShowIndex { get; set; } = true;
     public bool IsPngFormat { get; set; } = true;
     public double JpegQuality { get; set; } = 90;
+    public ThumbnailSheetBackground Background { get; set; } = ThumbnailSheetBackground.Dark;
+    public string CustomBackgroundColor { get; set; } = "#FFFFFF";
 }

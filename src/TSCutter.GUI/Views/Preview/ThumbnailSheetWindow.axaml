@@ -85,45 +85,44 @@
             </Grid>
         </Grid>
 
-        <!-- 取帧方式与显示开关 -->
-        <Grid Grid.Row="1" ColumnDefinitions="Auto,Auto,Auto,Auto,Auto,*" ColumnSpacing="8">
-            <TextBlock Grid.Column="0"
-                       Text="{DynamicResource String.ThumbnailSheet.Sampling}"
-                       VerticalAlignment="Center" />
-            <ComboBox Grid.Column="1"
-                      ItemsSource="{Binding SamplingOptions}"
-                      SelectedItem="{Binding SelectedSampling, Mode=TwoWay}"
-                      DisplayMemberBinding="{Binding Label}"
-                      MinWidth="190" />
-            <StackPanel Grid.Column="2"
-                        Orientation="Horizontal"
-                        Spacing="6"
-                        VerticalAlignment="Center"
-                        IsVisible="{Binding IsIntervalSampling}">
-                <TextBlock Text="{DynamicResource String.ThumbnailSheet.Interval}"
-                           VerticalAlignment="Center" />
-                <NumericUpDown Value="{Binding IntervalSeconds, Mode=TwoWay}"
-                               Minimum="1" Maximum="3600"
-                               Increment="1"
-                               FormatString="0.##"
-                               Width="110" />
-                <TextBlock Text="{DynamicResource String.ThumbnailSheet.SecondsUnit}"
-                           VerticalAlignment="Center" />
+        <!-- 常用参数放在同一行；窗口缩窄或显示间隔输入时允许自然换行。 -->
+        <WrapPanel Grid.Row="1" Name="SheetOptionsRow" Orientation="Horizontal">
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,16,4">
+                <TextBlock Text="{DynamicResource String.ThumbnailSheet.Sampling}" VerticalAlignment="Center" />
+                <ComboBox ItemsSource="{Binding SamplingOptions}"
+                          SelectedItem="{Binding SelectedSampling, Mode=TwoWay}"
+                          DisplayMemberBinding="{Binding Label}" MinWidth="160" />
             </StackPanel>
-            <CheckBox Grid.Column="3"
-                      Content="{DynamicResource String.ThumbnailSheet.ShowHeader}"
-                      IsChecked="{Binding ShowHeader, Mode=TwoWay}"
-                      VerticalAlignment="Center"
-                      Margin="10,0,0,0" />
-            <CheckBox Grid.Column="4"
-                      Content="{DynamicResource String.ThumbnailSheet.ShowCaption}"
-                      IsChecked="{Binding ShowCaption, Mode=TwoWay}"
-                      VerticalAlignment="Center" />
-            <CheckBox Grid.Column="5"
-                      Content="{DynamicResource String.ThumbnailSheet.ShowIndex}"
-                      IsChecked="{Binding ShowIndex, Mode=TwoWay}"
-                      VerticalAlignment="Center" />
-        </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,0,16,4"
+                        VerticalAlignment="Center" IsVisible="{Binding IsIntervalSampling}">
+                <TextBlock Text="{DynamicResource String.ThumbnailSheet.Interval}" VerticalAlignment="Center" />
+                <NumericUpDown Value="{Binding IntervalSeconds, Mode=TwoWay}"
+                               Minimum="1" Maximum="3600" Increment="1" FormatString="0.##" Width="90" />
+                <TextBlock Text="{DynamicResource String.ThumbnailSheet.SecondsUnit}" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Orientation="Horizontal" Spacing="8" Margin="0,0,16,4" VerticalAlignment="Center">
+                <CheckBox Content="{DynamicResource String.ThumbnailSheet.ShowHeader}"
+                          IsChecked="{Binding ShowHeader, Mode=TwoWay}" VerticalAlignment="Center" />
+                <CheckBox Content="{DynamicResource String.ThumbnailSheet.ShowCaption}"
+                          IsChecked="{Binding ShowCaption, Mode=TwoWay}" VerticalAlignment="Center" />
+                <CheckBox Content="{DynamicResource String.ThumbnailSheet.ShowIndex}"
+                          IsChecked="{Binding ShowIndex, Mode=TwoWay}" VerticalAlignment="Center" />
+            </StackPanel>
+            <StackPanel Name="BackgroundOptions" Orientation="Horizontal" Spacing="8" Margin="0,0,0,4"
+                        VerticalAlignment="Center">
+                <TextBlock Text="{DynamicResource String.ThumbnailSheet.Background}" VerticalAlignment="Center" />
+                <ComboBox Name="BackgroundSelector" Width="110"
+                          SelectedIndex="{Binding SelectedBackgroundIndex, Mode=TwoWay}">
+                    <ComboBoxItem Content="{DynamicResource String.ThumbnailSheet.Background.Dark}" />
+                    <ComboBoxItem Content="{DynamicResource String.ThumbnailSheet.Background.Light}" />
+                    <ComboBoxItem Content="{DynamicResource String.ThumbnailSheet.Background.Custom}" />
+                </ComboBox>
+                <ColorPicker Name="BackgroundColorPicker" Width="48" Height="28" VerticalAlignment="Center"
+                             Color="{Binding SheetBackgroundColor, Mode=TwoWay}"
+                             IsAlphaEnabled="False" IsAlphaVisible="False"
+                             ToolTip.Tip="{DynamicResource String.ThumbnailSheet.Background.Custom}" />
+            </StackPanel>
+        </WrapPanel>
 
         <!-- 预览区 -->
         <Border Grid.Row="2"

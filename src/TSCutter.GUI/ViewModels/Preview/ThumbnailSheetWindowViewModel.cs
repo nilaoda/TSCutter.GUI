@@ -5,6 +5,7 @@ using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -69,6 +70,11 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
     private bool isInitialized;
     private bool isClosed;
     private bool previewDirty = true;
+    private ThumbnailSheetBackground background;
+    private Color customBackgroundColor = Colors.White;
+    private IDisposable? backgroundUpdate;
+    private ThumbnailSheetLayout? previewLayout;
+    private IReadOnlyList<ThumbnailSheetCell> previewCells = [];
 
     public bool EnableSdrToneMapping { get; set; } = true;
 
@@ -94,6 +100,8 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
         showIndex = preferences.ShowIndex;
         isPngFormat = preferences.IsPngFormat;
         jpegQuality = preferences.JpegQuality;
+        background = preferences.Background;
+        customBackgroundColor = Color.Parse(preferences.CustomBackgroundColor);
         RefreshLocalizedText();
         App.LocalizationService.LanguageChanged += OnLanguageChanged;
     }
@@ -120,7 +128,10 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             ShowIndex = preferences.ShowIndex,
             IsPngFormat = preferences.IsPngFormat,
             JpegQuality = double.IsFinite(preferences.JpegQuality)
-                ? Math.Clamp(preferences.JpegQuality, 10, 100) : 90
+                ? Math.Clamp(preferences.JpegQuality, 10, 100) : 90,
+            Background = Enum.IsDefined(preferences.Background) ? preferences.Background : ThumbnailSheetBackground.Dark,
+            CustomBackgroundColor = TryParseBackgroundColor(preferences.CustomBackgroundColor, out var color)
+                ? FormatBackgroundColor(color) : "#FFFFFF"
         };
     }
 
@@ -377,6 +388,101 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             if (!SetProperty(ref showIndex, value))
                 return;
             QueueRebuild();
+        }
+    }
+
+    internal static bool TryParseBackgroundColor(string? value, out Color color)
+    {
+        var text = value?.Trim() ?? "";
+        if (text.Length == 6)
+            text = "#" + text;
+        color = default;
+        return text.Length == 7 && text[0] == '#' && Color.TryParse(text, out color);
+    }
+
+    private static string FormatBackgroundColor(Color color) => $"#{color.R:X2}{color.G:X2}{color.B:X2}";
+
+    public int SelectedBackgroundIndex
+    {
+        get => (int)background;
+        set
+        {
+            if (value is < 0 or > 2 || !SetProperty(ref background, (ThumbnailSheetBackground)value))
+                return;
+            OnPropertyChanged(nameof(SheetBackgroundColor));
+            ApplySheetBackground();
+        }
+    }
+
+    public Color SheetBackgroundColor
+    {
+        get => background switch
+        {
+            ThumbnailSheetBackground.Light => Colors.White,
+            ThumbnailSheetBackground.Custom => customBackgroundColor,
+            _ => SheetBrushes.DefaultBackground
+        };
+        set
+        {
+            var opaque = Color.FromRgb(value.R, value.G, value.B);
+            if (SheetBackgroundColor == opaque)
+                return;
+            customBackgroundColor = opaque;
+            background = ThumbnailSheetBackground.Custom;
+            OnPropertyChanged(nameof(SelectedBackgroundIndex));
+            OnPropertyChanged(nameof(SheetBackgroundColor));
+            // 选色器连续拖动时仅在暂停后合成，避免反复绘制大图。
+            QueueBackgroundUpdate();
+        }
+    }
+
+    private void QueueBackgroundUpdate()
+    {
+        CancelBackgroundUpdate();
+        if (!isClosed && !IsBusy && !previewDirty && previewImage is not null)
+            backgroundUpdate = DispatcherTimer.RunOnce(ApplySheetBackground, TimeSpan.FromMilliseconds(150));
+        SaveCommand.NotifyCanExecuteChanged();
+        CopyToClipboardCommand.NotifyCanExecuteChanged();
+    }
+
+    private void CancelBackgroundUpdate()
+    {
+        backgroundUpdate?.Dispose();
+        backgroundUpdate = null;
+    }
+
+    private void ApplySheetBackground()
+    {
+        CancelBackgroundUpdate();
+        // 参数重建已在进行时，合成阶段会读取最新底色；完成图则只重绘文字与背景。
+        if (isClosed || IsBusy || previewDirty || previewImage is null || previewLayout is null)
+        {
+            SaveCommand.NotifyCanExecuteChanged();
+            CopyToClipboardCommand.NotifyCanExecuteChanged();
+            return;
+        }
+        // 保存和复制可能仍在读取旧位图，等导出释放锁后再替换和释放它，且不阻塞界面。
+        if (!rebuildLock.Wait(0))
+        {
+            QueueBackgroundUpdate();
+            return;
+        }
+        try
+        {
+            var composed = ThumbnailSheetComposer.Compose(previewLayout, previewCells, BuildHeaderLines(),
+                showCaption, showIndex, SheetBackgroundColor, previewImage);
+            SetPreview(composed);
+        }
+        catch (Exception ex)
+        {
+            SetPreviewDirty(true);
+            StatusText = string.Format(LocalizationManager.Instance.String_ThumbnailSheet_Status_Failed, ex.Message);
+        }
+        finally
+        {
+            rebuildLock.Release();
+            SaveCommand.NotifyCanExecuteChanged();
+            CopyToClipboardCommand.NotifyCanExecuteChanged();
         }
     }
 
@@ -741,9 +847,19 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
                 cells,
                 headerLines,
                 showCaption,
-                showIndex);
+                showIndex,
+                SheetBackgroundColor);
 
             cancellationToken.ThrowIfCancellationRequested();
+            // 仅保存格子位置所需的轻量元数据；各格位图仍在 finally 中立即释放。
+            var metadata = new List<ThumbnailSheetCell>(cells.Count);
+            foreach (var cell in cells)
+                metadata.Add(new ThumbnailSheetCell(cell.Index, cell.Timestamp)
+                {
+                    TimestampText = cell.TimestampText, State = cell.State
+                });
+            previewLayout = layout;
+            previewCells = metadata;
             SetPreview(composed);
             composed = null;
             SetPreviewDirty(false);
@@ -905,6 +1021,11 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             return;
 
         var previous = previewImage;
+        if (bitmap is null)
+        {
+            previewLayout = null;
+            previewCells = [];
+        }
         PreviewImage = bitmap;
         previous?.Dispose();
     }
@@ -932,7 +1053,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
 
     private bool CanSave() =>
         IsPreviewReadyForExport(PreviewImage is not null, previewDirty, IsBusy)
-        && IsLayoutSafe;
+        && IsLayoutSafe && backgroundUpdate is null;
 
     [RelayCommand(CanExecute = nameof(CanSave))]
     private async Task SaveAsync()
@@ -1000,7 +1121,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
     }
 
     private bool CanCopyToClipboard() =>
-        IsPreviewReadyForExport(PreviewImage is not null, previewDirty, IsBusy);
+        IsPreviewReadyForExport(PreviewImage is not null, previewDirty, IsBusy) && backgroundUpdate is null;
 
     [RelayCommand(CanExecute = nameof(CanCopyToClipboard))]
     private async Task CopyToClipboardAsync()
@@ -1035,6 +1156,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
     public void CancelWork()
     {
         isClosed = true;
+        CancelBackgroundUpdate();
         CancelSafely(initializationCancellation);
         CancelSafely(debounceCancellation);
         CancelSafely(buildCancellation);
@@ -1046,6 +1168,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
     public async Task OnClosedAsync()
     {
         isClosed = true;
+        CancelBackgroundUpdate();
         App.LocalizationService.LanguageChanged -= OnLanguageChanged;
 
         var preferences = new ThumbnailSheetPreferences
@@ -1059,7 +1182,9 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             ShowCaption = showCaption,
             ShowIndex = showIndex,
             IsPngFormat = isPngFormat,
-            JpegQuality = jpegQuality
+            JpegQuality = jpegQuality,
+            Background = background,
+            CustomBackgroundColor = FormatBackgroundColor(customBackgroundColor)
         };
         if (configService.CurrentConfig.ThumbnailSheetPreferences != preferences)
         {

@@ -799,6 +799,10 @@ public sealed class ThemeTestApplication : Avalonia.Application
         Styles.Add(new ClassicTheme { FontAliasing = false });
         Styles.Add(new StyleInclude(new Uri("avares://TSCutterGUI/"))
         {
+            Source = new Uri("avares://Classic.Avalonia.Theme.ColorPicker/Classic.axaml")
+        });
+        Styles.Add(new StyleInclude(new Uri("avares://TSCutterGUI/"))
+        {
             Source = new Uri("avares://TSCutterGUI/Themes/CustomTheme.axaml")
         });
     }

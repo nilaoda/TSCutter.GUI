@@ -1,0 +1,91 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:classic="clr-namespace:Classic.Avalonia.Theme;assembly=Classic.Avalonia.Theme"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        xmlns:local="using:TSCutter.GUI.Themes">
+    <!-- Classic 模板将六个分量的输入列写死为 27px，现代输入框的内边距会挤掉数字。
+         保留原有选色绑定，改为按内容测量，并为三位数和输入光标留足空间。 -->
+    <Style Selector="FlyoutPresenter.nopadding Grid[(Grid.Row)=2]">
+        <Setter Property="(local:ColorPickerLayout.Columns)" Value="60,Auto,Auto,Auto,Auto" />
+    </Style>
+    <!-- RGB 标签与左侧 HSV 输入框之间留出间距，避免最长的 Green 标签贴边。 -->
+    <Style Selector="FlyoutPresenter.nopadding Grid[(Grid.Row)=2] > TextBlock[(Grid.Column)=3]">
+        <Setter Property="Margin" Value="8,0,4,0" />
+    </Style>
+    <Style Selector="FlyoutPresenter.nopadding NumericUpDown">
+        <Setter Property="MinWidth" Value="54" />
+        <Setter Property="Height" Value="NaN" />
+        <Setter Property="MinHeight" Value="28" />
+    </Style>
+    <Style Selector="FlyoutPresenter.nopadding NumericUpDown /template/ TextBox#PART_TextBox">
+        <Setter Property="Padding" Value="4,2" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
+    <!-- Windows 7 及后续主题使用各自的按钮配色，避免色块仍套用 Classic 的立体外框。 -->
+    <Style Selector="ColorPicker.desktop-theme:not(.luna) /template/ DropDownButton">
+        <Setter Property="Background" Value="{DynamicResource DesktopButtonBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="CornerRadius" Value="3" />
+        <Setter Property="Padding" Value="3" />
+        <Setter Property="FocusAdorner" Value="{x:Null}" />
+        <Setter Property="Template">
+            <ControlTemplate>
+                <Border Name="ColorPickerButtonBorder" Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}"
+                        CornerRadius="{TemplateBinding CornerRadius}" ClipToBounds="True">
+                    <Grid ColumnDefinitions="*,16">
+                        <ContentPresenter Name="PART_ContentPresenter" Margin="{TemplateBinding Padding}"
+                                          Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          HorizontalContentAlignment="Stretch" VerticalContentAlignment="Stretch" />
+                        <Path Grid.Column="1" Width="7" Height="4" Data="M0,0 L3.5,3.5 L7,0"
+                              Stroke="{TemplateBinding Foreground}" StrokeThickness="1"
+                              HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Grid>
+                </Border>
+            </ControlTemplate>
+        </Setter>
+    </Style>
+    <Style Selector="ColorPicker.flat-theme /template/ DropDownButton">
+        <Setter Property="CornerRadius" Value="0" />
+    </Style>
+    <Style Selector="ColorPicker.fluent /template/ DropDownButton">
+        <Setter Property="CornerRadius" Value="4" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+    </Style>
+    <Style Selector="ColorPicker.desktop-theme:not(.luna) /template/ DropDownButton:pointerover">
+        <Setter Property="Background" Value="{DynamicResource DesktopButtonBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopHoverAccentBrush}" />
+    </Style>
+    <Style Selector="ColorPicker.desktop-theme:not(.luna) /template/ DropDownButton:pressed, ColorPicker.desktop-theme:not(.luna) /template/ DropDownButton:flyout-open">
+        <Setter Property="Background" Value="{DynamicResource DesktopButtonPressedBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopFocusHighlightBrush}" />
+    </Style>
+    <Style Selector="ColorPicker.desktop-theme:not(.luna) /template/ DropDownButton:focus-visible">
+        <Setter Property="BorderBrush" Value="{DynamicResource {x:Static common:SystemColors.HighlightBrushKey}}" />
+    </Style>
+
+    <!-- Classic 和 Luna 保留立体色板；后续主题改用细边框，弹层外观与各自菜单一致。 -->
+    <Style Selector="FlyoutPresenter.nopadding.desktop-theme:not(.luna) NumericUpDown">
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="FlyoutPresenter.nopadding.desktop-theme:not(.luna) classic|ClassicBorderDecorator">
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+    </Style>
+    <Style Selector="FlyoutPresenter.nopadding.desktop-theme:not(.luna) ListBoxItem /template/ classic|ClassicBorderDecorator">
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="FlyoutPresenter.nopadding.desktop-theme:not(.luna)">
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="FlyoutPresenter.nopadding.desktop-theme:not(.luna) /template/ classic|ClassicBorderDecorator#LayoutRoot">
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+    </Style>
+    <Style Selector="FlyoutPresenter.nopadding.fluent">
+        <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+    </Style>
+</Styles>

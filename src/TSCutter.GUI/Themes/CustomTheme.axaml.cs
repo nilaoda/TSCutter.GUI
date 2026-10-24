@@ -139,13 +139,24 @@ public class CustomTheme : Styles
         TopLevel.ActualThemeVariantProperty.Changed.AddClassHandler<ContextMenu>((menu, _) => UpdateThemeClasses(menu));
         TopLevel.ActualThemeVariantProperty.Changed.AddClassHandler<MenuFlyoutPresenter>((menu, _) => UpdateThemeClasses(menu));
         TopLevel.ActualThemeVariantProperty.Changed.AddClassHandler<FlyoutPresenter>((flyout, _) => UpdateThemeClasses(flyout));
+        TopLevel.ActualThemeVariantProperty.Changed.AddClassHandler<ColorPicker>((picker, _) => UpdateThemeClasses(picker));
+        // 选色弹层打开时会用 PresenterClasses 覆盖样式类，加载后补回主题标记。
+        Control.LoadedEvent.AddClassHandler<FlyoutPresenter>((flyout, _) =>
+        {
+            if (flyout.Classes.Contains("nopadding"))
+                UpdateThemeClasses(flyout);
+        });
 
         // 提示框也有独立的弹出根，按自身主题更新，避免漏掉各主题的提示样式。
         TopLevel.ActualThemeVariantProperty.Changed.AddClassHandler<ToolTip>((tip, _) => UpdateThemeClasses(tip));
 
         // 模板内的按钮保留各自用途，避免普通按钮样式覆盖下拉箭头等模板部件。
         StyledElement.TemplatedParentProperty.Changed.AddClassHandler<Button>((button, _) =>
-            button.Classes.Set("desktop-template-button", button.TemplatedParent != null));
+        {
+            // 选色器的色谱开关属于内容操作，需要普通切换按钮的按下、选中和禁用状态。
+            var isColorPickerToggle = button is ToggleButton && button.TemplatedParent is ColorPicker;
+            button.Classes.Set("desktop-template-button", button.TemplatedParent != null && !isColorPickerToggle);
+        });
 
         // Classic 只在加载或滚动位置变化时检查范围，异步填入内容后箭头会保持禁用。
         // 补齐范围变化通知，确保内容增减后立即刷新箭头状态。

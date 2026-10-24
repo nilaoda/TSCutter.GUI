@@ -1,5 +1,6 @@
 using TSCutter.GUI.FFmpeg;
 using Avalonia;
+using Avalonia.Media;
 using System.Linq;
 using System.Text.Json;
 using FFmpeg.AutoGen.Abstractions;
@@ -32,7 +33,9 @@ public sealed class ThumbnailSheetTests
                 ShowCaption = false,
                 ShowIndex = false,
                 IsPngFormat = false,
-                JpegQuality = 76
+                JpegQuality = 76,
+                Background = ThumbnailSheetBackground.Custom,
+                CustomBackgroundColor = "#A4B5C6"
             }
         };
 
@@ -54,7 +57,9 @@ public sealed class ThumbnailSheetTests
             OutputWidth = 4096,
             Sampling = (ThumbnailSheetSampling)99,
             IntervalSeconds = double.NaN,
-            JpegQuality = double.PositiveInfinity
+            JpegQuality = double.PositiveInfinity,
+            Background = (ThumbnailSheetBackground)99,
+            CustomBackgroundColor = "#00112233"
         });
 
         Assert.Equal(12, normalized.Columns);
@@ -63,6 +68,22 @@ public sealed class ThumbnailSheetTests
         Assert.Equal(ThumbnailSheetSampling.Uniform, normalized.Sampling);
         Assert.Equal(10, normalized.IntervalSeconds);
         Assert.Equal(90, normalized.JpegQuality);
+        Assert.Equal(ThumbnailSheetBackground.Dark, normalized.Background);
+        Assert.Equal("#FFFFFF", normalized.CustomBackgroundColor);
+    }
+
+    [Theory]
+    [InlineData("#12Ab34", true)]
+    [InlineData("12ab34", true)]
+    [InlineData("#FF001122", false)]
+    [InlineData("red", false)]
+    [InlineData("#GGGGGG", false)]
+    [InlineData(null, false)]
+    public void BackgroundColorsRequireOpaqueRgb(string? value, bool expected)
+    {
+        Assert.Equal(expected, ThumbnailSheetWindowViewModel.TryParseBackgroundColor(value, out var color));
+        if (expected)
+            Assert.Equal(Color.FromRgb(0x12, 0xAB, 0x34), color);
     }
 
     [Theory]
