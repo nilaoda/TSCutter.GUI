@@ -1,4 +1,7 @@
 using Avalonia.Headless;
+using System.Reflection;
+using FFmpeg.AutoGen.Abstractions;
+using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Tests.FFmpeg;
 using TSCutter.GUI.Tests.UI;
@@ -16,21 +19,21 @@ public sealed class KeyFrameNavigationTests
         await session.Dispatch<bool>(async () =>
         {
             var directory = TSCutter.GUI.Tests.FFmpeg.NativeTestEnvironment.FixtureDirectory("keyframes");
-            foreach (var name in new[] { "fixed.mp4", "fractional.ts", "variable.mp4", "hevc-hlg.ts" })
+            foreach (var name in new[] { "fixed.mp4", "fractional.ts", "variable.mp4", "hevc-hlg.ts", "interlaced.ts" })
             {
                 var path = Path.Combine(directory, name);
                 var expected = System.Text.Json.JsonSerializer.Deserialize<double[]>(File.ReadAllText(path + ".json"))!;
                 // 直接扫描解码器取得原始 PTS，导航测试不依赖预览条服务。
-                long anchorPts = 0;
+                var referencePts = new long[expected.Length];
                 using (var reference = new VideoInstance(path))
                 {
                     await reference.InitVideoAsync();
-                    for (var index = 0; index <= 8; index++)
+                    for (var index = 0; index < expected.Length; index++)
                     {
                         var frame = await reference.DecodeNextSearchFrameAsync(32, 18, CancellationToken.None);
                         Assert.NotNull(frame);
                         Assert.Equal(expected[index], frame.FrameTimestamp.TotalSeconds, 3);
-                        anchorPts = frame.FramePts;
+                        referencePts[index] = frame.FramePts;
                         Dispose(frame);
                     }
                 }
@@ -45,7 +48,7 @@ public sealed class KeyFrameNavigationTests
                     var nextPreview = await video.DecodeNextFrameAsync(1);
                     Assert.Equal(expected[1], nextPreview.FrameTimestamp.TotalSeconds, 3);
                     Dispose(nextPreview);
-                    Dispose(await video.DecodeKeyFrameAtPtsAsync(anchorPts));
+                    Dispose(await video.DecodeKeyFrameAtPtsAsync(referencePts[8]));
                     foreach (var index in new[] { 7, 6, 5 })
                     {
                         var result = await video.DecodeNextFrameAsync(-1);
@@ -62,10 +65,42 @@ public sealed class KeyFrameNavigationTests
                     var stillFirst = await video.DecodeNextFrameAsync(-1);
                     Assert.Equal(expected[0], stillFirst.FrameTimestamp.TotalSeconds, 3);
                     Dispose(stillFirst);
+                    foreach (var steps in new[] { 10, 20 })
+                    {
+                        var anchorIndex = expected.Length - 2;
+                        Dispose(await video.DecodeKeyFrameAtPtsAsync(referencePts[anchorIndex]));
+                        var before = GetDecodedFrameCount(video);
+                        var result = await video.DecodeNextFrameAsync(-steps);
+                        Assert.InRange(result.FramePts, referencePts[0], referencePts[anchorIndex - 1]);
+                        var interval = video.EstimatedKeyFrameIntervalSeconds;
+                        var approximateTarget = Math.Max(0, expected[anchorIndex] - steps * interval);
+                        Assert.InRange(result.FrameTimestamp.TotalSeconds,
+                            Math.Max(0, approximateTarget - interval * 2 - 0.002), approximateTarget + interval * 2 + 0.002);
+                        var targetIndex = Array.IndexOf(referencePts, result.FramePts);
+                        Assert.True(targetIndex >= 0);
+                        Assert.Equal(result.FramePts, video.CurrentPts);
+                        if (!hardware)
+                            Assert.InRange(GetDecodedFrameCount(video) - before, 1, 6);
+                        Dispose(result);
+                        var next = await video.DecodeNextFrameAsync(1);
+                        Assert.Equal(referencePts[targetIndex + 1], next.FramePts);
+                        Dispose(next);
+                        Dispose(await video.DecodeKeyFrameAtPtsAsync(referencePts[0]));
+                        var atBeginning = await video.DecodeNextFrameAsync(-steps);
+                        Assert.Equal(referencePts[0], atBeginning.FramePts);
+                        Dispose(atBeginning);
+                    }
                 }
             }
             return true;
         }, CancellationToken.None);
+    }
+
+    private static unsafe long GetDecodedFrameCount(VideoInstance video)
+    {
+        AVCodecContext* decoder = (CodecContext)typeof(VideoInstance).GetField("videoDecoder",
+            BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(video)!;
+        return decoder->frame_num;
     }
 
     private static void Dispose(DecodeResult? result)
