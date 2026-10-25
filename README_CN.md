@@ -75,6 +75,8 @@ TSCutter.GUI 是一个跨平台的视频剪辑与 MPEG-TS 诊断工具。它支�
   <img alt="TSCutter.GUI 界面预览" src="img/light_cn.png">
 </picture>
 
+预览画面来源：NASA，[国际空间站地球影像（无配乐）](https://images.nasa.gov/details/NHQ_2020_1221_Earth%20Views)。详见[素材来源与使用说明](img/SOURCES.md)。
+
 ### 桌面主题
 
 提供六个 Windows 风格的主题系列及各自的深浅配色，均可在 Windows、Linux 和 macOS 上使用。

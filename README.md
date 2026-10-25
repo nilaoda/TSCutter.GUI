@@ -75,6 +75,8 @@ Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilao
   <img alt="TSCutter.GUI preview" src="img/light_en.png">
 </picture>
 
+Preview footage: NASA, [Earth Views from the ISS – No Music](https://images.nasa.gov/details/NHQ_2020_1221_Earth%20Views). See [media source and usage notes](img/SOURCES.md).
+
 ### Desktop themes
 
 Six Windows-inspired theme families are available on Windows, Linux, and macOS, with light and dark palettes.
