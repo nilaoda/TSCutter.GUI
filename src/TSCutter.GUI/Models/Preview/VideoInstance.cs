@@ -673,9 +673,13 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     {
         cancellationToken.ThrowIfCancellationRequested();
         var anchorPts = currentKeyFramePts;
+        // 已在片头时按单步钳位处理，避免粗跳反复查找不存在的更早画面。
+        if (count < -1 && isNavigation && anchorPts <= firstFrameTimestamp)
+            count = -1;
         try
         {
-            if (count < 0 && isNavigation)
+            // 只有单步回退查找精确相邻帧；前 10/20 按估算间隔直接定位，避免扫描整段候选帧。
+            if (count == -1 && isNavigation)
                 return DecodePreviousKeyFrame(count, anchorPts, cancellationToken);
             return DecodeNextFrame(
                 count,
@@ -800,7 +804,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
 
         DecodeResult DecodeFullPacketsFromTarget()
         {
-            if (count < 0 && isNavigation)
+            if (count == -1 && isNavigation)
                 return DecodePreviousKeyFrame(count, anchorPts, cancellationToken);
             var prerollPts = Math.Max(0, targetPts - keyFrameGap * 2);
             Seek(prerollPts, AVSEEK_FLAG.Backward);

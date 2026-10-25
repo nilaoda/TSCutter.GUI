@@ -29,6 +29,9 @@ def main():
 
     h264("fixed.mp4", 12, 12, 12)
     ffmpeg("-i", root / "fixed.mp4", "-c", "copy", "-output_ts_offset", 20, root / "fixed.ts")
+    # 使用隔行 H.264 覆盖前 10/20 的快速跳转，不需要生成真实的 1080 行画面。
+    h264("interlaced.mp4", 25, 32, 25, "-flags", "+ildct+ilme", "-x264-params", "tff=1")
+    ffmpeg("-i", root / "interlaced.mp4", "-c", "copy", "-output_ts_offset", 20, root / "interlaced.ts")
     h264("fractional.mp4", "30000/1001", 16, 30)
     # 保留很大的非零时间戳，覆盖广播 TS 中的 PTS 换算。
     ffmpeg("-i", root / "fractional.mp4", "-c", "copy", "-output_ts_offset", 41852, root / "fractional.ts")
@@ -38,7 +41,7 @@ def main():
     h264("short.mp4", 12, 0.25, 12)
 
     # 使用较短的 POC 周期和 CRA，覆盖跨回绕的连续扫描；不包含真实节目画面。
-    ffmpeg("-f", "lavfi", "-i", "testsrc2=size=128x72:rate=50:duration=9",
+    ffmpeg("-f", "lavfi", "-i", "testsrc2=size=128x72:rate=50:duration=24",
            "-an", "-c:v", "libx265", "-preset", "ultrafast", "-crf", 38,
            "-x265-params", "keyint=32:min-keyint=32:scenecut=0:open-gop=1:log2-max-poc-lsb=6:repeat-headers=1:pools=1:frame-threads=1:log-level=error",
            "-pix_fmt", "yuv420p10le", "-color_primaries", "bt2020", "-color_trc", "arib-std-b67",
