@@ -39,8 +39,8 @@ python tools/prepare-test-media.py --group remux subtitles
 | Group | Coverage |
 | --- | --- |
 | `keyframes` | H.264/HEVC, fixed and variable GOPs, dense GOPs, B frames, fractional frame rates, TS with nonzero PTS, HLG, short clips, and single frames |
-| `remux` | MP4/MKV export, multiple audio tracks, subtitles, chapters, attachments, cover art, HDR, and open GOPs |
-| `subtitles` | Preview, seeking, and track switching for mov_text, animated ASS, PGS, and DVB subtitles |
+| `remux` | MP4/MKV export, multiple audio tracks, text/PGS subtitles, fractional-frame-rate HEVC, chapters, attachments, cover art, HDR, and open GOPs |
+| `subtitles` | Preview, local-window seeking, sparse/empty tracks, and track switching for mov_text, animated ASS, PGS, and DVB subtitles |
 
 Each generator can also run independently. Omitting its directory argument uses the same default location. `--font` accepts a TTF/OTF font for subtitle attachment tests.
 The generators prepare test data only. They do not download tools, change application settings, or re-encode media on each `dotnet test` run.

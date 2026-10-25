@@ -1207,8 +1207,8 @@
     <x:String x:Key="String.RemuxExport.Container">Output container</x:String>
     <x:String x:Key="String.RemuxExport.Tracks">Tracks to keep</x:String>
     <x:String x:Key="String.RemuxExport.TrackHint">Source order · Current video required</x:String>
-    <x:String x:Key="String.RemuxExport.FastSubtitleSeek">Fast MKV subtitle seeking</x:String>
-    <x:String x:Key="String.RemuxExport.FastSubtitleSeekHint">Read from about 30 seconds before each cut. Subtitles starting earlier and spanning the cut may be omitted.</x:String>
+    <x:String x:Key="String.RemuxExport.FastSubtitleSeek">Fast MKV text subtitle seeking</x:String>
+    <x:String x:Key="String.RemuxExport.FastSubtitleSeekHint">Read text subtitles from about 30 seconds before each cut. Earlier text spanning the cut may be omitted. PGS display state is restored separately.</x:String>
     <x:String x:Key="String.RemuxExport.Notice">Container data is rewritten; output is not byte-for-byte lossless.</x:String>
     <x:String x:Key="String.RemuxExport.BoundaryHint">Audio/video is copied without re-encoding. Video cuts use keyframes.</x:String>
     <x:String x:Key="String.RemuxExport.Files">MP4 / MKV files</x:String>

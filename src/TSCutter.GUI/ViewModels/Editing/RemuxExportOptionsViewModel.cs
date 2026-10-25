@@ -14,7 +14,7 @@ public partial class RemuxExportTrackChoice : ObservableObject
     public int Index { get; init; }
     public string Description { get; init; } = "";
     public bool CanChange { get; init; } = true;
-    public bool IsSubtitle { get; init; }
+    public bool IsTextSubtitle { get; init; }
     [ObservableProperty] private bool _isSelected;
 }
 
@@ -25,7 +25,7 @@ public partial class RemuxExportOptionsViewModel : ViewModelBase, IModalDialogVi
     [ObservableProperty] private bool _fastSubtitleSeek = true;
     public List<RemuxExportTrackChoice> Tracks { get; } = [];
     private bool _isMatroskaSource;
-    public bool CanUseFastSubtitleSeek => _isMatroskaSource && Tracks.Any(track => track.IsSubtitle && track.IsSelected);
+    public bool CanUseFastSubtitleSeek => _isMatroskaSource && Tracks.Any(track => track.IsTextSubtitle && track.IsSelected);
 
     internal void Initialize(RemuxExportSettings settings, IEnumerable<RemuxExportTrackChoice> tracks, bool isMatroskaSource)
     {

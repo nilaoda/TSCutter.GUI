@@ -39,8 +39,8 @@ python tools/prepare-test-media.py --group remux subtitles
 | 组 | 覆盖内容 |
 | --- | --- |
 | `keyframes` | H.264/HEVC、固定和变长 GOP、密集 GOP、B 帧、分数帧率、非零 PTS 的 TS、HLG、短片和单帧 |
-| `remux` | MP4/MKV 导出、多音轨、字幕、章节、附件、封面、HDR 和 open GOP |
-| `subtitles` | mov_text、ASS 动画、PGS 和 DVB 字幕的预览、定位和切换 |
+| `remux` | MP4/MKV 导出、多音轨、文字/PGS 字幕、分数帧率 HEVC、章节、附件、封面、HDR 和 open GOP |
+| `subtitles` | mov_text、ASS 动画、PGS 和 DVB 字幕的预览、局部定位、稀疏/空轨道和切换 |
 
 三组生成器也能单独运行；不传目录时使用相同的默认位置。`--font` 可以为字幕附件测试指定 TTF/OTF 字体。
 生成脚本只负责测试数据，不下载工具，不修改应用配置，也不会在每次 `dotnet test` 时重新编码。
