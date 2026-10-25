@@ -45,7 +45,8 @@ public sealed class RemuxExportServiceTests
         var dialog = new RemuxExportOptionsViewModel();
         dialog.Initialize(settings,
             [new() { Index = 0, IsSelected = true, CanChange = false },
-             new() { Index = 1, IsSelected = true, IsSubtitle = true }], isMatroskaSource);
+             new() { Index = 1, IsSelected = true, IsTextSubtitle = true },
+             new() { Index = 2, IsSelected = true, Description = "PGS" }], isMatroskaSource);
         Assert.Equal(isMatroskaSource, dialog.CanUseFastSubtitleSeek);
         dialog.Container = "mp4";
         Assert.Equal(isMatroskaSource, dialog.CanUseFastSubtitleSeek);
@@ -757,6 +758,29 @@ public sealed class RemuxExportServiceTests
             progress, duringExport.Token));
         Assert.Equal("existing", await File.ReadAllTextAsync(target.Path));
         Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(target.Path)!, ".tscutter-*.tmp"));
+    }
+
+    [RemuxExportFact]
+    public async Task FractionalMatroskaPrerollKeepsTheSameMarkedFramesWithSubtitles()
+    {
+        var source = Fixture("fractional-subtitles.mkv");
+        var origin = VideoStart(source);
+        var keys = VideoKeyframeTimes(source, 34);
+        var start = keys[30];
+        var end = keys[32];
+        var expected = HashPackets(source, start, end + 0.0021);
+        Assert.NotEmpty(expected);
+        foreach (var fast in new[] { true, false })
+        {
+            var settings = Settings("mkv", 0, 1);
+            settings.TimelineOriginSeconds = origin;
+            settings.FastSubtitleSeek = fast;
+            using var output = new TemporaryOutput("mkv");
+            await new RemuxExportService().ExportAsync(new(output.Path,
+                [new(source, start - origin, end - origin, settings)]));
+            Assert.Equal(expected, HashPackets(output.Path, 0, double.MaxValue));
+            AssertMonotonicDts(output.Path, allowMissingInitialVideoDts: true);
+        }
     }
 
     private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>

@@ -3,8 +3,8 @@
 import argparse
 import json
 from pathlib import Path
-import struct
 import subprocess
+from pgs_sample import write_pgs_sample
 
 
 def main():
@@ -50,26 +50,26 @@ def main():
     ffmpeg("-i", root / "video.mp4", "-i", root / "animated.ass", "-map", "0:v", "-map", "1:s",
            "-c", "copy", *attach, "-metadata:s:s", "title=Animated ASS", root / "animated.mkv")
 
-    # 合成一幅白色 PGS 字幕及清屏事件，无需引入外部影视字幕素材。
-    def segment(kind, data, time):
-        return b"PG" + struct.pack(">IIBH", time * 90000, 0, kind, len(data)) + data
-
-    def presentation(number, count, state):
-        header = struct.pack(">HHBHBBBB", 320, 180, 0x10, number, state, 0, 0, count)
-        return header + (struct.pack(">HBBHH", 0, 0, 0, 20, 40) if count else b"")
-
-    rle = (b"\x01" * 32 + b"\0\0") * 16
-    obj = struct.pack(">HBB", 0, 0, 0xC0) + (len(rle) + 4).to_bytes(3, "big") + struct.pack(">HH", 32, 16) + rle
-    pgs = segment(0x16, presentation(0, 1, 0x80), 1)
-    pgs += segment(0x17, struct.pack(">BBHHHH", 1, 0, 20, 40, 32, 16), 1)
-    pgs += segment(0x14, bytes([0, 0, 0, 16, 128, 128, 0, 1, 235, 128, 128, 255]), 1)
-    pgs += segment(0x15, obj, 1) + segment(0x80, b"", 1)
-    pgs += segment(0x16, presentation(1, 0, 0), 3) + segment(0x80, b"", 3)
-    (root / "bitmap.sup").write_bytes(pgs)
+    # 合成 PGS 字幕、缓存复用和清屏事件，无需外部影视素材。
+    write_pgs_sample(root / "bitmap.sup")
     ffmpeg("-copyts", "-i", root / "video.mp4", "-i", root / "bitmap.sup", "-map", "0:v", "-map", "1:s",
            "-c", "copy", root / "bitmap.mkv")
     ffmpeg("-fix_sub_duration", "-i", root / "bitmap.mkv", "-map", "0:v", "-map", "0:s", "-c:v", "copy", "-c:s", "dvbsub",
            "-f", "mpegts", root / "bitmap.ts")
+    # 长视频中包含稀疏及空字幕，验证局部加载不会读到文件末尾。
+    header = (root / "animated.ass").read_text(encoding="utf-8").split("Dialogue:")[0]
+    (root / "windowed.ass").write_text(header +
+        "Dialogue: 0,0:00:20.00,0:00:24.00,Default,,0,0,0,,Backward preview\n" +
+        "Dialogue: 0,0:00:29.00,0:00:35.00,Default,,0,0,0,,Cache edge preview\n" +
+        "Dialogue: 0,0:01:00.00,0:01:04.00,Default,,0,0,0,,Middle preview\n" +
+        "Dialogue: 0,0:02:00.00,0:02:04.00,Default,,0,0,0,,Later preview\n", encoding="utf-8")
+    (root / "empty.ass").write_text(header, encoding="utf-8")
+    ffmpeg("-f", "lavfi", "-i", "color=c=black:s=128x72:r=5:d=150",
+           "-i", root / "windowed.ass", "-i", root / "empty.ass", "-i", root / "bitmap.sup",
+           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=10",
+           "-map", "0:v", "-map", "1:s", "-map", "2:s", "-map", "3:s", "-map", "4:a",
+           "-c:v", "libx264", "-g", 10, "-pix_fmt", "yuv420p", "-c:s", "copy", "-c:a", "aac",
+           root / "windowed.mkv")
     manifest.write_text(json.dumps({"formatVersion": 1}, indent=2) + "\n", encoding="utf-8")
     print(root)
 

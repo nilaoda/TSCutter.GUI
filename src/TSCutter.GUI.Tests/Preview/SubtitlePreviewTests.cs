@@ -224,6 +224,40 @@ public sealed class SubtitlePreviewTests
     }
 
     [NativeSubtitleFact]
+    public async Task SparseAndEmptyTracksUseLocalWindowsAcrossForwardAndBackwardSeeks()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            using var video = OpenVideo("windowed.mkv");
+            Assert.Equal(3, video.PreviewSubtitleTracks.Count);
+            foreach (var track in video.PreviewSubtitleTracks)
+            {
+                using var subtitles = SubtitlePreviewService.Load(SamplePath("windowed.mkv"), track.Selection!,
+                    video.CodedVideoSize, video.TimelineOriginSeconds, video.GetVideoDurationInSeconds(),
+                    video.TsSyncOffset, CancellationToken.None, displayedSeconds: 61);
+                Assert.InRange(subtitles.ReadThroughSeconds, 67, 68);
+                var readThrough = subtitles.ReadThroughSeconds;
+                using var middle = subtitles.Render(62, new PixelSize(320, 180));
+                Assert.Equal(track == video.PreviewSubtitleTracks[0], middle is not null);
+                Assert.Equal(readThrough, subtitles.ReadThroughSeconds);
+                using var edge = subtitles.Render(32, new PixelSize(320, 180));
+                Assert.Equal(track == video.PreviewSubtitleTracks[0], edge is not null);
+                Assert.InRange(subtitles.ReadThroughSeconds, 38, 40);
+                using var later = subtitles.Render(121, new PixelSize(320, 180));
+                Assert.Equal(track == video.PreviewSubtitleTracks[0], later is not null);
+                Assert.InRange(subtitles.ReadThroughSeconds, 127, 128);
+                using var backward = subtitles.Render(21, new PixelSize(320, 180));
+                Assert.Equal(track == video.PreviewSubtitleTracks[0], backward is not null);
+                Assert.InRange(subtitles.ReadThroughSeconds, 27, 28);
+                Assert.Null(subtitles.Render(25, new PixelSize(320, 180)));
+                if (track == video.PreviewSubtitleTracks[2])
+                    Assert.Null(subtitles.Render(34, new PixelSize(320, 180)));
+            }
+        }, CancellationToken.None);
+    }
+
+    [NativeSubtitleFact]
     public async Task TrackSwitchingPublishesOnlyTheLatestOverlayAndOffClearsIt()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));

@@ -163,7 +163,7 @@ internal sealed unsafe class RemuxExportService
     }
 
     private sealed record PreparedSegment(RemuxExportSegment Segment, FormatContext Input, int[] Streams,
-        double Start, double End, long[] StartDts, long[] EndDts, long[] EndDurations, long Length, DateTime Modified);
+        double Start, double End, long[] StartDts, long[] EndPts, long[] EndDurations, long Length, DateTime Modified);
 
     private static PreparedSegment Prepare(RemuxExportSegment segment, CancellationToken token)
     {
@@ -231,12 +231,13 @@ internal sealed unsafe class RemuxExportService
                         endDurations[i] = Ticks(frameEnd - finish.Time, stream->time_base);
                     }
                     starts[i] = start.Dts;
-                    ends[i] = finish.Dts;
+                    ends[i] = finish.Dts == long.MaxValue ? long.MaxValue : Ticks(finish.Time, stream->time_base);
                 }
-                // 仅复制位图字幕的部分显示集合，无法还原其完整显示状态。
+                // MKV 的 PGS 会补齐起点显示状态；其他位图格式仍需独立处理其显示集合。
                 if (stream->codecpar->codec_type == AVMediaType.AVMEDIA_TYPE_SUBTITLE &&
                     stream->codecpar->codec_id is not (AVCodecID.AV_CODEC_ID_MOV_TEXT or AVCodecID.AV_CODEC_ID_ASS or
-                        AVCodecID.AV_CODEC_ID_SSA or AVCodecID.AV_CODEC_ID_SUBRIP or AVCodecID.AV_CODEC_ID_TEXT or AVCodecID.AV_CODEC_ID_WEBVTT))
+                        AVCodecID.AV_CODEC_ID_SSA or AVCodecID.AV_CODEC_ID_SUBRIP or AVCodecID.AV_CODEC_ID_TEXT or AVCodecID.AV_CODEC_ID_WEBVTT) &&
+                    !(segment.Settings.Container == "mkv" && stream->codecpar->codec_id == AVCodecID.AV_CODEC_ID_HDMV_PGS_SUBTITLE))
                     throw new RemuxExportException(RemuxExportError.UnsupportedTrack, $"#{stream->index}: {stream->codecpar->codec_id}");
             }
             var result = new PreparedSegment(segment, input, indices, startBoundary.Time, endTime,
@@ -486,15 +487,17 @@ internal sealed unsafe class RemuxExportService
     private static double CopyPackets(AVFormatContext* output, PreparedSegment item, double offset, long[] lastDts,
         long[] initialCompositionOffsets, long[] subtitleOrder, CancellationToken token, Action<double, int> report)
     {
-        var hasSubtitles = item.Streams.Any(index =>
-            item.Input.Streams[index].Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_SUBTITLE);
+        var pgs = ReadPgsPreroll(item, token);
+        var hasTextSubtitles = item.Streams.Any(index =>
+            item.Input.Streams[index].Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_SUBTITLE &&
+            item.Input.Streams[index].Codecpar?.CodecId != AVCodecID.AV_CODEC_ID_HDMV_PGS_SUBTITLE);
         // MOV 默认按各轨道索引分别向前定位，能保留跨起点的 mov_text 字幕。
-        // Matroska 快速模式只回看约 30 秒；关闭后从头读取以保留长字幕。
-        // 起点不足 30 秒时仍从头读取，避免定位到首个视频关键帧后漏掉开头字幕。
+        // Matroska 文字字幕快速模式按公共回看范围读取；关闭后从头读取以保留长字幕。
+        // 起点仍在回看范围内时从头读取，避免定位到首个视频关键帧后漏掉开头字幕。
         var isMatroska = item.Input.InputFormat!.Name.Split(',').Contains("matroska");
-        var fastSubtitleSeek = hasSubtitles && isMatroska && item.Segment.Settings.FastSubtitleSeek &&
-            item.Start - item.Segment.Settings.TimelineOriginSeconds > 30;
-        var scanSubtitles = hasSubtitles && isMatroska && !fastSubtitleSeek;
+        var fastSubtitleSeek = hasTextSubtitles && isMatroska && item.Segment.Settings.FastSubtitleSeek &&
+            item.Start - item.Segment.Settings.TimelineOriginSeconds > SubtitleReadDefaults.LookbackSeconds;
+        var scanSubtitles = hasTextSubtitles && isMatroska && !fastSubtitleSeek;
         using var scanInput = scanSubtitles
             ? InterruptibleInputFormatContext.Open(item.Segment.SourcePath, () => token.IsCancellationRequested) : null;
         // 可定位的输入复用准备阶段的上下文，避免再次打开文件和探测轨道。
@@ -502,23 +505,9 @@ internal sealed unsafe class RemuxExportService
         AVFormatContext* rawInput = input;
         if (scanInput is not null)
         {
-            AVFormatContext* preparedInput = item.Input;
-            if (rawInput->nb_streams != preparedInput->nb_streams)
-                input.LoadStreamInfo();
-            else
-            {
-                // Matroska 文件头已包含轨道列表；复用已探测的参数和帧率，
-                // 避免字幕扫描前再次读取音视频来猜测这些信息。
-                for (var i = 0; i < rawInput->nb_streams; i++)
-                {
-                    var stream = rawInput->streams[i];
-                    var prepared = preparedInput->streams[i];
-                    if (stream->codecpar->codec_type == AVMediaType.AVMEDIA_TYPE_ATTACHMENT) continue;
-                    FFmpegException.Check(FF.avcodec_parameters_copy(stream->codecpar, prepared->codecpar));
-                    stream->avg_frame_rate = prepared->avg_frame_rate;
-                    stream->r_frame_rate = prepared->r_frame_rate;
-                }
-            }
+            // 新上下文还需要初始化 FFmpeg 内部的 B 帧时间戳状态。
+            // 仅复制 codecpar 和帧率会使分数帧率 HEVC 的 DTS 回退或重复。
+            input.LoadStreamInfo();
         }
         var map = Enumerable.Repeat(-1, checked((int)rawInput->nb_streams)).ToArray();
         for (var i = 0; i < item.Streams.Length; i++) map[item.Streams[i]] = i;
@@ -528,7 +517,7 @@ internal sealed unsafe class RemuxExportService
         if (!scanSubtitles)
         {
             var reference = rawInput->streams[item.Segment.Settings.ReferenceVideoIndex];
-            var seekStart = fastSubtitleSeek ? item.Start - 30 : item.Start;
+            var seekStart = fastSubtitleSeek ? item.Start - SubtitleReadDefaults.LookbackSeconds : item.Start;
             input.SeekFrame(Ticks(seekStart, reference->time_base), reference->index);
         }
         var toEof = item.Segment.EndSeconds is null;
@@ -537,6 +526,7 @@ internal sealed unsafe class RemuxExportService
         var videoStarted = new bool[item.Streams.Length];
         var packetsWritten = new int[item.Streams.Length];
         var nextSourceDts = item.StartDts.ToArray();
+        var sourceStartDts = item.StartDts.ToArray();
         var finished = new bool[item.Streams.Length];
         var remainingStreams = item.Streams.Length;
         for (var i = 0; i < item.Streams.Length; i++)
@@ -547,6 +537,8 @@ internal sealed unsafe class RemuxExportService
             remainingStreams--;
             stream->discard = AVDiscard.AVDISCARD_ALL;
         }
+        foreach (var (streamIndex, preroll) in pgs)
+            WritePgsPacket(output, map[streamIndex], preroll.Epoch, offset, lastDts);
         // 各轨道独立确认终点；在读取下一包之前判断是否结束，避免 continue 绕过退出判断。
         using var packets = input.ReadPackets().GetEnumerator();
         while (remainingStreams > 0 && packets.MoveNext())
@@ -578,24 +570,24 @@ internal sealed unsafe class RemuxExportService
             var pts = Seconds(raw->pts, stream->time_base);
             var packetDuration = Math.Max(0, Seconds(raw->duration, stream->time_base));
             var end = pts + packetDuration;
-            var isEndFrame = type == AVMediaType.AVMEDIA_TYPE_VIDEO && raw->dts == item.EndDts[index];
+            var isEndFrame = type == AVMediaType.AVMEDIA_TYPE_VIDEO && raw->pts == item.EndPts[index];
             if (type == AVMediaType.AVMEDIA_TYPE_VIDEO)
             {
                 if (!videoStarted[index])
                 {
-                    if (raw->dts < item.StartDts[index]) continue;
                     if ((raw->flags & 1) == 0 || Math.Abs(pts - item.Start) > 0.002)
-                        throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{stream->index}");
+                    {
+                        if ((raw->flags & 1) != 0 && pts > item.Start + 0.002)
+                            throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{stream->index}");
+                        continue;
+                    }
+                    // MKV 定位后可能缺少开头几个 DTS；字幕回看则能恢复它们。
+                    // 两次读取的 DTS 可相差若干毫秒，起止帧必须按实际 PTS 识别。
+                    sourceStartDts[index] = raw->dts;
                     videoStarted[index] = true;
                 }
-                // EndDts 对应用户标记的终点帧；仅在它之后停止，避免漏掉该帧。
-                if (raw->dts > item.EndDts[index])
-                {
-                    finished[index] = true;
-                    remainingStreams--;
-                    stream->discard = AVDiscard.AVDISCARD_ALL;
-                    continue;
-                }
+                if (raw->pts > item.EndPts[index])
+                    throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{stream->index}");
                 // VFR 压缩包的解码时长可能不同于显示时长；终点帧须完整显示后再结束。
                 if (isEndFrame)
                     raw->duration = item.EndDurations[index];
@@ -611,17 +603,42 @@ internal sealed unsafe class RemuxExportService
                     stream->discard = AVDiscard.AVDISCARD_ALL;
                     continue;
                 }
-                if (end <= item.Start) continue;
-                var clippedStart = Math.Max(pts, item.Start);
-                var clippedEnd = toEof ? end : Math.Min(end, item.End);
-                if (stream->codecpar->codec_id is AVCodecID.AV_CODEC_ID_ASS or AVCodecID.AV_CODEC_ID_SSA &&
-                    (clippedStart > pts || clippedEnd < end) && HasTimedAssEffects(raw))
-                    throw new RemuxExportException(RemuxExportError.SubtitleTiming, $"#{stream->index}");
-                raw->pts = Ticks(clippedStart, stream->time_base);
-                raw->dts = raw->pts;
-                raw->duration = Ticks(clippedEnd - clippedStart, stream->time_base);
-                if (stream->codecpar->codec_id is AVCodecID.AV_CODEC_ID_ASS or AVCodecID.AV_CODEC_ID_SSA)
-                    RewriteAssReadOrder(raw, subtitleOrder[index]++);
+                if (pgs.TryGetValue(raw->stream_index, out var state))
+                {
+                    // PGS 通常没有包时长，显示与清屏由显示集合决定。
+                    // 起点状态已补齐，此处原样复制后续集合，不能当作零时长文字字幕丢弃。
+                    if (pts < item.Start)
+                        continue;
+                    if (PgsSubtitlePacket.Decompress(new ReadOnlySpan<byte>(raw->data, raw->size)) is { } decoded)
+                    {
+                        using var replacement = new Packet();
+                        AVPacket* target = replacement;
+                        FFmpegException.Check(FF.av_new_packet(target, decoded.Length));
+                        FFmpegException.Check(FF.av_packet_copy_props(target, raw));
+                        decoded.CopyTo(new Span<byte>(target->data, target->size));
+                        FF.av_packet_unref(raw);
+                        FF.av_packet_move_ref(raw, target);
+                    }
+                    state.State.Read(new ReadOnlySpan<byte>(raw->data, raw->size));
+                    raw->dts = raw->pts;
+                    if (!toEof && end > item.End)
+                        raw->duration = Ticks(item.End - pts, stream->time_base);
+                }
+                else
+                {
+                    if (end <= item.Start)
+                        continue;
+                    var clippedStart = Math.Max(pts, item.Start);
+                    var clippedEnd = toEof ? end : Math.Min(end, item.End);
+                    if (stream->codecpar->codec_id is AVCodecID.AV_CODEC_ID_ASS or AVCodecID.AV_CODEC_ID_SSA &&
+                        (clippedStart > pts || clippedEnd < end) && HasTimedAssEffects(raw))
+                        throw new RemuxExportException(RemuxExportError.SubtitleTiming, $"#{stream->index}");
+                    raw->pts = Ticks(clippedStart, stream->time_base);
+                    raw->dts = raw->pts;
+                    raw->duration = Ticks(clippedEnd - clippedStart, stream->time_base);
+                    if (stream->codecpar->codec_id is AVCodecID.AV_CODEC_ID_ASS or AVCodecID.AV_CODEC_ID_SSA)
+                        RewriteAssReadOrder(raw, subtitleOrder[index]++);
+                }
             }
             else
             {
@@ -648,7 +665,7 @@ internal sealed unsafe class RemuxExportService
             raw->duration = Ticks(Seconds(raw->duration, stream->time_base), timeBase);
             if (type == AVMediaType.AVMEDIA_TYPE_VIDEO && previousDts[index] != FF.AV_NOPTS_VALUE)
             {
-                var firstDts = Ticks(Seconds(item.StartDts[index], stream->time_base) - item.Start + offset, timeBase);
+                var firstDts = Ticks(Seconds(sourceStartDts[index], stream->time_base) - item.Start + offset, timeBase);
                 var splice = Ticks(offset, timeBase);
                 if (firstDts <= previousDts[index] && raw->dts < splice)
                 {
@@ -681,6 +698,12 @@ internal sealed unsafe class RemuxExportService
             var size = raw->size;
             FFmpegException.Check(FF.av_interleaved_write_frame(output, raw));
             packetsWritten[index]++;
+            if (isEndFrame)
+            {
+                finished[index] = true;
+                remainingStreams--;
+                stream->discard = AVDiscard.AVDISCARD_ALL;
+            }
             report(Math.Clamp(pts - item.Start, 0, item.End - item.Start), size);
         }
         for (var i = 0; i < item.Streams.Length; i++)
@@ -690,7 +713,88 @@ internal sealed unsafe class RemuxExportService
                 (stream->disposition & 1024) == 0 && packetsWritten[i] == 0)
                 throw new RemuxExportException(RemuxExportError.NoPackets, $"#{stream->index}");
         }
+        if (!toEof)
+            foreach (var (streamIndex, state) in pgs)
+                WritePgsPacket(output, map[streamIndex], state.State.CreateClear(),
+                    offset + item.End - item.Start, lastDts);
         return toEof ? actualEnd : item.End;
+    }
+
+    private sealed record PgsPreroll(PgsSubtitleState State, byte[] Epoch);
+
+    private static Dictionary<int, PgsPreroll> ReadPgsPreroll(PreparedSegment item, CancellationToken token)
+    {
+        var indices = item.Streams.Where(index =>
+            item.Input.Streams[index].Codecpar?.CodecId == AVCodecID.AV_CODEC_ID_HDMV_PGS_SUBTITLE).ToArray();
+        if (indices.Length == 0)
+            return [];
+        // 优先回看附近的显示集合；缺少对象或长时间没有字幕时扩大范围，
+        // 直到取得完整状态，不能把“附近没有字幕包”误判为已清屏。
+        var lookback = SubtitleReadDefaults.LookbackSeconds;
+        while (true)
+        {
+            token.ThrowIfCancellationRequested();
+            var start = Math.Max(item.Segment.Settings.TimelineOriginSeconds, item.Start - lookback);
+            var fromBeginning = start <= item.Segment.Settings.TimelineOriginSeconds;
+            using var input = InterruptibleInputFormatContext.Open(item.Segment.SourcePath, () => token.IsCancellationRequested);
+            AVFormatContext* raw = input;
+            if (raw->nb_streams != item.Input.Streams.Count)
+                throw new RemuxExportException(RemuxExportError.SourceChanged);
+            var states = indices.ToDictionary(index => index, _ => new PgsSubtitleState());
+            for (var i = 0; i < raw->nb_streams; i++)
+                if (!states.ContainsKey(i))
+                    raw->streams[i]->discard = AVDiscard.AVDISCARD_ALL;
+            if (!fromBeginning)
+            {
+                var video = raw->streams[item.Segment.Settings.ReferenceVideoIndex];
+                input.SeekFrame(Ticks(start, video->time_base), video->index);
+            }
+            var remaining = indices.ToHashSet();
+            foreach (var packet in input.ReadPackets())
+            {
+                token.ThrowIfCancellationRequested();
+                AVPacket* data = packet;
+                if (!remaining.Contains(data->stream_index))
+                    continue;
+                if (data->pts == FF.AV_NOPTS_VALUE)
+                    throw new RemuxExportException(RemuxExportError.MissingTimestamp, $"#{data->stream_index}");
+                if (Seconds(data->pts, raw->streams[data->stream_index]->time_base) >= item.Start)
+                {
+                    remaining.Remove(data->stream_index);
+                    if (remaining.Count == 0)
+                        break;
+                    continue;
+                }
+                states[data->stream_index].Read(new ReadOnlySpan<byte>(data->data, data->size));
+            }
+            var result = new Dictionary<int, PgsPreroll>();
+            foreach (var (index, state) in states)
+                if (state.CreateEpoch(fromBeginning) is { } epoch)
+                    result[index] = new PgsPreroll(state, epoch);
+            if (result.Count == indices.Length)
+                return result;
+            if (fromBeginning)
+                throw new RemuxExportException(RemuxExportError.UnsupportedTrack, "PGS preroll");
+            lookback *= 4;
+        }
+    }
+
+    private static void WritePgsPacket(AVFormatContext* output, int index, byte[] bytes, double time, long[] lastDts)
+    {
+        if (bytes.Length == 0)
+            return;
+        using var packet = new Packet();
+        AVPacket* raw = packet;
+        FFmpegException.Check(FF.av_new_packet(raw, bytes.Length));
+        bytes.CopyTo(new Span<byte>(raw->data, raw->size));
+        raw->stream_index = index;
+        raw->pts = raw->dts = Ticks(time, output->streams[index]->time_base);
+        raw->pos = -1;
+        raw->flags = 1;
+        if (lastDts[index] != FF.AV_NOPTS_VALUE && raw->dts < lastDts[index])
+            throw new RemuxExportException(RemuxExportError.NonMonotonicTimestamp, $"#{index}");
+        lastDts[index] = raw->dts;
+        FFmpegException.Check(FF.av_interleaved_write_frame(output, raw));
     }
 
     private static bool HasTimedAssEffects(AVPacket* packet)

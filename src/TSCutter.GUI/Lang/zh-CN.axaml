@@ -1207,8 +1207,8 @@
     <x:String x:Key="String.RemuxExport.Container">输出封装</x:String>
     <x:String x:Key="String.RemuxExport.Tracks">保留轨道</x:String>
     <x:String x:Key="String.RemuxExport.TrackHint">保持原顺序 · 当前视频必选</x:String>
-    <x:String x:Key="String.RemuxExport.FastSubtitleSeek">快速定位 MKV 字幕</x:String>
-    <x:String x:Key="String.RemuxExport.FastSubtitleSeekHint">从每段起点前约 30 秒开始读取，可能遗漏更早开始且跨越起点的字幕。</x:String>
+    <x:String x:Key="String.RemuxExport.FastSubtitleSeek">快速定位 MKV 文字字幕</x:String>
+    <x:String x:Key="String.RemuxExport.FastSubtitleSeekHint">文字字幕从每段起点前约 30 秒开始读取，可能遗漏更早开始且跨越起点的文字字幕。PGS 显示状态会单独恢复。</x:String>
     <x:String x:Key="String.RemuxExport.Notice">封装信息会重新写入，输出并非字节级无损。</x:String>
     <x:String x:Key="String.RemuxExport.BoundaryHint">音视频不重新编码；视频按关键帧剪辑。</x:String>
     <x:String x:Key="String.RemuxExport.Files">MP4 / MKV 文件</x:String>

@@ -22,6 +22,8 @@ namespace TSCutter.GUI.Services.Preview;
 
 internal sealed unsafe class SubtitlePreviewService : IDisposable
 {
+    private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(30);
+    private const double LookaheadSeconds = 5;
     private const long MaximumCacheBytes = 128L * 1024 * 1024;
     private const int MaximumEvents = 200_000;
     private const int MaximumBitmapPixels = 16 * 1024 * 1024;
@@ -30,6 +32,12 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
     private bool useDefaultTextStyle;
     private readonly PixelSize codedSize;
     private readonly double originSeconds;
+    private readonly string path;
+    private readonly PreviewStreamSelection selection;
+    private readonly double durationSeconds;
+    private readonly long tsSyncOffset;
+    private double loadedStart = double.NaN, loadedEnd = double.NaN;
+    internal double ReadThroughSeconds { get; private set; }
     private nint library, renderer, track;
     private long cacheBytes;
     private int eventCount;
@@ -39,24 +47,29 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
     private sealed record BitmapPart(int X, int Y, int Width, int Height, byte[] Data);
     private sealed record BitmapCue(long Start, long End, PixelSize Canvas, IReadOnlyList<BitmapPart> Parts);
 
-    private SubtitlePreviewService(PixelSize codedSize, double originSeconds)
+    private SubtitlePreviewService(string path, PreviewStreamSelection selection, PixelSize codedSize,
+        double originSeconds, double durationSeconds, long tsSyncOffset)
     {
+        this.path = path;
+        this.selection = selection;
         this.codedSize = codedSize;
         this.originSeconds = originSeconds;
+        this.durationSeconds = durationSeconds;
+        this.tsSyncOffset = tsSyncOffset;
     }
 
     public static SubtitlePreviewService Load(string path, PreviewStreamSelection selection,
         PixelSize codedSize, double originSeconds, double durationSeconds, long tsSyncOffset,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, double displayedSeconds = 0)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (codedSize.Width <= 0 || codedSize.Height <= 0 || !double.IsFinite(originSeconds) ||
-            !double.IsFinite(durationSeconds) || durationSeconds < 0)
+            !double.IsFinite(durationSeconds) || durationSeconds < 0 || !double.IsFinite(displayedSeconds))
             throw new InvalidDataException(LocalizationManager.Instance.String_SubtitlePreview_Invalid);
-        var service = new SubtitlePreviewService(codedSize, originSeconds);
+        var service = new SubtitlePreviewService(path, selection, codedSize, originSeconds, durationSeconds, tsSyncOffset);
         try
         {
-            service.Read(path, selection, durationSeconds, tsSyncOffset, cancellationToken);
+            service.LoadWindow(Math.Clamp(displayedSeconds, 0, durationSeconds), cancellationToken);
             return service;
         }
         catch
@@ -66,10 +79,21 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
         }
     }
 
-    private void Read(string path, PreviewStreamSelection selection, double durationSeconds,
-        long tsSyncOffset, CancellationToken cancellationToken)
+    private void LoadWindow(double displayedSeconds, CancellationToken cancellationToken)
     {
-        var deadline = new MediaReadDeadline(TimeSpan.FromSeconds(30), cancellationToken);
+        ClearCache();
+        var start = Math.Max(0, displayedSeconds - SubtitleReadDefaults.LookbackSeconds);
+        var end = Math.Min(durationSeconds, displayedSeconds + LookaheadSeconds);
+        Read(start, end, cancellationToken);
+        // 回看数据用于恢复当前位置的字幕状态；向左跳转需要新的完整回看范围。
+        // 从文件开头读取时，左侧的全部历史已知，可以直接复用。
+        loadedStart = start == 0 ? 0 : displayedSeconds;
+        loadedEnd = end;
+    }
+
+    private void Read(double startSeconds, double endSeconds, CancellationToken cancellationToken)
+    {
+        var deadline = new MediaReadDeadline(ReadTimeout, cancellationToken);
         using var input = OpenInput();
         FormatContext OpenInput()
         {
@@ -136,29 +160,80 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
                 }
                 FF.ass_set_fonts(renderer, null, defaultFont, 1, null, 1);
             }
-            // 独立扫描字幕，避免预览跳到长字幕中间时漏掉其开始事件。
-            // 未选中的流由解复用器丢弃，不解码音视频。
+            var media = input.Streams.Where(other => !other.IsAttachedPicture &&
+                other.Codecpar?.CodecType is AVMediaType.AVMEDIA_TYPE_VIDEO or AVMediaType.AVMEDIA_TYPE_AUDIO &&
+                (selection.ProgramId is not { } programId || input.Programs.Any(program =>
+                    program.Id == programId && program.ContainsStream(other.Index)))).ToArray();
+            var reference = media.First(other => other.Codecpar!.CodecType == AVMediaType.AVMEDIA_TYPE_VIDEO);
+            // 音频提供细粒度进度，视频关键帧兜底，避免空音轨或音频提前结束时读到片尾。
+            // 有音频时尽量丢弃视频的非关键帧；不解码音视频。
+            var clock = media.FirstOrDefault(other => other.Codecpar!.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO);
+            if (clock.Codecpar is null)
+                clock = reference;
             foreach (var other in input.Streams)
-                if (other.Index != stream.Index) ((AVStream*)other)->discard = AVDiscard.AVDISCARD_ALL;
+            {
+                if (other.Index == reference.Index && clock.Index != reference.Index)
+                    ((AVStream*)other)->discard = AVDiscard.AVDISCARD_NONKEY;
+                else if (other.Index != stream.Index && other.Index != clock.Index)
+                    ((AVStream*)other)->discard = AVDiscard.AVDISCARD_ALL;
+            }
+            if (startSeconds > 0)
+                input.SeekFrame((long)Math.Floor((originSeconds + startSeconds) / reference.TimeBase.ToDouble()), reference.Index);
+            ReadThroughSeconds = startSeconds;
+            var isPgs = stream.Codecpar.CodecId == AVCodecID.AV_CODEC_ID_HDMV_PGS_SUBTITLE;
+            var pgsReady = startSeconds == 0;
             using var packet = new Packet();
             while (true)
             {
-                deadline = new MediaReadDeadline(TimeSpan.FromSeconds(30), cancellationToken);
+                deadline = new MediaReadDeadline(ReadTimeout, cancellationToken);
                 var result = FF.av_read_frame(input, packet);
                 deadline.ThrowIfInterrupted();
                 if (result == FF.AVERROR_EOF) break;
                 FFmpegException.Check(result);
                 try
                 {
-                    if (packet.StreamIndex == stream.Index)
-                        Decode(decoder, packet, stream.TimeBase, isBitmap, cancellationToken);
+                    AVPacket* raw = packet;
+                    if (packet.StreamIndex == clock.Index || packet.StreamIndex == reference.Index)
+                    {
+                        var timeBase = packet.StreamIndex == clock.Index ? clock.TimeBase : reference.TimeBase;
+                        var timestamp = raw->dts != FF.AV_NOPTS_VALUE ? raw->dts : raw->pts;
+                        if (timestamp != FF.AV_NOPTS_VALUE)
+                        {
+                            ReadThroughSeconds = timestamp * timeBase.ToDouble() - originSeconds;
+                            // 留一秒余量，容纳常见的音视频重排序和字幕交错。
+                            if (ReadThroughSeconds >= endSeconds + 1)
+                                break;
+                        }
+                    }
+                    else if (packet.StreamIndex == stream.Index)
+                    {
+                        var decoded = isPgs ? PgsSubtitlePacket.Decompress(new ReadOnlySpan<byte>(raw->data, raw->size)) : null;
+                        if (isPgs && !pgsReady)
+                        {
+                            var bytes = decoded is null ? new ReadOnlySpan<byte>(raw->data, raw->size) : decoded;
+                            if (!PgsSubtitlePacket.HasAcquisitionPoint(bytes))
+                                continue;
+                            pgsReady = true;
+                        }
+                        if (decoded is not null)
+                        {
+                            using var expanded = new Packet();
+                            AVPacket* data = expanded;
+                            FFmpegException.Check(FF.av_new_packet(data, decoded.Length));
+                            FFmpegException.Check(FF.av_packet_copy_props(data, raw));
+                            decoded.CopyTo(new Span<byte>(data->data, data->size));
+                            Decode(decoder, data, stream.TimeBase, isBitmap, cancellationToken);
+                        }
+                        else
+                            Decode(decoder, raw, stream.TimeBase, isBitmap, cancellationToken);
+                    }
                 }
                 finally { packet.Unref(); }
             }
             AVPacket empty = default;
             empty.pts = empty.dts = FF.AV_NOPTS_VALUE;
             Decode(decoder, &empty, stream.TimeBase, isBitmap, cancellationToken);
-            FlushPending((long)Math.Ceiling((originSeconds + durationSeconds) * 1000));
+            FlushPending((long)Math.Ceiling((originSeconds + endSeconds + 1) * 1000));
             bitmapCues.Sort((a, b) => a.Start.CompareTo(b.Start));
             for (var i = 0; i + 1 < bitmapCues.Count; i++)
                 bitmapCues[i] = bitmapCues[i] with { End = Math.Min(bitmapCues[i].End, bitmapCues[i + 1].Start) };
@@ -366,7 +441,11 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
         {
             ObjectDisposedException.ThrowIf(disposed, this);
             token.ThrowIfCancellationRequested();
-            if (!double.IsFinite(displayedSeconds) || displaySize.Width <= 0 || displaySize.Height <= 0) return null;
+            if (!double.IsFinite(displayedSeconds) || displayedSeconds < 0 || displayedSeconds > durationSeconds ||
+                displaySize.Width <= 0 || displaySize.Height <= 0)
+                return null;
+            if (!(displayedSeconds >= loadedStart && displayedSeconds <= loadedEnd))
+                LoadWindow(displayedSeconds, token);
             var time = (long)Math.Round((displayedSeconds + originSeconds) * 1000);
             var parts = new List<SubtitleOverlayPart>();
             try
@@ -494,18 +573,29 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
 
     private static NotSupportedException CacheLimit() => new(LocalizationManager.Instance.String_SubtitlePreview_Limit);
 
+    private void ClearCache()
+    {
+        if (track != 0)
+            FF.ass_free_track(track);
+        if (renderer != 0)
+            FF.ass_renderer_done(renderer);
+        if (library != 0)
+            FF.ass_library_done(library);
+        track = renderer = library = 0;
+        bitmapCues.Clear();
+        pendingText.Clear();
+        cacheBytes = eventCount = 0;
+        useDefaultTextStyle = false;
+        loadedStart = loadedEnd = double.NaN;
+    }
+
     public void Dispose()
     {
         lock (sync)
         {
             if (disposed) return;
             disposed = true;
-            if (track != 0) FF.ass_free_track(track);
-            if (renderer != 0) FF.ass_renderer_done(renderer);
-            if (library != 0) FF.ass_library_done(library);
-            track = renderer = library = 0;
-            bitmapCues.Clear();
-            pendingText.Clear();
+            ClearCache();
         }
     }
 }

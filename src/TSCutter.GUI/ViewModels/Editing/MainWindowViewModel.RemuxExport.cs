@@ -37,7 +37,7 @@ public partial class MainWindowViewModel
         {
             Index = track.Index, Description = track.Description,
             CanChange = track.Index != settings.ReferenceVideoIndex,
-            IsSubtitle = track.Type == AVMediaType.AVMEDIA_TYPE_SUBTITLE,
+            IsTextSubtitle = track.Type == AVMediaType.AVMEDIA_TYPE_SUBTITLE && track.Codec != "hdmv_pgs_subtitle",
             IsSelected = settings.StreamIndices.Contains(track.Index)
         }), video.ClipExtension == "mkv");
         await _dialogService.ShowDialogAsync(this, dialog);

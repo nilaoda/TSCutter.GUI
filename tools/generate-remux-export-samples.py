@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+from pgs_sample import write_pgs_sample
 
 
 def main():
@@ -102,6 +103,15 @@ def main():
            "-c", "copy", "-disposition:v:1", "attached_pic",
            "-metadata:s:a:0", "title=English", "-metadata:s:a:1", "title=Japanese",
            "-metadata:s:s:0", "title=简体中文字幕", root / "cover.mp4")
+    # 23.976 fps 的 MKV 在定位后可能缺少前三包 DTS；字幕回看恢复的 DTS 与推算值存在舍入差异。
+    ffmpeg("-f", "lavfi", "-i", "testsrc2=size=128x72:rate=24000/1001:duration=80",
+           "-i", root / "seek.ass", "-map", "0:v", "-map", "1:s", "-c:v", "libx265",
+           "-preset", "ultrafast", "-x265-params",
+           "pools=1:log-level=error:keyint=48:min-keyint=48:scenecut=0:open-gop=0:bframes=3:b-adapt=0",
+           "-c:s", "copy", root / "fractional-subtitles.mkv")
+    write_pgs_sample(root / "bitmap.sup")
+    ffmpeg("-copyts", "-i", root / "multi.mp4", "-i", root / "bitmap.sup",
+           "-map", "0:v:0", "-map", "0:a:0", "-map", "1:s:0", "-c", "copy", root / "bitmap.mkv")
     manifest.write_text(json.dumps({"formatVersion": 1}, indent=2) + "\n", encoding="utf-8")
     print(root)
 
