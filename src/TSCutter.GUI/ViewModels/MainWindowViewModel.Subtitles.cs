@@ -11,7 +11,7 @@ using TSCutter.GUI.Services.Preview;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Media;
 
-namespace TSCutter.GUI.ViewModels.Editing;
+namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel
 {

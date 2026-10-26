@@ -1,13 +1,13 @@
 using System.Reflection;
 using Avalonia;
 using Splat;
+using TSCutter.GUI.ViewModels;
 using Xunit;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Editing;
-using TSCutter.GUI.ViewModels.Editing;
 
 namespace TSCutter.GUI.Tests.Editing;
 

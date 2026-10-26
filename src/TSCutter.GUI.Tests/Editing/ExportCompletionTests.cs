@@ -12,6 +12,7 @@ using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Tests.UI;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Editing;
 
 namespace TSCutter.GUI.Tests.Editing;

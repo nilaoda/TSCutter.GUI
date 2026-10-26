@@ -5,13 +5,13 @@ using Avalonia.Media.Imaging;
 using System.Reflection;
 using Splat;
 using TSCutter.GUI.Controls;
+using TSCutter.GUI.ViewModels;
 using Xunit;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Services.Preview;
 using TSCutter.GUI.Tests.UI;
-using TSCutter.GUI.ViewModels.Editing;
 
 namespace TSCutter.GUI.Tests.Preview;
 

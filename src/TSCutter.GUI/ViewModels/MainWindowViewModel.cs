@@ -35,16 +35,15 @@ using TSCutter.GUI.Utils.Editing;
 using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.Utils.TransportStream.Packets;
-using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Application;
+using TSCutter.GUI.ViewModels.Editing;
 using TSCutter.GUI.ViewModels.FrameSearch;
 using TSCutter.GUI.ViewModels.Preview;
 using TSCutter.GUI.ViewModels.TransportStream.Analysis;
 using TSCutter.GUI.ViewModels.TransportStream.Processing;
 using TSCutter.GUI.ViewModels.TransportStream.Repair;
-using TSCutter.GUI.Views.Editing;
 
-namespace TSCutter.GUI.ViewModels.Editing;
+namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<PropertyChangedEventArgs>
 {

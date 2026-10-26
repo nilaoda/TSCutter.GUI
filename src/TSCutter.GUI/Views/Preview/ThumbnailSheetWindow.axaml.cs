@@ -4,7 +4,6 @@ using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using Classic.Avalonia.Theme;
 using TSCutter.GUI.ViewModels.Preview;
-using TSCutter.GUI.Views.Editing;
 
 namespace TSCutter.GUI.Views.Preview;
 

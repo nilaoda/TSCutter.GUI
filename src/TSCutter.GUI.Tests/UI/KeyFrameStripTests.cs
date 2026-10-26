@@ -9,6 +9,7 @@ using Classic.Avalonia.Theme;
 using TSCutter.GUI.Controls;
 using TSCutter.GUI.Services.Preview;
 using TSCutter.GUI.Themes;
+using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Preview;
 using Avalonia.VisualTree;
 using HanumanInstitute.MvvmDialogs;
@@ -19,8 +20,7 @@ using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.ViewModels.Application;
-using TSCutter.GUI.ViewModels.Editing;
-using TSCutter.GUI.Views.Editing;
+using TSCutter.GUI.Views;
 using Xunit;
 
 namespace TSCutter.GUI.Tests.UI;

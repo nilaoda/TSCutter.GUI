@@ -4,8 +4,9 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Utils.Editing;
+using TSCutter.GUI.ViewModels.Editing;
 
-namespace TSCutter.GUI.ViewModels.Editing;
+namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel
 {

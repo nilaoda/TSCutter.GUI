@@ -12,6 +12,7 @@ using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Tests.UI;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Editing;
 using TSCutter.GUI.Views.Editing;
 using Xunit;

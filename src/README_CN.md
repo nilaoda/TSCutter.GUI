@@ -20,12 +20,14 @@
 
 ## 功能分组
 
+`MainWindow` 直接放在 `Views` 根目录，`MainWindowViewModel` 及其分部文件直接放在 `ViewModels` 根目录，体现它们协调整个应用的职责。具体功能的窗口与流程仍放在对应功能目录。
+
 较大的分层目录内部按功能分组：
 
 | 分组 | 内容 |
 | --- | --- |
 | `Application` | 配置、语言、主题、关于与更新 |
-| `Editing` | 主编辑器、片段、工程、导出队列、剪辑与合并 |
+| `Editing` | 片段、工程、导出队列、剪辑与合并 |
 | `Preview` | 视频与字幕预览、关键帧总览、图集、截图和媒体信息 |
 | `FrameSearch` | 画面搜索、匹配及模板管理 |
 | `TransportStream/Analysis` | TS 检查、节目表解析、包查看及报告 |

@@ -17,10 +17,10 @@ using TSCutter.GUI.Rendering;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Themes;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Application;
-using TSCutter.GUI.ViewModels.Editing;
+using TSCutter.GUI.Views;
 using TSCutter.GUI.Views.Application;
-using TSCutter.GUI.Views.Editing;
 using Xunit;
 
 namespace TSCutter.GUI.Tests.UI;

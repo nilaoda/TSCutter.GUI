@@ -20,12 +20,14 @@ English | [简体中文](README_CN.md)
 
 ## Feature groups
 
+`MainWindow` lives directly in `Views`, and `MainWindowViewModel` and its partial files live directly in `ViewModels`, because they coordinate the application as a whole. Feature-specific windows and workflows stay in their feature directories.
+
 Larger layer directories are organized by feature:
 
 | Group | Contents |
 | --- | --- |
 | `Application` | Configuration, languages, themes, About, and updates |
-| `Editing` | Main editor, clips, projects, export queue, cutting, and merging |
+| `Editing` | Clips, projects, export queue, cutting, and merging |
 | `Preview` | Video and subtitle preview, keyframe overview, thumbnail sheets, screenshots, and media information |
 | `FrameSearch` | Frame searching, matching, and template management |
 | `TransportStream/Analysis` | TS inspection, program tables, packet viewing, and reports |

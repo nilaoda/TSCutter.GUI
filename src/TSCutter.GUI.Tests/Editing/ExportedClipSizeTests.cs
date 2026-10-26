@@ -3,6 +3,7 @@ using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.Avalonia;
 using Avalonia.Headless;
 using Splat;
+using TSCutter.GUI.ViewModels;
 using Xunit;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
@@ -11,7 +12,6 @@ using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Tests.UI;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
-using TSCutter.GUI.ViewModels.Editing;
 
 namespace TSCutter.GUI.Tests.Editing;
 

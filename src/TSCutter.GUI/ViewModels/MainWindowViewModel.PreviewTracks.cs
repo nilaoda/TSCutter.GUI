@@ -9,7 +9,7 @@ using CommunityToolkit.Mvvm.Messaging;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Utils.Application;
 
-namespace TSCutter.GUI.ViewModels.Editing;
+namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel
 {

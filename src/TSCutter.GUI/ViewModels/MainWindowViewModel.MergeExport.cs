@@ -11,8 +11,9 @@ using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.ViewModels.Editing;
 
-namespace TSCutter.GUI.ViewModels.Editing;
+namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel
 {

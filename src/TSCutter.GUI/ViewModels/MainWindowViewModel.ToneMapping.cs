@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Utils.Application;
 
-namespace TSCutter.GUI.ViewModels.Editing;
+namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel
 {

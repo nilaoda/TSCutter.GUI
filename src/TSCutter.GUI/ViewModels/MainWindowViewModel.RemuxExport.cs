@@ -7,8 +7,9 @@ using HanumanInstitute.MvvmDialogs;
 using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.ViewModels.Editing;
 
-namespace TSCutter.GUI.ViewModels.Editing;
+namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel
 {

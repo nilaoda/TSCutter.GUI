@@ -11,10 +11,10 @@ using TSCutter.GUI.Controls;
 using TSCutter.GUI.Themes;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
-using TSCutter.GUI.ViewModels.Editing;
+using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Preview;
 
-namespace TSCutter.GUI.Views.Editing;
+namespace TSCutter.GUI.Views;
 
 public partial class MainWindow : ClassicWindow
 {

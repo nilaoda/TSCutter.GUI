@@ -4,7 +4,7 @@ using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Preview;
 using TSCutter.GUI.ViewModels.Preview;
 
-namespace TSCutter.GUI.ViewModels.Editing;
+namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel
 {

@@ -11,7 +11,9 @@ using Splat;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Tests.UI;
+using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Editing;
+using TSCutter.GUI.Views;
 using TSCutter.GUI.Views.Editing;
 using Xunit;
 
