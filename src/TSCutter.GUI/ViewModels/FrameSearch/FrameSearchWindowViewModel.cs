@@ -30,6 +30,7 @@ public sealed partial class FrameSearchWindowViewModel : ViewModelBase, IModalDi
     public bool EnableSdrToneMapping { get; set; } = true;
 
     public PreviewStreamSelection? StreamSelection { get; set; }
+    public TSCutter.GUI.Models.Discs.DiscInput? Disc { get; set; }
 
     public event Action? RequestClose;
     public bool? DialogResult { get; private set; }
@@ -80,7 +81,7 @@ public sealed partial class FrameSearchWindowViewModel : ViewModelBase, IModalDi
             using var stream = new MemoryStream(Template!.Jpeg, writable: false);
             ReferenceImage = new Bitmap(stream);
             await service.SearchAsync(FilePath, Template!.Jpeg, StartTime, ReceiveMatchAsync,
-                PauseAfterMatchAsync, progress, cancellation.Token, StreamSelection, EnableSdrToneMapping);
+                PauseAfterMatchAsync, progress, cancellation.Token, StreamSelection, EnableSdrToneMapping, Disc);
             if (cancellation.IsCancellationRequested) return;
             StatusText = Matches.Count == 0
                 ? LocalizationManager.Instance.String_FrameSearch_NoResults

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""准备全部或指定组的合成测试素材；Windows、macOS、Linux 使用相同入口。"""
+"""准备常用或指定组的合成测试素材；ISO 组需显式指定，三平台使用相同入口。"""
 import argparse
 from pathlib import Path
 import shutil
@@ -11,19 +11,20 @@ GROUPS = {
     "keyframes": "generate-keyframe-test-samples.py",
     "remux": "generate-remux-export-samples.py",
     "subtitles": "generate-subtitle-preview-samples.py",
+    "iso": "generate-iso-test-samples.py",
 }
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--group", nargs="+", choices=GROUPS, default=list(GROUPS))
+    parser.add_argument("--group", nargs="+", choices=GROUPS, default=["keyframes", "remux", "subtitles"])
     parser.add_argument("--output-dir", type=Path,
                         default=Path(__file__).resolve().parents[1] / "artifacts/test-media")
     parser.add_argument("--ffmpeg", default="ffmpeg")
     parser.add_argument("--ffprobe", default="ffprobe")
     parser.add_argument("--font", type=Path, help="可选：字幕附件测试使用的 TTF/OTF 字体")
     args = parser.parse_args()
-    for executable in [args.ffmpeg] + ([args.ffprobe] if "keyframes" in args.group else []):
+    for executable in [args.ffmpeg] + ([args.ffprobe] if any(group in args.group for group in ("keyframes", "iso")) else []):
         if shutil.which(executable) is None:
             parser.error(f"找不到 {executable}；请将 FFmpeg CLI 加入 PATH，或使用 --ffmpeg/--ffprobe 指定程序。")
     encoders = subprocess.run([args.ffmpeg, "-hide_banner", "-encoders"], check=True,
@@ -33,6 +34,8 @@ def main():
         required.add("libx265")
     if "subtitles" in args.group:
         required.add("dvbsub")
+    if "iso" in args.group:
+        required.update(["mpeg2video", "mp2", "ac3"])
     missing = sorted(name for name in required if name not in encoders)
     if missing:
         parser.error("FFmpeg CLI 缺少编码器：" + ", ".join(missing))
@@ -40,7 +43,7 @@ def main():
     for group in dict.fromkeys(args.group):
         command = [sys.executable, str(scripts / GROUPS[group]), str(args.output_dir.resolve() / group),
                    "--ffmpeg", args.ffmpeg]
-        if group == "keyframes":
+        if group in ("keyframes", "iso"):
             command += ["--ffprobe", args.ffprobe]
         if group == "subtitles" and args.font:
             command += ["--font", str(args.font.resolve())]

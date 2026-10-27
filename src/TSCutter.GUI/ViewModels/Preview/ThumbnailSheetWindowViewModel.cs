@@ -578,6 +578,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
     public bool? DialogResult { get; private set; }
 
     public PreviewStreamSelection? StreamSelection { get; set; }
+    public TSCutter.GUI.Models.Discs.DiscInput? Disc { get; set; }
 
     public event Action? RequestClose;
 
@@ -612,7 +613,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
 
             StatusText = LocalizationManager.Instance.String_ThumbnailSheet_Status_LoadingInfo;
             info = await Task.Run(
-                () => ThumbnailSheetInfoBuilder.Build(filePath, StreamSelection),
+                () => ThumbnailSheetInfoBuilder.Build(filePath, StreamSelection, Disc, cts.Token),
                 cts.Token).ConfigureAwait(true);
             cts.Token.ThrowIfCancellationRequested();
 
@@ -624,7 +625,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
             }
 
             StatusText = LocalizationManager.Instance.String_ThumbnailSheet_Status_Opening;
-            await service.OpenAsync(filePath, cts.Token, StreamSelection, EnableSdrToneMapping).ConfigureAwait(true);
+            await service.OpenAsync(filePath, cts.Token, StreamSelection, EnableSdrToneMapping, Disc).ConfigureAwait(true);
             cts.Token.ThrowIfCancellationRequested();
 
             await RebuildAsync().ConfigureAwait(true);

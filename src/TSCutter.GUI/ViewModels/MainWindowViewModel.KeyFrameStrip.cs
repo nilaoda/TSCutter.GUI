@@ -61,7 +61,8 @@ public partial class MainWindowViewModel
     {
         if (!ShowKeyFrameStrip || !IsVideoInitialized || DurationMax <= 0)
             return;
-        KeyFrameStrip.SetSource(new KeyFrameStripSource(VideoPath, _activePreviewSelection, EnableSdrToneMapping));
+        KeyFrameStrip.SetSource(new KeyFrameStripSource(VideoPath, _activePreviewSelection,
+            EnableSdrToneMapping, _videoInstance?.Disc));
         KeyFrameStrip.RequestAt(time, immediate, currentPts);
     }
 

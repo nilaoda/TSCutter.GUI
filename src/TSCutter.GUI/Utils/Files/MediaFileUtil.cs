@@ -14,6 +14,21 @@ internal static class MediaFileUtil
     internal static bool PathsEqual(string first, string second) =>
         PathComparer.Equals(CanonicalPath(first), CanonicalPath(second));
 
+    // 光盘目录中的 VOB/M2TS/导航文件也属于源数据，不能作为其他队列项的输出。
+    internal static bool ConflictsWithSource(string output, string source) =>
+        PathsEqual(output, source) || Directory.Exists(source) && IsWithinDirectory(output, source);
+
+    internal static bool IsWithinDirectory(string path, string directory)
+    {
+        var root = Path.TrimEndingDirectorySeparator(CanonicalDirectory(Path.GetFullPath(directory)));
+        if (OperatingSystem.IsMacOS())
+            root = root.Normalize(NormalizationForm.FormC);
+        if (!Path.EndsInDirectorySeparator(root))
+            root += Path.DirectorySeparatorChar;
+        var target = CanonicalPath(path);
+        return target.Length > root.Length && PathComparer.Equals(target[..root.Length], root);
+    }
+
     internal static string CanonicalPath(string path)
     {
         var fullPath = Path.GetFullPath(path);

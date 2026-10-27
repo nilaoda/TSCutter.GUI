@@ -20,7 +20,9 @@ public partial class RemuxExportTrackChoice : ObservableObject
 
 public partial class RemuxExportOptionsViewModel : ViewModelBase, IModalDialogViewModel
 {
-    public IReadOnlyList<string> Containers { get; } = ["mp4", "mkv"];
+    public IReadOnlyList<string> Containers { get; private set; } = ["mp4", "mkv"];
+    public bool IsVobOutput => Container == "vob";
+    partial void OnContainerChanged(string value) => OnPropertyChanged(nameof(IsVobOutput));
     [ObservableProperty] private string _container = "mp4";
     [ObservableProperty] private bool _fastSubtitleSeek = true;
     public List<RemuxExportTrackChoice> Tracks { get; } = [];
@@ -29,6 +31,11 @@ public partial class RemuxExportOptionsViewModel : ViewModelBase, IModalDialogVi
 
     internal void Initialize(RemuxExportSettings settings, IEnumerable<RemuxExportTrackChoice> tracks, bool isMatroskaSource)
     {
+        if (settings.Disc is { } disc)
+        {
+            Containers = [disc.Kind == Models.Discs.DiscKind.Dvd ? "vob" : "m2ts", "mkv", "mp4"];
+            OnPropertyChanged(nameof(Containers));
+        }
         Container = settings.Container;
         FastSubtitleSeek = settings.FastSubtitleSeek;
         _isMatroskaSource = isMatroskaSource;

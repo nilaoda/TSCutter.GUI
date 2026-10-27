@@ -14,6 +14,7 @@ public sealed class MediaFileUtilTests
         var path = Path.Combine(root, "tscutter-" + Guid.NewGuid().ToString("N") + ".mp4");
         Assert.Equal(Path.GetFullPath(path), MediaFileUtil.CanonicalPath(path));
         Assert.Equal(Path.GetFullPath(root), MediaFileUtil.CanonicalPath(root));
+        Assert.True(MediaFileUtil.IsWithinDirectory(path, root));
     }
 
     [Fact]

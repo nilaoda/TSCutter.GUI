@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using TSCutter.GUI.Models.Discs;
 using FFmpeg.AutoGen.Abstractions;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Models.Preview;
@@ -16,11 +18,17 @@ namespace TSCutter.GUI.Utils.Media;
 /// </summary>
 public static class ThumbnailSheetInfoBuilder
 {
-    public static ThumbnailSheetInfo Build(string filePath, PreviewStreamSelection? streamSelection = null)
+    public static ThumbnailSheetInfo Build(string filePath, PreviewStreamSelection? streamSelection = null,
+        DiscInput? disc = null, CancellationToken cancellationToken = default)
     {
         var fi = new FileInfo(filePath);
-        using var fc = FormatContext.OpenInputUrl(filePath);
-        fc.LoadStreamInfo();
+        var deadline = new MediaReadDeadline(TimeSpan.FromSeconds(30), cancellationToken);
+        using var fc = disc is not null
+            ? InterruptibleInputFormatContext.Open(disc, () => deadline.ShouldInterrupt)
+            : InterruptibleInputFormatContext.Open(filePath, () => deadline.ShouldInterrupt);
+        try { fc.LoadStreamInfo(); }
+        catch { deadline.ThrowIfInterrupted(); throw; }
+        deadline.ThrowIfInterrupted();
 
         // MediaStream 是值类型，这里用索引标记是否找到，避免默认值带来的误判。
         var selectedVideo = streamSelection is null ? (MediaStream?)null : PreviewStreamUtil.ResolveVideo(fc, streamSelection);
@@ -50,11 +58,11 @@ public static class ThumbnailSheetInfoBuilder
 
         // 时长优先取视频流，回退到容器时长。部分异常 TS 缺少流时长，
         // 此时容器已估算的时长更可靠（与 VideoInstance.ResolveTimelineDuration 的策略一致）。
-        var duration = ResolveDuration(hasVideo ? videoStream : default, hasVideo, fc.Duration);
+        var duration = disc?.Duration ?? ResolveDuration(hasVideo ? videoStream : default, hasVideo, fc.Duration);
         var videoBitRate = hasVideo ? videoStream.Codecpar!.BitRate : 0;
         var videoBitRateEstimated = false;
         // 多节目或多视频流无法可靠地将容器总码率归属于当前视频。
-        if (hasVideo && videoBitRate <= 0 && fc.BitRate > 0 && fc.Programs.Count <= 1 &&
+        if (disc is null && hasVideo && videoBitRate <= 0 && fc.BitRate > 0 && fc.Programs.Count <= 1 &&
             fc.Streams.Count(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_VIDEO &&
                                       !stream.IsAttachedPicture) == 1)
         {
@@ -117,10 +125,12 @@ public static class ThumbnailSheetInfoBuilder
         return new ThumbnailSheetInfo
         {
             FileName = fi.Name,
-            Format = fc.InputFormat?.Name ?? string.Empty,
-            FileSize = fi.Exists ? fi.Length : 0,
+            Format = disc is not null ? disc.Kind == DiscKind.Dvd ? "DVD-Video" : "Blu-ray"
+                : fc.InputFormat?.Name ?? string.Empty,
+            // 镜像大小和底层容器码率不代表当前标题；目录也没有单一文件大小。
+            FileSize = disc is null && fi.Exists ? fi.Length : 0,
             Duration = duration,
-            OverallBitRate = fc.BitRate > 0 ? fc.BitRate : 0,
+            OverallBitRate = disc is null && fc.BitRate > 0 ? fc.BitRate : 0,
             VideoCodec = hasVideo ? videoStream.Codecpar!.CodecName : null,
             VideoWidth = hasVideo ? videoStream.Codecpar!.Width : 0,
             VideoHeight = hasVideo ? videoStream.Codecpar!.Height : 0,

@@ -70,6 +70,57 @@ The script uses only the Python standard library. Run its focused checks with:
 python3 -m unittest discover -s tools -p 'test_*.py'
 ```
 
+## Disc image (ISO) test media
+
+`generate-iso-test-samples.py` builds two synthetic disc images under
+`artifacts/test-media/iso/` (Git-ignored):
+
+* `bluray.iso` — a hand-authored BDMV structure (INDEX/MovieObject/MPLS/CLPI with
+  real EP maps) plus four H.264 AC-3 M2TS clips. Titles cover a single-clip
+  title, a 200 s multi-clip title (non-zero in-points, truncated out-points,
+  clip order different from file order, the same clip referenced twice, a +300 s
+  PTS base jump and variable bitrate), a PGS-subtitle title, and a 60 s title
+  repeating the same PGS clip three times, plus a short playlist cut during
+  subtitle display. Chapter marks cover PlayItem starts; an additional playlist
+  enters a clip inside a GOP to verify that unsafe lossless joins are rejected.
+* `dvd.iso` — dvdauthor-authored VIDEO_TS (two titles, one spanning three cells and two actual VOB files) with B frames, short GOPs and real VOB subpicture (SPU) streams, PGC palette and display/clear
+  timings produced by `spumux`.
+
+The matching `dvd/` and `bluray/` folders are retained alongside the images for
+folder-input tests, including opening `VIDEO_TS` or `BDMV` directly.
+
+Both images are built as ISO9660 + UDF hybrids: libdvdread's image path and
+libbluray's udfread both read files through UDF.
+
+### Requirements
+
+| Component | Purpose | macOS | Debian/Ubuntu | Windows |
+| --- | --- | --- | --- | --- |
+| FFmpeg CLI with `libass`, `libx264`, `ac3`, `mpeg2video`, `mp2` | render text and encode clips | `brew install ffmpeg` | `apt install ffmpeg` | MSYS2 / gyan.dev build |
+| `dvdauthor` (provides `spumux`) | author DVD-Video + VOB subtitles | `brew install dvdauthor` | `apt install dvdauthor` | MSYS2 / cygwin package |
+| `mkisofs` (cdrtools) or `genisoimage` (cdrkit) with `-udf` | build the ISO images | `brew install cdrtools` | `apt install genisoimage` | cdrtools for Windows |
+
+Use `mkisofs` or `genisoimage` for the tested ISO9660/UDF layout. This generator
+does not validate `hdiutil` output, and `xorriso` does not write UDF.
+
+The C# integration tests additionally need a compatible disc-enabled FFmpeg
+runtime. The runtime build statically embeds libbluray 1.5+, libudfread,
+libdvdread, libdvdnav and libdvdcss in avformat, which exports the APIs used by the GUI;
+no separate disc shared libraries are needed. A development runtime may also
+provide matching standalone libraries. Missing capabilities cause an explicit
+skip; present but incompatible libraries fail rather than silently skipping.
+
+### Command
+
+```sh
+python3 tools/prepare-test-media.py --group iso --ffmpeg ffmpeg --ffprobe ffprobe
+dotnet test src/TSCutter.GUI.Tests -c Debug
+```
+
+`--skip-bluray` / `--skip-dvd` limit generation to one image. The generator wipes
+its own `work/` directory before regenerating, so repeated runs never accumulate
+extra dvdauthor title sets.
+
 ## Running tests
 
 Windows, macOS and Linux use the same setup. With .NET 10 installed, run ordinary

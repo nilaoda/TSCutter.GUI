@@ -8,6 +8,7 @@ using Avalonia.Media.Imaging;
 using FFmpeg.AutoGen.Abstractions;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Extensions;
+using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Rendering;
 using static TSCutter.GUI.Utils.CommonUtil;
 using TSCutter.GUI.Models.Application;
@@ -23,7 +24,8 @@ namespace TSCutter.GUI.Models.Preview;
 
 public partial class VideoInstance(string filePath, bool enableHardwareDecoding = false,
     PreviewStreamSelection? streamSelection = null, Func<bool>? enableSdrToneMapping = null,
-    bool retainPreviewFrame = false, bool probeHardwareDecoding = false) : IDisposable
+    bool retainPreviewFrame = false, bool probeHardwareDecoding = false,
+    DiscInput? discInput = null) : IDisposable
 {
     private static readonly HashSet<string> HardwareTags = new() 
     { 
@@ -55,6 +57,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     public IReadOnlyList<PreviewProgramOption> PreviewPrograms { get; private set; } = [];
     public PreviewStreamSelection? StreamSelection { get; private set; }
     public IReadOnlyList<PreviewSubtitleTrackOption> PreviewSubtitleTracks { get; private set; } = [];
+    internal int AudioTrackCount => inFc.Streams.Count(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO);
     internal double TimelineOriginSeconds => firstFrameTimestamp * timeBase.num / (double)timeBase.den;
     internal Avalonia.PixelSize CodedVideoSize => new(inVideoStream.Codecpar!.Width, inVideoStream.Codecpar.Height);
     public int ProgramCount { get; private set; }
@@ -62,14 +65,16 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     internal TsPacketLayout PacketLayout { get; private set; }
     public bool CanRemuxClip { get; private set; }
     public bool CanClip => CanBinaryClip || CanRemuxClip;
-    internal string ClipExtension => CanRemuxClip
-        ? inFc.InputFormat!.Name.Split(',').Contains("mov") ? "mp4" : "mkv"
+    internal string ClipExtension => Disc is { } disc
+        ? disc.Kind == DiscKind.Dvd ? "vob" : "m2ts"
+        : CanRemuxClip ? inFc.InputFormat!.Name.Split(',').Contains("mov") ? "mp4" : "mkv"
         : PacketLayout.Extension;
     internal IReadOnlyList<RemuxExportTrack> ExportTracks { get; private set; } = [];
     internal RemuxExportSettings CreateExportSettings() => new()
     {
         Container = ClipExtension, ReferenceVideoIndex = videoStreamIndex,
         TimelineOriginSeconds = firstFrameTimestamp * timeBase.num / (double)timeBase.den,
+        Disc = Disc,
         StreamIndices = inFc.Streams.Where(stream => stream.Codecpar?.CodecType is
             AVMediaType.AVMEDIA_TYPE_VIDEO or AVMediaType.AVMEDIA_TYPE_AUDIO or
             AVMediaType.AVMEDIA_TYPE_SUBTITLE or AVMediaType.AVMEDIA_TYPE_ATTACHMENT).Select(stream => stream.Index).ToList()
@@ -110,6 +115,9 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     private bool isSearchScan;
     
     private readonly string videoPath = filePath;
+    public DiscInput? Disc { get; } = discInput;
+    private readonly DiscTimeline? discTimeline = discInput?.Kind == DiscKind.BluRay
+        ? discInput.CreateTimeline() : null;
 
     public async Task InitVideoAsync(CancellationToken cancellationToken = default)
     {
@@ -130,7 +138,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     private void InitVideoCore(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var probedBeforeOpening = TsScramblingProbe.ShouldProbeBeforeOpening(videoPath);
+        var probedBeforeOpening = Disc is null && TsScramblingProbe.ShouldProbeBeforeOpening(videoPath);
         var tsProbe = probedBeforeOpening ? TsScramblingProbe.Probe(videoPath, cancellationToken) : default;
         if (tsProbe.Layout.PacketSize != 0)
             tsProbe.Layout.RequireSupported();
@@ -141,8 +149,10 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         {
             RunReadOperation(() =>
             {
-                inFc = InterruptibleInputFormatContext.Open(videoPath,
-                    () => activeReadDeadline?.ShouldInterrupt == true, syncOffset);
+                inFc = Disc is { } disc
+                    ? InterruptibleInputFormatContext.Open(disc, () => activeReadDeadline?.ShouldInterrupt == true)
+                    : InterruptibleInputFormatContext.Open(videoPath,
+                        () => activeReadDeadline?.ShouldInterrupt == true, syncOffset);
                 inFc.LoadStreamInfo();
                 activeReadDeadline!.ThrowIfInterrupted();
                 return true;
@@ -157,7 +167,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         {
             OpenInput(tsProbe.IsSupportedTransportStream && tsProbe.Layout.PacketOffset > 0 ? tsProbe.Layout.PacketOffset : -1);
         }
-        catch (Exception exception) when (!probedBeforeOpening &&
+        catch (Exception exception) when (!probedBeforeOpening && Disc is null &&
             exception is FFmpegException or NoVideoStreamException)
         {
             // 普通容器不额外扫描。自动探测失败时才检查其他后缀的损坏 TS。
@@ -173,14 +183,14 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             OpenInput(tsProbe.Layout.PacketOffset);
         }
 
-        var isMpegTs = inFc.InputFormat?.Name == "mpegts";
+        var isMpegTs = Disc is null && inFc.InputFormat?.Name == "mpegts";
         // 其他后缀在解复用器确认 TS 后再探测，避免误扫普通容器中的 TS 相似数据。
         if (isMpegTs && !probedBeforeOpening)
             tsProbe = TsScramblingProbe.Probe(videoPath, cancellationToken);
         if (isMpegTs && tsProbe.HasScrambledPayload)
             throw new ScrambledTsException();
         CanBinaryClip = isMpegTs && tsProbe.IsSupportedTransportStream;
-        CanRemuxClip = Services.Editing.RemuxExportService.IsSupportedInput(inFc.InputFormat?.Name);
+        CanRemuxClip = Disc is not null || Services.Editing.RemuxExportService.IsSupportedInput(inFc.InputFormat?.Name);
         if (CanRemuxClip) ExportTracks = Services.Editing.RemuxExportService.DescribeTracks(inFc);
         PacketLayout = tsProbe.Layout;
         if (isMpegTs)
@@ -238,7 +248,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             + gpuFramePresenter.Value.Capabilities.UnavailableReason);
 
         var (firstPts, gap) = ReadKeyFramePacketPts(cancellationToken);
-        firstFrameTimestamp = firstPts;
+        firstFrameTimestamp = discTimeline is null ? firstPts : 0;
         var isFlv = inFc.InputFormat?.Name is "flv" or "live_flv";
         if (isFlv && inVideoStream.Duration <= 0)
         {
@@ -449,6 +459,19 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         }, cancellationToken), cancellationToken);
     }
 
+    // 同步解码入口：供测试与 headless 场景使用，避免后台线程与 UI 线程互相等待。
+    internal static DecodeResult DecodeAtTimeSync(VideoInstance video, TimeSpan timeSpan,
+        CancellationToken cancellationToken = default) =>
+        video.RunReadOperation(() =>
+        {
+            video.SeekToTime(timeSpan);
+            return video.DecodeNextFrame(1, cancellationToken, 0, 0, isNavigation: false);
+        }, cancellationToken);
+
+    internal DecodeResult DecodeNextFrameSync(int count, CancellationToken cancellationToken = default) =>
+        RunReadOperation(() => DecodeNextFrame(count, cancellationToken, 0, 0, isNavigation: true),
+            cancellationToken);
+
     // 缩略图保留了原始 PTS，点击时不再经过秒数和 TimeSpan 的往返换算。
     internal Task<DecodeResult?> DecodeKeyFrameAtPtsAsync(long targetPts, CancellationToken cancellationToken = default) =>
         Task.Run(() => RunReadOperation(() => DecodeKeyFrameAtPts(targetPts, cancellationToken),
@@ -527,6 +550,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 flag = AVSEEK_FLAG.Backward;
             Console.WriteLine($"lastSeekPts: {lastSeekPts}, targetPts: {pts}, flag: {flag}");
             lastSeekPts = pts;
+            if (Disc is not null)
+                pts = Math.Max(0, pts);
             inFc.SeekFrame(pts, videoStreamIndex, flag);
             activeReadDeadline!.ThrowIfInterrupted();
             videoDecoder.FlushBuffers();
@@ -1007,16 +1032,38 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         return entries;
     }
 
-    public string GetVideoInfoText()
+    public string GetDiscMediaInfoText(DiscTitleInfo? title = null)
+    {
+        lock (decoderSync)
+        {
+            ObjectDisposedException.ThrowIf(closed, this);
+            if (!Inited || Disc is null)
+                throw new InvalidOperationException("No disc title is open.");
+            // 只格式化现有的轨道与章节元数据，不定位、不重新探测，也不读取视频包。
+            return MediaInfoBuilder.BuildDisc(inFc, Disc, title);
+        }
+    }
+
+    public string GetVideoInfoText(bool includeFileSize = true)
     {
         var width = inVideoStream.Codecpar!.Width;
         var height = inVideoStream.Codecpar.Height;
+        if (!includeFileSize || Disc is not null)
+            return $"{inVideoStream.Codecpar.CodecName}, {width}x{height}, {FormatSeconds(timelineDurationSeconds)}";
         var fileSize = inFc.GetFileSize();
         return $"{inVideoStream.Codecpar.CodecName}, {width}x{height}, {FormatSeconds(timelineDurationSeconds)}, {FormatFileSize(fileSize)}";
     }
 
     private void UpdateTimelineDuration()
     {
+        // 光盘时长来自所选标题的导航结构，避免容器估算或损坏的 PGC 汇总值影响范围。
+        if (Disc is { } discTitle)
+        {
+            timelineDurationSeconds = discTitle.Duration.TotalSeconds;
+            timelineDurationPts = (long)Math.Round(timelineDurationSeconds * timeBase.den / timeBase.num);
+            return;
+        }
+
         (timelineDurationSeconds, timelineDurationPts) = ResolveTimelineDuration(
             inVideoStream.Duration,
             timeBase.num,
@@ -1189,6 +1236,20 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         return (long)(timeSpan.TotalSeconds * t) + firstFrameTimestamp;
     }
 
+    private bool IsFrameInDiscTitle(long pts, long packetPosition)
+    {
+        if (discTimeline is null)
+            return true;
+        var ticks = (long)Math.Round(pts * (double)timeBase.num * 90_000 / timeBase.den);
+        // MPLS 使用 [入点, 出点) 区间，PTS 等于出点的画面已在标题之外。
+        // B 帧重排不改变显示时间语义，不能把越界画面 clamp 成标题内的最后一帧。
+        if (ticks < 0 || ticks >= Disc!.Duration.TotalSeconds * 90_000)
+            return false;
+        var segment = discTimeline.FindByByte(packetPosition);
+        return segment is null || (ticks >= segment.RelativeStart90k &&
+            ticks < segment.RelativeStart90k + segment.OutPts90k - segment.InPts90k);
+    }
+
     internal TimeSpan PtsToTimeSpan(long pts)
     {
         var t = (double)timeBase.den / timeBase.num;
@@ -1270,10 +1331,12 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 if (!AudioMode && pts < 0)
                     pts = frame.BestEffortTimestamp;
                 
+                var pktPosition = frame.PacketPosition;
+                if (!IsFrameInDiscTitle(pts, pktPosition))
+                    continue;
                 currentKeyFramePts = pts;
                 if (!isSearchScan)
                     Console.WriteLine($"Current keyFrame: {pts}");
-                var pktPosition = frame.PacketPosition;
                 // 延迟输出的帧不一定属于本次输入包；来源未知时保留 -1，避免剪错位置。
                 
                 PositionInFile = CanBinaryClip && PacketLayout.IsM2ts && pktPosition >= 0 ? PacketLayout.AlignPosition(pktPosition) : pktPosition;

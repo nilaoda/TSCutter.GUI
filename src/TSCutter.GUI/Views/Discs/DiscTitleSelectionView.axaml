@@ -1,0 +1,37 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TSCutter.GUI.ViewModels.Discs"
+        x:Class="TSCutter.GUI.Views.Discs.DiscTitleSelectionView"
+        x:DataType="vm:DiscTitleSelectionViewModel"
+        Width="560" SizeToContent="Height" CanResize="False"
+        CanMinimize="False" CanMaximize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" Title="{DynamicResource String.Disc.TitleSelection}">
+    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="12">
+        <TextBlock Text="{Binding Heading}" FontWeight="Bold" TextWrapping="Wrap" />
+        <StackPanel Grid.Row="1" Spacing="4">
+            <TextBlock Text="{DynamicResource String.Disc.SelectionHint}" Opacity="0.7" TextWrapping="Wrap" />
+        </StackPanel>
+        <ListBox Grid.Row="2" ItemsSource="{Binding Titles}" MaxHeight="288" MinHeight="96"
+                 SelectedItem="{Binding SelectedRow, Mode=TwoWay}">
+            <ListBox.ItemTemplate>
+                <DataTemplate x:DataType="vm:DiscTitleRow">
+                    <Grid ColumnDefinitions="120,88,*,72" ColumnSpacing="12" Margin="2,3">
+                        <TextBlock Text="{Binding NumberText}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                        <TextBlock Grid.Column="1" Text="{Binding DurationText}" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="{Binding DetailText}" VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DetailText}" />
+                        <TextBlock Grid.Column="3" Text="{Binding RecommendedText}" VerticalAlignment="Center"
+                                   FontStyle="Italic" TextAlignment="Right" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <StackPanel Grid.Row="3" Spacing="8">
+            <TextBlock Text="{DynamicResource String.Disc.ProjectNotice}" TextWrapping="Wrap" Opacity="0.7" />
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="{DynamicResource String.Ok}" Command="{Binding ConfirmCommand}" MinWidth="80" IsDefault="True" />
+                <Button Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}" MinWidth="80" IsCancel="True" />
+            </StackPanel>
+        </StackPanel>
+    </Grid>
+</Window>

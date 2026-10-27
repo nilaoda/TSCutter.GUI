@@ -436,6 +436,91 @@ public sealed class PreviewOptionsTests
         }, CancellationToken.None);
     }
 
+    [TSCutter.GUI.Tests.Discs.DiscMediaFact]
+    public async Task DiscFolderEnablesMarkingAndExportWithTheNativeContainerByDefault()
+    {
+        var path = Path.Combine(TSCutter.GUI.Tests.FFmpeg.NativeTestEnvironment.FixtureDirectory("iso"), "dvd");
+        var scan = await TSCutter.GUI.Services.Discs.DiscScanService.ScanAsync(path, CancellationToken.None);
+        var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        try
+        {
+            await session.Dispatch(async () =>
+            {
+                using var resolver = new ModernDependencyResolver();
+                using var scope = resolver.WithResolver();
+                Locator.CurrentMutable.RegisterConstant<ILocalizationService>(new LocalizationService());
+                var vm = new MainWindowViewModel(
+                    new DialogService(DispatchProxy.Create<IDialogManager, UnusedDialogs>()), new MemoryConfiguration());
+                var input = scan.Inputs[1];
+                var video = new VideoInstance(input.SourcePath, discInput: input);
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                try
+                {
+                    video.InitVideo();
+                    vm.VideoPath = input.SourcePath;
+                    vm.DurationMax = video.GetVideoDurationInSeconds();
+                    typeof(MainWindowViewModel).GetField("_videoInstance", flags)!.SetValue(vm, video);
+                    typeof(MainWindowViewModel).GetField("_discInput", flags)!.SetValue(vm, input);
+                    var apply = typeof(MainWindowViewModel).GetMethod("ApplyDecodeResult", flags)!;
+                    apply.Invoke(vm, [VideoInstance.DecodeAtTimeSync(video, TimeSpan.FromSeconds(3))]);
+                    Assert.True(vm.AddClipCommand.CanExecute(null));
+                    vm.AddClipCommand.Execute(null);
+                    var clip = Assert.Single(vm.Clips);
+                    Assert.True(clip.RequiresRemux);
+                    apply.Invoke(vm, [VideoInstance.DecodeAtTimeSync(video, TimeSpan.FromSeconds(6))]);
+                    await vm.MarkClipEndCommand.ExecuteAsync(null);
+                    Assert.True(clip.EndTime > clip.StartTime);
+                    Assert.True(vm.SaveVideoClickCommand.CanExecute(null));
+                    Assert.True(vm.ExportAllCommand.CanExecute(null));
+                    Assert.True(vm.AddToQueueCommand.CanExecute(null));
+                    Assert.True(vm.RemuxExportOptionsCommand.CanExecute(null));
+                    Assert.False(vm.SaveProjectCommand.CanExecute(null));
+                    var settings = video.CreateExportSettings();
+                    Assert.Equal("vob", settings.Container);
+                    Assert.Same(input, settings.Snapshot().Disc);
+                    apply.Invoke(vm, [VideoInstance.DecodeAtTimeSync(video, TimeSpan.FromSeconds(12))]);
+                    vm.AddClipCommand.Execute(null);
+                    vm.SelectAllClipsCommand.Execute(null);
+                    Assert.True(vm.MergeSelectedClipsCommand.CanExecute(null));
+                    // 换到无法读取的光盘后，保留的普通文件队列仍应允许保存工程。
+                    vm.ExportQueue.Add(new TSCutter.GUI.Models.Editing.ExportQueueItem
+                    {
+                        SourceFilePath = "queued.mp4", OutputFilePath = "queued-cut.mp4"
+                    });
+                    vm.VideoPath = Path.Combine(Path.GetTempPath(), $"missing-{Guid.NewGuid():N}.iso");
+                    typeof(MainWindowViewModel).GetField("_discInput", flags)!.SetValue(vm,
+                        input with { SourcePath = vm.VideoPath });
+                    typeof(MainWindowViewModel).GetField("_discTitleInfo", flags)!.SetValue(vm, scan.Titles[1]);
+                    var load = typeof(MainWindowViewModel).GetMethod("LoadVideoAsync", flags)!;
+                    Assert.False(await (Task<bool>)load.Invoke(vm, [null])!);
+                    Assert.Null(typeof(MainWindowViewModel).GetField("_discInput", flags)!.GetValue(vm));
+                    Assert.Null(typeof(MainWindowViewModel).GetField("_discTitleInfo", flags)!.GetValue(vm));
+                    Assert.True(vm.SaveProjectCommand.CanExecute(null));
+                    var output = new TSCutter.GUI.ViewModels.Editing.OutputWindowViewModel();
+                    var protectedPath = Path.Combine(input.SourcePath, "VIDEO_TS", "VTS_01_1.VOB");
+                    output.SetBatchTasks([
+                        new("queued.mp4", protectedPath, 0, -1, RemuxSettings: new() { Container = "mp4" }),
+                        new(input.SourcePath, protectedPath, 0, -1, RemuxSettings: settings)
+                    ]);
+                    await output.OutputCommand.ExecuteAsync(null);
+                    Assert.Equal(TSCutter.GUI.Models.Editing.RemuxExportError.SameFile,
+                        Assert.IsType<TSCutter.GUI.Models.Editing.RemuxExportException>(output.Exception).Code);
+                    Assert.Equal(2, output.FailedTaskIndices.Count);
+                }
+                finally
+                {
+                    vm.Close();
+                    video.Dispose();
+                }
+                return true;
+            }, CancellationToken.None).ConfigureAwait(false);
+        }
+        finally
+        {
+            await Task.Run(session.Dispose).ConfigureAwait(false);
+        }
+    }
+
     private static void PublishFrame(MainWindowViewModel vm, VideoDynamicRange range) =>
         typeof(MainWindowViewModel).GetMethod("ApplyDecodeResult", BindingFlags.Instance | BindingFlags.NonPublic)!
             .Invoke(vm, [new DecodeResult { VideoDynamicRange = range }]);

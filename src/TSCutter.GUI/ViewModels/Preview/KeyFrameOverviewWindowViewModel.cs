@@ -62,6 +62,7 @@ public sealed partial class KeyFrameOverviewWindowViewModel : ViewModelBase,
     }
 
     public PreviewStreamSelection? StreamSelection { get; set; }
+    public TSCutter.GUI.Models.Discs.DiscInput? Disc { get; set; }
 
     public event EventHandler? RequestClose;
 
@@ -106,7 +107,7 @@ public sealed partial class KeyFrameOverviewWindowViewModel : ViewModelBase,
         {
             keyFrames = await service.OpenAsync(
                 FilePath,
-                cancellation.Token, StreamSelection, EnableSdrToneMapping).ConfigureAwait(true);
+                cancellation.Token, StreamSelection, EnableSdrToneMapping, Disc).ConfigureAwait(true);
             RebuildTiles();
             worker = ProcessQueueAsync(cancellation.Token);
             StatusText = string.Format(

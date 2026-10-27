@@ -1203,7 +1203,7 @@
     <x:String x:Key="String.Settings.OutputTemplateHint">{source}：源文件名；{name}：片段名；{index}：三位序号；{start}/{end}：起止时间。名称为空时使用 clip001。扩展名自动添加。</x:String>
     <x:String x:Key="String.Settings.OutputTemplatePreview">文件名预览</x:String>
     <x:String x:Key="String.Settings.OutputTemplateInvalid">请填写不超过 240 字符的模板，并使用支持的占位符。</x:String>
-    <x:String x:Key="String.RemuxExport.Options">MP4 / MKV 导出设置</x:String>
+    <x:String x:Key="String.RemuxExport.Options">导出设置</x:String>
     <x:String x:Key="String.RemuxExport.Container">输出封装</x:String>
     <x:String x:Key="String.RemuxExport.Tracks">保留轨道</x:String>
     <x:String x:Key="String.RemuxExport.TrackHint">保持原顺序 · 当前视频必选</x:String>
@@ -1213,7 +1213,7 @@
     <x:String x:Key="String.RemuxExport.BoundaryHint">音视频不重新编码；视频按关键帧剪辑。</x:String>
     <x:String x:Key="String.RemuxExport.Files">MP4 / MKV 文件</x:String>
     <x:String x:Key="String.RemuxExport.Error.Container">请为所有片段选择相同的输出封装，并使用对应的文件扩展名。</x:String>
-    <x:String x:Key="String.RemuxExport.Error.Track">所选封装无法保留该轨道，或无法安全剪辑。请选择兼容封装或取消保留该轨道。暂不支持位图字幕的压缩包复制剪辑。</x:String>
+    <x:String x:Key="String.RemuxExport.Error.Track">所选封装无法保留该轨道，或无法安全剪辑。请选择兼容封装或取消保留该轨道。</x:String>
     <x:String x:Key="String.RemuxExport.Error.Compatibility">所选轨道不兼容，无法无损合并。请确认编码及配置、音视频参数、HDR 数据、轨道顺序、语言、名称和标记一致。</x:String>
     <x:String x:Key="String.RemuxExport.Error.Boundary">无法对齐到兼容的视频关键帧。请更换剪切位置，或仅保留当前预览的视频轨道。</x:String>
     <x:String x:Key="String.RemuxExport.Error.Timestamp">无法安全保留所选区间或数据包的时间戳，已停止导出。</x:String>
@@ -1234,4 +1234,28 @@
     <x:String x:Key="String.SubtitlePreview.Invalid">字幕数据不完整或无效。</x:String>
     <x:String x:Key="String.SubtitlePreview.Limit">该字幕轨道过大，无法建立预览缓存，请选择其他轨道。</x:String>
     <x:String x:Key="String.Clips.Merged">已合并导出</x:String>
+    <x:String x:Key="String.Disc.ExportFiles">光盘视频文件</x:String>
+    <x:String x:Key="String.Disc.VobExportNotice">VOB 可保存视频、音频和图形字幕，但字幕调色板保存在 DVD 的 IFO 中。如需在单个文件中保留字幕颜色，请选择 MKV。</x:String>
+    <x:String x:Key="String.Disc.OpenFolder">打开光盘文件夹(_F)...</x:String>
+    <x:String x:Key="String.Disc.Scanning">正在读取光盘标题…</x:String>
+    <x:String x:Key="String.Disc.TitleSelection">选择光盘标题</x:String>
+    <x:String x:Key="String.Disc.TitleSelectionHeading">已识别 {0} 来源：{1}，请选择要打开的标题。</x:String>
+    <x:String x:Key="String.Disc.SelectionHint">每行为一个可播放标题（蓝光播放列表或 DVD 标题），已推荐时长最长的正片。</x:String>
+    <x:String x:Key="String.Disc.ProjectNotice">光盘来源暂不支持保存到工程文件。</x:String>
+    <x:String x:Key="String.Disc.Recommended">正片</x:String>
+    <x:String x:Key="String.Disc.Chapters">{0} 章节</x:String>
+    <x:String x:Key="String.Disc.Angles">{0} 角度</x:String>
+    <x:String x:Key="String.Disc.Clips">{0} 片段</x:String>
+    <x:String x:Key="String.Disc.AudioLanguages">音频：{0}</x:String>
+    <x:String x:Key="String.Disc.SubtitleLanguages">字幕：{0}</x:String>
+    <x:String x:Key="String.Disc.ProtectedError">无法读取受保护的光盘：{0}</x:String>
+    <x:String x:Key="String.Disc.RuntimeMissing">当前 FFmpeg 运行库缺少兼容的光盘输入能力。请使用内置 libbluray 1.5 及以上版本和 DVD 输入库的运行库。</x:String>
+    <x:String x:Key="String.Disc.StructureError">光盘结构无法读取或暂不支持：{0}</x:String>
+    <x:String x:Key="String.Disc.NotDiscError">无法识别为 DVD/蓝光视频光盘（来源可能损坏或缺少光盘结构）：{0}</x:String>
+    <x:String x:Key="String.Disc.ExportBoundary">播放列表在以下时间点从 GOP 中间接入另一片段，无法直接无损拼接。请将导出范围限制在此时间点的一侧。</x:String>
+    <x:String x:Key="String.Disc.OpenFailed">打开光盘标题失败：{0}</x:String>
+    <x:String x:Key="String.Disc.ProjectUnsupported">光盘来源暂不支持保存工程文件。</x:String>
+    <x:String x:Key="String.Disc.KindBluRay">蓝光</x:String>
+    <x:String x:Key="String.Disc.KindDvd">DVD</x:String>
+    <x:String x:Key="String.Disc.InfoText">{0} 标题 {1} · {2}</x:String>
 </ResourceDictionary>

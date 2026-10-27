@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
 using FFmpeg.AutoGen.Abstractions;
+using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Utils.Application;
 
 namespace TSCutter.GUI.Models.Editing;
@@ -14,16 +15,21 @@ public sealed class RemuxExportSettings
     public double TimelineOriginSeconds { get; set; }
     public List<int> StreamIndices { get; set; } = [];
     public bool FastSubtitleSeek { get; set; } = true;
+    // 光盘标题随导出任务快照保留；光盘来源仍不写入工程文件。
+    [JsonIgnore]
+    public DiscInput? Disc { get; set; }
 
     public RemuxExportSettings Snapshot() => new()
     {
         Container = Container, ReferenceVideoIndex = ReferenceVideoIndex,
         TimelineOriginSeconds = TimelineOriginSeconds, StreamIndices = [.. StreamIndices],
-        FastSubtitleSeek = FastSubtitleSeek
+        FastSubtitleSeek = FastSubtitleSeek, Disc = Disc
     };
 
     [JsonIgnore]
-    public bool IsValid => Container is "mp4" or "mkv" && ReferenceVideoIndex >= 0 &&
+    public bool IsValid => (Container is "mp4" or "mkv" ||
+        Disc is { Kind: DiscKind.Dvd } && Container == "vob" ||
+        Disc is { Kind: DiscKind.BluRay } && Container == "m2ts") && ReferenceVideoIndex >= 0 &&
         double.IsFinite(TimelineOriginSeconds) && StreamIndices is { Count: > 0 and <= 256 } &&
         StreamIndices.TrueForAll(index => index >= 0) &&
         new HashSet<int>(StreamIndices).Count == StreamIndices.Count && StreamIndices.Contains(ReferenceVideoIndex);
@@ -61,7 +67,7 @@ internal sealed record RemuxExportTrack(int Index, string Codec, AVMediaType Typ
 internal enum RemuxExportError
 {
     InvalidRequest, SameFile, UnsupportedContainer, UnsupportedTrack, IncompatibleStreams,
-    InvalidBoundary, UnsafeGop, SubtitleTiming, MissingTimestamp, NonMonotonicTimestamp, SourceChanged, NoPackets
+    InvalidBoundary, UnsafeGop, UnsafeDiscBoundary, SubtitleTiming, MissingTimestamp, NonMonotonicTimestamp, SourceChanged, NoPackets
 }
 
 internal sealed class RemuxExportException(RemuxExportError code, string detail = "") : Exception(detail)

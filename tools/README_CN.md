@@ -56,6 +56,49 @@ python3 tools/generate_third_party_notices.py --output artifact/THIRD_PARTY_NOTI
 python3 -m unittest discover -s tools -p 'test_*.py'
 ```
 
+## 光盘镜像（ISO）测试素材
+
+`generate-iso-test-samples.py` 在 `artifacts/test-media/iso/`（已被 Git 忽略）下生成两个合成镜像：
+
+* `bluray.iso` — 手写 BDMV 结构（INDEX/MovieObject/MPLS/CLPI，含真实 EP map）
+  加四个 H.264 + AC-3 的 M2TS 片段。标题覆盖：单片段标题、200 秒多片段标题
+  （非零入点、截断出点、片段顺序与文件名不同、同一片段重复引用、跨片段 PTS
+  基准跳变 +300 秒和可变码率）、带 PGS 字幕的标题，以及重复引用同一 PGS 片段和在字幕显示期间截断的短标题。
+  播放项起点包含章节标记，另有一个从 GOP 中间接入片段的播放列表，用于验证拒绝不安全的无损拼接。
+* `dvd.iso` — 由 dvdauthor 生成的 VIDEO_TS（两个标题，其中一个跨三个 Cell 和两个实际 VOB 文件），包含 B 帧、短 GOP 和真实的 VOB 图形字幕（SPU）流、PGC 调色板和显示/清除时间。
+
+生成器还会在镜像旁保留对应的 `dvd/` 和 `bluray/` 文件夹，用于验证目录输入，
+包括直接选择 `VIDEO_TS` 或 `BDMV` 子目录。
+
+两个镜像都是 ISO9660 + UDF 混合镜像：libdvdread 的镜像读取路径和 libbluray
+使用的 udfread 都通过 UDF 访问文件。
+
+### 依赖
+
+| 组件 | 用途 | macOS | Debian/Ubuntu | Windows |
+| --- | --- | --- | --- | --- |
+| 带 `libass`、`libx264`、`ac3`、`mpeg2video`、`mp2` 的 FFmpeg CLI | 渲染文字、编码片段 | `brew install ffmpeg` | `apt install ffmpeg` | MSYS2 / gyan.dev 构建 |
+| `dvdauthor`（含 `spumux`） | 生成 DVD-Video 与 VOB 字幕 | `brew install dvdauthor` | `apt install dvdauthor` | MSYS2 / cygwin 包 |
+| 支持 `-udf` 的 `mkisofs`（cdrtools）或 `genisoimage`（cdrkit） | 生成 ISO 镜像 | `brew install cdrtools` | `apt install genisoimage` | Windows 版 cdrtools |
+
+请使用 `mkisofs` 或 `genisoimage` 生成已验证的 ISO9660/UDF 布局。
+此生成器未验证 `hdiutil` 输出，`xorriso` 则不支持写 UDF。
+
+C# 集成测试还需要兼容的光盘运行库。运行库构建将 libbluray 1.5 及以上版本、
+libudfread、libdvdread、libdvdnav 和 libdvdcss 静态合入 avformat，并导出 GUI 使用的接口，无需额外的
+光盘动态库。开发运行库也可使用匹配的独立库。缺少能力时测试明确报告跳过原因；
+已安装但损坏或不兼容的库会报告失败。
+
+### 命令
+
+```sh
+python3 tools/prepare-test-media.py --group iso --ffmpeg ffmpeg --ffprobe ffprobe
+dotnet test src/TSCutter.GUI.Tests -c Debug
+```
+
+`--skip-bluray` / `--skip-dvd` 可只生成其中一个镜像。生成器每次运行前会清空自己
+的 `work/` 目录，重复运行不会累积多余的 dvdauthor 标题。
+
 ## 运行测试
 
 Windows、macOS 和 Linux 使用相同流程。安装 .NET 10 后，可以直接运行普通逻辑和无头 UI 测试，无需设置素材环境变量：
