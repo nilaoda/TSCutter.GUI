@@ -4,12 +4,14 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
+using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Utils.Media;
 
 namespace TSCutter.GUI.Services.Preview;
 
-internal sealed record KeyFrameStripSource(string Path, PreviewStreamSelection? Selection, bool ToneMapping);
+internal sealed record KeyFrameStripSource(string Path, PreviewStreamSelection? Selection, bool ToneMapping,
+    DiscInput? Disc = null);
 internal sealed record KeyFrameStripFrame(long Pts, TimeSpan Timestamp, Bitmap? Bitmap, string? KeyFrameType = null);
 internal sealed record KeyFrameStripRange(IReadOnlyList<KeyFrameStripFrame> Frames, bool AtStart, bool AtEnd);
 
@@ -31,7 +33,7 @@ internal sealed class KeyFrameStripService : IKeyFrameStripService
     public async Task OpenAsync(KeyFrameStripSource source, CancellationToken token)
     {
         decoder = new VideoInstance(source.Path, enableHardwareDecoding: false,
-            source.Selection, () => source.ToneMapping);
+            source.Selection, () => source.ToneMapping, discInput: source.Disc);
         await decoder.InitVideoAsync(token);
     }
 

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -13,6 +14,7 @@ using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.ViewModels;
 
 namespace TSCutter.GUI.ViewModels.Editing;
@@ -197,7 +199,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         try
         {
             CurrentFileName = Path.GetFileName(OutputPath!);
-            _totalBytes = EndPosition > 0 ? EndPosition - StartPosition : new FileInfo(SourceFilePath!).Length - StartPosition;
+            _totalBytes = RemuxSettings is not null ? 0 :
+                EndPosition > 0 ? EndPosition - StartPosition : new FileInfo(SourceFilePath!).Length - StartPosition;
             _startTime = DateTime.Now;
             _lastUpdateTime = _startTime;
             await CopyClipAsync(new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId,
@@ -286,6 +289,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private async Task RunBatchAsync()
     {
         _batchCancelled = false;
+        var sources = _tasks.Select(task => task.SourcePath).Distinct(MediaFileUtil.PathComparer).ToArray();
         for (int i = 0; i < _tasks.Count; i++)
         {
             if (_batchCancelled)
@@ -300,7 +304,10 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
             try
             {
-                _totalBytes = task.EndPosition > 0
+                // 执行前再次检查全部源，避免某一项覆盖队列中另一张光盘的组成文件。
+                if (sources.Any(source => MediaFileUtil.ConflictsWithSource(task.DestinationPath, source)))
+                    throw new RemuxExportException(RemuxExportError.SameFile);
+                _totalBytes = task.RemuxSettings is not null ? 0 : task.EndPosition > 0
                     ? task.EndPosition - task.StartPosition
                     : new FileInfo(task.SourcePath).Length - task.StartPosition;
                 _startTime = DateTime.Now;

@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using TSCutter.GUI.Models.FrameSearch;
+using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Media;
@@ -24,12 +25,14 @@ internal sealed class FrameSearchService
         string filePath, byte[] referenceJpeg, TimeSpan startTime,
         Func<FrameSearchMatch, bool, TimeSpan?, Task> onMatch,
         Func<CancellationToken, Task> pauseAfterMatch, IProgress<double>? progress,
-        CancellationToken token, PreviewStreamSelection? streamSelection = null, bool enableSdrToneMapping = true)
+        CancellationToken token, PreviewStreamSelection? streamSelection = null, bool enableSdrToneMapping = true,
+        DiscInput? discInput = null)
     {
         using var stream = new MemoryStream(referenceJpeg, writable: false);
         using var reference = new Bitmap(stream);
         var target = FrameVisualMatcher.Create(reference);
-        using var decoder = new VideoInstance(filePath, enableHardwareDecoding: false, streamSelection, () => enableSdrToneMapping);
+        using var decoder = new VideoInstance(filePath, enableHardwareDecoding: false, streamSelection,
+            () => enableSdrToneMapping, discInput: discInput);
         await decoder.InitVideoAsync(token).ConfigureAwait(false);
         var duration = decoder.GetVideoDurationInSeconds();
         if (!double.IsFinite(duration) || duration <= 0)
@@ -60,7 +63,8 @@ internal sealed class FrameSearchService
             token.ThrowIfCancellationRequested();
             if (previewDecoder is null && includeNearby && neighborhood is null)
             {
-                previewDecoder = new VideoInstance(filePath, enableHardwareDecoding: false, streamSelection, () => enableSdrToneMapping);
+                previewDecoder = new VideoInstance(filePath, enableHardwareDecoding: false, streamSelection,
+                    () => enableSdrToneMapping, discInput: discInput);
                 await previewDecoder.InitVideoAsync(token).ConfigureAwait(false);
             }
             var match = await CreateMatchAsync(previewDecoder, scoredFrame, update,

@@ -12,8 +12,10 @@ using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Platform;
 using FFmpeg.AutoGen.Abstractions;
+using TSCutter.GUI.Extensions;
 using TSCutter.GUI.FFmpeg;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
+using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Media;
@@ -36,6 +38,9 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
     private readonly PreviewStreamSelection selection;
     private readonly double durationSeconds;
     private readonly long tsSyncOffset;
+    private readonly DiscInput? disc;
+    private readonly DiscTimeline? discTimeline;
+    private DiscSegment? subtitleSegment;
     private double loadedStart = double.NaN, loadedEnd = double.NaN;
     internal double ReadThroughSeconds { get; private set; }
     private nint library, renderer, track;
@@ -48,7 +53,7 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
     private sealed record BitmapCue(long Start, long End, PixelSize Canvas, IReadOnlyList<BitmapPart> Parts);
 
     private SubtitlePreviewService(string path, PreviewStreamSelection selection, PixelSize codedSize,
-        double originSeconds, double durationSeconds, long tsSyncOffset)
+        double originSeconds, double durationSeconds, long tsSyncOffset, DiscInput? disc)
     {
         this.path = path;
         this.selection = selection;
@@ -56,17 +61,19 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
         this.originSeconds = originSeconds;
         this.durationSeconds = durationSeconds;
         this.tsSyncOffset = tsSyncOffset;
+        this.disc = disc;
+        discTimeline = disc?.Kind == DiscKind.BluRay ? disc.CreateTimeline() : null;
     }
 
     public static SubtitlePreviewService Load(string path, PreviewStreamSelection selection,
         PixelSize codedSize, double originSeconds, double durationSeconds, long tsSyncOffset,
-        CancellationToken cancellationToken, double displayedSeconds = 0)
+        CancellationToken cancellationToken, double displayedSeconds = 0, DiscInput? disc = null)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (codedSize.Width <= 0 || codedSize.Height <= 0 || !double.IsFinite(originSeconds) ||
             !double.IsFinite(durationSeconds) || durationSeconds < 0 || !double.IsFinite(displayedSeconds))
             throw new InvalidDataException(LocalizationManager.Instance.String_SubtitlePreview_Invalid);
-        var service = new SubtitlePreviewService(path, selection, codedSize, originSeconds, durationSeconds, tsSyncOffset);
+        var service = new SubtitlePreviewService(path, selection, codedSize, originSeconds, durationSeconds, tsSyncOffset, disc);
         try
         {
             service.LoadWindow(Math.Clamp(displayedSeconds, 0, durationSeconds), cancellationToken);
@@ -93,11 +100,17 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
 
     private void Read(double startSeconds, double endSeconds, CancellationToken cancellationToken)
     {
+        subtitleSegment = null;
         var deadline = new MediaReadDeadline(ReadTimeout, cancellationToken);
         using var input = OpenInput();
         FormatContext OpenInput()
         {
-            try { return InterruptibleInputFormatContext.Open(path, () => deadline.ShouldInterrupt, tsSyncOffset); }
+            try
+            {
+                return disc is { } title
+                    ? InterruptibleInputFormatContext.Open(title, () => deadline.ShouldInterrupt)
+                    : InterruptibleInputFormatContext.Open(path, () => deadline.ShouldInterrupt, tsSyncOffset);
+            }
             catch { deadline.ThrowIfInterrupted(); throw; }
         }
         try
@@ -186,7 +199,7 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
             while (true)
             {
                 deadline = new MediaReadDeadline(ReadTimeout, cancellationToken);
-                var result = FF.av_read_frame(input, packet);
+                var result = input.ReadPacket(packet);
                 deadline.ThrowIfInterrupted();
                 if (result == FF.AVERROR_EOF) break;
                 FFmpegException.Check(result);
@@ -207,6 +220,18 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
                     }
                     else if (packet.StreamIndex == stream.Index)
                     {
+                        var segment = discTimeline?.FindByByte(packet.Position) ?? subtitleSegment;
+                        if (segment is not null && !ReferenceEquals(segment, subtitleSegment))
+                        {
+                            if (!discTimeline!.Continues(subtitleSegment, segment))
+                            {
+                                if (subtitleSegment is { } previous)
+                                    FlushPending(discTimeline.ContinuousEnd90k(previous) / 90);
+                                decoder.FlushBuffers();
+                                pgsReady = false;
+                            }
+                            subtitleSegment = segment;
+                        }
                         var decoded = isPgs ? PgsSubtitlePacket.Decompress(new ReadOnlySpan<byte>(raw->data, raw->size)) : null;
                         if (isPgs && !pgsReady)
                         {
@@ -352,11 +377,27 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
                         var duration = subtitle.end_display_time > subtitle.start_display_time && subtitle.end_display_time != uint.MaxValue
                             ? subtitle.end_display_time - subtitle.start_display_time :
                             packet->duration > 0 ? packet->duration * timeBase.ToDouble() * 1000 - subtitle.start_display_time : 0;
-                        if (++eventCount > MaximumEvents) throw CacheLimit();
-                        if (bitmap)
-                            AddBitmap(subtitle, start, duration > 0 ? start + (long)Math.Round(duration) : long.MaxValue,
-                                decoder, cancellationToken);
-                        else AddText(subtitle, start, Math.Max(0, (long)Math.Round(duration)));
+                        var withinSegment = true;
+                        if (subtitleSegment is { } segment)
+                        {
+                            var segmentStart = segment.RelativeStart90k / 90;
+                            var segmentEnd = discTimeline!.ContinuousEnd90k(segment) / 90;
+                            var end = duration > 0 ? start + (long)Math.Round(duration) : segmentEnd;
+                            start = Math.Max(start, segmentStart);
+                            end = Math.Min(end, segmentEnd);
+                            withinSegment = end > start;
+                            duration = end - start;
+                        }
+                        if (withinSegment)
+                        {
+                            if (++eventCount > MaximumEvents)
+                                throw CacheLimit();
+                            if (bitmap)
+                                AddBitmap(subtitle, start, duration > 0 ? start + (long)Math.Round(duration) : long.MaxValue,
+                                    decoder, cancellationToken);
+                            else
+                                AddText(subtitle, start, Math.Max(0, (long)Math.Round(duration)));
+                        }
                     }
                 }
             }

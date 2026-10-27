@@ -15,6 +15,7 @@ using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Application;
+using TSCutter.GUI.ViewModels.Discs;
 using TSCutter.GUI.ViewModels.Editing;
 using TSCutter.GUI.ViewModels.FrameSearch;
 using TSCutter.GUI.ViewModels.Preview;
@@ -66,6 +67,7 @@ public partial class App : Application
         SplatRegistrations.Register<CaptureFrameViewModel>();
         SplatRegistrations.Register<ClipDetailsViewModel>();
         SplatRegistrations.Register<RemuxExportOptionsViewModel>();
+        SplatRegistrations.Register<DiscTitleSelectionViewModel>();
         // --- 注册单例服务 ---
         var localizationService = new LocalizationService();
         SplatRegistrations.RegisterConstant<ILocalizationService>(localizationService);

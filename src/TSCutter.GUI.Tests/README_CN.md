@@ -45,6 +45,12 @@ python tools/prepare-test-media.py --group remux subtitles
 三组生成器也能单独运行；不传目录时使用相同的默认位置。`--font` 可以为字幕附件测试指定 TTF/OTF 字体。
 生成脚本只负责测试数据，不下载工具，不修改应用配置，也不会在每次 `dotnet test` 时重新编码。
 
+## 可选的光盘镜像测试
+
+执行 `python tools/prepare-test-media.py --group iso` 生成合成 DVD 和蓝光镜像。
+该组需要额外安装 `dvdauthor` / `spumux` 及支持 UDF 的 ISO 制作工具，因此默认不生成。
+测试还需要带光盘支持的 FFmpeg 运行库，依赖和覆盖范围见[ISO 工具说明](../../tools/README_CN.md#光盘镜像iso测试素材)。
+
 ## FFmpeg 运行库
 
 生成素材使用 `ffmpeg` / `ffprobe` 命令行工具；C# 解码测试加载的是应用使用的 **FFmpeg 9 共享库**，仅有 `ffmpeg.exe` 并不能代替它。

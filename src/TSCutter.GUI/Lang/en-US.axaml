@@ -1203,7 +1203,7 @@
     <x:String x:Key="String.Settings.OutputTemplateHint">{source}: source filename; {name}: clip name; {index}: 3-digit index; {start}/{end}: start/end time. Empty names use clip001. The extension is added automatically.</x:String>
     <x:String x:Key="String.Settings.OutputTemplatePreview">Example filename</x:String>
     <x:String x:Key="String.Settings.OutputTemplateInvalid">Enter a template (up to 240 characters) using the supported placeholders.</x:String>
-    <x:String x:Key="String.RemuxExport.Options">MP4 / MKV export settings</x:String>
+    <x:String x:Key="String.RemuxExport.Options">Export settings</x:String>
     <x:String x:Key="String.RemuxExport.Container">Output container</x:String>
     <x:String x:Key="String.RemuxExport.Tracks">Tracks to keep</x:String>
     <x:String x:Key="String.RemuxExport.TrackHint">Source order · Current video required</x:String>
@@ -1213,7 +1213,7 @@
     <x:String x:Key="String.RemuxExport.BoundaryHint">Audio/video is copied without re-encoding. Video cuts use keyframes.</x:String>
     <x:String x:Key="String.RemuxExport.Files">MP4 / MKV files</x:String>
     <x:String x:Key="String.RemuxExport.Error.Container">Choose the same output container for all segments and use its matching filename extension.</x:String>
-    <x:String x:Key="String.RemuxExport.Error.Track">This track cannot be preserved in the selected container or safely cut. Choose a compatible container or deselect the track. Bitmap subtitles are not supported for packet-copy cutting.</x:String>
+    <x:String x:Key="String.RemuxExport.Error.Track">This track cannot be preserved in the selected container or safely cut. Choose a compatible container or deselect the track.</x:String>
     <x:String x:Key="String.RemuxExport.Error.Compatibility">The selected streams are incompatible for lossless merging. Match their codecs, codec configuration, video/audio parameters, HDR data, track order, language, titles and flags.</x:String>
     <x:String x:Key="String.RemuxExport.Error.Boundary">The cut could not be aligned to compatible video keyframes. Choose another boundary or keep only the preview video track.</x:String>
     <x:String x:Key="String.RemuxExport.Error.Timestamp">Export stopped because the selected range or packet timestamps could not be safely preserved.</x:String>
@@ -1234,4 +1234,28 @@
     <x:String x:Key="String.SubtitlePreview.Invalid">Subtitle data is incomplete or invalid.</x:String>
     <x:String x:Key="String.SubtitlePreview.Limit">This subtitle track exceeds the preview cache limit. Choose another track.</x:String>
     <x:String x:Key="String.Clips.Merged">Included in merged export</x:String>
+    <x:String x:Key="String.Disc.ExportFiles">Disc video files</x:String>
+    <x:String x:Key="String.Disc.VobExportNotice">VOB carries the video, audio and bitmap subtitles, but its subtitle palette is stored in the DVD IFO. Choose MKV to preserve the subtitle colors in one file.</x:String>
+    <x:String x:Key="String.Disc.OpenFolder">Open Disc _Folder...</x:String>
+    <x:String x:Key="String.Disc.Scanning">Reading disc titles…</x:String>
+    <x:String x:Key="String.Disc.TitleSelection">Select Disc Title</x:String>
+    <x:String x:Key="String.Disc.TitleSelectionHeading">Detected a {0} source: {1}. Choose the title to open.</x:String>
+    <x:String x:Key="String.Disc.SelectionHint">Each row is a playable title (a Blu-ray playlist or a DVD title). The longest one is recommended.</x:String>
+    <x:String x:Key="String.Disc.ProjectNotice">Disc sources are not supported in project files yet.</x:String>
+    <x:String x:Key="String.Disc.Recommended">Main feature</x:String>
+    <x:String x:Key="String.Disc.Chapters">{0} chapters</x:String>
+    <x:String x:Key="String.Disc.Angles">{0} angles</x:String>
+    <x:String x:Key="String.Disc.Clips">{0} clips</x:String>
+    <x:String x:Key="String.Disc.AudioLanguages">Audio: {0}</x:String>
+    <x:String x:Key="String.Disc.SubtitleLanguages">Subtitles: {0}</x:String>
+    <x:String x:Key="String.Disc.ProtectedError">Could not read the protected disc: {0}</x:String>
+    <x:String x:Key="String.Disc.RuntimeMissing">The FFmpeg runtime lacks compatible disc input support. Use a runtime with embedded libbluray 1.5+ and DVD input libraries.</x:String>
+    <x:String x:Key="String.Disc.StructureError">The disc structure could not be read or is not supported: {0}</x:String>
+    <x:String x:Key="String.Disc.NotDiscError">The source is not a recognizable DVD/Blu-ray video disc (it may be damaged or lack a video disc structure): {0}</x:String>
+    <x:String x:Key="String.Disc.ExportBoundary">The playlist joins another clip inside a GOP at the time below, so it cannot be joined safely without re-encoding. Keep the export range on one side of this time.</x:String>
+    <x:String x:Key="String.Disc.OpenFailed">Opening the disc title failed: {0}</x:String>
+    <x:String x:Key="String.Disc.ProjectUnsupported">Disc sources cannot be saved into project files yet.</x:String>
+    <x:String x:Key="String.Disc.KindBluRay">Blu-ray</x:String>
+    <x:String x:Key="String.Disc.KindDvd">DVD</x:String>
+    <x:String x:Key="String.Disc.InfoText">{0} title {1} · {2}</x:String>
 </ResourceDictionary>

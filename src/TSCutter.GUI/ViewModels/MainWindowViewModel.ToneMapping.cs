@@ -81,7 +81,8 @@ public partial class MainWindowViewModel
             await toneMappingRefreshTask;
             var targetPts = _displayedFramePts;
             candidate = new VideoInstance(VideoPath, targetHardware, _activePreviewSelection,
-                () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true);
+                () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true,
+                discInput: previous.Disc);
             await candidate.InitVideoAsync();
             result = await candidate.DecodePreviewFrameAtPtsAsync(targetPts);
             if (result is null || result.FramePts != targetPts)

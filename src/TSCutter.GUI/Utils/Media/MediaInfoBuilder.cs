@@ -60,19 +60,7 @@ public static partial class MediaInfoBuilder
             AppendField(sb, "Frame rate", firstStream.AvgFrameRate.ToDouble().ToString("F3") + " FPS");
         sb.AppendLine();
 
-        // ==================== Streams ====================
-        foreach (var stream in fc.Streams)
-        {
-            var cp = stream.Codecpar!;
-            switch (cp.CodecType)
-            {
-                case AVMediaType.AVMEDIA_TYPE_VIDEO: WriteVideo(sb, stream, cp, fc, fi, ts); break;
-                case AVMediaType.AVMEDIA_TYPE_AUDIO: WriteAudio(sb, stream, cp, fc, fi, ts); break;
-                case AVMediaType.AVMEDIA_TYPE_SUBTITLE: WriteSubtitle(sb, stream, cp); break;
-                default: WriteGeneric(sb, stream, cp); break;
-            }
-            sb.AppendLine();
-        }
+        WriteStreams(sb, fc, fi, ts);
 
         // ==================== Menu (Program) ====================
         if (fc.Programs is { Count: > 0 })
@@ -102,6 +90,24 @@ public static partial class MediaInfoBuilder
         }
 
         return sb.ToString().TrimEnd();
+    }
+
+    private static void WriteStreams(StringBuilder sb, FormatContext fc, FileInfo? fi,
+        TsMediaInfoProbe? ts = null, TimeSpan? titleDuration = null)
+    {
+        foreach (var stream in fc.Streams)
+        {
+            if (stream.Codecpar is not { } cp)
+                continue;
+            switch (cp.CodecType)
+            {
+                case AVMediaType.AVMEDIA_TYPE_VIDEO: WriteVideo(sb, stream, cp, fc, fi, ts, titleDuration); break;
+                case AVMediaType.AVMEDIA_TYPE_AUDIO: WriteAudio(sb, stream, cp, fc, fi, ts, titleDuration); break;
+                case AVMediaType.AVMEDIA_TYPE_SUBTITLE: WriteSubtitle(sb, stream, cp); break;
+                default: WriteGeneric(sb, stream, cp); break;
+            }
+            sb.AppendLine();
+        }
     }
 
     #region ----- Helpers -----
@@ -198,7 +204,7 @@ public static partial class MediaInfoBuilder
     #endregion
 
     #region ----- Video -----
-    private static unsafe void WriteVideo(StringBuilder sb, MediaStream stream, CodecParameters cp, FormatContext fc, FileInfo fi, TsMediaInfoProbe? ts)
+    private static unsafe void WriteVideo(StringBuilder sb, MediaStream stream, CodecParameters cp, FormatContext fc, FileInfo? fi, TsMediaInfoProbe? ts, TimeSpan? titleDuration = null)
     {
         AppendSection(sb, "Video");
 
@@ -219,7 +225,8 @@ public static partial class MediaInfoBuilder
         var dolbyVision = ReadDolbyVisionConfiguration(cp);
         if (dolbyVision is not null) AppendField(sb, "HDR format", dolbyVision.Description);
         AppendField(sb, "Codec ID", ts is null ? VideoCodecId(cp.CodecTag, cp.CodecId) : CodecId(cp, stream.Id, ts));
-        AppendField(sb, "Duration", FormatDuration(stream));
+        AppendField(sb, "Duration", titleDuration is { } duration
+            ? FormatDuration((long)Math.Round(duration.TotalSeconds * FF.AV_TIME_BASE)) : FormatDuration(stream));
 
         if (cp.BitRate > 0)
         {
@@ -288,7 +295,7 @@ public static partial class MediaInfoBuilder
         }
 
         long streamSize = StreamSize(fc, stream);
-        if (streamSize > 0)
+        if (fi is not null && streamSize > 0)
             AppendField(sb, "Stream size", ToSize(streamSize) + " (" + (100.0 * streamSize / fi.Length).ToString("F0") + "%)");
 
         if (stream.Codecpar!.FieldOrder != AVFieldOrder.AV_FIELD_PROGRESSIVE && stream.Codecpar.FieldOrder != AVFieldOrder.AV_FIELD_UNKNOWN)
@@ -301,7 +308,7 @@ public static partial class MediaInfoBuilder
     #endregion
 
     #region ----- Audio -----
-    private static unsafe void WriteAudio(StringBuilder sb, MediaStream stream, CodecParameters cp, FormatContext fc, FileInfo fi, TsMediaInfoProbe? ts)
+    private static unsafe void WriteAudio(StringBuilder sb, MediaStream stream, CodecParameters cp, FormatContext fc, FileInfo? fi, TsMediaInfoProbe? ts, TimeSpan? titleDuration = null)
     {
         AppendSection(sb, "Audio");
 
@@ -313,7 +320,8 @@ public static partial class MediaInfoBuilder
         if (codec == "AC3") AppendField(sb, "Commercial name", "Dolby Digital");
         AppendField(sb, "Codec ID", CodecId(cp, stream.Id, ts));
 
-        AppendField(sb, "Duration", FormatDuration(stream));
+        AppendField(sb, "Duration", titleDuration is { } duration
+            ? FormatDuration((long)Math.Round(duration.TotalSeconds * FF.AV_TIME_BASE)) : FormatDuration(stream));
 
         if (cp.BitRate > 0)
         {
@@ -345,7 +353,7 @@ public static partial class MediaInfoBuilder
         }
 
         long streamSize = StreamSize(fc, stream);
-        if (streamSize > 0)
+        if (fi is not null && streamSize > 0)
             AppendField(sb, "Stream size", ToSize(streamSize) + " (" + (100.0 * streamSize / fi.Length).ToString("F0") + "%)");
 
         if (ts?.Streams.TryGetValue(stream.Id, out var tsStream) == true && tsStream.Languages.Count > 0)

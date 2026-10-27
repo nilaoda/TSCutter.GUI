@@ -51,7 +51,7 @@ public unsafe class FormatContext : SafeHandle
     }
     public MediaStream GetVideoStream() => Streams.First(s => s.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_VIDEO);
     public MediaStream GetAudioStream() => Streams.First(s => s.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO);
-    public void SeekFrame(long timestamp, int streamIndex, AVSEEK_FLAG flags = AVSEEK_FLAG.Backward)
+    public virtual void SeekFrame(long timestamp, int streamIndex, AVSEEK_FLAG flags = AVSEEK_FLAG.Backward)
         => FFmpegException.Check(FF.av_seek_frame(Raw, streamIndex, timestamp, (int)flags));
 
     // 输入上下文始终复用一个原生包；连续搜索每次返回关键帧后，
@@ -64,7 +64,7 @@ public unsafe class FormatContext : SafeHandle
         try
         {
             var packet = reusablePacket ??= new Packet();
-            while (ReadPacket(packet))
+            while (TryReadPacket(packet))
             {
                 try { yield return packet; }
                 finally { packet.Unref(); }
@@ -72,9 +72,11 @@ public unsafe class FormatContext : SafeHandle
         }
         finally { readingPackets = false; }
     }
-    private bool ReadPacket(Packet packet)
+    public virtual int ReadPacket(Packet packet) => FF.av_read_frame(Raw, packet);
+
+    private bool TryReadPacket(Packet packet)
     {
-        var result = FF.av_read_frame(Raw, packet);
+        var result = ReadPacket(packet);
         if (result == FF.AVERROR_EOF) return false;
         FFmpegException.Check(result);
         return true;

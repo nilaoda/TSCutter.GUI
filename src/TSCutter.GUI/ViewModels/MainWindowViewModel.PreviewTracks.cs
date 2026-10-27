@@ -122,6 +122,7 @@ public partial class MainWindowViewModel
         OnPropertyChanged(nameof(FilteredClipSizeStr));
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
         LoadVideoClickCommand.NotifyCanExecuteChanged();
+        OpenDiscFolderCommand.NotifyCanExecuteChanged();
         OpenProjectCommand.NotifyCanExecuteChanged();
     }
 
@@ -152,7 +153,8 @@ public partial class MainWindowViewModel
             await CompleteScrubPreviewAsync();
             candidate = new VideoInstance(VideoPath,
                 preferHardwareDecodingForPreview, choice.Selection,
-                () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true);
+                () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true,
+                discInput: _videoInstance?.Disc);
             await candidate.InitVideoAsync(cancellation.Token);
             var duration = candidate.GetVideoDurationInSeconds();
             if (CurrentTime > 0 && duration > 0)

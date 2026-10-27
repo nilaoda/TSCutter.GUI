@@ -24,8 +24,9 @@ public partial class MainWindowViewModel
     public bool IsRemuxExport => _videoInstance is { Inited: true, CanRemuxClip: true };
     private RemuxExportSettings? CurrentRemuxSettings => IsRemuxExport
         ? _remuxExportSettings ??= _videoInstance!.CreateExportSettings() : null;
-    private string ExportFileFilterName => IsRemuxExport
-        ? LocalizationManager.Instance.String_RemuxExport_Files : LocalizationManager.Instance.String_TsFiles;
+    private string ExportFileFilterName => CurrentRemuxSettings?.Container is "vob" or "m2ts"
+        ? LocalizationManager.Instance.String_Disc_ExportFiles
+        : IsRemuxExport ? LocalizationManager.Instance.String_RemuxExport_Files : LocalizationManager.Instance.String_TsFiles;
     private bool CanConfigureRemuxExport => CanEditVideo && IsRemuxExport;
 
     [RelayCommand(CanExecute = nameof(CanConfigureRemuxExport))]
@@ -38,9 +39,10 @@ public partial class MainWindowViewModel
         {
             Index = track.Index, Description = track.Description,
             CanChange = track.Index != settings.ReferenceVideoIndex,
-            IsTextSubtitle = track.Type == AVMediaType.AVMEDIA_TYPE_SUBTITLE && track.Codec != "hdmv_pgs_subtitle",
+            IsTextSubtitle = track.Type == AVMediaType.AVMEDIA_TYPE_SUBTITLE &&
+                track.Codec is not ("hdmv_pgs_subtitle" or "dvd_subtitle"),
             IsSelected = settings.StreamIndices.Contains(track.Index)
-        }), video.ClipExtension == "mkv");
+        }), video.Disc is null && video.ClipExtension == "mkv");
         await _dialogService.ShowDialogAsync(this, dialog);
         if (dialog.DialogResult != true || !ReferenceEquals(video, _videoInstance)) return;
         var updated = dialog.Apply(settings);
@@ -83,6 +85,7 @@ public partial class MainWindowViewModel
             RemuxExportError.IncompatibleStreams => strings.String_RemuxExport_Error_Compatibility,
             RemuxExportError.InvalidBoundary => strings.String_RemuxExport_Error_Boundary,
             RemuxExportError.UnsafeGop => strings.String_RemuxExport_Error_Gop,
+            RemuxExportError.UnsafeDiscBoundary => strings.String_Disc_ExportBoundary,
             RemuxExportError.SubtitleTiming => strings.String_RemuxExport_Error_SubtitleTiming,
             RemuxExportError.SourceChanged => strings.String_MergeClips_SourceChanged,
             _ => strings.String_RemuxExport_Error_Timestamp

@@ -1203,7 +1203,7 @@
     <x:String x:Key="String.Settings.OutputTemplateHint">{source}：來源檔名；{name}：片段名稱；{index}：三位序號；{start}/{end}：起訖時間。名稱為空時使用 clip001。副檔名自動新增。</x:String>
     <x:String x:Key="String.Settings.OutputTemplatePreview">檔案名稱預覽</x:String>
     <x:String x:Key="String.Settings.OutputTemplateInvalid">請填寫不超過 240 字元的範本，並使用支援的預留位置。</x:String>
-    <x:String x:Key="String.RemuxExport.Options">MP4 / MKV 匯出設定</x:String>
+    <x:String x:Key="String.RemuxExport.Options">匯出設定</x:String>
     <x:String x:Key="String.RemuxExport.Container">輸出封裝</x:String>
     <x:String x:Key="String.RemuxExport.Tracks">保留軌道</x:String>
     <x:String x:Key="String.RemuxExport.TrackHint">維持原順序 · 目前視訊必選</x:String>
@@ -1213,7 +1213,7 @@
     <x:String x:Key="String.RemuxExport.BoundaryHint">音訊視訊不重新編碼；視訊按關鍵影格剪輯。</x:String>
     <x:String x:Key="String.RemuxExport.Files">MP4 / MKV 檔案</x:String>
     <x:String x:Key="String.RemuxExport.Error.Container">請為所有片段選擇相同的輸出封裝，並使用對應的檔案副檔名。</x:String>
-    <x:String x:Key="String.RemuxExport.Error.Track">所選封裝無法保留此軌道，或無法安全剪輯。請選擇相容封裝或取消保留此軌道。暫不支援點陣字幕的壓縮包複製剪輯。</x:String>
+    <x:String x:Key="String.RemuxExport.Error.Track">所選封裝無法保留此軌道，或無法安全剪輯。請選擇相容封裝或取消保留此軌道。</x:String>
     <x:String x:Key="String.RemuxExport.Error.Compatibility">所選軌道不相容，無法無損合併。請確認編碼及設定、音訊視訊參數、HDR 資料、軌道順序、語言、名稱和標記一致。</x:String>
     <x:String x:Key="String.RemuxExport.Error.Boundary">無法對齊到相容的視訊關鍵影格。請更換剪切位置，或僅保留目前預覽的視訊軌道。</x:String>
     <x:String x:Key="String.RemuxExport.Error.Timestamp">無法安全保留所選區間或資料包的時間戳，已停止匯出。</x:String>
@@ -1234,4 +1234,28 @@
     <x:String x:Key="String.SubtitlePreview.Invalid">字幕資料不完整或無效。</x:String>
     <x:String x:Key="String.SubtitlePreview.Limit">此字幕軌道過大，無法建立預覽快取，請選擇其他軌道。</x:String>
     <x:String x:Key="String.Clips.Merged">已合併匯出</x:String>
+    <x:String x:Key="String.Disc.ExportFiles">光碟視訊檔案</x:String>
+    <x:String x:Key="String.Disc.VobExportNotice">VOB 可儲存視訊、音訊和圖形字幕，但字幕調色盤儲存在 DVD 的 IFO 中。如需在單一檔案中保留字幕色彩，請選擇 MKV。</x:String>
+    <x:String x:Key="String.Disc.OpenFolder">開啟光碟資料夾(_F)...</x:String>
+    <x:String x:Key="String.Disc.Scanning">正在讀取光碟標題…</x:String>
+    <x:String x:Key="String.Disc.TitleSelection">選擇光碟標題</x:String>
+    <x:String x:Key="String.Disc.TitleSelectionHeading">已辨識 {0} 來源：{1}，請選擇要開啟的標題。</x:String>
+    <x:String x:Key="String.Disc.SelectionHint">每行為一個可播放標題（藍光播放清單或 DVD 標題），已推薦時長最長的正片。</x:String>
+    <x:String x:Key="String.Disc.ProjectNotice">光碟來源暫不支援儲存到專案檔。</x:String>
+    <x:String x:Key="String.Disc.Recommended">正片</x:String>
+    <x:String x:Key="String.Disc.Chapters">{0} 章節</x:String>
+    <x:String x:Key="String.Disc.Angles">{0} 角度</x:String>
+    <x:String x:Key="String.Disc.Clips">{0} 片段</x:String>
+    <x:String x:Key="String.Disc.AudioLanguages">音訊：{0}</x:String>
+    <x:String x:Key="String.Disc.SubtitleLanguages">字幕：{0}</x:String>
+    <x:String x:Key="String.Disc.ProtectedError">無法讀取受保護的光碟：{0}</x:String>
+    <x:String x:Key="String.Disc.RuntimeMissing">目前 FFmpeg 執行階段缺少相容的光碟輸入能力。請使用內建 libbluray 1.5 及以上版本和 DVD 輸入程式庫的執行階段。</x:String>
+    <x:String x:Key="String.Disc.StructureError">光碟結構無法讀取或暫不支援：{0}</x:String>
+    <x:String x:Key="String.Disc.NotDiscError">無法辨識為 DVD/藍光視訊光碟（來源可能損壞或缺少光碟結構）：{0}</x:String>
+    <x:String x:Key="String.Disc.ExportBoundary">播放清單在以下時間點從 GOP 中間接入另一片段，無法直接無損拼接。請將匯出範圍限制在此時間點的一側。</x:String>
+    <x:String x:Key="String.Disc.OpenFailed">開啟光碟標題失敗：{0}</x:String>
+    <x:String x:Key="String.Disc.ProjectUnsupported">光碟來源暫不支援儲存專案檔。</x:String>
+    <x:String x:Key="String.Disc.KindBluRay">藍光</x:String>
+    <x:String x:Key="String.Disc.KindDvd">DVD</x:String>
+    <x:String x:Key="String.Disc.InfoText">{0} 標題 {1} · {2}</x:String>
 </ResourceDictionary>

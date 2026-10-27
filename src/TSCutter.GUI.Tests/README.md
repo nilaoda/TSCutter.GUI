@@ -45,6 +45,14 @@ python tools/prepare-test-media.py --group remux subtitles
 Each generator can also run independently. Omitting its directory argument uses the same default location. `--font` accepts a TTF/OTF font for subtitle attachment tests.
 The generators prepare test data only. They do not download tools, change application settings, or re-encode media on each `dotnet test` run.
 
+## Optional disc image tests
+
+Run `python tools/prepare-test-media.py --group iso` to prepare synthetic DVD and
+Blu-ray images. This group is opt-in because it additionally needs `dvdauthor` /
+`spumux` and a UDF-capable ISO authoring tool. The tests require a disc-enabled
+FFmpeg runtime. See the [ISO tool guide](../../tools/README.md#disc-image-iso-test-media)
+for dependencies and coverage.
+
 ## FFmpeg runtime
 
 Fixture generation uses the `ffmpeg` / `ffprobe` command-line tools. The C# decoding tests load the application's **FFmpeg 9 shared libraries**; `ffmpeg.exe` alone does not replace them.

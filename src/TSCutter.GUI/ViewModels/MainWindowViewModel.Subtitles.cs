@@ -67,8 +67,9 @@ public partial class MainWindowViewModel
             var codedSize = video.CodedVideoSize;
             var syncOffset = video.TsSyncOffset;
             var displayedSeconds = _displayedFrameTime;
+            var disc = video.Disc;
             candidate = await Task.Run(() => SubtitlePreviewService.Load(path, selection, codedSize, origin,
-                duration, syncOffset, cancellation.Token, displayedSeconds), cancellation.Token);
+                duration, syncOffset, cancellation.Token, displayedSeconds, disc), cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             if (!ReferenceEquals(video, _videoInstance)) return;
             _subtitlePreview = candidate;

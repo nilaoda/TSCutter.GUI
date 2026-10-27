@@ -23,10 +23,12 @@ using HanumanInstitute.MvvmDialogs.FileSystem;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Rendering;
 using TSCutter.GUI.Models.Application;
+using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Discs;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils;
@@ -50,7 +52,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private const int DefaultScrubPreviewWidth = 1280;
     private const int DefaultScrubPreviewHeight = 720;
     private static readonly string[] PreviewFileExtensions =
-        ["ts", "m2ts", "mts", "mp4", "mkv", "mov", "avi", "webm", "m4v", "mpg", "mpeg", "wmv", "flv", "3gp"];
+        ["ts", "m2ts", "mts", "mp4", "mkv", "mov", "avi", "webm", "m4v", "mpg", "mpeg", "vob", "wmv", "flv", "3gp", "iso"];
     private const int MaximumHistoryEntries = 100;
     private const int MaximumHistoryThumbnailEntries = 4;
     private static string TitleInfo => ReleaseInfo.WindowTitle;
@@ -70,6 +72,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private VideoInstance? _videoInstance;
     private bool _isLoadingVideo;
     private bool _currentFileSupportsTsTools;
+    private DiscInput? _discInput;
+    private DiscTitleInfo? _discTitleInfo;
+    private CancellationTokenSource? _discScanCancellation;
     private Exception? _previewFailure;
     private KeyFrameOverviewWindowViewModel? keyFrameOverviewWindow;
     private readonly IDialogService _dialogService;
@@ -1005,6 +1010,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         dialogViewModel.FilePath = VideoPath;
         dialogViewModel.EnableSdrToneMapping = EnableSdrToneMapping;
         dialogViewModel.StreamSelection = _activePreviewSelection;
+        dialogViewModel.Disc = _videoInstance?.Disc;
         keyFrameOverviewWindow = dialogViewModel;
         try
         {
@@ -1027,6 +1033,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         dialogViewModel.FilePath = VideoPath;
         dialogViewModel.EnableSdrToneMapping = EnableSdrToneMapping;
         dialogViewModel.StreamSelection = _activePreviewSelection;
+        dialogViewModel.Disc = _videoInstance?.Disc;
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
 
@@ -1045,6 +1052,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         search.FilePath = VideoPath;
         search.EnableSdrToneMapping = EnableSdrToneMapping;
         search.StreamSelection = _activePreviewSelection;
+        search.Disc = _videoInstance?.Disc;
         search.Template = template;
         search.StartTime = manager.SearchFromCurrent
             ? TimeSpan.FromSeconds(manager.CurrentTimeSeconds) : TimeSpan.Zero;
@@ -1164,9 +1172,15 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         var dialogViewModel = _dialogService.CreateViewModel<MediainfoWindowViewModel>();
         dialogViewModel.FilePath = VideoPath;
+        dialogViewModel.DiscVideo = _discInput is not null ? _videoInstance : null;
+        dialogViewModel.DiscTitle = _discTitleInfo;
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
-    
+
+    private string DiscKindLabel(DiscKind kind) => kind == DiscKind.BluRay
+        ? LocalizationManager.Instance.String_Disc_KindBluRay
+        : LocalizationManager.Instance.String_Disc_KindDvd;
+
     [RelayCommand(CanExecute = nameof(CanUsePreview))]
     private async Task SaveFrameClickAsync()
     {
@@ -1390,6 +1404,17 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     }
 
     [RelayCommand(CanExecute = nameof(CanLoadVideo))]
+    private async Task OpenDiscFolderAsync()
+    {
+        var selected = await _dialogService.ShowOpenFolderDialogAsync(this, new OpenFolderDialogSettings
+        {
+            Title = LocalizationManager.Instance.String_Disc_OpenFolder
+        });
+        if (selected?.Path is not null && CanLoadVideo)
+            await OpenDiscAsync(selected.Path.LocalPath);
+    }
+
+    [RelayCommand(CanExecute = nameof(CanLoadVideo))]
     private async Task OpenProjectAsync()
     {
         var settings = new OpenFileDialogSettings
@@ -1459,6 +1484,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 _isLoadingVideo = false;
                 NotifyVideoCapabilityChanged();
             }
+            _discInput = null;
+            _discTitleInfo = null;
             VideoPath = project.Source.Path;
             if (!await LoadVideoAsync(prepared))
                 return;
@@ -1481,10 +1508,18 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     [RelayCommand(CanExecute = nameof(CanSaveProject))]
     private async Task SaveProjectAsAsync() => await SaveProjectCoreAsync(saveAs: true);
 
-    private bool CanSaveProject => !_isLoadingVideo && (IsVideoInitialized || ExportQueue.Count > 0);
+    // 首版不支持把 ISO 来源与所选标题写入工程文件，避免只存路径而丢失标题。
+    private bool CanSaveProject => !_isLoadingVideo && !HasDiscSources && (IsVideoInitialized || ExportQueue.Count > 0);
+    private bool HasDiscSources => _discInput is not null || ExportQueue.Any(item => item.RemuxSettings?.Disc is not null);
 
     private async Task<bool> SaveProjectCoreAsync(bool saveAs)
     {
+        if (HasDiscSources)
+        {
+            await ShowMessageAsync(LocalizationManager.Instance.String_Disc_ProjectUnsupported,
+                LocalizationManager.Instance.String_Project_Save, MessageBoxIcon.Warning);
+            return false;
+        }
         var path = saveAs ? null : _projectPath;
         if (path is null)
         {
@@ -1623,10 +1658,76 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private async Task OpenVideoPathAsync(string path)
     {
         if (_isLoadingVideo) return;
+        if (DiscScanService.IsDiscPath(path))
+        {
+            await OpenDiscAsync(path);
+            return;
+        }
         if (!await ConfirmProjectReplacementAsync() || _isLoadingVideo) return;
+        _discInput = null;
+        _discTitleInfo = null;
         VideoPath = path;
         if (await LoadVideoAsync() && ExportQueue.Count == 0)
             MarkProjectCheckpoint();
+    }
+
+    // 光盘镜像和目录先经 libbluray/libdvdread 枚举标题，
+    // 用户选择标题后再打开预览。光盘来源与标题选择不写入工程文件。
+    private async Task OpenDiscAsync(string sourcePath)
+    {
+        if (_isLoadingVideo)
+            return;
+        if (!await ConfirmProjectReplacementAsync() || _isLoadingVideo)
+            return;
+        using var cancellation = new CancellationTokenSource();
+        _discScanCancellation = cancellation;
+        _isLoadingVideo = true;
+        NotifyVideoCapabilityChanged();
+        DiscInput? selectedInput = null;
+        DiscTitleInfo? selectedTitle = null;
+        try
+        {
+            var scan = await RunExportPreparationAsync((_, token) =>
+            {
+                return ScanAsync(token);
+            }, caption: LocalizationManager.Instance.String_Disc_Scanning);
+            cancellation.Token.ThrowIfCancellationRequested();
+            var dialog = _dialogService.CreateViewModel<ViewModels.Discs.DiscTitleSelectionViewModel>();
+            dialog.Initialize(scan.Inputs[scan.RecommendedIndex].SourcePath, scan);
+            await _dialogService.ShowDialogAsync(this, dialog);
+            cancellation.Token.ThrowIfCancellationRequested();
+            if (dialog.DialogResult == true)
+            {
+                selectedInput = dialog.SelectedInput;
+                selectedTitle = dialog.SelectedTitle;
+            }
+        }
+        catch (OperationCanceledException) { }
+        catch (Exception exception)
+        {
+            if (!cancellation.IsCancellationRequested)
+                await ShowMessageAsync(DiscScanService.DescribeFailure(exception),
+                    LocalizationManager.Instance.String_FailedToLoadVideo, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            if (ReferenceEquals(_discScanCancellation, cancellation))
+                _discScanCancellation = null;
+            _isLoadingVideo = false;
+            NotifyVideoCapabilityChanged();
+        }
+        if (selectedInput is null || cancellation.IsCancellationRequested)
+            return;
+        _discInput = selectedInput;
+        _discTitleInfo = selectedTitle;
+        VideoPath = selectedInput.SourcePath;
+        await LoadVideoAsync();
+
+        async Task<DiscScanResult> ScanAsync(CancellationToken token)
+        {
+            using var linked = CancellationTokenSource.CreateLinkedTokenSource(token, cancellation.Token);
+            return await DiscScanService.ScanAsync(sourcePath, linked.Token);
+        }
     }
 
     private async Task RestoreProjectAsync(CutterProject project)
@@ -2156,6 +2257,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         try
         {
             CancelClipEndScan();
+            _discScanCancellation?.Cancel();
             await CompleteScrubPreviewAsync();
             await toneMappingRefreshTask;
             await (decodeIdleCompletion?.Task ?? Task.CompletedTask);
@@ -2168,14 +2270,18 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 _videoInstance = prepared ?? new VideoInstance(
                     VideoPath,
                     preferHardwareDecodingForPreview,
-                    enableSdrToneMapping: () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true);
+                    enableSdrToneMapping: () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true,
+                    discInput: _discInput);
                 if (prepared is null)
                     await _videoInstance.InitVideoAsync();
                 _remuxExportSettings = null;
                 SetPreviewTrackChoices(_videoInstance.PreviewPrograms, _videoInstance.StreamSelection);
                 SetSubtitleTrackChoices(_videoInstance.PreviewSubtitleTracks);
                 UpdateDecodeMode();
-                VideoInfoText = _videoInstance.GetVideoInfoText();
+                VideoInfoText = _discInput is { } disc
+                    ? string.Format(LocalizationManager.Instance.String_Disc_InfoText,
+                        DiscKindLabel(disc.Kind), disc.TitleNumber, _videoInstance.GetVideoInfoText(includeFileSize: false))
+                    : _videoInstance.GetVideoInfoText();
                 DurationMax = _videoInstance.GetVideoDurationInSeconds();
                 TimelineViewport.Reset(
                     DurationMax,
@@ -2206,13 +2312,15 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             _videoInstance = null;
             Console.WriteLine($"Failed to load video: {e}");
             // 项目导入仍要求可靠的预览与剪辑状态；普通文件打开可降级为工具模式。
-            if (prepared is null && await TryRetainFileForToolsAsync(e))
+            if (prepared is null && _discInput is null && await TryRetainFileForToolsAsync(e))
             {
                 SetPreviewTrackChoices(failedPrograms, failedSelection);
                 return true;
             }
 
             VideoPath = string.Empty;
+            _discInput = null;
+            _discTitleInfo = null;
             await ShowMessageAsync(FormatPreviewFailure(e),
                 LocalizationManager.Instance.String_FailedToLoadVideo,
                 MessageBoxIcon.Error);
@@ -2260,6 +2368,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         NoVideoStreamException => LocalizationManager.Instance.String_NoVideoStream,
         VideoDecoderUnavailableException decoder => string.Format(
             LocalizationManager.Instance.String_VideoDecoderUnavailable, decoder.CodecName),
+        DiscScanException => DiscScanService.DescribeFailure(exception),
+        DiscOpenException open => string.Format(
+            LocalizationManager.Instance.String_Disc_OpenFailed, open.Message),
         _ => FFmpegNativeBootstrapper.BuildLoadFailureMessage(exception)
     };
 
@@ -2310,14 +2421,16 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     [RelayCommand]
     private void DragOver(DragEventArgs? e)
     {
-        var filePath = CheckDropFilePath(e, requireExistingFile: false);
-        e!.DragEffects = filePath is not null ? DragDropEffects.Copy : DragDropEffects.None;
+        if (e is null)
+            return;
+        var filePath = CheckDropPath(e, requireExistingSource: false);
+        e.DragEffects = filePath is not null ? DragDropEffects.Copy : DragDropEffects.None;
     }
 
     [RelayCommand]
     private async Task Drop(DragEventArgs? e)
     {
-        var filePath = CheckDropFilePath(e, requireExistingFile: true);
+        var filePath = CheckDropPath(e, requireExistingSource: true);
         if (filePath is not null)
         {
             if (IsProjectFile(filePath))
@@ -2329,15 +2442,25 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         }
     }
 
-    private string? CheckDropFilePath(DragEventArgs? e, bool requireExistingFile)
+    private string? CheckDropPath(DragEventArgs? e, bool requireExistingSource)
     {
-        if (e is null || _isLoadingVideo) return null;
-        if (!e.Data.Contains(DataFormats.Files)) return null;
+        if (e is null || _isLoadingVideo)
+            return null;
+        if (!e.Data.Contains(DataFormats.Files))
+            return null;
 
         var fileNames = e.Data.GetFiles()?.ToArray();
-        if (fileNames is not { Length: > 0 }) return null;
+        if (fileNames is not { Length: > 0 })
+            return null;
         var filePath = fileNames[0].Path.LocalPath;
-        if ((!requireExistingFile || File.Exists(filePath))
+        if (Directory.Exists(filePath))
+        {
+            var root = DiscScanService.GetDirectoryRoot(filePath);
+            if (root is null)
+                return null;
+            filePath = root;
+        }
+        if ((!requireExistingSource || File.Exists(filePath) || Directory.Exists(filePath))
             && (string.IsNullOrWhiteSpace(VideoPath) || !PathsEqual(VideoPath, filePath)))
         {
             return filePath;
@@ -2378,6 +2501,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             previewDisposalTask = DisposeVideoAfterScrubStopsAsync(Task.WhenAll(scrubWorker, toneMappingRefreshTask,
                 decodeIdleCompletion?.Task ?? Task.CompletedTask), videoInstance);
         VideoPath = string.Empty;
+        _discInput = null;
+        _discTitleInfo = null;
+        _discScanCancellation?.Cancel();
+        _discScanCancellation = null;
     }
 
     private static async Task DisposeVideoAfterScrubStopsAsync(Task scrubWorker, VideoInstance videoInstance)
@@ -2643,7 +2770,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             previousExtension.Equals(".m2ts", StringComparison.OrdinalIgnoreCase) ||
             previousExtension.Equals(".mts", StringComparison.OrdinalIgnoreCase) ||
             previousExtension.Equals(".mp4", StringComparison.OrdinalIgnoreCase) ||
-            previousExtension.Equals(".mkv", StringComparison.OrdinalIgnoreCase))
+            previousExtension.Equals(".mkv", StringComparison.OrdinalIgnoreCase) ||
+            previousExtension.Equals(".vob", StringComparison.OrdinalIgnoreCase))
             suggestedName = Path.ChangeExtension(suggestedName, extension);
         var suggestedDirectory = !string.IsNullOrWhiteSpace(_lastQueueOutputDirectory) &&
                                  Directory.Exists(_lastQueueOutputDirectory)
@@ -2665,8 +2793,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         if (result?.Path is null || !ReferenceEquals(SelectedClip, clip) || !CanEditSelectedClip) return;
 
         var outputPath = result.Path.LocalPath;
-        if (PathsEqual(outputPath, clip.InFileInfo.FullName) || ExportQueue.Any(item =>
-                PathsEqual(item.SourceFilePath, outputPath) || PathsEqual(item.OutputFilePath, clip.InFileInfo.FullName)))
+        if (MediaFileUtil.ConflictsWithSource(outputPath, clip.InFileInfo.FullName) || ExportQueue.Any(item =>
+                MediaFileUtil.ConflictsWithSource(outputPath, item.SourceFilePath) ||
+                MediaFileUtil.ConflictsWithSource(item.OutputFilePath, clip.InFileInfo.FullName)))
         {
             await ShowMessageAsync(LocalizationManager.Instance.String_MergeClips_OutputMatchesSource,
                 LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
@@ -2698,7 +2827,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             SourceFileName = Path.GetFileName(clip.InFileInfo.FullName),
             StartTimeSeconds = clip.StartTime,
             EndTimeSeconds = clip.EndTime,
-            EstimatedBytes = Math.Max(0,
+            EstimatedBytes = IsRemuxExport ? 0 : Math.Max(0,
                 (clip.EndPosition > 0 ? clip.EndPosition : clip.InFileInfo.Length)
                 - clip.StartPosition),
         };

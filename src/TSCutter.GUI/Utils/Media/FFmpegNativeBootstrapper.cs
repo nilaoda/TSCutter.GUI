@@ -14,6 +14,14 @@ public static class FFmpegNativeBootstrapper
         ("avutil", 61), ("swresample", 7), ("swscale", 10),
         ("avcodec", 63), ("avformat", 63), ("avfilter", 12), ("avdevice", 63)
     ];
+    // 光盘枚举使用的可选依赖库，随启用了蓝光/DVD 能力的 FFmpeg 运行库一同分发。
+    // libbluray 1.5 为 libbluray.4，旧版为 libbluray.2；MSYS2 构建使用不同的 DLL 命名。
+    private static readonly string[][] OptionalLibraries =
+    [
+        ["libbluray.4.dylib", "libbluray.2.dylib", "libbluray.so.4", "libbluray.so.2",
+            "libbluray-4.dll", "libbluray-2.dll", "libbluray.dll", "bluray.dll"],
+        ["libdvdread.8.dylib", "libdvdread.so.8", "libdvdread-8.dll", "dvdread-8.dll", "libdvdread.dll", "dvdread.dll"]
+    ];
     private static readonly string[] SubtitleExports =
     [
         "ass_library_init", "ass_library_done", "ass_renderer_init", "ass_renderer_done",
@@ -25,6 +33,7 @@ public static class FFmpegNativeBootstrapper
     private static string? configuredRootPath;
     private static readonly object SyncRoot = new();
     private static readonly Dictionary<string, IntPtr> Handles = new(StringComparer.Ordinal);
+    private static readonly Dictionary<string, Exception> OptionalLoadErrors = new(StringComparer.Ordinal);
     private static bool initialized;
     private static bool subtitlesValidated;
     private static string diagnosticSummary = "FFmpeg bootstrap has not run yet.";
@@ -53,6 +62,7 @@ public static class FFmpegNativeBootstrapper
                     initialized = true;
                     diagnosticSummary = $"FFmpeg 9 runtime resolved from '{directory}'.";
                     Console.WriteLine(diagnosticSummary);
+                    LoadOptionalDiscLibraries(directory);
                     return;
                 }
                 catch (Exception exception)
@@ -65,6 +75,53 @@ public static class FFmpegNativeBootstrapper
                 + "or set FFmpegRootPath / TSCUTTER_FFMPEG_ROOT to its directory."
                 + Environment.NewLine + string.Join(Environment.NewLine, notes);
             Console.WriteLine(diagnosticSummary);
+        }
+    }
+
+    // 光盘枚举依赖 libbluray / libdvdread；缺失时仅影响蓝光/DVD 入口，不影响普通文件预览。
+    private static void LoadOptionalDiscLibraries(string directory)
+    {
+        var names = new[] { "bluray", "dvdread" };
+        for (var index = 0; index < OptionalLibraries.Length; index++)
+        {
+            var component = names[index];
+            var format = Handles["avformat"];
+            var marker = component == "bluray" ? "bd_get_version" : "DVDOpen";
+            if (NativeLibrary.TryGetExport(format, marker, out _))
+            {
+                Handles[component] = format;
+                continue;
+            }
+            foreach (var fileName in OptionalLibraries[index])
+            {
+                var path = Path.Combine(directory, fileName);
+                if (!File.Exists(path)) continue;
+                try
+                {
+                    Handles[component] = NativeLibrary.Load(path);
+                    OptionalLoadErrors.Remove(component);
+                    Console.WriteLine($"Disc library loaded: {fileName}");
+                    break;
+                }
+                catch (Exception exception)
+                {
+                    OptionalLoadErrors[component] = exception;
+                    Console.WriteLine($"Disc library '{fileName}' could not be loaded: {exception.Message}");
+                }
+            }
+        }
+    }
+
+    internal static bool TryGetOptionalLibrary(string component, out IntPtr handle)
+    {
+        lock (SyncRoot)
+        {
+            if (!initialized) Initialize();
+            if (Handles.TryGetValue(component, out handle) && handle != IntPtr.Zero)
+                return true;
+            if (OptionalLoadErrors.TryGetValue(component, out var failure))
+                throw new DllNotFoundException($"The optional disc library '{component}' could not be loaded.", failure);
+            return false;
         }
     }
 

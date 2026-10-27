@@ -29,6 +29,7 @@ Larger layer directories are organized by feature:
 | `Application` | Configuration, languages, themes, About, and updates |
 | `Editing` | Clips, projects, export queue, cutting, and merging |
 | `Preview` | Video and subtitle preview, keyframe overview, thumbnail sheets, screenshots, and media information |
+| `Discs` | Disc title selection, DVD/Blu-ray metadata, and ISO/folder input workflows |
 | `FrameSearch` | Frame searching, matching, and template management |
 | `TransportStream/Analysis` | TS inspection, program tables, packet viewing, and reports |
 | `TransportStream/Processing` | Binary TS merging, ES extraction, stream filtering, and editing |

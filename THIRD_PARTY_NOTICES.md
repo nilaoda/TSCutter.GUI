@@ -19,6 +19,11 @@ Multiple NuGet packages from the same project are grouped below. Versions are sp
 | [HanumanInstitute.MvvmDialogs](https://github.com/mysteryx93/HanumanInstitute.MvvmDialogs) | MIT |
 | [FFmpeg.AutoGen.Abstractions](https://github.com/Ruslan-B/FFmpeg.AutoGen) | MIT |
 | [libass 0.17.4](https://github.com/libass/libass/tree/0.17.4) | ISC |
+| [libbluray 1.5.0](https://code.videolan.org/videolan/libbluray) | LGPL-2.1-or-later |
+| [libdvdread 7.1.1](https://code.videolan.org/videolan/libdvdread) | GPL-2.0-or-later |
+| [libdvdnav 7.0.0](https://code.videolan.org/videolan/libdvdnav) | GPL-2.0-or-later |
+| [libdvdcss 1.6.0](https://code.videolan.org/videolan/libdvdcss) | GPL-2.0-or-later |
+| [libudfread 1.2.0](https://code.videolan.org/videolan/libudfread) | LGPL-2.1-or-later |
 | [Splat](https://github.com/reactiveui/splat) | MIT |
 | [Tmds.DBus.Protocol](https://github.com/tmds/Tmds.DBus) | MIT |
 
@@ -27,6 +32,10 @@ Multiple NuGet packages from the same project are grouped below. Versions are sp
 The font is Inter (SIL OFL 1.1); the shared runtime comes from FFmpegSharedLibraries (GPL v3). Internal dependencies are not listed individually.
 
 字幕渲染静态合入 avfilter，包含 libass 0.17.4、FreeType 2.13.3、HarfBuzz 10.2.0、FriBidi 1.0.16、libunibreak 6.1；Linux 还包含 Fontconfig 2.16.0 和 Expat 2.6.4。源代码、版本及构建补丁见 [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries)。各项目的上游许可原文随本声明附带。
+
+光盘镜像输入使用静态合入 avformat 的 libbluray、libdvdread、libdvdnav、libdvdcss 和 libudfread。应用从 avformat 调用 libbluray / libdvdread 的公开接口，蓝光按播放列表读取与定位，DVD 由 dvdvideo 解复用器读取；DVD 的 CSS 保护由 libdvdcss 处理；暂不支持蓝光 AACS／BD+，不捆绑 libaacs / libbdplus。上游许可原文随本声明附带；libdvdread、libdvdnav 和 libdvdcss 为 GPL-2.0-or-later，与本项目 GPL-3.0 兼容。
+
+Disc image input uses libbluray, libdvdread, libdvdnav, libdvdcss and libudfread statically embedded in avformat. The application calls the public libbluray/libdvdread APIs through avformat to read and seek Blu-ray playlists and enumerate DVD titles; DVD input uses the dvdvideo demuxer. DVD CSS is handled by libdvdcss. Protected Blu-ray input remains unsupported, and no libaacs or libbdplus is bundled. Upstream license texts are included; libdvdread, libdvdnav and libdvdcss are GPL-2.0-or-later, which is compatible with this project's GPL-3.0.
 
 Subtitle rendering is linked statically into avfilter and includes libass 0.17.4, FreeType 2.13.3, HarfBuzz 10.2.0, FriBidi 1.0.16 and libunibreak 6.1; Linux also includes Fontconfig 2.16.0 and Expat 2.6.4. Source versions and build patches are available in [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries). Original upstream license texts are included with this notice. FriBidi uses LGPL 2.1 or later; the complete LGPL 2.1 text is included among the consolidated licenses.
 
