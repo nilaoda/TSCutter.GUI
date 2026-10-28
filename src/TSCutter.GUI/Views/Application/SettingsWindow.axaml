@@ -160,6 +160,12 @@
                     <TextBlock Text="{DynamicResource String.Settings.OutputTemplateInvalid}"
                                TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}"
                                IsVisible="{Binding IsOutputTemplateValid, Converter={x:Static app:App.InverseBoolConverter}}" />
+                    <CheckBox IsChecked="{Binding TsCheckOnExport}"
+                              Content="{DynamicResource String.Settings.TsCheckOnExport}"
+                              ToolTip.Tip="{DynamicResource String.Settings.TsCheckOnExportTip}"
+                              Margin="0,6,0,0" />
+                    <TextBlock Text="{DynamicResource String.Settings.TsCheckOnExportHint}"
+                               TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}" />
                 </StackPanel>
             </TabItem>
         </TabControl>

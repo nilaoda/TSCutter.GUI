@@ -6,6 +6,7 @@ using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Services.Discs;
 using TSCutter.GUI.Services.Editing;
+using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Services.Preview;
 using TSCutter.GUI.Tests.FFmpeg;
 using Xunit;
@@ -57,13 +58,25 @@ public sealed class DiscMergeTests
             var service = new RemuxExportService();
             for (var i = 0; i < 2; i++)
                 await service.ExportAsync(new(outputs[i], [segments[i]]));
+            var check = extension == "m2ts" ? new ExportTsCheckSession(outputs[2]) : null;
             try
             {
-                await service.ExportAsync(new(outputs[2], segments));
+                await service.ExportAsync(new(outputs[2], segments), checkSession: check);
+                check?.Complete();
             }
             catch (RemuxExportException exception)
             {
                 Assert.Fail($"{label}: {exception.Code}: {exception}");
+            }
+            if (check is not null)
+            {
+                var reference = await new TsStreamAnalyzer().AnalyzeAsync(outputs[2]);
+                Assert.Equal(TsExportCheckState.Completed, check.State);
+                Assert.Equal(new FileInfo(outputs[2]).Length, check.Result!.FileSize);
+                Assert.Equal(192, check.Result.PacketSize);
+                Assert.Equal(reference.PacketCount, check.Result.PacketCount);
+                Assert.Equal(reference.TotalErrorCount, check.Result.TotalErrorCount);
+                Assert.Equal(reference.TotalWarningCount, check.Result.TotalWarningCount);
             }
             var first = Inspect(outputs[0]);
             var second = Inspect(outputs[1]);

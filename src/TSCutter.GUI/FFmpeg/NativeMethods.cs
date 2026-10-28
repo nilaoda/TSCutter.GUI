@@ -100,6 +100,10 @@ public static unsafe partial class NativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int avio_closep(AVIOContext** context);
 
+    [LibraryImport("tscutter.avformat", EntryPoint = "avio_flush", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void avio_flush(AVIOContext* context);
+
     [LibraryImport("tscutter.avcodec", EntryPoint = "avcodec_parameters_copy", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int avcodec_parameters_copy(AVCodecParameters* destination, AVCodecParameters* source);

@@ -13,6 +13,7 @@ using TSCutter.GUI.FFmpeg;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Discs;
+using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.Media;
 
@@ -24,8 +25,8 @@ internal sealed unsafe class RemuxExportService
     private static readonly AVRational Microseconds = new() { num = 1, den = FF.AV_TIME_BASE };
 
     public Task ExportAsync(RemuxExportRequest request, IProgress<RemuxExportProgress>? progress = null,
-        CancellationToken cancellationToken = default) =>
-        Task.Run(() => Export(request, progress, cancellationToken), cancellationToken);
+        CancellationToken cancellationToken = default, ExportTsCheckSession? checkSession = null) =>
+        Task.Run(() => Export(request, progress, cancellationToken, checkSession), cancellationToken);
 
     internal static bool IsSupportedInput(string? name) => name is not null &&
         (name.Split(',').Contains("mov") || name.Split(',').Contains("matroska"));
@@ -40,15 +41,19 @@ internal sealed unsafe class RemuxExportService
     }).ToArray();
 
     private static void Export(RemuxExportRequest request, IProgress<RemuxExportProgress>? progress,
-        CancellationToken token)
+        CancellationToken token, ExportTsCheckSession? checkSession = null)
     {
         Validate(request);
         token.ThrowIfCancellationRequested();
         var prepared = new List<PreparedSegment>();
         AVFormatContext* output = null;
+        M2tsAvioWriteContext? avioWriter = null;
         AVIOInterruptCB_callback interrupt = _ => token.IsCancellationRequested ? 1 : 0;
         var temporary = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(request.OutputPath))!,
             $".tscutter-{Guid.NewGuid():N}.tmp");
+        // M2TS 输出按顺序写出，可通过自定义 AVIO 写回调把封装器生成的最终字节交给检测会话；
+        // MP4/MKV/VOB 的输出管线需要回写，不接入 TS 检测。
+        var useCustomAvio = checkSession is not null && request.Segments[0].Settings.Container == "m2ts";
         try
         {
             foreach (var segment in request.Segments)
@@ -64,7 +69,8 @@ internal sealed unsafe class RemuxExportService
                     "mp4" => "mp4", "mkv" => "matroska", "vob" => "vob", "m2ts" => "mpegts",
                     _ => throw new RemuxExportException(RemuxExportError.UnsupportedContainer)
                 }, temporary));
-            if (output == null) throw new OutOfMemoryException();
+            if (output == null)
+                throw new OutOfMemoryException();
             output->interrupt_callback = new AVIOInterruptCB { callback = interrupt };
             // 将显示时间起点设为零并保留 B 帧的解码预滚；MP4 通过编辑列表处理。
             output->avoid_negative_ts = first.Segment.Settings.Container is "vob" or "m2ts" ? 1 : 0;
@@ -73,8 +79,17 @@ internal sealed unsafe class RemuxExportService
             output->strict_std_compliance = -1;
             CreateStreams(output, first);
             foreach (var item in prepared.Skip(1)) CheckCompatibility(first, item);
-            using (new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
-            FFmpegException.Check(FF.avio_open2(&output->pb, temporary, 2, &output->interrupt_callback, null));
+            if (useCustomAvio)
+            {
+                avioWriter = M2tsAvioWriteContext.Open(temporary, checkSession!);
+                output->pb = avioWriter.Io;
+                output->flags |= ffmpeg.AVFMT_FLAG_CUSTOM_IO;
+            }
+            else
+            {
+                using (new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
+                FFmpegException.Check(FF.avio_open2(&output->pb, temporary, 2, &output->interrupt_callback, null));
+            }
             AVDictionary* options = null;
             try
             {
@@ -114,7 +129,8 @@ internal sealed unsafe class RemuxExportService
                 var actualEnd = CopyPackets(output, item, offset, lastDts, initialCompositionOffsets, subtitleOrder, token, (time, size) =>
                 {
                     bytes += size;
-                    if (timer.Elapsed - lastReport < TimeSpan.FromMilliseconds(100)) return;
+                    if (timer.Elapsed - lastReport < TimeSpan.FromMilliseconds(100))
+                        return;
                     lastReport = timer.Elapsed;
                     var elapsed = Math.Max(timer.Elapsed.TotalSeconds, 0.001);
                     var done = Math.Clamp(offset + time, 0, duration);
@@ -133,7 +149,17 @@ internal sealed unsafe class RemuxExportService
             if (first.Segment.Settings.Container is "mp4" or "mkv")
                 CopyChapters(output, prepared);
             FFmpegException.Check(FF.av_write_trailer(output));
-            FFmpegException.Check(FF.avio_closep(&output->pb));
+            if (useCustomAvio)
+            {
+                // 自定义 AVIO 不能走 avio_closep 的 URL 关闭逻辑：先冲出封装器缓冲
+                // （其中包含 trailer 之后最后 flush 的字节）并检测，再释放原生上下文。
+                avioWriter!.Complete();
+                output->pb = null;
+            }
+            else
+            {
+                FFmpegException.Check(FF.avio_closep(&output->pb));
+            }
             token.ThrowIfCancellationRequested();
             File.Move(temporary, request.OutputPath, overwrite: true);
             progress?.Report(new RemuxExportProgress(100, bytes / Math.Max(timer.Elapsed.TotalSeconds, 0.001), 0));
@@ -146,11 +172,24 @@ internal sealed unsafe class RemuxExportService
         {
             if (output != null)
             {
-                if (output->pb != null) FF.avio_closep(&output->pb);
+                if (output->pb != null)
+                {
+                    if (avioWriter != null)
+                    {
+                        // 释放自定义 AVIO 前先把指针置空，避免悬空指针被再次释放。
+                        output->pb = null;
+                        avioWriter.Dispose();
+                    }
+                    else
+                    {
+                        FF.avio_closep(&output->pb);
+                    }
+                }
                 FF.avformat_free_context(output);
             }
             foreach (var item in prepared) item.Input.Dispose();
-            if (File.Exists(temporary)) File.Delete(temporary);
+            if (File.Exists(temporary))
+                File.Delete(temporary);
             GC.KeepAlive(interrupt);
         }
     }

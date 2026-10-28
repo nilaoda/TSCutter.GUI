@@ -42,6 +42,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     [ObservableProperty]
     private bool _enableSdrToneMapping;
     [ObservableProperty]
+    private bool _tsCheckOnExport;
+    [ObservableProperty]
     private ThemeModel _selectedTheme;
     [ObservableProperty]
     private ThemeModel _selectedDarkTheme;
@@ -68,6 +70,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         ShowKeyFrameStrip = _configService.CurrentConfig.ShowKeyFrameStrip;
         PreferHardwareDecoding = _configService.CurrentConfig.PreferHardwareDecoding;
         EnableSdrToneMapping = _configService.CurrentConfig.EnableSdrToneMapping;
+        TsCheckOnExport = _configService.CurrentConfig.TsCheckOnExport;
         SelectedTheme = _configService.CurrentConfig.ThemeModel;
         SelectedDarkTheme = _configService.CurrentConfig.DarkThemeModel;
         SelectedThemeVariantMode = _configService.CurrentConfig.ThemeVariantMode;
@@ -109,6 +112,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.CurrentConfig.ShowKeyFrameStrip = ShowKeyFrameStrip;
         _configService.CurrentConfig.PreferHardwareDecoding = PreferHardwareDecoding;
         _configService.CurrentConfig.EnableSdrToneMapping = EnableSdrToneMapping;
+        _configService.CurrentConfig.TsCheckOnExport = TsCheckOnExport;
         _configService.CurrentConfig.ThemeVariantMode = SelectedThemeVariantMode;
         // 两套配色都需保存，即使其中一套当前未启用。
         _configService.CurrentConfig.ThemeName = SelectedTheme.Name;

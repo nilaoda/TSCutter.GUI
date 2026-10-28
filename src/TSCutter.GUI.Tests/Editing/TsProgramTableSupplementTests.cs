@@ -1,6 +1,7 @@
 using System.Buffers.Binary;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Editing;
+using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils.TransportStream.Packets;
 using Xunit;
 
@@ -26,7 +27,14 @@ public sealed class TsProgramTableSupplementTests
             SourcePath = files.Source, OutputPath = files.Output,
             Ranges = [new(3 * stride, -1, 0, 1)]
         };
-        var result = await new TsClipMergeService().MergeAsync(request, addProgramTables: true);
+        var session = new ExportTsCheckSession(files.Output);
+        var result = await new TsClipMergeService().MergeAsync(request, addProgramTables: true, checkSession: session);
+        session.Complete();
+        var reference = await new TsStreamAnalyzer().AnalyzeAsync(files.Output);
+        Assert.Equal(reference.PacketCount, session.Result!.PacketCount);
+        Assert.Equal(reference.TotalErrorCount, session.Result.TotalErrorCount);
+        Assert.Equal(reference.TotalWarningCount, session.Result.TotalWarningCount);
+        Assert.Equal(reference.FileSize, session.Result.FileSize);
         var output = File.ReadAllBytes(files.Output);
         Assert.Equal(output.Length, result.OutputBytes);
         const int prefixPackets = 3;

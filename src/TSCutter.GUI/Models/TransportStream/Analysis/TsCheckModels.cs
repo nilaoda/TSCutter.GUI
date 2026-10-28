@@ -179,7 +179,8 @@ public sealed class TsStreamDefinition
 public sealed class TsCheckResult
 {
     public required string FilePath { get; init; }
-    public required long FileSize { get; init; }
+    // 文件扫描在构造时已知长度；增量检测会话在收尾时按实际累计写入字节数补齐，因此可写。
+    public required long FileSize { get; set; }
     public int TransportStreamId { get; set; } = 1;
     public byte PatVersion { get; set; }
     public long SyncOffset { get; set; }

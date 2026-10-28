@@ -2656,6 +2656,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             clip.MergedOutput = null;
             clip.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
             clip.ExportStatus = ClipExportStatus.Done;
+            clip.ExportCheck = BuildClipExportCheck(dialogViewModel.OutputPath, dialogViewModel.Outcomes);
         }
     }
 
@@ -2700,6 +2701,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 Clips[i].ExportStatus = ClipExportStatus.Done;
                 Clips[i].MergedOutput = null;
                 Clips[i].OutputFileInfo = new FileInfo(tasks[i].DestinationPath);
+                Clips[i].ExportCheck = BuildClipExportCheck(tasks[i].DestinationPath, dialogViewModel.Outcomes);
             }
             else if (failedSet.Contains(i))
             {
@@ -2712,6 +2714,52 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         }
         if (dialogViewModel.Exception is { } exception)
             await ShowMessageAsync(FormatMergeError(exception), LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
+    }
+
+    /// <summary>把导出结果表中的检测结论整理成片段上的轻量入口数据；找不到记录时返回 null。</summary>
+    private static ClipExportCheck? BuildClipExportCheck(string outputPath, IReadOnlyList<ExportTaskOutcome> outcomes)
+    {
+        if (App.ExportRecordRegistry is not { } registry)
+            return null;
+        foreach (var outcome in outcomes)
+        {
+            if (!outcome.Success || outcome.RecordId is null ||
+                !MediaFileUtil.PathsEqual(outcome.OutputPath, outputPath))
+                continue;
+            var record = registry.Find(outcome.RecordId.Value);
+            if (record is null)
+                return null;
+            return new ClipExportCheck
+            {
+                RecordId = record.Id,
+                CheckEnabled = record.CheckEnabled,
+                CheckApplicable = record.CheckApplicable,
+                CheckState = record.CheckState,
+                Verdict = record.CheckVerdict,
+                ErrorCount = record.ErrorCount,
+                WarningCount = record.WarningCount,
+            };
+        }
+        return null;
+    }
+
+    [RelayCommand]
+    private void OpenExportResult(object? parameter)
+    {
+        if (parameter is not PickedClip clip || clip.ExportCheck is not { } check)
+            return;
+        ShowExportRecordsInternal(check.RecordId);
+    }
+
+    [RelayCommand]
+    private void ShowExportRecords() => ShowExportRecordsInternal(null);
+
+    private void ShowExportRecordsInternal(long? selectRecordId)
+    {
+        var viewModel = _dialogService.CreateViewModel<ExportRecordsWindowViewModel>();
+        if (selectRecordId is { } id)
+            viewModel.SelectRecord(id);
+        _dialogService.Show(this, viewModel);
     }
 
     private string ClipExtension => CurrentRemuxSettings?.Container ?? _videoInstance?.ClipExtension ?? "ts";

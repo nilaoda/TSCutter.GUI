@@ -4,6 +4,7 @@ using TSCutter.GUI.FFmpeg;
 using Xunit;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Editing;
+using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.ViewModels.Editing;
 
@@ -102,6 +103,112 @@ public sealed class RemuxExportServiceTests
         var unicodeAlias = Path.Combine(sourceDirectory, "Cafe\u0301.mp4");
         if (OperatingSystem.IsMacOS() && File.Exists(unicodeAlias)) AssertProtected(unicodeAlias, unicodeSource);
         Assert.Equal("source must survive", File.ReadAllText(source));
+    }
+
+    [TSCutter.GUI.Tests.FFmpeg.NativeRuntimeFact]
+    public unsafe void M2tsMuxerBytesReachIncrementalDetectorThroughCustomAvio()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "tscutter-avio-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var temporary = Path.Combine(directory, ".tscutter-test.tmp");
+        var session = new ExportTsCheckSession(temporary);
+        session.Begin();
+        AVFormatContext* format = null;
+        try
+        {
+            // mpegts 复用器 + m2ts 模式：封装器写出的最终字节必须全部经自定义 AVIO 到达检测会话。
+            FFmpegException.Check(NativeMethods.avformat_alloc_output_context2(&format, null, "mpegts", temporary));
+            var stream = NativeMethods.avformat_new_stream(format, null);
+            Assert.True(stream != null);
+            stream->codecpar->codec_type = AVMediaType.AVMEDIA_TYPE_VIDEO;
+            stream->codecpar->codec_id = AVCodecID.AV_CODEC_ID_MPEG2VIDEO;
+            stream->codecpar->width = 1920;
+            stream->codecpar->height = 1080;
+            stream->codecpar->format = 0;
+            stream->time_base = new AVRational { num = 1, den = 90_000 };
+            AVDictionary* options = null;
+            var writer = M2tsAvioWriteContext.Open(temporary, session);
+            try
+            {
+                format->pb = writer.Io;
+                FFmpegException.Check(NativeMethods.av_dict_set(&options, "mpegts_m2ts_mode", "1", 0));
+                FFmpegException.Check(NativeMethods.avformat_write_header(format, &options));
+                using var packet = new Packet();
+                for (var index = 0; index < 24; index++)
+                {
+                    AVPacket* raw = packet;
+                    FFmpegException.Check(NativeMethods.av_new_packet(raw, 2000));
+                    new Span<byte>(raw->data, raw->size).Fill(0xAF);
+                    raw->stream_index = 0;
+                    raw->pts = raw->dts = index * 3_000L;
+                    raw->duration = 3_000;
+                    if (index == 0)
+                        raw->flags |= 1;
+                    FFmpegException.Check(NativeMethods.av_interleaved_write_frame(format, raw));
+                }
+                FFmpegException.Check(NativeMethods.av_write_trailer(format));
+                format->pb = null;
+                writer.Complete();
+                session.Complete();
+            }
+            finally
+            {
+                NativeMethods.av_dict_free(&options);
+                writer.Dispose();
+                if (format->pb != null)
+                    format->pb = null;
+                NativeMethods.avformat_free_context(format);
+                format = null;
+            }
+
+            Assert.Equal(TsExportCheckState.Completed, session.State);
+            var result = session.Result!;
+            Assert.False(result.WasCancelled);
+            // 检测的是封装器写出的最终 M2TS 字节：长度与文件一致，未读回输出。
+            Assert.Equal(new FileInfo(temporary).Length, result.FileSize);
+            Assert.True(result.PacketCount > 0);
+            Assert.Equal(192, result.PacketSize);
+            // PAT/PMT 在输出开头，检测器能识别节目表。
+            Assert.Contains(0x0000, result.Pids.Keys);
+        }
+        finally
+        {
+            session.Abort();
+            if (format != null)
+                NativeMethods.avformat_free_context(format);
+            if (File.Exists(temporary))
+                File.Delete(temporary);
+            Directory.Delete(directory, true);
+        }
+    }
+
+    [TSCutter.GUI.Tests.FFmpeg.NativeRuntimeFact]
+    public unsafe void CustomAvioFinalFlushPropagatesWriteFailureAndClosesTheStream()
+    {
+        var session = new ExportTsCheckSession("failed.m2ts");
+        session.Begin();
+        var stream = new FailingAvioStream();
+        using var writer = M2tsAvioWriteContext.Open(stream, session);
+        // 最后一个未满的 AVIO 缓冲直到 Complete 才触发写回调。
+        new Span<byte>(writer.Io->buffer, 192).Fill(0x47);
+        writer.Io->buf_ptr = writer.Io->buffer + 192;
+        Assert.Throws<IOException>(writer.Complete);
+        Assert.True(stream.Disposed);
+        Assert.True(writer.Io == null);
+        session.Abort();
+        Assert.Equal(TsExportCheckState.Aborted, session.State);
+        Assert.Equal(0, session.Result!.FileSize);
+    }
+
+    private sealed class FailingAvioStream : MemoryStream
+    {
+        public bool Disposed { get; private set; }
+        public override void Write(ReadOnlySpan<byte> buffer) => throw new IOException("Simulated disk failure");
+        protected override void Dispose(bool disposing)
+        {
+            Disposed = true;
+            base.Dispose(disposing);
+        }
     }
 
     [RemuxExportFact]
