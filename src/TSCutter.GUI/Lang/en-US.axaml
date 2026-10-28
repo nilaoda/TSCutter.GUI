@@ -180,6 +180,12 @@
     <x:String x:Key="String.Output.CancelRemaining">Cancel Remaining</x:String>
     <x:String x:Key="String.Settings.Title">Settings</x:String>
     <x:String x:Key="String.Settings.General">General</x:String>
+    <x:String x:Key="String.Settings.Appearance">Appearance</x:String>
+    <x:String x:Key="String.Settings.ThemePreset">Theme preset</x:String>
+    <x:String x:Key="String.Settings.ThemePresetHint">Choose a preset for matching light and dark themes, or combine them individually.</x:String>
+    <x:String x:Key="String.Settings.CustomTheme">Custom</x:String>
+    <x:String x:Key="String.Menu.CustomTheme">Custom…</x:String>
+    <x:String x:Key="String.Settings.Preview">Preview</x:String>
     <x:String x:Key="String.Settings.Language">Language</x:String>
     <x:String x:Key="String.Settings.AutoDetectLanguage">Auto detect language</x:String>
     <x:String x:Key="String.Settings.CurrentLanguage">Current language</x:String>

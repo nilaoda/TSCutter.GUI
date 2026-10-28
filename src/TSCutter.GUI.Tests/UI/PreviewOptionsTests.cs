@@ -29,6 +29,93 @@ namespace TSCutter.GUI.Tests.UI;
 public sealed class PreviewOptionsTests
 {
     [Fact]
+    public async Task ThemePresetsAndCustomPairsStayInSyncWithWindowAndNativeMenus()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            using var resolver = new ModernDependencyResolver();
+            using var scope = resolver.WithResolver();
+            var locale = new LocalizationService();
+            locale.SwitchLanguage("zh-CN");
+            Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+            var config = new MemoryConfiguration();
+            var vm = new MainWindowViewModel(
+                new DialogService(DispatchProxy.Create<IDialogManager, UnusedDialogs>()), config);
+            var main = new MainWindow { DataContext = vm };
+            var settings = new SettingsWindowViewModel(config, locale) { SelectedTabIndex = 1 };
+            var window = new SettingsWindow { DataContext = settings };
+            try
+            {
+                main.Show();
+                window.Show();
+                Dispatcher.UIThread.RunJobs();
+                var menu = main.FindControl<Menu>("AppMenu")!;
+                var view = menu.Items.OfType<MenuItem>()
+                    .Single(item => item.Header?.ToString() == LocalizationManager.Instance.String_Menu_View);
+                var themes = view.Items.OfType<MenuItem>()
+                    .Single(item => item.Header?.ToString() == LocalizationManager.Instance.String_Menu_Theme);
+                using var projection = new MacOSMenuBar.MenuProjection(menu);
+                var nativeView = (NativeMenuItem)projection.Menu.Items[menu.Items.IndexOf(view)];
+                var nativeThemes = nativeView.Menu!.Items.OfType<NativeMenuItem>()
+                    .Single(item => item.Header == themes.Header?.ToString()).Menu!;
+                var nativeXp = nativeThemes.Items.OfType<NativeMenuItem>()
+                    .Single(item => item.Header == "Windows XP");
+                var preset = window.FindControl<ComboBox>("ThemePresetPicker")!;
+                var light = window.FindControl<ComboBox>("LightThemePicker")!;
+                var dark = window.FindControl<ComboBox>("DarkThemePicker")!;
+                var silver = ThemeModel.AllThemes.Single(theme => theme.Name == "Luna Silver");
+                var win11 = ThemeModel.AllThemes.Single(theme => theme.Name == "Windows 11");
+                var win11Dark = ThemeModel.GetPairedDarkTheme(win11)!;
+                preset.SelectedValue = settings.ThemePresetOptions.Single(item => item.Theme == silver);
+                Assert.Same(silver, settings.SelectedTheme);
+                Assert.Equal("Luna (Dark)", settings.SelectedDarkTheme.Name);
+                Assert.Equal(0, config.SaveCount);
+                settings.ApplyCommand.Execute(null);
+                Assert.True(nativeXp.IsChecked);
+                Assert.True(nativeXp.Menu!.Items.OfType<NativeMenuItem>()
+                    .Single(item => item.Header == "Luna Silver").IsChecked);
+
+                // 只修改未显示的另一侧配色，也必须同步菜单，不能依赖 ActualThemeVariantChanged。
+                var actualTheme = Avalonia.Application.Current!.ActualThemeVariant;
+                dark.SelectedValue = win11Dark;
+                Assert.True(settings.SelectedThemePreset!.IsCustom);
+                Assert.Equal(0, preset.SelectedIndex);
+                Assert.Equal(locale.GetString("String.Settings.CustomTheme"),
+                    Assert.IsType<ComboBoxItem>(preset.SelectedItem).Content);
+                settings.ApplyCommand.Execute(null);
+                Assert.Equal(actualTheme, Avalonia.Application.Current.ActualThemeVariant);
+                Assert.False(nativeXp.IsChecked);
+                Assert.True(nativeThemes.Items.OfType<NativeMenuItem>().Last().IsChecked);
+
+                light.SelectedValue = win11;
+                Assert.Same(win11, settings.SelectedThemePreset!.Theme);
+                Assert.Same(win11, Assert.IsType<ThemePickerItem>(preset.SelectedValue).Theme);
+                settings.ApplyCommand.Execute(null);
+                Assert.True(nativeThemes.Items.OfType<NativeMenuItem>()
+                    .Single(item => item.Header == "Windows 11").IsChecked);
+                Assert.False(nativeThemes.Items.OfType<NativeMenuItem>().Last().IsChecked);
+                // 仅选择“自定义”而未改变配色，提交后仍应识别为原来的配套方案。
+                preset.SelectedValue = settings.ThemePresetOptions[0];
+                settings.ApplyCommand.Execute(null);
+                Assert.Same(win11, settings.SelectedThemePreset!.Theme);
+                // 从系统菜单选择配套方案时，也必须同时更新两侧配置并保留明暗模式。
+                nativeXp.Menu!.Items.OfType<NativeMenuItem>()
+                    .Single(item => item.Header == "Luna Silver").Command!.Execute(null);
+                Assert.Equal("Luna Silver", config.CurrentConfig.ThemeName);
+                Assert.Equal("Luna (Dark)", config.CurrentConfig.DarkThemeName);
+                Assert.Equal(ThemeVariantMode.Automatic, config.CurrentConfig.ThemeVariantMode);
+            }
+            finally
+            {
+                window.Close();
+                main.Close();
+                vm.Close();
+            }
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task StatusOverridesStayTemporaryAndSettingsOnlyChangeDefaults()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
@@ -66,6 +153,7 @@ public sealed class PreviewOptionsTests
                 {
                     window.Show();
                     settingsWindow.Show();
+                    settingsWindow.FindControl<TabControl>("SettingsTabs")!.SelectedIndex = 2;
                     var mappingControl = window.FindControl<Button>("ToneMappingToggle")!;
                     Assert.False(Assert.IsAssignableFrom<Control>(mappingControl.Parent).IsVisible);
                     PublishFrame(vm, VideoDynamicRange.Hdr);

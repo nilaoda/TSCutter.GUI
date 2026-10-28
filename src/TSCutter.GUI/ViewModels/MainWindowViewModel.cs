@@ -12,6 +12,7 @@ using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Input.Platform;
+using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media.Imaging;
 using Avalonia.Utilities;
 using Classic.CommonControls.Dialogs;
@@ -109,7 +110,6 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         BuildThemeMenuItems();
         // 计算型本地化文本不会随资源字典自动刷新，语言切换后需主动通知界面重新取值。
         App.LocalizationService.LanguageChanged += OnLanguageChanged;
-        Avalonia.Application.Current!.ActualThemeVariantChanged += (_, _) => UpdateThemeMenuChecks();
     }
 
     private void OnLanguageChanged()
@@ -1302,6 +1302,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             OnPropertyChanged(nameof(ShowImageNavigator));
         else if (e.PropertyName == nameof(AppConfig.ShowKeyFrameStrip))
             OnKeyFrameStripPreferenceChanged();
+        else if (e.PropertyName is nameof(AppConfig.ThemeName) or nameof(AppConfig.DarkThemeName))
+            UpdateThemeMenuChecks();
     }
 
     public double MaxZoomFactor => 3.0;
@@ -1884,9 +1886,12 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     }
 
     [RelayCommand]
-    private async Task SettingsClickAsync()
+    private async Task SettingsClickAsync() => await ShowSettingsAsync(0);
+
+    private async Task ShowSettingsAsync(int tabIndex)
     {
         var dialogViewModel = _dialogService.CreateViewModel<SettingsWindowViewModel>();
+        dialogViewModel.SelectedTabIndex = tabIndex;
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
     }
 
@@ -2938,26 +2943,49 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private void BuildThemeMenuItems()
     {
         ThemeMenuItems.Clear();
-        // 保留各系列的原有预设；macOS 外观只在当前平台支持时加入菜单。
-        foreach (var themeName in new[] { "Classic", "Luna Blue", "Windows 7 Aero", "Windows 8", "Windows 10", "Windows 11", "macOS" })
+        // 配套方案以浅色配色为标识；多种配色的系列通过子菜单完整展示。
+        foreach (var family in ThemeModel.AllThemes.GroupBy(theme => theme.Family))
         {
-            var lightTheme = ThemeModel.AllThemes.SingleOrDefault(theme => theme.Name == themeName);
-            if (lightTheme is null) continue;
-            var darkTheme = ThemeModel.AllDarkThemes.Single(theme => theme.Family == lightTheme.Family);
-            var menuItem = new MenuItem
+            var themes = family.ToArray();
+            if (themes.Length == 1)
             {
-                Header = lightTheme.Family,
-                ToggleType = MenuItemToggleType.Radio
-            };
-            menuItem.Click += (_, _) => ApplyThemePreset(lightTheme, darkTheme);
-            ThemeMenuItems.Add(menuItem);
+                ThemeMenuItems.Add(CreateThemeMenuItem(themes[0], family.Key));
+                continue;
+            }
+
+            var group = new MenuItem { Header = family.Key, ToggleType = MenuItemToggleType.CheckBox };
+            foreach (var theme in themes)
+                group.Items.Add(CreateThemeMenuItem(theme, theme.Name));
+            ThemeMenuItems.Add(group);
         }
+
+        var custom = new MenuItem { ToggleType = MenuItemToggleType.Radio };
+        custom.Bind(MenuItem.HeaderProperty, new DynamicResourceExtension("String.Menu.CustomTheme"));
+        custom.Click += async (_, _) =>
+        {
+            // 单选菜单在 Click 前可能已修改勾选；取消设置时也应保留当前方案的勾选。
+            UpdateThemeMenuChecks();
+            await ShowSettingsAsync(1);
+        };
+        ThemeMenuItems.Add(custom);
         UpdateThemeMenuChecks();
+    }
+
+    private MenuItem CreateThemeMenuItem(ThemeModel lightTheme, string header)
+    {
+        var menuItem = new MenuItem
+        {
+            Header = header,
+            Tag = lightTheme,
+            ToggleType = MenuItemToggleType.Radio
+        };
+        menuItem.Click += (_, _) => ApplyThemePreset(lightTheme, ThemeModel.GetPairedDarkTheme(lightTheme)!);
+        return menuItem;
     }
 
     private void ApplyThemePreset(ThemeModel lightTheme, ThemeModel darkTheme)
     {
-        // 同时保存该系列的明暗配色，保留用户当前的明暗模式。
+        // 同时保存该配色方案的明暗主题，保留用户当前的明暗模式。
         var config = _configService.CurrentConfig;
         config.ThemeName = lightTheme.Name;
         config.DarkThemeName = darkTheme.Name;
@@ -2974,11 +3002,28 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     private void UpdateThemeMenuChecks()
     {
-        // 设置中选用同系列的其他配色时，菜单仍勾选对应的系列。
-        var activeFamily = ThemeModel.AllThemes.Concat(ThemeModel.AllDarkThemes)
-            .FirstOrDefault(theme => theme.Variant == Avalonia.Application.Current!.ActualThemeVariant)?.Family;
+        var config = _configService.CurrentConfig;
+        var matched = false;
         foreach (var menuItem in ThemeMenuItems)
-            menuItem.IsChecked = Equals(menuItem.Header, activeFamily);
+        {
+            if (menuItem.Items.Count > 0)
+            {
+                var children = menuItem.Items.OfType<MenuItem>().ToArray();
+                foreach (var child in children)
+                    child.IsChecked = MatchesPreset(child);
+                menuItem.IsChecked = children.Any(child => child.IsChecked);
+                matched |= menuItem.IsChecked;
+            }
+            else if (menuItem.Tag is ThemeModel)
+            {
+                menuItem.IsChecked = MatchesPreset(menuItem);
+                matched |= menuItem.IsChecked;
+            }
+        }
+        ThemeMenuItems[^1].IsChecked = !matched;
+
+        bool MatchesPreset(MenuItem item) => item.Tag is ThemeModel light &&
+            config.ThemeName == light.Name && config.DarkThemeName == ThemeModel.GetPairedDarkTheme(light)?.Name;
     }
 
     private sealed record EditorStateSnapshot(

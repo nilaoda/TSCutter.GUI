@@ -9,8 +9,8 @@
         xmlns:models="clr-namespace:TSCutter.GUI.Models.Application"
         xmlns:app="using:TSCutter.GUI"
         mc:Ignorable="d"
-        d:DesignWidth="380" d:DesignHeight="490"
-        Width="380" Height="490"
+        d:DesignWidth="380" d:DesignHeight="420"
+        Width="380" Height="420"
         x:Class="TSCutter.GUI.Views.Application.SettingsWindow"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
@@ -22,9 +22,6 @@
             <Setter Property="ItemsPanel">
                 <ItemsPanelTemplate><StackPanel /></ItemsPanelTemplate>
             </Setter>
-        </Style>
-        <Style Selector="HeaderedContentControl">
-            <Setter Property="Padding" Value="10,15,10,10" />
         </Style>
     </Window.Styles>
     
@@ -66,17 +63,17 @@
                     Command="{Binding ApplyCommand}"
                     Width="70"/>
         </StackPanel>
-        <TabControl SelectedIndex="0">
+        <TabControl x:Name="SettingsTabs" SelectedIndex="{Binding SelectedTabIndex, Mode=TwoWay}">
             <TabItem Header="{DynamicResource String.Settings.General}">
-                <StackPanel Orientation="Vertical" Spacing="8">
-                    <HeaderedContentControl Header="{DynamicResource String.Settings.Language}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10,12" Spacing="10">
                         <StackPanel Orientation="Vertical" Spacing="4">
                             <CheckBox IsChecked="{Binding AutoDetectLanguage}"
                                       Content="{DynamicResource String.Settings.AutoDetectLanguage}" />
                             <Grid ColumnDefinitions="100, *" VerticalAlignment="Center">
                                 <TextBlock Grid.Column="0" VerticalAlignment="Center"
                                            Text="{DynamicResource String.Settings.CurrentLanguage}" />
-                                <ComboBox Grid.Column="1" ItemsSource="{Binding Languages}" 
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding Languages}"
                                           SelectedItem="{Binding SelectedLanguage}"
                                           IsEnabled="{Binding IsLanguageEnable}">
                                     <ComboBox.ItemTemplate>
@@ -87,85 +84,105 @@
                                 </ComboBox>
                             </Grid>
                         </StackPanel>
-                    </HeaderedContentControl>
-                    <HeaderedContentControl Header="{DynamicResource String.Settings.Theme}">
-                        <StackPanel Orientation="Vertical" Spacing="4">
-                            <Grid ColumnDefinitions="100, *" VerticalAlignment="Center">
-                                <TextBlock Grid.Column="0" VerticalAlignment="Center"
-                                           Text="{DynamicResource String.Settings.Theme.ThemeVariantMode}" />
-                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Spacing="4">
-                                    <!-- 自动模式 -->
-                                    <RadioButton Content="{StaticResource String.Settings.Theme.AutoDetect}"
-                                                 GroupName="ThemeGroup"
-                                                 IsChecked="{Binding SelectedThemeVariantMode, 
-                                                     Converter={StaticResource EnumToBoolConverter}, 
-                                                     ConverterParameter={x:Static models:ThemeVariantMode.Automatic}}" />
-                                    <!-- 浅色模式 -->
-                                    <RadioButton Content="{StaticResource String.Settings.Theme.Light}"
-                                                 GroupName="ThemeGroup"
-                                                 IsChecked="{Binding SelectedThemeVariantMode, 
-                                                     Converter={StaticResource EnumToBoolConverter}, 
-                                                     ConverterParameter={x:Static models:ThemeVariantMode.Light}}" />
-                                    <!-- 深色模式 -->
-                                    <RadioButton Content="{StaticResource String.Settings.Theme.Dark}"
-                                                 GroupName="ThemeGroup"
-                                                 IsChecked="{Binding SelectedThemeVariantMode, 
-                                                     Converter={StaticResource EnumToBoolConverter}, 
-                                                     ConverterParameter={x:Static models:ThemeVariantMode.Dark}}" />
-                                </StackPanel>
-                            </Grid>
-                            <Grid ColumnDefinitions="100, *" VerticalAlignment="Center">
-                                <TextBlock Grid.Column="0" VerticalAlignment="Center"
-                                           Text="{DynamicResource String.Settings.CurrentLightTheme}" />
-                                <ComboBox Grid.Column="1" Classes="theme-picker" ItemsSource="{Binding ThemeOptions, Converter={x:Static views:SettingsWindow.ThemeItemsConverter}}"
-                                          SelectedValue="{Binding SelectedTheme, Mode=TwoWay}"
-                                          SelectedValueBinding="{CompiledBinding Tag, DataType={x:Type ComboBoxItem}}"
-                                          ItemContainerTheme="{StaticResource ThemePickerItemTheme}" />
-                            </Grid>
-                            <Grid ColumnDefinitions="100, *" VerticalAlignment="Center">
-                                <TextBlock Grid.Column="0" VerticalAlignment="Center"
-                                           Text="{DynamicResource String.Settings.CurrentDarkTheme}" />
-                                <ComboBox Grid.Column="1" Classes="theme-picker" ItemsSource="{Binding DarkThemeOptions, Converter={x:Static views:SettingsWindow.ThemeItemsConverter}}"
-                                          SelectedValue="{Binding SelectedDarkTheme, Mode=TwoWay}"
-                                          SelectedValueBinding="{CompiledBinding Tag, DataType={x:Type ComboBoxItem}}"
-                                          ItemContainerTheme="{StaticResource ThemePickerItemTheme}" />
-                            </Grid>
-                        </StackPanel>
-                    </HeaderedContentControl>
-                    <CheckBox IsChecked="{Binding AutoCheckForUpdates}"
-                              Content="{DynamicResource String.Settings.AutoCheckForUpdates}" />
-                    <CheckBox IsChecked="{Binding ShowImageNavigator}"
-                              Content="{DynamicResource String.Settings.ShowImageNavigator}"
-                              ToolTip.Tip="{DynamicResource String.Settings.ShowImageNavigatorTip}" />
-                    <CheckBox IsChecked="{Binding ShowKeyFrameStrip}"
-                              Content="{DynamicResource String.Settings.ShowKeyFrameStrip}"
-                              ToolTip.Tip="{DynamicResource String.Settings.ShowKeyFrameStripTip}" />
-                    <CheckBox IsChecked="{Binding PreferHardwareDecoding}"
-                              IsEnabled="{Binding IsHardwareDecodingAvailable}"
-                              Content="{DynamicResource String.Settings.PreferHardwareDecoding}"
-                              ToolTip.Tip="{DynamicResource String.Settings.PreferHardwareDecodingTip}" />
-                    <CheckBox IsChecked="{Binding EnableSdrToneMapping}"
-                              Content="{DynamicResource String.Settings.EnableSdrToneMapping}"
-                              ToolTip.Tip="{DynamicResource String.Settings.EnableSdrToneMappingTip}" />
-                </StackPanel>
+                        <CheckBox IsChecked="{Binding AutoCheckForUpdates}"
+                                  Content="{DynamicResource String.Settings.AutoCheckForUpdates}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="{DynamicResource String.Settings.Appearance}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10,12" Spacing="10">
+                        <Grid ColumnDefinitions="100, *" VerticalAlignment="Center">
+                            <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                       Text="{DynamicResource String.Settings.Theme.ThemeVariantMode}" />
+                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Spacing="4">
+                                <!-- 自动模式 -->
+                                <RadioButton Content="{DynamicResource String.Settings.Theme.AutoDetect}"
+                                             GroupName="ThemeGroup"
+                                             IsChecked="{Binding SelectedThemeVariantMode,
+                                                 Converter={StaticResource EnumToBoolConverter},
+                                                 ConverterParameter={x:Static models:ThemeVariantMode.Automatic}}" />
+                                <!-- 浅色模式 -->
+                                <RadioButton Content="{DynamicResource String.Settings.Theme.Light}"
+                                             GroupName="ThemeGroup"
+                                             IsChecked="{Binding SelectedThemeVariantMode,
+                                                 Converter={StaticResource EnumToBoolConverter},
+                                                 ConverterParameter={x:Static models:ThemeVariantMode.Light}}" />
+                                <!-- 深色模式 -->
+                                <RadioButton Content="{DynamicResource String.Settings.Theme.Dark}"
+                                             GroupName="ThemeGroup"
+                                             IsChecked="{Binding SelectedThemeVariantMode,
+                                                 Converter={StaticResource EnumToBoolConverter},
+                                                 ConverterParameter={x:Static models:ThemeVariantMode.Dark}}" />
+                            </StackPanel>
+                        </Grid>
+                        <Grid ColumnDefinitions="100, *" VerticalAlignment="Center">
+                            <TextBlock VerticalAlignment="Center" Text="{DynamicResource String.Settings.ThemePreset}" />
+                            <ComboBox x:Name="ThemePresetPicker" Grid.Column="1" Classes="theme-picker"
+                                      ItemsSource="{Binding ThemePresetOptions, Converter={x:Static views:SettingsWindow.ThemePresetItemsConverter}}"
+                                      SelectedValue="{Binding SelectedThemePreset, Mode=TwoWay}"
+                                      SelectedValueBinding="{CompiledBinding Tag, DataType={x:Type ComboBoxItem}}"
+                                      ItemContainerTheme="{StaticResource ThemePickerItemTheme}" />
+                        </Grid>
+                        <TextBlock Text="{DynamicResource String.Settings.ThemePresetHint}"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                        <Grid ColumnDefinitions="100, *" VerticalAlignment="Center">
+                            <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                       Text="{DynamicResource String.Settings.CurrentLightTheme}" />
+                            <ComboBox x:Name="LightThemePicker" Grid.Column="1" Classes="theme-picker" ItemsSource="{Binding ThemeOptions, Converter={x:Static views:SettingsWindow.ThemeItemsConverter}}"
+                                      SelectedValue="{Binding SelectedTheme, Mode=TwoWay}"
+                                      SelectedValueBinding="{CompiledBinding Tag, DataType={x:Type ComboBoxItem}}"
+                                      ItemContainerTheme="{StaticResource ThemePickerItemTheme}" />
+                        </Grid>
+                        <Grid ColumnDefinitions="100, *" VerticalAlignment="Center">
+                            <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                       Text="{DynamicResource String.Settings.CurrentDarkTheme}" />
+                            <ComboBox x:Name="DarkThemePicker" Grid.Column="1" Classes="theme-picker" ItemsSource="{Binding DarkThemeOptions, Converter={x:Static views:SettingsWindow.ThemeItemsConverter}}"
+                                      SelectedValue="{Binding SelectedDarkTheme, Mode=TwoWay}"
+                                      SelectedValueBinding="{CompiledBinding Tag, DataType={x:Type ComboBoxItem}}"
+                                      ItemContainerTheme="{StaticResource ThemePickerItemTheme}" />
+                        </Grid>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="{DynamicResource String.Settings.Preview}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10,12" Spacing="10">
+                        <CheckBox IsChecked="{Binding ShowImageNavigator}"
+                                  Content="{DynamicResource String.Settings.ShowImageNavigator}"
+                                  ToolTip.Tip="{DynamicResource String.Settings.ShowImageNavigatorTip}" />
+                        <CheckBox IsChecked="{Binding ShowKeyFrameStrip}"
+                                  Content="{DynamicResource String.Settings.ShowKeyFrameStrip}"
+                                  ToolTip.Tip="{DynamicResource String.Settings.ShowKeyFrameStripTip}" />
+                        <CheckBox IsChecked="{Binding PreferHardwareDecoding}"
+                                  IsEnabled="{Binding IsHardwareDecodingAvailable}"
+                                  Content="{DynamicResource String.Settings.PreferHardwareDecoding}"
+                                  ToolTip.Tip="{DynamicResource String.Settings.PreferHardwareDecodingTip}" />
+                        <CheckBox IsChecked="{Binding EnableSdrToneMapping}"
+                                  Content="{DynamicResource String.Settings.EnableSdrToneMapping}"
+                                  ToolTip.Tip="{DynamicResource String.Settings.EnableSdrToneMappingTip}" />
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
             <TabItem Header="{DynamicResource String.Settings.Output}">
-                <StackPanel Margin="10,12" Spacing="10">
-                    <TextBlock Text="{DynamicResource String.Settings.OutputTemplate}" />
-                    <TextBox Text="{Binding ClipOutputTemplate}" MaxLength="240" />
-                    <TextBlock Text="{DynamicResource String.Settings.OutputTemplateHint}" TextWrapping="Wrap" />
-                    <TextBlock Text="{DynamicResource String.Settings.OutputTemplatePreview}" FontWeight="Bold" Margin="0,6,0,0" />
-                    <TextBox Text="{Binding OutputNamePreview}" IsReadOnly="True" IsVisible="{Binding IsOutputTemplateValid}" />
-                    <TextBlock Text="{DynamicResource String.Settings.OutputTemplateInvalid}"
-                               TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}"
-                               IsVisible="{Binding IsOutputTemplateValid, Converter={x:Static app:App.InverseBoolConverter}}" />
-                    <CheckBox IsChecked="{Binding TsCheckOnExport}"
-                              Content="{DynamicResource String.Settings.TsCheckOnExport}"
-                              ToolTip.Tip="{DynamicResource String.Settings.TsCheckOnExportTip}"
-                              Margin="0,6,0,0" />
-                    <TextBlock Text="{DynamicResource String.Settings.TsCheckOnExportHint}"
-                               TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}" />
-                </StackPanel>
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10,12" Spacing="10">
+                        <TextBlock Text="{DynamicResource String.Settings.OutputTemplate}" />
+                        <TextBox Text="{Binding ClipOutputTemplate}" MaxLength="240" />
+                        <TextBlock Text="{DynamicResource String.Settings.OutputTemplateHint}" TextWrapping="Wrap" />
+                        <TextBlock Text="{DynamicResource String.Settings.OutputTemplatePreview}" FontWeight="Bold" Margin="0,6,0,0" />
+                        <TextBox Text="{Binding OutputNamePreview}" IsReadOnly="True" IsVisible="{Binding IsOutputTemplateValid}" />
+                        <TextBlock Text="{DynamicResource String.Settings.OutputTemplateInvalid}"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}"
+                                   IsVisible="{Binding IsOutputTemplateValid, Converter={x:Static app:App.InverseBoolConverter}}" />
+                        <CheckBox IsChecked="{Binding TsCheckOnExport}"
+                                  Content="{DynamicResource String.Settings.TsCheckOnExport}"
+                                  ToolTip.Tip="{DynamicResource String.Settings.TsCheckOnExportTip}"
+                                  Margin="0,6,0,0" />
+                        <TextBlock Text="{DynamicResource String.Settings.TsCheckOnExportHint}"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                    </StackPanel>
+                </ScrollViewer>
             </TabItem>
         </TabControl>
     </DockPanel>

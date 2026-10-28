@@ -180,6 +180,12 @@
     <x:String x:Key="String.Output.CancelRemaining">取消剩余</x:String>
     <x:String x:Key="String.Settings.Title">设置</x:String>
     <x:String x:Key="String.Settings.General">常规</x:String>
+    <x:String x:Key="String.Settings.Appearance">外观</x:String>
+    <x:String x:Key="String.Settings.ThemePreset">配套主题</x:String>
+    <x:String x:Key="String.Settings.ThemePresetHint">选择配套主题会同时设置深浅配色，也可在下方自由组合。</x:String>
+    <x:String x:Key="String.Settings.CustomTheme">自定义</x:String>
+    <x:String x:Key="String.Menu.CustomTheme">自定义…</x:String>
+    <x:String x:Key="String.Settings.Preview">预览</x:String>
     <x:String x:Key="String.Settings.Language">语言</x:String>
     <x:String x:Key="String.Settings.AutoDetectLanguage">自动检测语言</x:String>
     <x:String x:Key="String.Settings.CurrentLanguage">当前语言</x:String>
