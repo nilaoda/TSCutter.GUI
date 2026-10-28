@@ -13,7 +13,7 @@
         <Grid ColumnDefinitions="*,Auto">
             <TextBlock Text="{Binding ProgressText}" VerticalAlignment="Center" />
             <Button Grid.Column="1" Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}"
-                    IsVisible="{Binding CanCancel}" MinWidth="90" />
+                    IsVisible="{Binding CanCancel}" MinWidth="90" IsCancel="True" />
         </Grid>
     </StackPanel>
 </Window>

@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:themes="using:TSCutter.GUI.Themes"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TSCutter.GUI"
@@ -145,11 +146,12 @@
                     <TextBlock Text="{DynamicResource String.RawCutter.RangeBytes}" Classes="Label" />
                     <TextBlock Text="{Binding RangeInfoStr}" FontWeight="Bold" />
                 </StackPanel>
-                <Button Grid.Column="1"
-                        Content="{DynamicResource String.RawCutter.Output}"
-                        Width="100"
-                        HorizontalAlignment="Right"
-                        Command="{Binding OutputClickCommand}" />
+                <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                    <Button Content="{DynamicResource String.RawCutter.Output}" MinWidth="100"
+                            Command="{Binding OutputClickCommand}" />
+                    <Button Content="{DynamicResource String.Window.Close}" MinWidth="80" IsCancel="True"
+                            Command="{x:Static themes:WindowCommands.Close}" CommandParameter="{Binding $parent[Window]}" />
+                </StackPanel>
             </Grid>
         </Grid>
     </Border>

@@ -1,6 +1,7 @@
 using System;
 using Avalonia.Controls;
 using Classic.Avalonia.Theme;
+using TSCutter.GUI.Themes;
 using TSCutter.GUI.ViewModels.TransportStream.Processing;
 
 namespace TSCutter.GUI.Views.TransportStream.Processing;
@@ -19,8 +20,9 @@ public partial class TsRemuxWindow : ClassicWindow
     {
         if (DataContext is not TsRemuxWindowViewModel { IsBusy: true } viewModel)
             return;
-        viewModel.CancelCommand.Execute(null);
         eventArgs.Cancel = true;
+        WindowCommands.CloseWhenIdle(this, viewModel, () => viewModel.IsBusy);
+        viewModel.CancelCommand.Execute(null);
     }
 
     private void OnLoaded(object? sender, EventArgs eventArgs)

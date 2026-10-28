@@ -80,7 +80,7 @@
         <Button Grid.Row="4" Grid.ColumnSpan="2"
                 Width="80" Height="26"
                 HorizontalAlignment="Right"
-                Content="{DynamicResource String.Ok}"
+                Content="{DynamicResource String.Window.Close}"
                 IsDefault="True"
                 IsCancel="True"
                 Click="Button_OnClick" />

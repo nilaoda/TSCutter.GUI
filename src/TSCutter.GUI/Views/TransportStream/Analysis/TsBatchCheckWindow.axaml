@@ -119,7 +119,7 @@
             <Button Grid.Column="1" Content="{DynamicResource String.TsBatchCheck.Export}" Command="{Binding ExportSummaryCommand}" MinWidth="100" />
             <Button Grid.Column="3" Content="{DynamicResource String.TsBatchCheck.Start}" Command="{Binding StartCommand}" MinWidth="100" />
             <Button Grid.Column="4" Content="{DynamicResource String.TsBatchCheck.Stop}" Command="{Binding StopCommand}" MinWidth="80" />
-            <Button Grid.Column="5" Content="{DynamicResource String.TsBatchCheck.Close}" Click="Close_OnClick" MinWidth="80" />
+            <Button Grid.Column="5" Content="{DynamicResource String.Window.Close}" Click="Close_OnClick" MinWidth="80" IsCancel="True" />
         </Grid>
     </Grid>
 </Window>

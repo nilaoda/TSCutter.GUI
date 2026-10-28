@@ -64,8 +64,7 @@
                     IsCancel="True"/>
             <Button Content="{DynamicResource String.Apply}"
                     Command="{Binding ApplyCommand}"
-                    Width="70"
-                    IsCancel="True"/>
+                    Width="70"/>
         </StackPanel>
         <TabControl SelectedIndex="0">
             <TabItem Header="{DynamicResource String.Settings.General}">

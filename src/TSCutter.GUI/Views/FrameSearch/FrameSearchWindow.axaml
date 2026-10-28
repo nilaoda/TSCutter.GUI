@@ -58,8 +58,8 @@
             <Button Grid.Column="1" Content="{DynamicResource String.FrameSearch.Continue}"
                     Command="{Binding ContinueSearchCommand}" IsVisible="{Binding IsPaused}"
                     MinWidth="100" />
-            <Button Grid.Column="2" Content="{DynamicResource String.Cancel}"
-                    Command="{Binding CancelCommand}" MinWidth="88" />
+            <Button Grid.Column="2" Content="{DynamicResource String.Window.Close}"
+                    Command="{Binding CancelCommand}" MinWidth="80" IsCancel="True" />
         </Grid>
     </Grid>
 </Window>

@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:themes="using:TSCutter.GUI.Themes"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels.TransportStream.Analysis"
@@ -251,6 +252,8 @@
             <Button Content="{DynamicResource String.TsCheck.Start}" Command="{Binding StartCommand}" Width="100" />
             <Button Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}" Width="100" />
             <Button Content="{DynamicResource String.TsCheck.Export}" Command="{Binding ExportCommand}" Width="120" />
+            <Button Content="{DynamicResource String.Window.Close}" MinWidth="80" IsCancel="True"
+                    Command="{x:Static themes:WindowCommands.Close}" CommandParameter="{Binding $parent[Window]}" />
         </StackPanel>
     </Grid>
 </Window>

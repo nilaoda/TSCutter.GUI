@@ -50,8 +50,8 @@
                     Command="{Binding CopySummaryCommand}" IsEnabled="{Binding HasSelection}" />
             <Button Content="{DynamicResource String.Export_Records_OpenFolder}" Margin="4,4,0,0"
                     Command="{Binding OpenFolderCommand}" IsEnabled="{Binding HasSelection}" />
-            <Button Content="{DynamicResource String.Export_Records_Close}" Margin="4,4,0,0" MinWidth="70"
-                    Command="{Binding CloseCommand}" />
+            <Button Content="{DynamicResource String.Window.Close}" Margin="4,4,0,0" MinWidth="70"
+                    Command="{Binding CloseCommand}" IsCancel="True" />
         </WrapPanel>
     </Grid>
 </Window>
