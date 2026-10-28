@@ -48,6 +48,7 @@ internal sealed unsafe class RemuxExportService
         var prepared = new List<PreparedSegment>();
         AVFormatContext* output = null;
         M2tsAvioWriteContext? avioWriter = null;
+        HevcMp4PacketConverter?[] hevc = [];
         AVIOInterruptCB_callback interrupt = _ => token.IsCancellationRequested ? 1 : 0;
         var temporary = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(request.OutputPath))!,
             $".tscutter-{Guid.NewGuid():N}.tmp");
@@ -79,6 +80,16 @@ internal sealed unsafe class RemuxExportService
             output->strict_std_compliance = -1;
             CreateStreams(output, first);
             foreach (var item in prepared.Skip(1)) CheckCompatibility(first, item);
+            hevc = new HevcMp4PacketConverter?[output->nb_streams];
+            if (first.Segment.Settings.Container == "mp4")
+            {
+                for (var index = 0; index < output->nb_streams; index++)
+                {
+                    var stream = output->streams[index];
+                    if (stream->codecpar->codec_id == AVCodecID.AV_CODEC_ID_HEVC && (stream->disposition & 1024) == 0)
+                        hevc[index] = HevcMp4PacketConverter.Create(stream->codecpar);
+                }
+            }
             if (useCustomAvio)
             {
                 avioWriter = M2tsAvioWriteContext.Open(temporary, checkSession!);
@@ -126,7 +137,7 @@ internal sealed unsafe class RemuxExportService
                 var item = prepared[segmentIndex];
                 token.ThrowIfCancellationRequested();
                 EnsureUnchanged(item);
-                var actualEnd = CopyPackets(output, item, offset, lastDts, initialCompositionOffsets, subtitleOrder, token, (time, size) =>
+                var actualEnd = CopyPackets(output, item, offset, lastDts, initialCompositionOffsets, subtitleOrder, hevc, token, (time, size) =>
                 {
                     bytes += size;
                     if (timer.Elapsed - lastReport < TimeSpan.FromMilliseconds(100))
@@ -187,6 +198,8 @@ internal sealed unsafe class RemuxExportService
                 }
                 FF.avformat_free_context(output);
             }
+            foreach (var converter in hevc)
+                converter?.Dispose();
             foreach (var item in prepared) item.Input.Dispose();
             if (File.Exists(temporary))
                 File.Delete(temporary);
@@ -467,8 +480,7 @@ internal sealed unsafe class RemuxExportService
             if (stream == null) throw new OutOfMemoryException();
             // 同时复制编解码配置、HDR 静态附加数据、杜比视界配置和显示矩阵。
             FFmpegException.Check(FF.avcodec_parameters_copy(stream->codecpar, source->codecpar));
-            stream->codecpar->codec_tag = first.Segment.Settings.Container == "mp4" &&
-                source->codecpar->codec_id == AVCodecID.AV_CODEC_ID_HEVC ? source->codecpar->codec_tag : 0;
+            stream->codecpar->codec_tag = RemuxCodecTag.Select(first.Segment.Settings.Container, source->codecpar);
             stream->time_base = source->time_base;
             stream->avg_frame_rate = source->avg_frame_rate;
             stream->sample_aspect_ratio = source->sample_aspect_ratio;
@@ -595,7 +607,7 @@ internal sealed unsafe class RemuxExportService
     }
 
     private static double CopyPackets(AVFormatContext* output, PreparedSegment item, double offset, long[] lastDts,
-        long[] initialCompositionOffsets, long[] subtitleOrder, CancellationToken token, Action<double, int> report)
+        long[] initialCompositionOffsets, long[] subtitleOrder, HevcMp4PacketConverter?[] hevc, CancellationToken token, Action<double, int> report)
     {
         var pgs = ReadPgsPreroll(item, token);
         var timeline = item.Segment.Settings.Disc is { Kind: DiscKind.BluRay } disc ? disc.CreateTimeline() : null;
@@ -891,7 +903,7 @@ internal sealed unsafe class RemuxExportService
             raw->stream_index = index;
             raw->pos = -1;
             var size = raw->size;
-            FFmpegException.Check(FF.av_interleaved_write_frame(output, raw));
+            FFmpegException.Check(FF.av_interleaved_write_frame(output, hevc[index] is { } converter ? converter.Convert(raw) : raw));
             packetsWritten[index]++;
             if (isEndFrame && discMpeg2)
                 endFrameWritten[index] = true;

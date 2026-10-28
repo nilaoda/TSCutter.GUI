@@ -25,6 +25,7 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
 {
     private readonly IDialogService _dialogService;
     private readonly ILocalizationService _localization;
+    private readonly LocalizationManager _strings;
     private readonly IConfigurationService _configuration;
     private readonly List<TsBatchCheckFileItem> _selectedFiles = [];
     private readonly SemaphoreSlim _addLock = new(1);
@@ -38,13 +39,14 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
     {
         _dialogService = dialogService;
         _localization = localization;
+        _strings = new LocalizationManager(localization);
         _configuration = configuration;
         _saveLogs = configuration.CurrentConfig.TsBatchCheckSaveLogs;
         _localization.LanguageChanged += RefreshLocalizedText;
     }
 
     public bool? DialogResult { get; }
-    public string WindowTitle => LocalizationManager.Instance.String_TsBatchCheck_Title;
+    public string WindowTitle => _strings.String_TsBatchCheck_Title;
     public BulkObservableCollection<TsBatchCheckFileItem> Files { get; } = [];
     public BulkObservableCollection<TsBatchCheckFileItem> VisibleFiles { get; } = [];
     public bool IsEmpty => Files.Count == 0;
@@ -75,7 +77,7 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
             return Math.Min(100, processed * 100 / total);
         }
     }
-    public string SummaryText => string.Format(LocalizationManager.Instance.String_TsBatchCheck_Summary,
+    public string SummaryText => string.Format(_strings.String_TsBatchCheck_Summary,
         Files.Count(item => item.State is TsBatchCheckState.Completed or TsBatchCheckState.Failed), Files.Count,
         Files.Count(item => item.State == TsBatchCheckState.Completed && item.IsPass),
         Files.Count(item => item.State == TsBatchCheckState.Completed && (item.IsWarning || item.IsError)),
@@ -161,9 +163,9 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
     {
         var selected = await _dialogService.ShowOpenFilesDialogAsync(this, new OpenFileDialogSettings
         {
-            Title = LocalizationManager.Instance.String_TsBatchCheck_Title,
+            Title = _strings.String_TsBatchCheck_Title,
             AllowMultiple = true,
-            Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts", "m2ts", "mts", "m2t", "mpegts"])]
+            Filters = [new(_strings.String_TsFiles, ["ts", "m2ts", "mts", "m2t", "mpegts"])]
         });
         await AddFilesAsync(selected.Select(item => item.LocalPath));
     }
@@ -198,7 +200,7 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
             });
             if (_isClosed) return;
             Files.AddRange(loaded);
-            OperationMessage = string.Format(_localization.GetString("String.TsBinaryMerge.Status.FilesAdded"), loaded.Count);
+            OperationMessage = string.Format(_strings.String_TsBinaryMerge_Status_FilesAdded, loaded.Count);
         }
         finally
         {
@@ -340,7 +342,7 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
     {
         var selected = await _dialogService.ShowOpenFolderDialogAsync(this, new OpenFolderDialogSettings
         {
-            Title = LocalizationManager.Instance.String_TsBatchCheck_SelectFolder,
+            Title = _strings.String_TsBatchCheck_SelectFolder,
             SuggestedStartLocation = Directory.Exists(OutputFolder) ? new DesktopDialogStorageFolder(OutputFolder) : null
         });
         if (!_isClosed && selected?.Path is not null) OutputFolder = selected.Path.LocalPath;

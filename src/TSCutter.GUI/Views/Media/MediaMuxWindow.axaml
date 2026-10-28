@@ -1,0 +1,206 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TSCutter.GUI.ViewModels.Media"
+        xmlns:models="using:TSCutter.GUI.Models.Media"
+        xmlns:themes="using:TSCutter.GUI.Themes"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia"
+        x:Class="TSCutter.GUI.Views.Media.MediaMuxWindow"
+        x:DataType="vm:MediaMuxWindowViewModel"
+        Title="{Binding WindowTitle}" Width="1080" Height="700" MinWidth="960" MinHeight="600"
+        WindowStartupLocation="CenterScreen" DragDrop.AllowDrop="True">
+    <Window.Styles>
+        <!-- 强调色复选框在聚焦选中行里使用反色，避免与行高亮融为一体。 -->
+        <Style Selector=":is(Window).fluent DataGrid#TrackGrid:focus-within DataGridRow:selected CheckBox.track-inclusion:not(:disabled)">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{Binding $parent[DataGridRow].Foreground}" />
+        </Style>
+        <Style Selector=":is(Window).fluent DataGrid#TrackGrid:focus-within DataGridRow:selected CheckBox.track-inclusion:checked:not(:disabled)">
+            <Setter Property="Background" Value="{Binding $parent[DataGridRow].Foreground}" />
+        </Style>
+        <Style Selector=":is(Window).fluent DataGrid#TrackGrid:focus-within DataGridRow:selected CheckBox.track-inclusion:checked:not(:disabled) /template/ Path#CheckMarkPath">
+            <Setter Property="Fill" Value="{DynamicResource {x:Static common:SystemColors.HighlightBrushKey}}" />
+        </Style>
+        <Style Selector="TextBlock.conversion">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.failure">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
+        </Style>
+        <Style Selector="DataGrid#TrackGrid:focus-within DataGridRow:selected TextBlock.conversion, DataGrid#TrackGrid:focus-within DataGridRow:selected TextBlock.failure">
+            <Setter Property="Foreground" Value="{Binding $parent[DataGridRow].Foreground}" />
+        </Style>
+    </Window.Styles>
+    <Grid Margin="12" RowDefinitions="Auto,100,*,Auto" RowSpacing="10">
+        <Grid ColumnDefinitions="Auto,Auto,*" ColumnSpacing="8">
+            <Button Content="{DynamicResource String.MediaMux.AddFiles}" Command="{Binding AddFilesCommand}" MinWidth="100" />
+            <Button Grid.Column="1" Content="{DynamicResource String.MediaMux.RemoveFile}" Command="{Binding RemoveSourceCommand}" MinWidth="90" />
+            <TextBlock Grid.Column="2" Text="{Binding Summary}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                       Foreground="{DynamicResource AppSecondaryTextBrush}" />
+        </Grid>
+        <Grid Grid.Row="1">
+            <ListBox ItemsSource="{Binding Sources}" SelectedItem="{Binding SelectedSource, Mode=TwoWay}" IsEnabled="{Binding CanEdit}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="models:MediaMuxSource">
+                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12" Margin="3">
+                            <TextBlock Text="{Binding Name}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Path}" />
+                            <TextBlock Grid.Column="1" Text="{Binding Format}" Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+            <TextBlock Text="{DynamicResource String.MediaMux.DropHint}" IsHitTestVisible="False" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       IsVisible="{Binding IsEmpty}" Foreground="{DynamicResource AppSecondaryTextBrush}" />
+        </Grid>
+        <Grid Grid.Row="2" ColumnDefinitions="*,250" ColumnSpacing="12">
+            <Grid RowDefinitions="Auto,*" RowSpacing="8">
+                <Grid ColumnDefinitions="Auto,Auto,*,Auto,Auto" ColumnSpacing="6">
+                    <Button Content="{DynamicResource String.MediaMux.SelectAll}" Command="{Binding SelectAllCommand}" MinWidth="70" />
+                    <Button Grid.Column="1" Content="{DynamicResource String.MediaMux.SelectNone}" Command="{Binding SelectNoneCommand}" MinWidth="70" />
+                    <Button Grid.Column="3" Content="{DynamicResource String.MediaMux.MoveUp}" Command="{Binding MoveUpCommand}" MinWidth="70" />
+                    <Button Grid.Column="4" Content="{DynamicResource String.MediaMux.MoveDown}" Command="{Binding MoveDownCommand}" MinWidth="70" />
+                </Grid>
+                <DataGrid x:Name="TrackGrid" Grid.Row="1" ItemsSource="{Binding Tracks}" SelectedItem="{Binding SelectedTrack, Mode=OneWay}" SelectionChanged="TrackGrid_OnSelectionChanged"
+                          IsEnabled="{Binding CanEdit}" AutoGenerateColumns="False" CanUserSortColumns="False" CanUserResizeColumns="True"
+                          GridLinesVisibility="Horizontal" HeadersVisibility="Column" SelectionMode="Single" DragDrop.AllowDrop="True">
+                    <DataGrid.Columns>
+                        <DataGridTemplateColumn Width="20">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:MediaMuxTrackItem">
+                                    <Border Tag="{Binding}" Background="Transparent" Cursor="SizeAll" Padding="3"
+                                            PointerPressed="TrackHandle_OnPressed" PointerMoved="TrackHandle_OnMoved"
+                                            PointerReleased="TrackHandle_OnReleased" PointerCaptureLost="TrackHandle_OnCaptureLost">
+                                        <TextBlock Text="⋮⋮" Opacity="0.6" VerticalAlignment="Center" HorizontalAlignment="Center" />
+                                    </Border>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="#" Binding="{Binding Order}" Width="30" IsReadOnly="True" />
+                        <DataGridTemplateColumn Width="32">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:MediaMuxTrackItem">
+                                    <CheckBox Classes="track-inclusion" IsChecked="{Binding IsSelected}" HorizontalAlignment="Center" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTemplateColumn Header="{DynamicResource String.MediaMux.Track}" Width="*" MinWidth="140">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:MediaMuxTrackItem">
+                                    <StackPanel Margin="4,5" Spacing="2">
+                                        <TextBlock Text="{Binding Kind}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding Description}" FontSize="11" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Description}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                        <DataGridTextColumn Header="{DynamicResource String.MediaMux.Source}" Binding="{Binding SourceName}" Width="110" IsReadOnly="True" />
+                        <DataGridTextColumn Header="{DynamicResource String.MediaMux.Language}" Binding="{Binding Language}" Width="60" IsReadOnly="True" />
+                        <DataGridTextColumn Header="{DynamicResource String.MediaMux.Offset}" Binding="{Binding OffsetText}" Width="80" IsReadOnly="True" />
+                        <DataGridTemplateColumn Header="{DynamicResource String.MediaMux.Status}" Width="90">
+                            <DataGridTemplateColumn.CellTemplate>
+                                <DataTemplate x:DataType="vm:MediaMuxTrackItem">
+                                    <TextBlock Text="{Binding Status}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="4"
+                                               Classes.conversion="{Binding ConvertsSubtitle}" Classes.failure="{Binding !IsCompatible}"
+                                               ToolTip.Tip="{Binding StatusHint}" />
+                                </DataTemplate>
+                            </DataGridTemplateColumn.CellTemplate>
+                        </DataGridTemplateColumn>
+                    </DataGrid.Columns>
+                </DataGrid>
+            </Grid>
+            <ClassicBorderDecorator Grid.Column="1" BorderStyle="Etched" BorderThickness="1" Padding="12">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Spacing="8" IsEnabled="{Binding CanEdit}">
+                        <TextBlock Text="{DynamicResource String.MediaMux.Properties}" FontWeight="Bold" Margin="0,0,0,4" />
+                        <StackPanel Spacing="8" IsEnabled="{Binding HasTrack}">
+                            <TextBlock Text="{DynamicResource String.MediaMux.TrackName}" />
+                            <TextBox Text="{Binding SelectedTrack.Title}" MaxLength="256" />
+                            <TextBlock Text="{DynamicResource String.MediaMux.Language}" />
+                            <Grid ColumnDefinitions="*,32" ColumnSpacing="4">
+                                <TextBox Text="{Binding SelectedTrack.Language, Mode=TwoWay}" Watermark="und" MaxLength="3" />
+                                <Button x:Name="LanguagePickerButton" Grid.Column="1" Content="▾" MinWidth="0" Padding="4"
+                                        HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
+                                    <Button.Flyout>
+                                        <Flyout Placement="BottomEdgeAlignedRight">
+                                            <ListBox ItemsSource="{Binding Languages}" SelectionChanged="LanguageChoice_OnChanged" MaxHeight="280" MinWidth="170">
+                                                <ListBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="vm:MediaMuxLanguageChoice">
+                                                        <TextBlock Text="{Binding Label}" />
+                                                    </DataTemplate>
+                                                </ListBox.ItemTemplate>
+                                            </ListBox>
+                                        </Flyout>
+                                    </Button.Flyout>
+                                </Button>
+                            </Grid>
+                            <TextBlock Text="{DynamicResource String.MediaMux.LanguageHint}" FontSize="11"
+                                       TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                            <TextBlock Text="{DynamicResource String.MediaMux.OffsetMs}" />
+                            <NumericUpDown Value="{Binding SelectedTrack.OffsetMilliseconds}" Minimum="-86400000" Maximum="86400000"
+                                           Increment="10" FormatString="0.###" IsEnabled="{Binding SelectedTrack.CanShift}" />
+                            <CheckBox Content="{DynamicResource String.MediaMux.Default}" IsChecked="{Binding SelectedTrack.IsDefault}"
+                                      IsEnabled="{Binding SelectedTrack.CanShift}" />
+                            <CheckBox Content="{DynamicResource String.MediaMux.Forced}" IsChecked="{Binding SelectedTrack.IsForced}"
+                                      IsVisible="{Binding SelectedTrack.IsSubtitle}" />
+                        </StackPanel>
+                        <TextBlock Text="{DynamicResource String.MediaMux.OffsetHint}" TextWrapping="Wrap" FontSize="11"
+                                   Foreground="{DynamicResource AppSecondaryTextBrush}" Margin="0,4,0,0" />
+                    </StackPanel>
+                </ScrollViewer>
+            </ClassicBorderDecorator>
+        </Grid>
+        <StackPanel Grid.Row="3" Spacing="8">
+            <Grid ColumnDefinitions="100,*,Auto" ColumnSpacing="8" IsEnabled="{Binding CanEdit}">
+                <ComboBox ItemsSource="{Binding Containers}" SelectedItem="{Binding Container, Mode=TwoWay}" HorizontalAlignment="Stretch" />
+                <TextBox Grid.Column="1" Text="{Binding OutputPath}" Watermark="{DynamicResource String.MediaMux.ChooseOutput}" />
+                <Button Grid.Column="2" Content="{DynamicResource String.MediaMux.Browse}" Command="{Binding BrowseOutputCommand}" MinWidth="80" />
+            </Grid>
+            <StackPanel Orientation="Horizontal" Spacing="16" IsEnabled="{Binding CanEdit}">
+                <CheckBox x:Name="ShortestCheckBox" Content="{DynamicResource String.MediaMux.Shortest}"
+                          IsChecked="{Binding Shortest}" ToolTip.Tip="{DynamicResource String.MediaMux.ShortestHint}" />
+                <CheckBox x:Name="ShortestSubtitlesCheckBox" Content="{DynamicResource String.MediaMux.ShortestIncludesSubtitles}"
+                          IsChecked="{Binding ShortestIncludesSubtitles}" IsEnabled="{Binding Shortest}" />
+                <CheckBox x:Name="FastStartCheckBox" Content="{DynamicResource String.MediaMux.FastStart}"
+                          IsChecked="{Binding FastStart}" IsEnabled="{Binding CanUseFastStart}"
+                          ToolTip.Tip="{DynamicResource String.MediaMux.FastStartHint}" />
+            </StackPanel>
+            <StackPanel Spacing="4">
+                <TextBlock Text="{Binding ContainerHint}" TextWrapping="Wrap" FontSize="11"
+                           Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                <TextBlock Text="{Binding SubtitleConversionHint}" TextWrapping="Wrap" FontSize="11"
+                           IsVisible="{Binding SubtitleConversionHint, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource AppStatusWarningForegroundBrush}" />
+                <TextBlock Text="{Binding ValidationText}" TextWrapping="Wrap"
+                           IsVisible="{Binding ValidationText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                           Foreground="{DynamicResource AppStatusWarningForegroundBrush}" />
+            </StackPanel>
+            <Expander x:Name="MuxErrorDetails" Header="{DynamicResource String.MediaMux.ErrorDetails}" HorizontalAlignment="Stretch"
+                      IsVisible="{Binding HasErrorDetails}" IsExpanded="False">
+                <TextBox Text="{Binding ErrorDetails}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                         MinHeight="70" MaxHeight="130" ScrollViewer.VerticalScrollBarVisibility="Auto"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
+            </Expander>
+            <!-- 进度条与统计共用一行，只保留状态栏所需高度，任务切换不改变布局。 -->
+            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+                <Grid RowDefinitions="18,16" RowSpacing="4" VerticalAlignment="Center">
+                    <TextBlock Text="{Binding StatusText}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                               Classes.failure="{Binding IsFailure}" ToolTip.Tip="{Binding StatusText}" />
+                    <DockPanel Grid.Row="1" LastChildFill="True">
+                        <ProgressBar DockPanel.Dock="Left" Value="{Binding Percent}" Minimum="0" Maximum="100"
+                                     Width="100" Height="8" MinHeight="0" Margin="0,0,8,0" VerticalAlignment="Center"
+                                     ShowProgressText="False" IsVisible="{Binding IsBusy}" IsIndeterminate="{Binding !IsExporting}" />
+                        <TextBlock Text="{Binding ProgressText}" TextTrimming="CharacterEllipsis" FontSize="11"
+                                   Foreground="{DynamicResource AppSecondaryTextBrush}" VerticalAlignment="Center" />
+                    </DockPanel>
+                </Grid>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Bottom">
+                    <Button Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}" MinWidth="80" />
+                    <Button x:Name="StartMuxButton" Content="{DynamicResource String.MediaMux.Start}" Command="{Binding ExportCommand}" MinWidth="100" />
+                    <Button Content="{DynamicResource String.MediaMux.Reveal}" Command="{Binding RevealOutputCommand}" MinWidth="90" />
+                    <Button Content="{DynamicResource String.Window.Close}" MinWidth="80" IsCancel="True"
+                            Command="{x:Static themes:WindowCommands.Close}" CommandParameter="{Binding $parent[Window]}" />
+                </StackPanel>
+            </Grid>
+        </StackPanel>
+    </Grid>
+</Window>

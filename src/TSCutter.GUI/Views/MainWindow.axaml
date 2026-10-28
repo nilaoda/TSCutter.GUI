@@ -263,6 +263,8 @@
                                       Command="{Binding TsMultiSourceRepairClickCommand}" />
                         </MenuItem>
                         <MenuItem Header="{DynamicResource String.Menu.ToolGroupMerge}">
+                            <MenuItem Header="{DynamicResource String.Menu.MediaMux}"
+                                      Command="{Binding MediaMuxClickCommand}" />
                             <MenuItem Header="{DynamicResource String.Menu.TsBinaryMerge}"
                                       Command="{Binding TsBinaryMergeClickCommand}" />
                         </MenuItem>

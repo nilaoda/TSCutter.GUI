@@ -2,7 +2,7 @@ using System;
 using System.Buffers;
 using System.IO;
 using System.Threading;
-using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils.Files;
 
@@ -47,19 +47,17 @@ public readonly record struct TsPacketLayout(int PacketSize, long SyncOffset)
 
     public void RequireSupported(bool standardOnly = false)
     {
+        // 服务也可脱离界面运行；未注册本地化服务时仍保留明确的异常类型及提示。
+        var strings = App.LocalizationService is null ? null : LocalizationManager.Instance;
         if (PacketSize == 0 || PacketOffset < 0)
-            throw new InvalidDataException(GetMessage("String.TsLayout.NoSync", "No valid TS packet layout was found."));
+            throw new InvalidDataException(strings?.String_TsLayout_NoSync ?? "No valid TS packet layout was found.");
         if (!IsSupported || (standardOnly && PacketSize != TsUtil.TsPacketSize))
             throw new NotSupportedException(string.Format(
-                standardOnly ? GetMessage("String.TsLayout.StandardOnly",
-                    "This tool currently supports only 188-byte TS packets; {0}-byte packets are not supported.")
-                    : GetMessage("String.TsLayout.Unsupported",
-                        "Unsupported {0}-byte TS packets. Only 188-byte TS and 192-byte M2TS are supported."), PacketSize));
+                standardOnly ? strings?.String_TsLayout_StandardOnly ??
+                    "This tool currently supports only 188-byte TS packets; {0}-byte packets are not supported."
+                    : strings?.String_TsLayout_Unsupported ??
+                        "Unsupported {0}-byte TS packets. Only 188-byte TS and 192-byte M2TS are supported.", PacketSize));
     }
-
-    // 服务也可脱离界面运行；未注册本地化服务时仍保留明确的异常类型及提示。
-    private static string GetMessage(string key, string fallback) =>
-        App.LocalizationService?.GetString(key) ?? fallback;
 
     public static TsPacketLayout Detect(string path, CancellationToken token = default, long startPosition = 0)
     {
