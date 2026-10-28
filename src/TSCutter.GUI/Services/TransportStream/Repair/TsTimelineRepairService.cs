@@ -340,6 +340,7 @@ public sealed class TsTimelineRepairService
     {
         var result = new Dictionary<int, List<PcrSample>>();
         var states = new Dictionary<int, InputPcrState>();
+        var pendingDiscontinuities = new HashSet<int>();
         var buffer = ArrayPool<byte>.Shared.Rent(PacketSize * ReadPacketCount + PacketSize);
         var buffered = 0;
         long packetIndex = 0;
@@ -363,13 +364,21 @@ public sealed class TsTimelineRepairService
                     var packet = buffer.AsSpan(offset, PacketSize);
                     if (packet[0] != 0x47)
                         throw new TsTimelineRepairException(TsTimelineRepairErrorCode.SyncLost, packetIndex);
+                    // 不采信 TEI 或非法 adaptation field 中的时钟与切换标志。
                     if ((packet[1] & 0x80) != 0 ||
-                        !TsTimestampFieldCodec.TryReadPcr(
-                            packet, out var rawPcr90k, out _, out var discontinuity))
-                    {
+                        (packet[3] & 0x20) != 0 && packet[4] > 183)
                         continue;
-                    }
+                    var hasPcr = TsTimestampFieldCodec.TryReadPcr(
+                        packet, out var rawPcr90k, out _, out var discontinuity);
+                    if (!hasPcr && !discontinuity)
+                        continue;
                     var pid = ((packet[1] & 0x1F) << 8) | packet[2];
+                    if (discontinuity)
+                        pendingDiscontinuities.Add(pid);
+                    if (!hasPcr)
+                        continue;
+                    // 切换标记可以先于 PCR 出现在同 PID 的非 PCR 包中，只传递给随后第一个样本。
+                    discontinuity |= pendingDiscontinuities.Remove(pid);
                     if (!states.TryGetValue(pid, out var state))
                     {
                         state = new InputPcrState();

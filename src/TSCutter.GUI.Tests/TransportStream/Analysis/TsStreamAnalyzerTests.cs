@@ -117,6 +117,30 @@ public sealed class TsStreamAnalyzerTests
     }
 
     [Fact]
+    public async Task MetadataAndSubtitlePtsDoNotUseAudioMonotonicityOrGapRules()
+    {
+        var packets = new List<byte[]>
+        {
+            CreatePsiPacket(0, 0, BuildPatSection(0x1000)),
+            CreatePsiPacket(0x1000, 0, BuildPmtSection(0x101,
+                (TsStreamTypes.H264, 0x101), (TsStreamTypes.Aac, 0x102),
+                (TsStreamTypes.PrivateData, 0x103), (0x90, 0x104))),
+            CreatePacket(0x101, 0, pcrBase: 0)
+        };
+        foreach (var pid in new[] { 0x102, 0x103, 0x104 })
+        {
+            packets.Add(CreatePesPacket(pid, 0, 90_000, pid == 0x102 ? (byte)0xC0 : (byte)0xFC));
+            packets.Add(CreatePesPacket(pid, 1, 0, pid == 0x102 ? (byte)0xC0 : (byte)0xFC));
+            packets.Add(CreatePesPacket(pid, 2, 1_800_000, pid == 0x102 ? (byte)0xC0 : (byte)0xFC));
+        }
+        var result = await AnalyzeAsync(packets);
+        Assert.Contains(result.Events, item => item.Pid == 0x102 && item.Type == TsCheckEventType.PtsBackward);
+        Assert.Contains(result.Events, item => item.Pid == 0x102 && item.Type == TsCheckEventType.PtsJump);
+        Assert.DoesNotContain(result.Events, item => item.Pid is 0x103 or 0x104 &&
+            item.Type is TsCheckEventType.PtsBackward or TsCheckEventType.PtsJump or TsCheckEventType.StreamGap);
+    }
+
+    [Fact]
     public async Task PtsBeforeFirstTimelinePcrDoesNotCreateEstimatedTimeline()
     {
         const int pmtPid = 0x0100;
@@ -413,8 +437,15 @@ public sealed class TsStreamAnalyzerTests
         };
         for (var index = 0; index < 100; index++)
         {
-            packets.Add(CreatePacket(pcrPid, index & 15));
-            var pcr = index * 3_600L + (index >= 50 ? 450_000 : 0);
+            var beforePcr = CreatePacket(pcrPid, index & 15);
+            if (index == 25)
+            {
+                beforePcr[3] |= 0x20;
+                beforePcr[4] = 1;
+                beforePcr[5] = 0x80;
+            }
+            packets.Add(beforePcr);
+            var pcr = index * 3_600L + (index >= 25 ? 27_000 : 0) + (index >= 50 ? 450_000 : 0);
             var clockPacket = CreatePacket(pcrPid, index & 15, pcrBase: pcr);
             clockPacket[3] = (byte)(0x20 | (index & 15));
             clockPacket[4] = 183;

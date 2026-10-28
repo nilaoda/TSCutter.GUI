@@ -8,6 +8,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models.TransportStream.Processing;
+using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils.Editing;
 using TSCutter.GUI.Utils.Files;
@@ -58,6 +59,10 @@ internal sealed class TsClipMergeService
             ? await TsExportProgramTableProbe.ReadTablesNearCutAsync(sourcePath, ranges[0].StartPosition, cancellationToken)
                 .ConfigureAwait(false) : null;
 
+        // 私有音频（如 DRA）未必被解复用器识别成音轨；无音轨清单时从切点附近的 PMT 补齐。
+        var audioPids = ranges.Count > 1 && request.AudioPids.Count == 0
+            ? await ReadAudioPidsAsync(source, ranges[0].StartPosition, request.ProgramId, cancellationToken).ConfigureAwait(false)
+            : request.AudioPids;
         using var splitHeaderReader = new TsSplitPesHeaderReader();
         var splitTimestampRewriter = new TsSplitPesTimestampRewriter();
         var totalBytes = ranges.Sum(item => item.EndPosition - item.StartPosition);
@@ -69,20 +74,24 @@ internal sealed class TsClipMergeService
         long rewrittenPcrCount = 0;
         long rewrittenTimestampCount = 0;
         long rewrittenContinuityCount = 0;
+        var pcrTimeline = new TsClipMergePcrTimeline();
         var previousTimeline = new TsClipMergeTimeline();
         previousTimeline.Reset(request.VideoPid);
         // 只为实际音轨保留定额统计，不按全部 8192 个 PID 分配状态。
-        TsClipMergeTimeline[] audioTimelines = request.AudioPids.Count == 0 ? [] : new TsClipMergeTimeline[request.AudioPids.Count];
-        TsClipMergeTimeline[] audioHeads = request.AudioPids.Count == 0 ? [] : new TsClipMergeTimeline[request.AudioPids.Count];
+        TsClipMergeTimeline[] audioTimelines = audioPids.Count == 0 ? [] : new TsClipMergeTimeline[audioPids.Count];
+        TsClipMergeTimeline[] audioHeads = audioPids.Count == 0 ? [] : new TsClipMergeTimeline[audioPids.Count];
         for (var index = 0; index < audioTimelines.Length; index++)
-            audioTimelines[index].Reset(request.AudioPids[index]);
+            audioTimelines[index].Reset(audioPids[index]);
         var previousCorrection = 0L;
         var expectedStartTime = ranges[0].StartTimeSeconds;
 
         uint lastArrivalTimestamp = 0;
+        uint lastArrivalPermissions = 0;
         var hasArrivalTimestamp = false;
         var outputCreated = false;
         long prefixBytes = 0;
+        long writtenBytes = 0;
+        var audioBoundary = new TsClipMergeAudioBoundary(ranges.Count > 1 ? audioPids : [], request.VideoPid);
         try
         {
             await using var programOutput = request.ProgramId is { } programId
@@ -120,60 +129,96 @@ internal sealed class TsClipMergeService
                 cancellationToken.ThrowIfCancellationRequested();
                 var range = ranges[rangeIndex];
                 programOutput?.BeginSegment();
+                var audioFrames = ranges.Count > 1
+                    ? await TsClipMergeAudioFrames.ReadAsync(source, range.StartPosition, range.EndPosition,
+                        audioPids, layout, cancellationToken).ConfigureAwait(false)
+                    : new TsClipMergeAudioFrames();
                 var correction = (long)Math.Round((expectedStartTime - range.StartTimeSeconds) * 90_000.0);
-                if (rangeIndex > 0 && previousTimeline.HasPts)
+                if (rangeIndex > 0 && (previousTimeline.HasPts || pcrTimeline.HasClocks ||
+                    audioTimelines.Any(item => item.HasPts)))
                 {
                     var head = await ReadTimelineHeadAsync(source, range, buffer, splitHeaderReader,
-                            previousTimeline.Pid, audioTimelines, audioHeads, cancellationToken, layout)
+                            previousTimeline.Pid, audioTimelines, audioHeads, cancellationToken, layout,
+                            pcrTimeline, previousTimeline.HasPts)
                         .ConfigureAwait(false);
-                    if (head.HasPts)
+                    if (previousTimeline.HasPts && head.HasPts)
                     {
                         // HEVC 前导帧可能早于起点关键帧，按实际最早 PTS 接续上一段末帧。
                         correction = previousTimeline.EndPts + previousCorrection - head.MinimumPts;
                         if (previousTimeline.HasDts && head.HasDts)
                             correction = LaterCorrection(correction,
                                 previousTimeline.EndDts + previousCorrection - head.MinimumDts);
-                        // 音频 PES 可能覆盖多帧并超过视频终点；同一偏移应用于全部音视频，
-                        // 既保留片段内的音画关系，也避免接缝音轨倒退或重叠。
-                        for (var index = 0; index < audioTimelines.Length; index++)
-                            if (audioTimelines[index].HasPts && audioHeads[index].HasPts)
-                                correction = LaterCorrection(correction,
-                                    audioTimelines[index].EndPts + previousCorrection - audioHeads[index].MinimumPts);
+                    }
+                    // 音频 PES 可能覆盖多帧并超过视频终点；同一偏移应用于全部音视频，
+                    // 既保留片段内的音画关系，也避免接缝音轨倒退或重叠。
+                    for (var index = 0; index < audioTimelines.Length; index++)
+                        if (audioTimelines[index].HasPts && audioHeads[index].HasPts)
+                            correction = LaterCorrection(correction,
+                                audioTimelines[index].EndPts + previousCorrection - audioHeads[index].MinimumPts);
+                    correction = pcrTimeline.ConstrainCorrection(correction);
+                }
+                if (rangeIndex > 0)
+                {
+                    var clockPrefix = pcrTimeline.CreateSwitchPrefix(layout, previousTimeline.Pid,
+                        lastPayloadContinuity, ref lastArrivalTimestamp, lastArrivalPermissions);
+                    if (clockPrefix.Length > 0)
+                    {
+                        if (programOutput is null)
+                            await output!.WriteAsync(clockPrefix, cancellationToken).ConfigureAwait(false);
+                        else
+                        {
+                            for (var offset = 0; offset < clockPrefix.Length; offset += stride)
+                                programOutput.WriteFilteredPacket(clockPrefix.AsSpan(offset, stride), range.StartPosition);
+                            await programOutput.FlushIfNeededAsync(cancellationToken).ConfigureAwait(false);
+                        }
+                        writtenBytes += clockPrefix.Length;
+                        hasArrivalTimestamp |= layout.IsM2ts;
                     }
                 }
                 var timeline = new TsClipMergeTimeline();
                 timeline.Reset(previousTimeline.Pid);
                 for (var index = 0; index < audioTimelines.Length; index++)
-                    audioTimelines[index].Reset(request.AudioPids[index]);
+                    audioTimelines[index].Reset(audioPids[index]);
                 Array.Fill(segmentContinuityOffsets, int.MinValue);
                 source.Position = range.StartPosition;
-                var remaining = range.EndPosition - range.StartPosition;
+                var position = range.StartPosition;
+                // 只在切点后局部读取缺少的音频续包，不延长所选视频，也不复制后续新 PES。
+                var scanEnd = range.EndPosition + Math.Min(sourceLength - range.EndPosition,
+                    TsClipBoundaryResolver.MaximumScanBytes);
+                scanEnd -= (scanEnd - range.EndPosition) % stride;
+                audioBoundary.BeginSegment();
                 long arrivalCorrection = 0;
                 var firstArrival = true;
 
-                while (remaining > 0)
+                while (position < range.EndPosition || audioBoundary.HasPending && position < scanEnd)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    var requested = (int)Math.Min(buffer.Length, remaining);
+                    var requested = (int)Math.Min(position < range.EndPosition ? buffer.Length : stride * 512,
+                        (position < range.EndPosition ? range.EndPosition : scanEnd) - position);
                     requested -= requested % stride;
                     if (requested <= 0)
                         throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
 
                     await source.ReadExactlyAsync(buffer.AsMemory(0, requested), cancellationToken)
                         .ConfigureAwait(false);
-                    var chunkStart = range.StartPosition + (range.EndPosition - range.StartPosition - remaining);
+                    var chunkStart = position;
+                    var outputCount = 0;
                     for (var offset = 0; offset < requested; offset += stride)
                     {
+                        if (layout.GetPacketBody(buffer.AsSpan(), offset)[0] != 0x47)
+                            throw new TsClipMergeException(TsClipMergeErrorCode.SourceChanged, chunkStart + offset);
+                        if (chunkStart + offset >= range.EndPosition && !audioBoundary.HasPending)
+                            break;
+                        audioFrames.RewriteHead(layout.GetPacketBody(buffer.AsSpan(), offset), chunkStart + offset);
+                        if (!audioBoundary.KeepPacket(layout.GetPacketBody(buffer.AsSpan(), offset),
+                                chunkStart + offset >= range.EndPosition))
+                            continue;
                         TsSplitPesHeader splitHeader = default;
                         if ((rangeIndex + 1 < ranges.Count || correction != 0) &&
                             TsSplitPesHeaderReader.NeedsRead(layout.GetPacketBody(buffer.AsSpan(), offset)))
                             splitHeader = await splitHeaderReader.ReadAsync(source, buffer, chunkStart,
-                                requested, offset, range.EndPosition, cancellationToken, layout).ConfigureAwait(false);
+                                requested, offset, scanEnd, cancellationToken, layout).ConfigureAwait(false);
                         var packet = layout.GetPacketBody(buffer.AsSpan(), offset);
-                        if (packet[0] != 0x47)
-                            throw new TsClipMergeException(
-                                TsClipMergeErrorCode.SourceChanged,
-                                range.StartPosition + (range.EndPosition - range.StartPosition - remaining) + offset);
 
                         var transportError = (packet[1] & 0x80) != 0;
                         // 最后一段之后没有接缝；单段导出也无需统计时间戳。
@@ -204,6 +249,12 @@ internal sealed class TsClipMergeService
                                 rewrittenPcrCount++;
                         }
 
+                        if (rangeIndex > 0)
+                            pcrTimeline.MarkOutputStart(packet);
+                        if ((packet[3] & 0x20) != 0 && packet[4] >= 1 && (packet[5] & 0x90) != 0 &&
+                            (programOutput is null || programOutput.RoutedPids.Contains(((packet[1] & 31) << 8) | packet[2])))
+                            pcrTimeline.ObserveOutput(packet);
+
                         // 每个后续片段对各 PID 只计算一次固定 CC 偏移。这样既能消除人为
                         // 剪切产生的接缝跳号，又会完整保留片段内部原有的跳号、重复包和 TEI。
                         rewrittenContinuityCount += RewriteContinuity(
@@ -217,22 +268,28 @@ internal sealed class TsClipMergeService
                             if (firstArrival && hasArrivalTimestamp)
                                 arrivalCorrection = (long)lastArrivalTimestamp + 1 - (arrival & mask);
                             firstArrival = false;
+                            lastArrivalPermissions = arrival & ~mask;
                             lastArrivalTimestamp = (uint)((arrival & mask) + arrivalCorrection) & mask;
                             BinaryPrimitives.WriteUInt32BigEndian(header, (arrival & ~mask) | lastArrivalTimestamp);
                             hasArrivalTimestamp = true;
                         }
+                        // 在原缓冲内压紧保留包，不为片头丢弃及片尾补齐另建媒体缓冲。
+                        if (outputCount != offset)
+                            buffer.AsSpan(offset, stride).CopyTo(buffer.AsSpan(outputCount, stride));
+                        outputCount += stride;
                     }
 
                     if (programOutput is null)
-                        await output!.WriteAsync(buffer.AsMemory(0, requested), cancellationToken).ConfigureAwait(false);
+                        await output!.WriteAsync(buffer.AsMemory(0, outputCount), cancellationToken).ConfigureAwait(false);
                     else
                     {
-                        for (var offset = 0; offset < requested; offset += stride)
+                        for (var offset = 0; offset < outputCount; offset += stride)
                             programOutput.WriteFilteredPacket(buffer.AsSpan(offset, stride), chunkStart + offset);
                         await programOutput.FlushIfNeededAsync(cancellationToken).ConfigureAwait(false);
                     }
-                    remaining -= requested;
-                    processedBytes += requested;
+                    position += requested;
+                    writtenBytes += outputCount;
+                    processedBytes += Math.Max(0, Math.Min(requested, range.EndPosition - chunkStart));
                     progress?.Report(new TsClipMergeProgress(
                         processedBytes,
                         totalBytes,
@@ -240,6 +297,52 @@ internal sealed class TsClipMergeService
                         stopwatch.Elapsed));
                 }
                 splitTimestampRewriter.CompleteSegment();
+                foreach (var tail in audioFrames.Tails)
+                {
+                    if (lastPayloadContinuity[tail.Pid] < 0)
+                        continue;
+                    var packetCount = (tail.Data.Length + 183) / 184;
+                    var suffix = new byte[packetCount * stride];
+                    suffix.AsSpan().Fill(0xFF);
+                    var copied = 0;
+                    for (var index = 0; index < packetCount; index++)
+                    {
+                        var packet = layout.GetPacketBody(suffix.AsSpan(), index * stride);
+                        var count = Math.Min(184, tail.Data.Length - copied);
+                        packet[0] = 0x47;
+                        packet[1] = (byte)((tail.Pid >> 8) | (index == 0 ? 0x40 : 0));
+                        packet[2] = (byte)tail.Pid;
+                        var continuity = (lastPayloadContinuity[tail.Pid] + 1) & 15;
+                        lastPayloadContinuity[tail.Pid] = continuity;
+                        packet[3] = (byte)((count == 184 ? 0x10 : 0x30) | continuity);
+                        if (count < 184)
+                        {
+                            packet[4] = (byte)(183 - count);
+                            if (packet[4] > 0)
+                                packet[5] = 0;
+                        }
+                        tail.Data.AsSpan(copied, count).CopyTo(packet[(188 - count)..]);
+                        copied += count;
+                        if (layout.IsM2ts)
+                        {
+                            lastArrivalTimestamp = (lastArrivalTimestamp + 1) & ((1u << 30) - 1);
+                            BinaryPrimitives.WriteUInt32BigEndian(suffix.AsSpan(index * stride, layout.PrefixSize),
+                                lastArrivalPermissions | lastArrivalTimestamp);
+                        }
+                    }
+                    if (programOutput is null)
+                        await output!.WriteAsync(suffix, cancellationToken).ConfigureAwait(false);
+                    else
+                    {
+                        for (var offset = 0; offset < suffix.Length; offset += stride)
+                            programOutput.WriteFilteredPacket(suffix.AsSpan(offset, stride), range.EndPosition);
+                        await programOutput.FlushIfNeededAsync(cancellationToken).ConfigureAwait(false);
+                    }
+                    writtenBytes += suffix.Length;
+                }
+                for (var index = 0; index < audioTimelines.Length; index++)
+                    if (audioFrames.EndPts.TryGetValue(audioTimelines[index].Pid, out var audioEnd))
+                        audioTimelines[index].IncludeAudioFrameEnd(audioEnd);
                 previousTimeline = timeline;
                 previousCorrection = correction;
                 expectedStartTime = range.EndTimeSeconds + correction / 90_000.0;
@@ -260,7 +363,7 @@ internal sealed class TsClipMergeService
             return new TsClipMergeResult
             {
                 OutputPath = outputPath,
-                OutputBytes = programOutput?.BytesWritten ?? totalBytes + prefixBytes,
+                OutputBytes = programOutput?.BytesWritten ?? writtenBytes + prefixBytes,
                 SegmentCount = ranges.Count,
                 RewrittenPcrCount = rewrittenPcrCount,
                 RewrittenTimestampCount = rewrittenTimestampCount,
@@ -284,6 +387,30 @@ internal sealed class TsClipMergeService
         {
             ArrayPool<byte>.Shared.Return(buffer);
         }
+    }
+
+    private static async Task<IReadOnlyList<int>> ReadAudioPidsAsync(FileStream source, long start,
+        int? programId, CancellationToken token)
+    {
+        const int maximumBytes = TsExportProgramTableProbe.MaximumProbeBytes;
+        using var analyzer = new TsStreamAnalyzer();
+        analyzer.BeginSession(source.Name, new TsStreamAnalyzeOptions
+        {
+            InventoryOnly = true, MaxBytes = maximumBytes, Features = TsStreamAnalyzeFeatures.None
+        });
+        var buffer = ArrayPool<byte>.Shared.Rent(maximumBytes);
+        try
+        {
+            source.Position = start;
+            var count = (int)Math.Min(maximumBytes, source.Length - start);
+            await source.ReadExactlyAsync(buffer.AsMemory(0, count), token).ConfigureAwait(false);
+            analyzer.AppendOutput(buffer.AsSpan(0, count), token);
+            var catalog = analyzer.CompleteSession(token);
+            return catalog.Pids.Values.Where(pid => pid.StreamType is { } type &&
+                TsStreamTypes.IsAudio(type, pid.SupplementaryStreamType) &&
+                (programId is null || pid.ProgramNumber == programId)).Select(pid => pid.Pid).ToArray();
+        }
+        finally { ArrayPool<byte>.Shared.Return(buffer); }
     }
 
     internal static List<NormalizedRange> NormalizeRanges(
@@ -335,11 +462,15 @@ internal sealed class TsClipMergeService
     private static async Task<TsClipMergeTimeline> ReadTimelineHeadAsync(
         FileStream source, NormalizedRange range, byte[] buffer, TsSplitPesHeaderReader splitHeaderReader, int videoPid,
         TsClipMergeTimeline[] previousAudio, TsClipMergeTimeline[] audioHeads,
-        CancellationToken cancellationToken, TsPacketLayout layout)
+        CancellationToken cancellationToken, TsPacketLayout layout,
+        TsClipMergePcrTimeline pcrTimeline, bool requireVideoClock)
     {
+        pcrTimeline.BeginHead();
         var stride = layout.PacketSize;
         var timeline = new TsClipMergeTimeline();
         timeline.Reset(videoPid);
+        var headerScanEnd = range.EndPosition + Math.Min(source.Length - range.EndPosition,
+            TsClipBoundaryResolver.MaximumScanBytes);
         for (var index = 0; index < audioHeads.Length; index++)
             audioHeads[index].Reset(previousAudio[index].Pid);
         source.Position = range.StartPosition;
@@ -359,12 +490,12 @@ internal sealed class TsClipMergeService
                 var chunkStart = source.Position - requested;
                 if (TsSplitPesHeaderReader.NeedsRead(layout.GetPacketBody(buffer.AsSpan(), offset)))
                     splitHeader = await splitHeaderReader.ReadAsync(source, buffer, chunkStart,
-                        requested, offset, Math.Min(range.EndPosition,
-                            range.StartPosition + TsClipBoundaryResolver.MaximumScanBytes), cancellationToken, layout).ConfigureAwait(false);
+                        requested, offset, headerScanEnd, cancellationToken, layout).ConfigureAwait(false);
                 var packet = layout.GetPacketBody(buffer.AsSpan(), offset);
                 if (packet[0] != 0x47)
                     throw new TsClipMergeException(TsClipMergeErrorCode.SourceChanged,
                         source.Position - requested + offset);
+                pcrTimeline.ObserveHead(packet);
                 if (splitHeader.IsValid)
                     ObserveSplitHeader(splitHeader, ref timeline, audioHeads);
                 else
@@ -372,12 +503,14 @@ internal sealed class TsClipMergeService
                     timeline.Observe(packet);
                     ObserveAudio(packet, audioHeads);
                 }
-                if (timeline.HasSuccessor && HasAudioHeads(previousAudio, audioHeads))
+                if ((!requireVideoClock || timeline.HasSuccessor) && HasAudioHeads(previousAudio, audioHeads) &&
+                    pcrTimeline.HasAllHeads)
                     return timeline;
             }
             remaining -= requested;
         }
-        if (!timeline.HasSuccessor && range.EndPosition - range.StartPosition > TsClipBoundaryResolver.MaximumScanBytes)
+        if (requireVideoClock && !timeline.HasSuccessor &&
+            range.EndPosition - range.StartPosition > TsClipBoundaryResolver.MaximumScanBytes)
             throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
         return timeline;
     }
@@ -392,7 +525,8 @@ internal sealed class TsClipMergeService
 
     private static void ObserveAudio(ReadOnlySpan<byte> packet, TsClipMergeTimeline[] timelines)
     {
-        if ((packet[1] & 0x40) == 0) return;
+        if ((packet[1] & 0x40) == 0)
+            return;
         var pid = ((packet[1] & 31) << 8) | packet[2];
         for (var index = 0; index < timelines.Length; index++)
             if (timelines[index].Pid == pid)
@@ -436,11 +570,12 @@ internal sealed class TsClipMergeService
         if (rangeIndex > 0)
         {
             var offset = segmentOffsets[pid];
-            if (offset == int.MinValue && hasPayload)
+            if (offset == int.MinValue && (hasPayload || lastPayloadContinuity[pid] >= 0))
             {
+                // 片头先出现无载荷包时也要应用同一偏移；它不推进 payload 的连续计数器。
                 offset = lastPayloadContinuity[pid] < 0
                     ? 0
-                    : (lastPayloadContinuity[pid] + 1 - original + 16) & 0x0F;
+                    : (lastPayloadContinuity[pid] + (hasPayload ? 1 : 0) - original + 16) & 0x0F;
                 segmentOffsets[pid] = offset;
             }
             if (offset != int.MinValue)

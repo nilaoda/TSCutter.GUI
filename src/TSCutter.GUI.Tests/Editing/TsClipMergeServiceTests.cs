@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -238,6 +239,138 @@ public sealed class TsClipMergeServiceTests
         finally { File.Delete(sourcePath); File.Delete(outputPath); }
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(TimestampWrap - 9_000)]
+    public async Task PcrPhaseAndIndependentClocksConstrainTheWholeSegment(long basePts)
+    {
+        const int otherPcrPid = 300;
+        var stride = basePts == 0 ? 188 : 192;
+        byte[] PcrOnly(int pid, long timestamp, int extension = 0, int counter = 0)
+        {
+            var packet = Enumerable.Repeat((byte)0xFF, PacketSize).ToArray();
+            packet[0] = 0x47;
+            packet[1] = (byte)(pid >> 8);
+            packet[2] = (byte)pid;
+            packet[3] = (byte)(0x20 | (pid == MediaPid ? 4 : counter));
+            packet[4] = 183;
+            packet[5] = 0x10;
+            WritePcr(packet.AsSpan(6, 6), basePts + timestamp);
+            packet[10] = (byte)((packet[10] & 0xFE) | (extension >> 8));
+            packet[11] = (byte)extension;
+            return packet;
+        }
+        var packets = new List<byte[]>
+        {
+            TableProbeData.Section(0, TableProbeData.Pat()),
+            TableProbeData.Section(0x1000, TableProbeData.Pmt())
+        };
+        for (var index = 0; index < 5; index++)
+        {
+            var packet = CreatePacket(index, basePts + index * 9_000);
+            WritePcr(packet.AsSpan(6, 6), basePts + index * 9_000 - 72_000);
+            packets.Add(packet);
+        }
+        if (stride == 192)
+        {
+            var payload = TableProbeData.Padding();
+            payload[1] = (byte)(otherPcrPid >> 8);
+            payload[2] = (byte)(otherPcrPid & 255);
+            payload[3] = 0x18;
+            packets.Add(payload);
+        }
+        var oldOtherCounter = stride == 192 ? 8 : 9;
+        packets.AddRange([PcrOnly(MediaPid, -33_000), PcrOnly(otherPcrPid, -70_000, counter: oldOtherCounter),
+            PcrOnly(otherPcrPid, -30_000, 299, oldOtherCounter)]);
+        var firstEnd = packets.Count;
+        packets.AddRange(Enumerable.Range(0, 10).Select(_ => TableProbeData.Padding()));
+        var secondStart = packets.Count;
+        for (var index = 0; index < 5; index++)
+        {
+            var packet = CreatePacket(index, basePts + 900_000 + index * 9_000);
+            // 片段内故意保留一次真实 PCR 倒退，接缝修复不能掩盖它。
+            WritePcr(packet.AsSpan(6, 6), basePts + (index == 2 ? 827_000 : 819_000 + index * 9_000));
+            packets.Add(packet);
+            if (index == 1)
+            {
+                packets.Add(PcrOnly(otherPcrPid, 819_000, counter: 3));
+                if (stride == 192)
+                {
+                    var payload = TableProbeData.Padding();
+                    payload[1] = (byte)(otherPcrPid >> 8);
+                    payload[2] = (byte)(otherPcrPid & 255);
+                    payload[3] = 0x14;
+                    packets.Add(payload);
+                }
+            }
+        }
+        var secondEnd = packets.Count;
+        packets.AddRange(Enumerable.Range(0, 10).Select(_ => TableProbeData.Padding()));
+        var thirdStart = packets.Count;
+        for (var index = 0; index < 5; index++)
+        {
+            var packet = CreatePacket(index, basePts + 1_800_000 + index * 9_000);
+            WritePcr(packet.AsSpan(6, 6), basePts + 1_770_000 + index * 9_000);
+            if (index == 0 && stride == 192)
+            {
+                // 首包没有 adaptation field 时，应在 PES 前插入无 PCR 的切换标记。
+                var payloadOnly = Enumerable.Repeat((byte)0xFF, 188).ToArray();
+                packet.AsSpan(0, 4).CopyTo(payloadOnly);
+                payloadOnly[3] &= 0xDF;
+                packet.AsSpan(12).CopyTo(payloadOnly.AsSpan(4));
+                packet = payloadOnly;
+            }
+            packets.Add(packet);
+            if (index == 0)
+            {
+                var between = PcrOnly(MediaPid, 1_770_000);
+                between[3] = 0x20;
+                packets.Add(between);
+                packets.Add(packet.ToArray());
+            }
+        }
+        using var files = new TableProbeData.Files(packets.SelectMany((packet, index) => stride == 188
+            ? packet : new byte[] { 0xC0, 0, (byte)(index >> 8), (byte)index }.Concat(packet)).ToArray());
+        var session = new ExportTsCheckSession(files.Output);
+        await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
+        {
+            SourcePath = files.Source, OutputPath = files.Output, VideoPid = MediaPid,
+            Ranges = [new(0, firstEnd * stride, 0, 0.4),
+                new(secondStart * stride, secondEnd * stride, 10, 10.4),
+                new(thirdStart * stride, packets.Count * stride, 20, 20.4)]
+        }, checkSession: session);
+        session.Complete();
+        var output = (await File.ReadAllBytesAsync(files.Output)).Chunk(stride)
+            .Select(packet => packet[(stride - PacketSize)..]).ToArray();
+        var clocks = output.Where(packet => TsPacketParser.Parse(packet) is { Pid: otherPcrPid, HasPcr: true }).ToArray();
+        Assert.Equal(3, clocks.Length);
+        var expectedCounter = stride == 192 ? 8 : 3;
+        Assert.Equal(expectedCounter, clocks[2][3] & 15);
+        Assert.Contains(output, packet => TsPacketParser.Parse(packet) is
+            { Pid: otherPcrPid, Discontinuity: true, HasPcr: false } && (packet[3] & 15) == expectedCounter);
+        var before = clocks[1];
+        var after = clocks[2];
+        var delta27m = ModuloTimestamp(ReadPcr(after) - ReadPcr(before)) * 300 +
+            (((after[10] & 1) << 8) | after[11]) - (((before[10] & 1) << 8) | before[11]);
+        Assert.Equal(1, delta27m);
+        var video = output.Where(packet => TsPacketParser.Parse(packet).Pid == MediaPid && (packet[1] & 0x40) != 0).ToArray();
+        Assert.Equal(81_000, ModuloTimestamp(ReadPts(video[6]) - ReadPcr(video[6])));
+        Assert.Equal(video[10], video[11]);
+        Assert.Contains(output, packet => TsPacketParser.Parse(packet) is { Pid: MediaPid, Discontinuity: true });
+        var verification = await new TsStreamAnalyzer().AnalyzeAsync(files.Output);
+        var retained = Assert.Single(verification.Events, item => item.Type == TsCheckEventType.PcrBackward);
+        Assert.Equal(1_000 / 90_000d, retained.MessageArguments[0]);
+        Assert.Equal(1, verification.ErrorCount);
+        Assert.Equal(verification.ErrorCount, session.Result!.ErrorCount);
+        Assert.DoesNotContain(verification.Events, item => item.Type == TsCheckEventType.PcrGap);
+        if (stride == 188)
+        {
+            var timeline = await new TSCutter.GUI.Services.TransportStream.Repair.TsTimelineRepairService()
+                .AnalyzeAsync(files.Output, verification);
+            Assert.Empty(timeline.Issues);
+        }
+    }
+
     private static void SetDts(byte[] packet, long dts)
     {
         packet[19] = 0xC0;
@@ -259,7 +392,9 @@ public sealed class TsClipMergeServiceTests
             var packets = Enumerable.Range(0, 30)
                 .Select(index => CreatePacket(index, index * 9_000L))
                 .ToArray();
-            // 第二段内部故意保留一个 CC 跳号和一个 TEI；合并只能修复片段接缝，不能掩盖它们。
+            for (var index = 0; index < packets.Length; index++)
+                WritePcr(packets[index].AsSpan(6, 6), index * 9_000L - (index < 20 ? 72_000 : 27_000));
+            // 第二段内部故意保留一个 CC 跳号和一个 TEI；合法时钟切换不能掩盖它们。
             packets[25][3] = (byte)((packets[25][3] & 0xF0) | 0x0B);
             packets[26][1] |= 0x80;
             byte[] source = [.. TableProbeData.Section(0, TableProbeData.Pat()),
@@ -295,7 +430,8 @@ public sealed class TsClipMergeServiceTests
             var joined = output.AsSpan(10 * PacketSize, PacketSize);
             Assert.Equal(9, previous[3] & 0x0F);
             Assert.Equal(10, joined[3] & 0x0F);
-            Assert.Equal(9_000, ReadPcr(joined) - ReadPcr(previous));
+            Assert.Equal(54_000, ReadPcr(joined) - ReadPcr(previous));
+            Assert.True(TsPacketParser.Parse(joined).Discontinuity);
             Assert.Equal(9_000, ReadPts(joined) - ReadPts(previous));
 
             var beforeGap = output.AsSpan(14 * PacketSize, PacketSize);
@@ -321,6 +457,191 @@ public sealed class TsClipMergeServiceTests
             File.Delete(sourcePath);
             File.Delete(outputPath);
         }
+    }
+
+    [Theory]
+    [InlineData(188, false)]
+    [InlineData(192, false)]
+    [InlineData(188, true)]
+    public async Task AudioPesAreCompletedWithoutJoiningOrphanPayloads(int stride, bool programOnly)
+    {
+        const int audioPid = 257;
+        var packets = new List<byte[]>
+        {
+            TableProbeData.Section(0, TableProbeData.Pat()),
+            TableProbeData.Section(0x1000, TsPsiSectionBuilder.BuildPmt(1, 0, MediaPid, [],
+            [
+                new(MediaPid, new TsStreamDefinition { StreamType = TsStreamTypes.H264 }),
+                new(audioPid, new TsStreamDefinition
+                {
+                    StreamType = TsStreamTypes.PrivateData, Descriptors = [0x05, 4, 0x44, 0x52, 0x41, 0x31]
+                })
+            ]))
+        };
+        var ranges = new List<TsClipMergeRange>();
+        var expectedPayload = new List<byte>();
+        for (var segment = 0; segment < 4; segment++)
+        {
+            var pts = segment * 900_000L;
+            var audio = new byte[368];
+            audio.AsSpan().Fill((byte)(0x60 + segment));
+            byte[] header = [0, 0, 1, 0xBD, 1, 0x6A, 0x80, 0x80, 5];
+            header.CopyTo(audio, 0);
+            WriteTimestamp(audio.AsSpan(9, 5), pts + 1_000);
+            // 当前节目路径同时覆盖 PES 头跨越视频终点、首包重复及 DRA 元数据识别。
+            var audioPackets = new List<byte[]>();
+            for (var offset = 0; offset < audio.Length;)
+            {
+                var count = Math.Min(offset == 0 && programOnly ? 3 : 184, audio.Length - offset);
+                var packet = new byte[188];
+                packet.AsSpan().Fill(0xFF);
+                packet[0] = 0x47;
+                packet[1] = offset == 0 ? (byte)0x41 : (byte)1;
+                packet[2] = 1;
+                packet[3] = (byte)((count == 184 ? 0x10 : 0x30) | audioPackets.Count);
+                if (count < 184)
+                {
+                    packet[4] = (byte)(183 - count);
+                    if (packet[4] > 0)
+                        packet[5] = 0;
+                }
+                audio.AsSpan(offset, count).CopyTo(packet.AsSpan(188 - count));
+                audioPackets.Add(packet);
+                offset += count;
+            }
+            var head = audioPackets[0];
+            byte[] orphan = [0x47, 1, 1, 0x1F, .. new byte[184]];
+            var start = packets.Count;
+            packets.AddRange([CreatePacket(0, pts), orphan, orphan.ToArray(), head,
+                CreatePacket(1, pts + 9_000), CreatePacket(2, pts + 18_000)]);
+            if (programOnly)
+                packets.Add(head.ToArray());
+            packets.AddRange(audioPackets.Skip(1));
+            packets.AddRange([head.ToArray(), CreatePacket(3, pts + 27_000)]);
+            ranges.Add(new((segment == 0 ? 0 : start) * stride, (start + 6) * stride,
+                pts / 90_000d, (pts + 18_000) / 90_000d));
+            expectedPayload.AddRange(audio[14..]);
+        }
+        using var files = new TableProbeData.Files(packets.SelectMany((packet, index) => stride == 188
+            ? packet : new byte[] { 0, 0, (byte)(index >> 8), (byte)index }.Concat(packet)).ToArray());
+        var session = new ExportTsCheckSession(files.Output);
+        var result = await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
+        {
+            SourcePath = files.Source, OutputPath = files.Output, Ranges = ranges,
+            VideoPid = MediaPid, AudioPids = programOnly ? [] : [audioPid], ProgramId = programOnly ? 1 : null
+        }, checkSession: session);
+        session.Complete();
+        var bytes = await File.ReadAllBytesAsync(files.Output);
+        Assert.Equal(bytes.Length, result.OutputBytes);
+        var bodies = bytes.Chunk(stride).Select(packet => packet[(stride - 188)..]).ToArray();
+        Assert.Equal(12, bodies.Count(packet => TsPacketParser.Parse(packet).Pid == MediaPid));
+        var outputAudio = bodies.Where(packet => TsPacketParser.Parse(packet).Pid == audioPid).ToArray();
+        Assert.Equal(programOnly ? 16 : 8, outputAudio.Length);
+        var actualPayload = new List<byte>();
+        var headerRemaining = 0;
+        byte[]? previous = null;
+        foreach (var packet in outputAudio)
+        {
+            if (previous is not null && packet.AsSpan().SequenceEqual(previous))
+                continue;
+            previous = packet;
+            var info = TsPacketParser.Parse(packet);
+            if (info.PayloadStart)
+                headerRemaining = 14;
+            var skipped = Math.Min(headerRemaining, 188 - info.PayloadOffset);
+            headerRemaining -= skipped;
+            actualPayload.AddRange(packet[(info.PayloadOffset + skipped)..]);
+        }
+        Assert.Equal(expectedPayload, actualPayload);
+        Assert.Equal(0, session.Result!.ErrorCount);
+        var verification = await new TsStreamAnalyzer().AnalyzeAsync(files.Output);
+        Assert.Equal(0, verification.ErrorCount);
+        Assert.Equal(session.Result.WarningCount, verification.WarningCount);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task DolbyAudioFramesCrossingPesStayCompleteAtEveryJoin(bool enhanced)
+    {
+        const int audioPid = 257;
+        var stride = enhanced ? 192 : 188;
+        var basePts = enhanced ? TimestampWrap - 27_000 : 0;
+        var frames = new List<byte[]>();
+        for (var index = 0; index < 40; index++)
+        {
+            var frame = Enumerable.Repeat((byte)(index + 1), 128).ToArray();
+            byte[] header = enhanced ? [0x0B, 0x77, 0, 63, 0x30, 0x80, 0] : [0x0B, 0x77, 0, 0, 0, 0x40, 0];
+            header.CopyTo(frame, 0);
+            frames.Add(frame);
+            if (enhanced)
+            {
+                var dependent = frame.ToArray();
+                dependent[2] = 0x40;
+                frames.Add(dependent);
+            }
+        }
+        var audio = frames.SelectMany(frame => frame).ToArray();
+        var unitSize = enhanced ? 256 : 128;
+        var packets = new List<byte[]>
+        {
+            TableProbeData.Section(0, TableProbeData.Pat()),
+            TableProbeData.Section(0x1000, TsPsiSectionBuilder.BuildPmt(1, 0, MediaPid, [],
+            [new(MediaPid, new TsStreamDefinition { StreamType = TsStreamTypes.H264 }),
+             new(audioPid, new TsStreamDefinition { StreamType = enhanced ? TsStreamTypes.Eac3 : TsStreamTypes.Ac3 })]))
+        };
+        for (var offset = 0; offset < audio.Length; offset += 150)
+        {
+            var count = Math.Min(150, audio.Length - offset);
+            var pes = new byte[14 + count];
+            byte[] header = [0, 0, 1, 0xBD, 0, (byte)(pes.Length - 6), 0x80, 0x80, 5];
+            header.CopyTo(pes, 0);
+            WriteTimestamp(pes.AsSpan(9, 5), basePts + (offset + unitSize - 1) / unitSize * 2_880L);
+            audio.AsSpan(offset, count).CopyTo(pes.AsSpan(14));
+            var packet = Enumerable.Repeat((byte)0xFF, 188).ToArray();
+            packet[0] = 0x47;
+            packet[1] = 0x41;
+            packet[2] = 1;
+            packet[3] = (byte)(0x30 | (offset / 150 & 15));
+            packet[4] = (byte)(183 - pes.Length);
+            packet[5] = 0;
+            pes.CopyTo(packet, 188 - pes.Length);
+            packets.Add(CreatePacket(offset / 150, basePts + offset / 150 * 3_000L));
+            packets.Add(packet);
+        }
+        using var files = new TableProbeData.Files(packets.SelectMany((packet, index) => stride == 188
+            ? packet : new byte[] { 0xC0, 0, (byte)(index >> 8), (byte)index }.Concat(packet)).ToArray());
+        var starts = new[] { 2, 10, 18, 26 };
+        await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
+        {
+            SourcePath = files.Source, OutputPath = files.Output, VideoPid = MediaPid, AudioPids = [audioPid],
+            ProgramId = enhanced ? 1 : null,
+            Ranges = starts.Select(index => new TsClipMergeRange((2 + 2 * index) * stride,
+                (2 + 2 * (index + 4)) * stride, index / 30d, (index + 4) / 30d)).ToArray()
+        }, addProgramTables: true);
+        var output = await File.ReadAllBytesAsync(files.Output);
+        var actual = new List<byte>();
+        foreach (var raw in output.Chunk(stride))
+        {
+            if (enhanced)
+                Assert.Equal(0xC0, raw[0] & 0xC0);
+            var packet = raw[(stride - 188)..];
+            var info = TsPacketParser.Parse(packet);
+            if (info.Pid != audioPid || !info.HasPayload)
+                continue;
+            var offset = info.PayloadOffset;
+            if (info.PayloadStart)
+                offset += 9 + packet[offset + 8];
+            actual.AddRange(packet[offset..]);
+        }
+        var expected = starts.SelectMany(index => audio.AsSpan(
+            (index * 150 + unitSize - 1) / unitSize * unitSize,
+            ((index + 4) * 150 + unitSize - 1) / unitSize * unitSize -
+                (index * 150 + unitSize - 1) / unitSize * unitSize).ToArray());
+        Assert.Equal(expected, actual);
+        var result = await new TsStreamAnalyzer().AnalyzeAsync(files.Output);
+        Assert.True(result.ErrorCount == 0, string.Join("; ", result.Events.Select(item =>
+            $"{item.Type}: {string.Join(',', item.MessageArguments)}")));
     }
 
     [Theory]
@@ -423,7 +744,8 @@ public sealed class TsClipMergeServiceTests
 
     private static long ReadPts(ReadOnlySpan<byte> packet)
     {
-        var value = packet[21..26];
+        var offset = 4 + ((packet[3] & 0x20) != 0 ? packet[4] + 1 : 0);
+        var value = packet[(offset + 9)..(offset + 14)];
         return ((long)(value[0] & 0x0E) << 29) |
                ((long)value[1] << 22) |
                ((long)(value[2] & 0xFE) << 14) |

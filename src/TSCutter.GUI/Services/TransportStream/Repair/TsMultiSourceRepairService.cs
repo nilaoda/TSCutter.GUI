@@ -2293,6 +2293,7 @@ public sealed class TsMultiSourceRepairService
     private sealed class ReferencePcrCollector(long syncOffset, TsCheckResult catalog)
     {
         private readonly Dictionary<int, PcrState> _states = [];
+        private readonly HashSet<int> _pendingDiscontinuities = [];
         private readonly Dictionary<int, long> _damageOffsets = [];
         private readonly Dictionary<int, PcrContinuityState>? _independentPcrContinuity =
             CreateIndependentPcrContinuity(catalog);
@@ -2347,6 +2348,8 @@ public sealed class TsMultiSourceRepairService
             }
             if (info.TransportError || (packet[3] & 0x20) == 0)
                 return;
+            if (info.Discontinuity)
+                _pendingDiscontinuities.Add(info.Pid);
             var adaptationLength = packet[4];
             if (adaptationLength < 7 || packet.Length < 12 || (packet[5] & 0x10) == 0)
                 return;
@@ -2364,7 +2367,7 @@ public sealed class TsMultiSourceRepairService
             state.WrapOffset = unwrapped - raw;
             var packetIndex = Math.Max(0, (fileOffset - syncOffset) / PacketSize);
             Samples[info.Pid].Add(new TsTimelineRepairService.PcrSample(
-                packetIndex, unwrapped, info.Discontinuity,
+                packetIndex, unwrapped, _pendingDiscontinuities.Remove(info.Pid) || info.Discontinuity,
                 TsTimelineRepairService.ReadDecodeTimestamp90k(packet, unwrapped))
             {
                 TransportDamage = _damageOffsets.TryGetValue(info.Pid, out var damagedOffset) &&
