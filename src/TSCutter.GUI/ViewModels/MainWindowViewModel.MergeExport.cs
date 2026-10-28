@@ -121,11 +121,13 @@ public partial class MainWindowViewModel
         {
             // 所有片段指向同一合并结果，用于显示总大小和恢复项目状态。
             var group = new MergedClipOutput(Guid.NewGuid().ToString("N"), clips.Length);
+            var check = BuildClipExportCheck(outputPath, output.Outcomes);
             foreach (var clip in clips)
             {
                 clip.MergedOutput = group;
                 clip.OutputFileInfo = new FileInfo(outputPath);
                 clip.ExportStatus = ClipExportStatus.Done;
+                clip.ExportCheck = check;
             }
             OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
         }

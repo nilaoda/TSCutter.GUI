@@ -46,6 +46,8 @@ public class AppConfig : ObservableObject
     public string ClipOutputTemplate { get; set; } = Utils.Editing.ClipOutputNaming.DefaultTemplate;
     public bool TsBatchCheckSaveLogs { get; set; }
     public bool ExportCurrentProgramOnly { get; set; }
+    // 导出过程中对最终输出字节同步执行 TS 检测；默认开启，可在设置中关闭。
+    public bool TsCheckOnExport { get; set; } = true;
     public bool PreferHardwareDecoding
     {
         get => IsHardwareDecodingSupported && _preferHardwareDecoding;

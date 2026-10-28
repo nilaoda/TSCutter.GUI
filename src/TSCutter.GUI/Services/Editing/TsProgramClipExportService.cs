@@ -19,7 +19,8 @@ internal sealed class TsProgramClipExportService
     private const int BufferSize = PacketSize * 4096;
 
     internal static async Task<TsServiceFilterService.OutputContext> OpenWriterAsync(
-        string sourcePath, string outputPath, int programId, CancellationToken cancellationToken)
+        string sourcePath, string outputPath, int programId, CancellationToken cancellationToken,
+        ExportTsCheckSession? checkSession = null)
     {
         if (string.Equals(Path.GetFullPath(sourcePath), Path.GetFullPath(outputPath),
                 OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
@@ -40,12 +41,12 @@ internal sealed class TsProgramClipExportService
             throw new TsFilterException(TsFilterErrorCode.MissingProgram, programId);
         return TsServiceFilterService.OutputContext.Create(
             new TsServiceFilterOutput { ServiceId = programId, OutputPath = outputPath },
-            catalog, cancellationToken, overwrite: true);
+            catalog, cancellationToken, overwrite: true, checkSession);
     }
 
     public async Task ExportAsync(string sourcePath, string outputPath, long startPosition,
         long endPosition, int programId, IProgress<TsFilterProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken, ExportTsCheckSession? checkSession = null)
     {
         await using var source = MediaFileUtil.OpenRead(sourcePath, BufferSize,
             FileOptions.Asynchronous | FileOptions.SequentialScan);
@@ -69,7 +70,7 @@ internal sealed class TsProgramClipExportService
         TsServiceFilterService.OutputContext? output = null;
         try
         {
-            output = await OpenWriterAsync(sourcePath, outputPath, programId, cancellationToken).ConfigureAwait(false);
+            output = await OpenWriterAsync(sourcePath, outputPath, programId, cancellationToken, checkSession).ConfigureAwait(false);
             output.WriteInitialTables();
             source.Position = start;
             long processed = 0;
@@ -106,9 +107,15 @@ internal sealed class TsProgramClipExportService
         }
         finally
         {
-            if (output is not null)
-                await output.DisposeAsync().ConfigureAwait(false);
-            ArrayPool<byte>.Shared.Return(buffer);
+            try
+            {
+                if (output is not null)
+                    await output.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
         }
     }
 }

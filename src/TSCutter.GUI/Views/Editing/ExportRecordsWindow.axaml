@@ -1,0 +1,57 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TSCutter.GUI.ViewModels.Editing"
+        xmlns:local="using:TSCutter.GUI"
+        x:Class="TSCutter.GUI.Views.Editing.ExportRecordsWindow"
+        x:DataType="vm:ExportRecordsWindowViewModel"
+        Width="900" Height="620" MinWidth="620" MinHeight="460" CanResize="True"
+        WindowStartupLocation="CenterOwner"
+        Title="{DynamicResource String.Menu.ExportRecords}">
+    <Grid Margin="12" RowDefinitions="Auto,*,8,1.2*,Auto,Auto">
+        <TextBlock Margin="0,0,0,8" Text="{DynamicResource String.Export_Records_Hint}"
+                   TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}" />
+        <TextBlock Grid.Row="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                   Text="{DynamicResource String.Export_Records_Empty}"
+                   IsVisible="{Binding HasRecords, Converter={x:Static local:App.InverseBoolConverter}}" />
+        <ListBox Grid.Row="1" ItemsSource="{Binding Records}" SelectedItem="{Binding SelectedRecord}"
+                 IsVisible="{Binding HasRecords}"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+            <ListBox.Styles>
+                <Style Selector="ListBoxItem">
+                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                </Style>
+            </ListBox.Styles>
+            <ListBox.ItemTemplate>
+                <DataTemplate>
+                    <Grid ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" Margin="4" ColumnSpacing="12" RowSpacing="4">
+                        <TextBlock Text="{Binding Record.FileName}" TextTrimming="CharacterEllipsis"
+                                   FontWeight="SemiBold" ToolTip.Tip="{Binding Record.OutputPath}" />
+                        <TextBlock Grid.Column="1" Text="{Binding TimeText}" FontSize="11" VerticalAlignment="Center" />
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="12">
+                            <TextBlock Text="{Binding KindText}" FontSize="11" />
+                            <TextBlock Text="{Binding FileSizeText}" FontSize="11" />
+                        </StackPanel>
+                        <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding CheckStatusText}" FontSize="11"
+                                   MaxWidth="280" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding CheckDetailText}" />
+                    </Grid>
+                </DataTemplate>
+            </ListBox.ItemTemplate>
+        </ListBox>
+        <TextBox Grid.Row="3" Name="Summary" Text="{Binding SummaryText, Mode=OneWay}"
+                 IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+                 ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                 ScrollViewer.VerticalScrollBarVisibility="Auto" />
+        <TextBlock Grid.Row="4" Text="{Binding StatusText}" TextWrapping="Wrap"
+                   Margin="0,4,0,0" Foreground="{DynamicResource AppSecondaryTextBrush}" />
+        <WrapPanel Grid.Row="5" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Content="{DynamicResource String.Export_Records_ViewDetails}" Margin="4,4,0,0"
+                    Command="{Binding ViewDetailsCommand}" IsEnabled="{Binding CanViewDetails}" />
+            <Button Content="{DynamicResource String.Export_Records_CopySummary}" Margin="4,4,0,0"
+                    Command="{Binding CopySummaryCommand}" IsEnabled="{Binding HasSelection}" />
+            <Button Content="{DynamicResource String.Export_Records_OpenFolder}" Margin="4,4,0,0"
+                    Command="{Binding OpenFolderCommand}" IsEnabled="{Binding HasSelection}" />
+            <Button Content="{DynamicResource String.Export_Records_Close}" Margin="4,4,0,0" MinWidth="70"
+                    Command="{Binding CloseCommand}" />
+        </WrapPanel>
+    </Grid>
+</Window>

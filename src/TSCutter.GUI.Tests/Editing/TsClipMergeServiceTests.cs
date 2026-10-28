@@ -5,6 +5,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
 using TSCutter.GUI.Models.TransportStream.Analysis;
+using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Services.TransportStream.Analysis;
@@ -57,11 +58,18 @@ public sealed class TsClipMergeServiceTests
             var secondStart = first.Length + insertedBytes;
             byte[] data = [.. first, .. new byte[insertedBytes], .. second, 0x12, 0x34];
             await File.WriteAllBytesAsync(sourcePath, data);
+            var session = new ExportTsCheckSession(outputPath);
             var result = await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
             {
                 SourcePath = sourcePath, OutputPath = outputPath,
                 Ranges = [new(PacketSize, first.Length, 0.1, 0.9), new(secondStart, -1, 2, 2.9)]
-            });
+            }, checkSession: session);
+            session.Complete();
+            var reference = await new TsStreamAnalyzer().AnalyzeAsync(outputPath);
+            Assert.Equal(reference.PacketCount, session.Result!.PacketCount);
+            Assert.Equal(reference.TotalErrorCount, session.Result.TotalErrorCount);
+            Assert.Equal(reference.TotalWarningCount, session.Result.TotalWarningCount);
+            Assert.Equal(reference.FileSize, session.Result.FileSize);
             var output = await File.ReadAllBytesAsync(outputPath);
             Assert.Equal(19 * PacketSize, output.Length);
             Assert.Equal(2, result.SegmentCount);
@@ -239,8 +247,10 @@ public sealed class TsClipMergeServiceTests
         packet[26] = (byte)((packet[26] & 15) | 0x10);
     }
 
-    [Fact]
-    public async Task MergeMakesJoinContinuousAndPreservesInternalTransportDamage()
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task MergeMakesJoinContinuousAndPreservesInternalTransportDamage(bool programOnly)
     {
         var sourcePath = Path.Combine(Path.GetTempPath(), $"ts-merge-{Guid.NewGuid():N}.ts");
         var outputPath = sourcePath + ".merged.ts";
@@ -252,20 +262,29 @@ public sealed class TsClipMergeServiceTests
             // 第二段内部故意保留一个 CC 跳号和一个 TEI；合并只能修复片段接缝，不能掩盖它们。
             packets[25][3] = (byte)((packets[25][3] & 0xF0) | 0x0B);
             packets[26][1] |= 0x80;
-            await File.WriteAllBytesAsync(sourcePath, packets.SelectMany(packet => packet).ToArray());
+            byte[] source = [.. TableProbeData.Section(0, TableProbeData.Pat()),
+                .. TableProbeData.Section(0x1000, TableProbeData.Pmt()), .. packets.SelectMany(packet => packet)];
+            await File.WriteAllBytesAsync(sourcePath, source);
+            var session = new ExportTsCheckSession(outputPath);
 
             var result = await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
             {
                 SourcePath = sourcePath,
                 OutputPath = outputPath,
+                ProgramId = programOnly ? 1 : null,
+                VideoPid = MediaPid,
                 Ranges =
                 [
-                    new TsClipMergeRange(0, 10 * PacketSize, 0, 1),
-                    new TsClipMergeRange(20 * PacketSize, 30 * PacketSize, 2, 3)
+                    new TsClipMergeRange(0, 12 * PacketSize, 0, 1),
+                    new TsClipMergeRange(22 * PacketSize, 32 * PacketSize, 2, 3)
                 ]
-            });
+            }, checkSession: session);
+            session.Complete();
 
-            var output = await File.ReadAllBytesAsync(outputPath);
+            var fullOutput = await File.ReadAllBytesAsync(outputPath);
+            var output = fullOutput.Chunk(PacketSize)
+                .Where(packet => (((packet[1] & 31) << 8) | packet[2]) == MediaPid)
+                .SelectMany(packet => packet).ToArray();
             Assert.Equal(20 * PacketSize, output.Length);
             Assert.Equal(2, result.SegmentCount);
             Assert.True(result.RewrittenPcrCount > 0);
@@ -284,13 +303,15 @@ public sealed class TsClipMergeServiceTests
             Assert.NotEqual(((beforeGap[3] & 0x0F) + 1) & 0x0F, gapPacket[3] & 0x0F);
             Assert.NotEqual(0, output[16 * PacketSize + 1] & 0x80);
 
-            var verification = await new TsStreamAnalyzer().AnalyzeAsync(
-                outputPath,
-                options: new TsStreamAnalyzeOptions
-                {
-                    Features = TsStreamAnalyzeFeatures.ContinuityValidation |
-                               TsStreamAnalyzeFeatures.DetailedEvents
-                });
+            var verification = await new TsStreamAnalyzer().AnalyzeAsync(outputPath);
+            Assert.Equal(TsExportCheckState.Completed, session.State);
+            Assert.Equal(fullOutput.Length, session.Result!.FileSize);
+            Assert.Equal(verification.PacketCount, session.Result.PacketCount);
+            Assert.Equal(verification.TotalErrorCount, session.Result.TotalErrorCount);
+            Assert.Equal(verification.TotalWarningCount, session.Result.TotalWarningCount);
+            Assert.Equal(1, session.Result.Pids[MediaPid].ContinuityErrors);
+            Assert.Equal(1, session.Result.Pids[MediaPid].TransportErrors);
+            Assert.DoesNotContain(session.Result.Events, item => item.Type is TsCheckEventType.PcrBackward or TsCheckEventType.PtsBackward);
             Assert.Equal(1, verification.Pids[MediaPid].ContinuityErrors);
             Assert.Equal(1, verification.Pids[MediaPid].TransportErrors);
             Assert.Contains(verification.Events, item => item.Type == TsCheckEventType.TransportError);

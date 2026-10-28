@@ -26,7 +26,8 @@ internal sealed class TsClipMergeService
     public async Task<TsClipMergeResult> MergeAsync(
         TsClipMergeRequest request,
         IProgress<TsClipMergeProgress>? progress = null,
-        CancellationToken cancellationToken = default, bool addProgramTables = false)
+        CancellationToken cancellationToken = default, bool addProgramTables = false,
+        ExportTsCheckSession? checkSession = null)
     {
         var sourcePath = Path.GetFullPath(request.SourcePath);
         var outputPath = Path.GetFullPath(request.OutputPath);
@@ -85,12 +86,17 @@ internal sealed class TsClipMergeService
         try
         {
             await using var programOutput = request.ProgramId is { } programId
-                ? await TsProgramClipExportService.OpenWriterAsync(sourcePath, outputPath, programId, cancellationToken)
+                ? await TsProgramClipExportService.OpenWriterAsync(sourcePath, outputPath, programId, cancellationToken, checkSession)
                     .ConfigureAwait(false)
                 : null;
-            await using var output = programOutput is null ? new FileStream(
-                outputPath, FileMode.Create, FileAccess.Write, FileShare.None,
-                buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan) : null;
+            // 提供检测会话时用检测型流包装最终输出；补入的节目表前缀与全部数据块都会经过检测。
+            await using var output = programOutput is null
+                ? checkSession is null
+                    ? (Stream)new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None,
+                        buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan)
+                    : new TsDetectingWriteStream(new FileStream(outputPath, FileMode.Create, FileAccess.Write,
+                        FileShare.None, buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan), checkSession)
+                : null;
             outputCreated = true;
             programOutput?.WriteInitialTables();
 
@@ -264,12 +270,14 @@ internal sealed class TsClipMergeService
         }
         catch (EndOfStreamException)
         {
-            if (outputCreated) TryDelete(outputPath);
+            if (outputCreated)
+                TryDelete(outputPath);
             throw new TsClipMergeException(TsClipMergeErrorCode.SourceChanged);
         }
         catch
         {
-            if (outputCreated) TryDelete(outputPath);
+            if (outputCreated)
+                TryDelete(outputPath);
             throw;
         }
         finally

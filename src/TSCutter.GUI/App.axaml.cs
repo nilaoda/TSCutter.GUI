@@ -11,6 +11,7 @@ using Splat;
 using TSCutter.GUI.Converters;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.ViewModels;
@@ -63,6 +64,7 @@ public partial class App : Application
         SplatRegistrations.Register<JumpTimeViewModel>();
         SplatRegistrations.Register<MediainfoWindowViewModel>();
         SplatRegistrations.Register<SettingsWindowViewModel>();
+        SplatRegistrations.Register<ExportRecordsWindowViewModel>();
         SplatRegistrations.Register<UpdatesInfoWindowViewModel>();
         SplatRegistrations.Register<CaptureFrameViewModel>();
         SplatRegistrations.Register<ClipDetailsViewModel>();
@@ -73,6 +75,7 @@ public partial class App : Application
         SplatRegistrations.RegisterConstant<ILocalizationService>(localizationService);
         var configurationService = new ConfigurationService(localizationService);
         SplatRegistrations.RegisterConstant<IConfigurationService>(configurationService);
+        SplatRegistrations.RegisterConstant<ExportRecordRegistry>(new ExportRecordRegistry());
         SplatRegistrations.SetupIOC();
     }
 
@@ -172,4 +175,7 @@ public partial class App : Application
     public static InverseBoolConverter InverseBoolConverter => InverseBoolConverter.Instance;
     public static IDialogService DialogService => Locator.Current.GetService<IDialogService>()!;
     public static ILocalizationService LocalizationService => Locator.Current.GetService<ILocalizationService>()!;
+    public static IConfigurationService? ConfigService => Locator.Current.GetService<IConfigurationService>();
+    // 会话内导出记录：不依赖队列项或片段，切换源文件后仍可查看。
+    public static ExportRecordRegistry? ExportRecordRegistry => Locator.Current.GetService<ExportRecordRegistry>();
 }

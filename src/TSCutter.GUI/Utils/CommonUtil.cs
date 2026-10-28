@@ -1,10 +1,12 @@
 ﻿using System;
+using System.Buffers;
 using System.Diagnostics;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
+using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Files;
 
@@ -50,46 +52,62 @@ public static partial class CommonUtil
         return false;
     }
 
-    public static Task CopyFileAsync(FileInfo startFile, string destinationFile, long start = 0, long end = -1, Action<double, long>? progress = null, CancellationToken cancellationToken = default) =>
-        Task.Run(() => CopyFileCoreAsync(startFile, destinationFile, start, end, progress, cancellationToken), cancellationToken);
+    public static Task CopyFileAsync(FileInfo startFile, string destinationFile, long start = 0, long end = -1, Action<double, long>? progress = null, CancellationToken cancellationToken = default, ExportTsCheckSession? checkSession = null) =>
+        Task.Run(() => CopyFileCoreAsync(startFile, destinationFile, start, end, progress, cancellationToken, checkSession), cancellationToken);
 
-    private static async Task CopyFileCoreAsync(FileInfo startFile, string destinationFile, long start, long end, Action<double, long>? progress, CancellationToken cancellationToken)
+    private static async Task CopyFileCoreAsync(FileInfo startFile, string destinationFile, long start, long end, Action<double, long>? progress, CancellationToken cancellationToken, ExportTsCheckSession? checkSession)
     {
         cancellationToken.ThrowIfCancellationRequested();
         if (end < 0 || end < start)
             end = startFile.Length;
 
-        const int bufferSize = 1024 * 1024; // 1024 KB buffer
+        const int bufferSize = 4 * 1024 * 1024; // 大块顺序 IO，减少每块异步读写的调度开销。
         var totalBytes = end - start;
-        var buffer = new byte[bufferSize];
+        var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
         var bytesRead = 0;
         var totalBytesRead = 0L;
 
-        await using var sourceStream = MediaFileUtil.OpenRead(startFile.FullName);
-        cancellationToken.ThrowIfCancellationRequested();
-        await using var destinationStream = new FileStream(destinationFile, FileMode.Create, FileAccess.Write);
-
-        sourceStream.Seek(start, SeekOrigin.Begin);
-
-        while (totalBytesRead < totalBytes)
+        try
         {
-            // Check if cancellation is requested
+            await using var sourceStream = MediaFileUtil.OpenRead(startFile.FullName);
             cancellationToken.ThrowIfCancellationRequested();
+            if (start < 0)
+                throw new ArgumentOutOfRangeException(nameof(start));
+            var sourceLength = sourceStream.Length;
+            if (end < start || start > sourceLength || end > sourceLength)
+                throw new EndOfStreamException();
+            // 提供检测会话时，成功写出的字节交给检测器，不在导出后重读输出文件。
+            await using Stream destinationStream = checkSession is null
+                ? new FileStream(destinationFile, FileMode.Create, FileAccess.Write)
+                : new TsDetectingWriteStream(
+                    new FileStream(destinationFile, FileMode.Create, FileAccess.Write), checkSession);
 
-            var bytesToRead = (int)Math.Min(bufferSize, totalBytes - totalBytesRead);
-            bytesRead = await sourceStream.ReadAsync(buffer.AsMemory(0, bytesToRead), cancellationToken);
-            if (bytesRead <= 0)
-                break;
+            sourceStream.Seek(start, SeekOrigin.Begin);
 
-            await destinationStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken);
-            totalBytesRead += bytesRead;
+            while (totalBytesRead < totalBytes)
+            {
+                // Check if cancellation is requested
+                cancellationToken.ThrowIfCancellationRequested();
 
-            var progressPercentage = totalBytesRead * 100.0 / totalBytes;
-            progress?.Invoke(progressPercentage, bytesRead);
+                var bytesToRead = (int)Math.Min(bufferSize, totalBytes - totalBytesRead);
+                bytesRead = await sourceStream.ReadAsync(buffer.AsMemory(0, bytesToRead), cancellationToken).ConfigureAwait(false);
+                if (bytesRead <= 0)
+                    throw new EndOfStreamException();
+
+                await destinationStream.WriteAsync(buffer.AsMemory(0, bytesRead), cancellationToken).ConfigureAwait(false);
+                totalBytesRead += bytesRead;
+
+                var progressPercentage = totalBytesRead * 100.0 / totalBytes;
+                progress?.Invoke(progressPercentage, bytesRead);
+            }
+
+            // Final progress report (100%)
+            progress?.Invoke(100, 0);
         }
-
-        // Final progress report (100%)
-        progress?.Invoke(100, 0);
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+        }
     }
     
     public static string FormatFileSize(double fileSize)

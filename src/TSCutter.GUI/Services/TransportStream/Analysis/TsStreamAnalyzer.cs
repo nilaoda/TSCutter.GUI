@@ -15,10 +15,12 @@ using TSCutter.GUI.Utils.TransportStream.Packets;
 
 namespace TSCutter.GUI.Services.TransportStream.Analysis;
 
-public sealed class TsStreamAnalyzer
+public sealed class TsStreamAnalyzer : IDisposable
 {
     public const int PacketSize = 188;
     private const int ReadBufferSize = PacketSize * 32_768;
+    // 仅拼接跨块残余；两倍探测窗口保证失步后仍有空间追加新数据并恢复同步。
+    private const int SessionCarryCapacity = TsPacketLayout.SyncProbeOverlapBytes * 2;
     private const int MaxStoredEvents = 20_000;
     private const int MaxMpegAudioProbeBytes = 64 * 1024;
     private const double PcrGapThresholdSeconds = 0.5;
@@ -31,6 +33,8 @@ public sealed class TsStreamAnalyzer
     private const long MinimumBitrateClockSpan90k = 45_000;
 
     private readonly Dictionary<int, PidState> _pidStates = [];
+    // PID 固定为 13 位；逐包查表避免反复计算字典哈希，字典仍用于遍历已出现的 PID。
+    private readonly PidState?[] _pidStateLookup = new PidState?[0x2000];
     private readonly Dictionary<int, TsPsiSectionAssembler> _psiAssemblers = [];
     private readonly Dictionary<int, int> _pmtPidPrograms = [];
     private readonly Dictionary<int, int> _streamPidPrograms = [];
@@ -79,6 +83,13 @@ public sealed class TsStreamAnalyzer
     private long _bitrateLastPcrPacket;
     private long _bitrateBestClockSpan90k;
     private long _bitrateBestPacketSpan;
+    // 增量检测会话状态：只保留跨块残余与检测状态，不缓存整段输出。
+    private byte[] _sessionScratch = [];
+    private int _sessionScratchCapacity;
+    private int _sessionScratchLength;
+    private long _sessionScratchStartOffset;
+    private long _sessionTotalBytes;
+    private bool _sessionActive;
 
     private bool NeedsClockProcessing => HasFeature(
         TsStreamAnalyzeFeatures.TimestampValidation |
@@ -101,15 +112,14 @@ public sealed class TsStreamAnalyzer
         CancellationToken cancellationToken = default,
         TsStreamAnalyzeOptions? options = null)
     {
-        Reset(filePath, progress, options);
-        _packetLayout = TsPacketLayout.FromPacketOffset(PacketSize, 0);
-        var readBufferSize = _options.InventoryOnly ? PacketSize * 8_192 : ReadBufferSize;
-        // 使用池化大缓冲区减少系统调用和大对象堆分配；额外空间用于保留跨 ReadAsync 的残余包。
-        var buffer = ArrayPool<byte>.Shared.Rent(readBufferSize + TsPacketLayout.SyncProbeOverlapBytes);
-        var buffered = 0;
-
+        BeginSession(filePath, options, progress);
+        byte[]? buffer = null;
         try
         {
+            _result.FileSize = new FileInfo(filePath).Length;
+            var readBufferSize = _options.InventoryOnly ? PacketSize * 8_192 : ReadBufferSize;
+            // 使用池化大缓冲区减少系统调用和大对象堆分配；跨块残余由会话缓冲区统一保留。
+            buffer = ArrayPool<byte>.Shared.Rent(readBufferSize);
             await using var stream = MediaFileUtil.OpenRead(
                 filePath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
@@ -117,86 +127,194 @@ public sealed class TsStreamAnalyzer
             while (true)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var read = await stream.ReadAsync(buffer.AsMemory(buffered, readBufferSize), cancellationToken)
+                var read = await stream.ReadAsync(buffer.AsMemory(0, readBufferSize), cancellationToken)
                     .ConfigureAwait(false);
                 if (read == 0)
-                {
-                    if (_syncOffset < 0 && buffered > 0)
-                    {
-                        var consumedTail = ProcessBuffer(buffer.AsSpan(0, buffered),
-                            stream.Position - buffered, cancellationToken, isFinal: true);
-                        buffered -= consumedTail;
-                    }
                     break;
-                }
 
-                buffered += read;
-                var consumed = ProcessBuffer(buffer.AsSpan(0, buffered), stream.Position - buffered, cancellationToken);
-                if (consumed > 0)
-                {
-                    buffered -= consumed;
-                    if (buffered > 0)
-                        buffer.AsSpan(consumed, buffered).CopyTo(buffer);
-                }
-
-                _result.BytesScanned = _syncOffset < 0
-                    ? Math.Min(stream.Position, _result.FileSize)
-                    : Math.Min(_result.FileSize, _syncOffset + _packetIndex * PacketStride);
-                ReportProgress(null, force: false);
+                AppendOutput(buffer.AsSpan(0, read), cancellationToken);
                 if (_stopRequested || _result.BytesScanned >= _options.MaxBytes)
                     break;
             }
 
-            if (_options.InventoryOnly && _syncOffset < 0)
-                throw new InvalidDataException(LocalizationManager.Instance.String_TsLayout_NoSync);
-            if (!_options.InventoryOnly && _syncOffset < 0)
-            {
-                AddEvent(TsCheckSeverity.Error, TsCheckEventType.SyncLoss, -1, 0, 0,
-                    TsCheckMessageCode.NoSync, [], null, false);
-            }
-            else if (!_options.InventoryOnly && _pendingSyncLossOffset >= 0)
-            {
-                AddEvent(TsCheckSeverity.Error, TsCheckEventType.SyncLoss, -1, _packetIndex,
-                    _pendingSyncLossOffset, TsCheckMessageCode.SyncLostAtEnd,
-                    [_pendingSyncLossBytes + buffered], GetEstimatedTime(), true);
-            }
-            else if (!_options.InventoryOnly && buffered > 0 && !_stopRequested)
-            {
-                AddEvent(TsCheckSeverity.Warning, TsCheckEventType.TrailingBytes, -1, _packetIndex,
-                    stream.Length - buffered, TsCheckMessageCode.TrailingBytes, [buffered],
-                    GetEstimatedTime(), true);
-            }
-
-            if (!_options.InventoryOnly)
-                ValidateCompletedScan(stream.Length);
-            CompleteResult(_stopRequested ? _result.BytesScanned : Math.Min(stream.Length, _options.MaxBytes), false);
+            var result = CompleteSession(cancellationToken);
+            ReportProgress(null, force: true);
+            return result;
         }
         catch (OperationCanceledException)
         {
-            CompleteResult(_result.BytesScanned, true);
+            var result = AbortSession();
+            ReportProgress(null, force: true);
+            return result;
         }
         finally
         {
-            ArrayPool<byte>.Shared.Return(buffer);
+            if (buffer is not null)
+                ArrayPool<byte>.Shared.Return(buffer);
+            // 未预期异常（如磁盘 IO 失败）也必须释放会话缓冲，保持实例可安全复用。
+            ReleaseSessionBuffer();
+        }
+    }
+
+    /// <summary>
+    /// 初始化一次增量检测会话。会话从空输出开始，不读取磁盘上的文件；
+    /// FileSize 由每次 Complete/Abort 时的实际累计写入字节数给出。
+    /// </summary>
+    public void BeginSession(string displayName, TsStreamAnalyzeOptions? options = null,
+        IProgress<TsCheckProgress>? progress = null)
+    {
+        if (_sessionActive)
+            throw new InvalidOperationException("An incremental check session is already active on this analyzer.");
+        Reset(displayName, progress, options);
+        _packetLayout = TsPacketLayout.FromPacketOffset(PacketSize, 0);
+        _sessionScratchCapacity = SessionCarryCapacity;
+        _sessionScratch = ArrayPool<byte>.Shared.Rent(_sessionScratchCapacity);
+        _sessionScratchLength = 0;
+        _sessionScratchStartOffset = 0;
+        _sessionTotalBytes = 0;
+        _sessionActive = true;
+    }
+
+    /// <summary>
+    /// 按顺序追加一块输出字节。支持任意大小的输入块；跨块的 TS 包、M2TS 前缀、
+    /// PSI 与 PES 由会话缓冲区拼接，失步恢复与文件扫描共用同一套逻辑。
+    /// </summary>
+    public void AppendOutput(ReadOnlySpan<byte> data, CancellationToken cancellationToken = default)
+    {
+        if (!_sessionActive)
+            throw new InvalidOperationException("The incremental check session is not active.");
+        cancellationToken.ThrowIfCancellationRequested();
+        _sessionTotalBytes += data.Length;
+        if (_stopRequested)
+            return;
+        while (!data.IsEmpty && !_stopRequested)
+        {
+            if (_sessionScratchLength == 0)
+            {
+                // 直接分析调用方的数据，只留下不足一个包或失步探测窗口的尾部。
+                var consumed = ProcessBuffer(data, _sessionScratchStartOffset, cancellationToken);
+                _sessionScratchStartOffset += consumed;
+                if (_stopRequested)
+                    break;
+                data = data[consumed..];
+                data.CopyTo(_sessionScratch);
+                _sessionScratchLength = data.Length;
+                break;
+            }
+
+            // 已同步时只补齐当前一个包，随后的大块立即恢复直接分析。
+            // 无法确认同步点时才拼接完整探测窗口，绝不缓存整块输出。
+            var targetLength = _syncOffset >= 0 && _sessionScratchLength < PacketStride &&
+                               (_sessionScratchLength <= _packetLayout.PrefixSize ||
+                                _sessionScratch[_packetLayout.PrefixSize] == 0x47)
+                ? PacketStride : _sessionScratchCapacity;
+            var take = Math.Min(data.Length, targetLength - _sessionScratchLength);
+            data[..take].CopyTo(_sessionScratch.AsSpan(_sessionScratchLength));
+            _sessionScratchLength += take;
+            data = data[take..];
+            var consumedCarry = ProcessBuffer(_sessionScratch.AsSpan(0, _sessionScratchLength),
+                _sessionScratchStartOffset, cancellationToken);
+            _sessionScratchLength -= consumedCarry;
+            _sessionScratchStartOffset += consumedCarry;
+            if (consumedCarry > 0 && _sessionScratchLength > 0)
+                _sessionScratch.AsSpan(consumedCarry, _sessionScratchLength).CopyTo(_sessionScratch);
+            if (consumedCarry == 0 && take == 0)
+                throw new InvalidOperationException("The incremental check session cannot make progress with the buffered data.");
+        }
+        _result.BytesScanned = _syncOffset < 0
+            ? _sessionTotalBytes
+            : Math.Min(_sessionTotalBytes, _syncOffset + _packetIndex * PacketStride);
+        ReportProgress(null, force: false);
+    }
+
+    /// <summary>
+    /// 正常结束会话：执行文件尾残余与最终结构检查，返回检测结果。
+    /// FileSize、BytesScanned 等最终字段按本次会话实际收到的字节数计算。
+    /// </summary>
+    public TsCheckResult CompleteSession(CancellationToken cancellationToken = default)
+    {
+        if (!_sessionActive)
+            throw new InvalidOperationException("The incremental check session is not active.");
+        cancellationToken.ThrowIfCancellationRequested();
+        if (_syncOffset < 0 && _sessionScratchLength > 0)
+        {
+            var consumedTail = ProcessBuffer(_sessionScratch.AsSpan(0, _sessionScratchLength),
+                _sessionScratchStartOffset, cancellationToken, isFinal: true);
+            _sessionScratchLength -= consumedTail;
+        }
+        if (_options.InventoryOnly && _syncOffset < 0)
+            throw new InvalidDataException(LocalizationManager.Instance.String_TsLayout_NoSync);
+        if (_result.FileSize == 0)
+            _result.FileSize = _sessionTotalBytes;
+        if (!_options.InventoryOnly && _syncOffset < 0)
+        {
+            AddEvent(TsCheckSeverity.Error, TsCheckEventType.SyncLoss, -1, 0, 0,
+                TsCheckMessageCode.NoSync, [], null, false);
+        }
+        else if (!_options.InventoryOnly && _pendingSyncLossOffset >= 0)
+        {
+            AddEvent(TsCheckSeverity.Error, TsCheckEventType.SyncLoss, -1, _packetIndex,
+                _pendingSyncLossOffset, TsCheckMessageCode.SyncLostAtEnd,
+                [_pendingSyncLossBytes + _sessionScratchLength], GetEstimatedTime(), true);
+        }
+        else if (!_options.InventoryOnly && _sessionScratchLength > 0 && !_stopRequested)
+        {
+            AddEvent(TsCheckSeverity.Warning, TsCheckEventType.TrailingBytes, -1, _packetIndex,
+                _sessionTotalBytes - _sessionScratchLength, TsCheckMessageCode.TrailingBytes,
+                [_sessionScratchLength], GetEstimatedTime(), true);
         }
 
-        ReportProgress(null, force: true);
+        if (!_options.InventoryOnly)
+            ValidateCompletedScan(_sessionTotalBytes);
+        CompleteResult(_stopRequested ? _result.BytesScanned : Math.Min(_sessionTotalBytes, _options.MaxBytes), false);
+        ReleaseSessionBuffer();
         return _result;
     }
 
-    private void Reset(string filePath, IProgress<TsCheckProgress>? progress, TsStreamAnalyzeOptions? options)
+    /// <summary>
+    /// 中止会话：结果标记为已取消（Incomplete），不会把不完整数据判成检测通过。
+    /// </summary>
+    public TsCheckResult AbortSession()
+    {
+        if (!_sessionActive)
+            return _result;
+        if (_result.FileSize == 0)
+            _result.FileSize = _sessionTotalBytes;
+        CompleteResult(_result.BytesScanned, cancelled: true);
+        ReleaseSessionBuffer();
+        return _result;
+    }
+
+    public void Dispose()
+    {
+        ReleaseSessionBuffer();
+    }
+
+    private void ReleaseSessionBuffer()
+    {
+        if (_sessionScratch.Length == 0)
+            return;
+        ArrayPool<byte>.Shared.Return(_sessionScratch);
+        _sessionScratch = [];
+        _sessionScratchCapacity = 0;
+        _sessionActive = false;
+    }
+
+    private void Reset(string displayName, IProgress<TsCheckProgress>? progress, TsStreamAnalyzeOptions? options)
     {
         _pidStates.Clear();
+        Array.Clear(_pidStateLookup);
         _psiAssemblers.Clear();
         _pmtPidPrograms.Clear();
         _streamPidPrograms.Clear();
         _pcrPidPrograms.Clear();
         _programClocks.Clear();
         _lastMergeableEvents.Clear();
+        // FileSize 由调用方补充：文件扫描读取磁盘长度，增量会话在收尾时按累计写入字节数给出。
         _result = new TsCheckResult
         {
-            FilePath = filePath,
-            FileSize = new FileInfo(filePath).Length
+            FilePath = displayName,
+            FileSize = 0
         };
         _progress = progress;
         _stopwatch = Stopwatch.StartNew();
@@ -407,12 +525,13 @@ public sealed class TsStreamAnalyzer
 
         var payload = packet[payloadOffset..];
         if (!transportError &&
-            (pid == 0 || _pmtPidPrograms.ContainsKey(pid) ||
+            (pid == 0 || state.Summary.IsPmtPid ||
              (_options.IncludeServiceMetadata && pid == 0x0011) ||
              (pid == TsDvbTimeTableParser.Pid && HasFeature(TsStreamAnalyzeFeatures.BroadcastClock))))
             ProcessPsi(pid, payload, payloadStart, fileOffset);
 
-        if (_streamPidPrograms.ContainsKey(pid))
+        // PAT/PMT 解析时已登记到 PID 状态，逐包路由直接读取，避免重复查字典。
+        if (state.Summary.StreamType.HasValue)
         {
             if (_options.InventoryOnly)
                 ProbeMpegAudioLayer(payload, payloadStart, state);
@@ -434,7 +553,7 @@ public sealed class TsStreamAnalyzer
                 var same = packetBody.SequenceEqual(state.LastPacketBody);
                 // HLS 分片可以重复发送相同的 PAT/PMT 和相同 CC。已验证且字节完全相同
                 // 的表不代表媒体重复或丢包；不同负载和媒体 PID 仍按原规则报告。
-                if (same && (pid == 0 || _pmtPidPrograms.ContainsKey(pid)) && IsValidRepeatedTable(packet))
+                if (same && (pid == 0 || state.Summary.IsPmtPid) && IsValidRepeatedTable(packet))
                     return false;
                 if (!same)
                 {
@@ -740,7 +859,8 @@ public sealed class TsStreamAnalyzer
         }
         _pcrPidPrograms[pcrPid] = programNumber;
         GetPidState(pcrPid).Summary.IsPcrPid = true;
-        _programClocks.TryAdd(programNumber, new ProgramClockState());
+        if (!_programClocks.ContainsKey(programNumber))
+            _programClocks[programNumber] = new ProgramClockState();
 
         while (offset + 5 <= sectionEnd)
         {
@@ -1328,13 +1448,15 @@ public sealed class TsStreamAnalyzer
 
     private PidState GetPidState(int pid)
     {
-        if (_pidStates.TryGetValue(pid, out var state))
+        var state = _pidStateLookup[pid];
+        if (state is not null)
             return state;
 
         var summary = new TsCheckPidSummary { Pid = pid };
         _result.Pids[pid] = summary;
         state = new PidState(summary);
         _pidStates[pid] = state;
+        _pidStateLookup[pid] = state;
         return state;
     }
 

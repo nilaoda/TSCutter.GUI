@@ -50,6 +50,14 @@
                 <Setter Property="TextDecorations" Value="Underline" />
             </Style>
         </ControlTheme>
+        <ControlTheme x:Key="ClipExportStatusTheme" TargetType="Button" BasedOn="{StaticResource PreviewStatusTextTheme}">
+            <Style Selector="^.export-warning">
+                <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+            </Style>
+            <Style Selector="^.export-error">
+                <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
+            </Style>
+        </ControlTheme>
         <ControlTheme x:Key="ClipEditButtonTheme" TargetType="Button">
             <Setter Property="Width" Value="22" />
             <Setter Property="Height" Value="20" />
@@ -206,6 +214,8 @@
                                   IsVisible="{Binding IsRemuxExport}" Command="{Binding RemuxExportOptionsCommand}" />
                         <MenuItem Header="{DynamicResource String.Menu.ExportQueue}"
                                   Command="{Binding BatchExportQueueCommand}" />
+                        <MenuItem Header="{DynamicResource String.Menu.ExportRecords}"
+                                  Command="{Binding ShowExportRecordsCommand}" />
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.CloseVideo}"
                                   Command="{Binding CloseVideoClickCommand}"/>
@@ -618,7 +628,16 @@
                                                                                         AutomationProperties.Name="{DynamicResource String.ClipDetails.Edit}"
                                                                                         Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).EditClipDetailsCommand}"
                                                                                         CommandParameter="{Binding}" ToolTip.Tip="{DynamicResource String.ClipDetails.Edit}" />
-                                                                                <TextBlock Grid.Column="3" Text="{Binding StatusText}" IsVisible="{Binding HasExportStatus}" VerticalAlignment="Center" />
+                                                                                <Button Grid.Column="3" Theme="{StaticResource ClipExportStatusTheme}" Classes="desktop-template-button"
+                                                                                        Classes.export-warning="{Binding HasExportWarning}" Classes.export-error="{Binding HasExportError}"
+                                                                                        Content="{Binding StatusText}" IsVisible="{Binding HasExportStatus}"
+                                                                                        IsEnabled="{Binding HasExportCheck}" VerticalAlignment="Center"
+                                                                                        Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).OpenExportResultCommand}"
+                                                                                        CommandParameter="{Binding}">
+                                                                                    <ToolTip.Tip>
+                                                                                        <TextBlock Text="{Binding ExportCheckTooltip}" MaxWidth="420" TextWrapping="Wrap" />
+                                                                                    </ToolTip.Tip>
+                                                                                </Button>
                                                                                 <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding Notes}" MaxLines="1"
                                                                                            IsVisible="{Binding HasNotes}" TextTrimming="CharacterEllipsis" MaxHeight="20"
                                                                                            Foreground="{DynamicResource AppSecondaryTextBrush}" Margin="0,2,0,3">

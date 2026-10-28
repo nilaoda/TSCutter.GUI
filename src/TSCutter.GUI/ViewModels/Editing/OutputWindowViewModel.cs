@@ -12,6 +12,7 @@ using HanumanInstitute.MvvmDialogs;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Editing;
+using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Files;
@@ -73,23 +74,93 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     public double StartSeconds { get; set; }
     public double? EndSeconds { get; set; }
 
+    // 导出开始时捕获一次设置，导出过程中修改设置不影响本次检测的完整性。
+    private bool _checkOnExport = true;
+    private int _exportClipCount;
+    private string _exportClipRangeSummary = "";
+    /// <summary>按路径关联任务的结果；执行前失败或取消的任务可能没有条目。</summary>
+    public List<ExportTaskOutcome> Outcomes { get; } = [];
+
+    private static bool ResolveCheckOnExport() =>
+        App.ConfigService?.CurrentConfig.TsCheckOnExport ?? true;
+
+    private ExportTsCheckSession? CreateCheckSession(string outputPath, bool checkApplicable)
+    {
+        if (IsRawByteRange || !_checkOnExport || !checkApplicable)
+            return null;
+        return new ExportTsCheckSession(outputPath);
+    }
+
+    private static (ExportKind Kind, bool CheckApplicable) ResolveTaskKind(BatchTask task)
+    {
+        if (task.RemuxSettings is { } settings)
+            return (ContainerKind(settings.Container), settings.Container == "m2ts");
+        return (ExportKind.TsCopy, true);
+    }
+
+    private ExportTaskOutcome RegisterOutcome(string outputPath, bool success, ExportTsCheckSession? session,
+        ExportKind kind, bool checkApplicable, TimeSpan elapsed)
+    {
+        long? recordId = null;
+        if (success && !IsRawByteRange && App.ExportRecordRegistry is { } registry)
+        {
+            var checkState = session?.State ?? TsExportCheckState.NotStarted;
+            var result = session?.Result;
+            long fileLength = 0;
+            var fileModified = DateTime.MinValue;
+            try
+            {
+                var info = new FileInfo(outputPath);
+                if (info.Exists)
+                {
+                    fileLength = info.Length;
+                    fileModified = info.LastWriteTimeUtc;
+                }
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+            {
+                // 文件元数据读取失败不阻断登记，长度按 0 处理。
+            }
+            var record = new ExportRecord
+            {
+                Timestamp = DateTime.Now,
+                OutputPath = outputPath,
+                Kind = kind,
+                FileSize = fileLength,
+                Elapsed = elapsed,
+                ClipCount = _exportClipCount,
+                ClipRangeSummary = _exportClipRangeSummary,
+                CheckEnabled = _checkOnExport,
+                CheckApplicable = checkApplicable,
+                CheckState = checkState,
+                CheckVerdict = result?.Verdict,
+                ErrorCount = result?.TotalErrorCount ?? 0,
+                WarningCount = result?.TotalWarningCount ?? 0,
+                FailureKind = session?.FailureKind ?? TsExportCheckFailure.None,
+                FailureDetail = session?.FailureDetail,
+                FileLengthAtExport = fileLength,
+                FileModifiedAtExport = fileModified,
+                RetainedResult = result
+            };
+            recordId = registry.Register(record).Id;
+        }
+        var outcome = new ExportTaskOutcome(recordId, outputPath, success);
+        Outcomes.Add(outcome);
+        return outcome;
+    }
+
+    private void SetExportClipInfo(int clipCount, string clipRangeSummary)
+    {
+        _exportClipCount = clipCount;
+        _exportClipRangeSummary = clipRangeSummary;
+    }
+
     internal void SetRemuxTask(RemuxExportRequest request)
     {
         _mediaRequest = request;
         OnPropertyChanged(nameof(IsMergeMode));
     }
 
-    private Task ExportRemuxAsync(RemuxExportRequest request, int generation)
-    {
-        var progress = new Progress<RemuxExportProgress>(value =>
-        {
-            if (DialogResult is not null || generation != _copyGeneration) return;
-            Percent = value.Percent;
-            Speed = value.BytesPerSecond;
-            RemainingSeconds = value.RemainingSeconds;
-        });
-        return new RemuxExportService().ExportAsync(request, progress, _cts.Token);
-    }
     public List<int> CompletedTaskIndices { get; } = [];
     public List<int> FailedTaskIndices { get; } = [];
     private CancellationTokenSource _cts = new();
@@ -122,7 +193,9 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     [RelayCommand]
     private async Task OutputAsync()
     {
-        if (!await CheckProgramTablesAsync()) return;
+        _checkOnExport = ResolveCheckOnExport();
+        if (!await CheckProgramTablesAsync())
+            return;
         if (IsBatchMode)
         {
             await RunBatchAsync();
@@ -141,57 +214,129 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     {
         if (_mediaRequest is { } media)
         {
+            var container = media.Segments[0].Settings.Container;
+            var checkApplicable = container == "m2ts";
+            var session = CreateCheckSession(media.OutputPath, checkApplicable);
+            var stopwatch = Stopwatch.StartNew();
             try
             {
                 CurrentFileName = Path.GetFileName(media.OutputPath);
-                await ExportRemuxAsync(media, ++_copyGeneration);
+                SetExportClipInfo(media.Segments.Count, FormatRangeList(
+                    media.Segments.Select(item => (item.StartSeconds, item.EndSeconds))));
+                await ExportRemuxAsync(media, ++_copyGeneration, session);
+                await CompleteCheckAsync(session);
                 Percent = 100;
                 RemainingSeconds = 0;
                 DialogResult = true;
+                RegisterOutcome(media.OutputPath, true, session, ContainerKind(container), checkApplicable, stopwatch.Elapsed);
             }
-            catch (OperationCanceledException) { DialogResult = false; }
-            catch (Exception exception) { Exception = exception; DialogResult = false; }
+            catch (OperationCanceledException)
+            {
+                session?.Abort();
+                RegisterOutcome(media.OutputPath, false, session, ContainerKind(container), checkApplicable, stopwatch.Elapsed);
+                DialogResult = false;
+            }
+            catch (Exception exception)
+            {
+                session?.Abort();
+                RegisterOutcome(media.OutputPath, false, session, ContainerKind(container), checkApplicable, stopwatch.Elapsed);
+                Exception = exception;
+                DialogResult = false;
+            }
             RequestClose?.Invoke();
             return;
         }
         var request = _mergeRequest;
         if (request is null)
             return;
-
+        var mergeSession = CreateCheckSession(request.OutputPath, checkApplicable: true);
+        var mergeStopwatch = Stopwatch.StartNew();
         try
         {
             CurrentFileName = Path.GetFileName(request.OutputPath);
-            await ExportTsAsync(request, ++_copyGeneration, supplementOutput).ConfigureAwait(true);
+            SetExportClipInfo(request.Ranges.Count, FormatRangeList(
+                request.Ranges.Select(item => (item.StartTimeSeconds, (double?)item.EndTimeSeconds))));
+            await ExportTsAsync(request, ++_copyGeneration, supplementOutput, mergeSession).ConfigureAwait(true);
+            await CompleteCheckAsync(mergeSession);
             Percent = 100;
             RemainingSeconds = 0;
             DialogResult = true;
+            RegisterOutcome(request.OutputPath, true, mergeSession,
+                request.ProgramId is null ? ExportKind.TsMerge : ExportKind.TsProgramOnly, true, mergeStopwatch.Elapsed);
             RequestClose?.Invoke();
         }
         catch (OperationCanceledException)
         {
+            mergeSession?.Abort();
+            RegisterOutcome(request.OutputPath, false, mergeSession,
+                request.ProgramId is null ? ExportKind.TsMerge : ExportKind.TsProgramOnly, true, mergeStopwatch.Elapsed);
             Console.WriteLine("TS clip merge was canceled.");
             DialogResult = false;
             RequestClose?.Invoke();
         }
         catch (Exception exception)
         {
+            mergeSession?.Abort();
+            RegisterOutcome(request.OutputPath, false, mergeSession,
+                request.ProgramId is null ? ExportKind.TsMerge : ExportKind.TsProgramOnly, true, mergeStopwatch.Elapsed);
             Exception = exception;
             DialogResult = false;
             RequestClose?.Invoke();
         }
     }
 
-    private Task ExportTsAsync(TsClipMergeRequest request, int generation, bool addTables)
+    private static ExportKind ContainerKind(string container) => container switch
+    {
+        "m2ts" => ExportKind.M2tsRemux,
+        "mkv" => ExportKind.MkvRemux,
+        "vob" => ExportKind.VobRemux,
+        _ => ExportKind.Mp4Remux
+    };
+
+    private static string FormatRange(double startSeconds, double? endSeconds) =>
+        $"{CommonUtil.FormatSeconds(startSeconds)} – {(endSeconds is { } end ? CommonUtil.FormatSeconds(end) : "Inf.")}";
+
+    private static string FormatRangeList(IEnumerable<(double Start, double? End)> ranges)
+    {
+        var parts = new List<string>();
+        foreach (var (start, end) in ranges)
+        {
+            parts.Add(FormatRange(start, end));
+            if (parts.Count == 6)
+            {
+                parts[^1] = "…";
+                break;
+            }
+        }
+        return string.Join("; ", parts);
+    }
+
+    private Task ExportRemuxAsync(RemuxExportRequest request, int generation, ExportTsCheckSession? checkSession = null)
+    {
+        var progress = new Progress<RemuxExportProgress>(value =>
+        {
+            if (DialogResult is not null || generation != _copyGeneration)
+                return;
+            Percent = value.Percent;
+            Speed = value.BytesPerSecond;
+            RemainingSeconds = value.RemainingSeconds;
+        });
+        return new RemuxExportService().ExportAsync(request, progress, _cts.Token, checkSession);
+    }
+
+    private Task ExportTsAsync(TsClipMergeRequest request, int generation, bool addTables,
+        ExportTsCheckSession? checkSession = null)
     {
         var progress = new Progress<TsClipMergeProgress>(value =>
         {
-            if (DialogResult is not null || generation != _copyGeneration) return;
+            if (DialogResult is not null || generation != _copyGeneration)
+                return;
             Percent = value.Percent;
             Speed = value.BytesPerSecond;
             RemainingSeconds = value.BytesPerSecond > 0
                 ? Math.Max(0, value.TotalBytes - value.BytesProcessed) / value.BytesPerSecond : 0;
         });
-        return Task.Run(() => new TsClipMergeService().MergeAsync(request, progress, _cts.Token, addTables), _cts.Token);
+        return Task.Run(() => new TsClipMergeService().MergeAsync(request, progress, _cts.Token, addTables, checkSession), _cts.Token);
     }
 
     private async Task RunSingleAsync()
@@ -229,35 +374,69 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     public bool IsRawByteRange { get; set; }
 
-    private Task CopyClipAsync(BatchTask task)
+    private async Task CopyClipAsync(BatchTask task)
+    {
+        var (kind, checkApplicable) = ResolveTaskKind(task);
+        if (AddsProgramTablesTo(task.DestinationPath))
+            (kind, checkApplicable) = (ExportKind.TsProgramTablesSupplement, true);
+        else if (task.ProgramId is not null)
+            (kind, checkApplicable) = (ExportKind.TsProgramOnly, true);
+        var session = CreateCheckSession(task.DestinationPath, checkApplicable);
+        SetExportClipInfo(1, FormatRange(task.StartSeconds, task.EndSeconds));
+        var stopwatch = Stopwatch.StartNew();
+        try
+        {
+            await CopyClipCoreAsync(task, session);
+            await CompleteCheckAsync(session);
+            RegisterOutcome(task.DestinationPath, true, session, kind, checkApplicable, stopwatch.Elapsed);
+        }
+        catch
+        {
+            session?.Abort();
+            RegisterOutcome(task.DestinationPath, false, session, kind, checkApplicable, stopwatch.Elapsed);
+            throw;
+        }
+    }
+
+    private async Task CompleteCheckAsync(ExportTsCheckSession? session)
+    {
+        _cts.Token.ThrowIfCancellationRequested();
+        // 服务已关闭输出并完成临时文件替换，检测收尾也留在工作线程。
+        if (session is not null)
+            await Task.Run(session.Complete);
+    }
+
+    private Task CopyClipCoreAsync(BatchTask task, ExportTsCheckSession? checkSession)
     {
         var generation = ++_copyGeneration;
         if (task.RemuxSettings is { } settings)
             return ExportRemuxAsync(new RemuxExportRequest(task.DestinationPath,
-                [new RemuxExportSegment(task.SourcePath, task.StartSeconds, task.EndSeconds, settings)]), generation);
+                [new RemuxExportSegment(task.SourcePath, task.StartSeconds, task.EndSeconds, settings)]), generation, checkSession);
         if (AddsProgramTablesTo(task.DestinationPath))
             return ExportTsAsync(new TsClipMergeRequest
             {
                 SourcePath = task.SourcePath, OutputPath = task.DestinationPath,
                 Ranges = [new(task.StartPosition, task.EndPosition, 0, 1)]
-            }, generation, true);
+            }, generation, true, checkSession);
         if (task.ProgramId is { } programId)
         {
             var progress = new Progress<TsFilterProgress>(value =>
             {
-                if (DialogResult is not null || generation != _copyGeneration) return;
+                if (DialogResult is not null || generation != _copyGeneration)
+                    return;
                 Percent = value.Percent;
                 Speed = value.BytesPerSecond;
                 RemainingSeconds = value.BytesPerSecond > 0
                     ? Math.Max(0, value.FileSize - value.BytesProcessed) / value.BytesPerSecond : 0;
             });
             return Task.Run(() => new TsProgramClipExportService().ExportAsync(task.SourcePath, task.DestinationPath,
-                task.StartPosition, task.EndPosition, programId, progress, _cts.Token), _cts.Token);
+                task.StartPosition, task.EndPosition, programId, progress, _cts.Token, checkSession), _cts.Token);
         }
         // 复制回调来自后台；只将限频后的进度送回创建 Progress 的界面线程。
         IProgress<(double Percent, long Bytes)> progressUpdates = new Progress<(double Percent, long Bytes)>(value =>
         {
-            if (DialogResult is not null || generation != _copyGeneration) return;
+            if (DialogResult is not null || generation != _copyGeneration)
+                return;
             Percent = value.Percent;
             _bytesCopied += value.Bytes;
             UpdateSpeed();
@@ -274,16 +453,17 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             progressUpdates.Report((percent, pendingBytes));
             pendingBytes = 0;
             lastReport = now;
-        }, _cts.Token);
+        }, _cts.Token, checkSession);
     }
 
-    private Task CopySourceRangeAsync(BatchTask task, Action<double, long> progress, CancellationToken token)
+    private Task CopySourceRangeAsync(BatchTask task, Action<double, long> progress, CancellationToken token,
+        ExportTsCheckSession? checkSession = null)
     {
         return IsRawByteRange
             ? CommonUtil.CopyFileAsync(new FileInfo(task.SourcePath), task.DestinationPath,
-                task.StartPosition, task.EndPosition, progress, token)
+                task.StartPosition, task.EndPosition, progress, token, checkSession)
             : TsClipCopyService.CopyAsync(task.SourcePath, task.DestinationPath,
-                task.StartPosition, task.EndPosition, progress, token);
+                task.StartPosition, task.EndPosition, progress, token, checkSession);
     }
 
     private async Task RunBatchAsync()
@@ -338,7 +518,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private void UpdateSpeed()
     {
         var elapsedTime = (DateTime.Now - _lastUpdateTime).TotalSeconds;
-        if (elapsedTime < 1) return;
+        if (elapsedTime < 1)
+            return;
         Speed = _bytesCopied / elapsedTime;
         _lastUpdateTime = DateTime.Now;
         _bytesCopied = 0;
@@ -346,14 +527,16 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     private void UpdateRemainingTime()
     {
-        if (Speed <= 0 || Percent >= 100) return;
+        if (Speed <= 0 || Percent >= 100)
+            return;
         var remainingBytes = _totalBytes * (1 - Percent / 100.0);
         RemainingSeconds = remainingBytes / Speed;
     }
 
     private static string FormatRemainingTime(double seconds)
     {
-        if (seconds <= 0) return "--:--";
+        if (seconds <= 0)
+            return "--:--";
         var ts = TimeSpan.FromSeconds(seconds);
         if (ts.TotalHours >= 1)
             return $"{(int)ts.TotalHours}:{ts.Minutes:D2}:{ts.Seconds:D2}";
@@ -363,7 +546,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     [RelayCommand]
     private void CancelOutput()
     {
-        if (DialogResult is not null) return;
+        if (DialogResult is not null)
+            return;
 
         if (checkingProgramTables)
         {

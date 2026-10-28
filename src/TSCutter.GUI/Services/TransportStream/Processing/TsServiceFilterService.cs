@@ -253,15 +253,18 @@ public sealed class TsServiceFilterService
         private readonly TsPacketLayout _layout;
         private uint _arrivalHeader;
         private bool _initialTablesPending;
+        private readonly ExportTsCheckSession? _checkSession;
         private int PrefixSize => _layout.PrefixSize;
 
-        private OutputContext(int serviceId, string path, FileStream stream, byte[] buffer, TsPacketLayout layout)
+        private OutputContext(int serviceId, string path, FileStream stream, byte[] buffer, TsPacketLayout layout,
+            ExportTsCheckSession? checkSession)
         {
             ServiceId = serviceId;
             Path = path;
             _stream = stream;
             _buffer = buffer;
             _layout = layout;
+            _checkSession = checkSession;
             Array.Fill(_psiContinuity, -1);
         }
 
@@ -276,7 +279,8 @@ public sealed class TsServiceFilterService
         public static OutputContext Create(
             TsServiceFilterOutput output,
             TsCheckResult catalog,
-            CancellationToken cancellationToken, bool overwrite = false)
+            CancellationToken cancellationToken, bool overwrite = false,
+            ExportTsCheckSession? checkSession = null)
         {
             cancellationToken.ThrowIfCancellationRequested();
             catalog.PacketLayout
@@ -312,7 +316,7 @@ public sealed class TsServiceFilterService
                 TryDelete(output.OutputPath);
                 throw;
             }
-            var context = new OutputContext(output.ServiceId, output.OutputPath, stream, buffer, catalog.PacketLayout)
+            var context = new OutputContext(output.ServiceId, output.OutputPath, stream, buffer, catalog.PacketLayout, checkSession)
             {
                 _transportStreamId = catalog.TransportStreamId
             };
@@ -461,6 +465,7 @@ public sealed class TsServiceFilterService
             // 单个源包可能同时路由到多个输出。缓冲区满时同步写入可避免 Span 跨 await，
             // 同时仍以约 192 KiB 的连续块落盘，不会退化为逐包系统调用。
             _stream.Write(_buffer, 0, BufferedLength);
+            _checkSession?.Append(_buffer.AsSpan(0, BufferedLength));
             BytesWritten += BufferedLength;
             BufferedLength = 0;
         }
@@ -477,6 +482,7 @@ public sealed class TsServiceFilterService
             if (BufferedLength == 0)
                 return;
             await _stream.WriteAsync(_buffer.AsMemory(0, BufferedLength), cancellationToken).ConfigureAwait(false);
+            _checkSession?.Append(_buffer.AsSpan(0, BufferedLength));
             BytesWritten += BufferedLength;
             BufferedLength = 0;
         }
@@ -498,8 +504,14 @@ public sealed class TsServiceFilterService
             if (_disposed)
                 return;
             _disposed = true;
-            await _stream.DisposeAsync().ConfigureAwait(false);
-            ArrayPool<byte>.Shared.Return(_buffer);
+            try
+            {
+                await _stream.DisposeAsync().ConfigureAwait(false);
+            }
+            finally
+            {
+                ArrayPool<byte>.Shared.Return(_buffer);
+            }
         }
     }
 

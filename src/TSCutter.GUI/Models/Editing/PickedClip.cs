@@ -3,6 +3,7 @@ using System.IO;
 using System.Threading;
 using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
+using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
 
@@ -80,12 +81,29 @@ public partial class PickedClip : ObservableObject, IDisposable
     private MergedClipOutput? _mergedOutput;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(StatusText), nameof(HasExportStatus))]
+    [NotifyPropertyChangedFor(nameof(StatusText), nameof(HasExportStatus), nameof(HasExportCheck), nameof(HasExportWarning), nameof(HasExportError))]
     private ClipExportStatus _exportStatus = ClipExportStatus.Pending;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
     private double _exportPercent;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusText), nameof(ExportCheckTooltip), nameof(HasExportCheck), nameof(HasExportWarning), nameof(HasExportError))]
+    private ClipExportCheck? _exportCheck;
+
+    public bool HasExportCheck => ExportStatus == ClipExportStatus.Done && ExportCheck is not null;
+
+    public bool HasExportWarning => ExportStatus == ClipExportStatus.Done && ExportCheck is
+    {
+        CheckApplicable: true, CheckEnabled: true,
+        CheckState: TsExportCheckState.Completed, Verdict: TsCheckVerdict.Warning
+    };
+
+    public bool HasExportError => ExportStatus == ClipExportStatus.Failed ||
+        ExportStatus == ClipExportStatus.Done && ExportCheck is { CheckApplicable: true, CheckEnabled: true } check &&
+        (check.CheckState == TsExportCheckState.Failed ||
+         check is { CheckState: TsExportCheckState.Completed, Verdict: TsCheckVerdict.Error });
 
     [ObservableProperty]
     private bool _isSelected;
@@ -122,17 +140,59 @@ public partial class PickedClip : ObservableObject, IDisposable
     {
         ClipExportStatus.Pending => "---",
         ClipExportStatus.Exporting => $"{ExportPercent:0.0}%",
-        ClipExportStatus.Done => LocalizationManager.Instance.String_Clips_Done,
+        ClipExportStatus.Done => LocalizationManager.Instance.String_Clips_Done + ExportCheckSuffix,
         ClipExportStatus.Failed => LocalizationManager.Instance.String_Clips_Failed,
         ClipExportStatus.Cancelled => LocalizationManager.Instance.String_Clips_Cancelled,
         _ => "---"
     };
+
+    /// <summary>导出状态后追加的轻量检测结论；详细数量与原因放在 tooltip 或导出记录中。</summary>
+    public string ExportCheckSuffix => ExportCheck is not { } check ? "" :
+        !check.CheckApplicable ? "" :
+        !check.CheckEnabled || check.CheckState is TsExportCheckState.NotStarted or TsExportCheckState.Aborted
+            ? " · " + LocalizationManager.Instance.String_Export_Check_NotRun
+            : check.CheckState == TsExportCheckState.Failed
+                ? " · " + LocalizationManager.Instance.String_Export_Check_Failed
+                : check.Verdict switch
+                {
+                    TsCheckVerdict.Pass => " · " + LocalizationManager.Instance.String_Export_Check_PassShort,
+                    null or TsCheckVerdict.Incomplete => " · " + LocalizationManager.Instance.String_Export_Check_NotRun,
+                    TsCheckVerdict.Warning => " · " + LocalizationManager.Instance.String_Export_Check_Warnings,
+                    _ => " · " + LocalizationManager.Instance.String_Export_Check_Errors
+                };
+
+    public string ExportCheckTooltip
+    {
+        get
+        {
+            if (ExportCheck is not { } check)
+                return "";
+            var strings = LocalizationManager.Instance;
+            var applicability = !check.CheckApplicable ? strings.String_Export_Check_NotApplicable
+                : check.CheckEnabled ? strings.String_Export_Check_Enabled
+                : strings.String_Export_Check_Disabled;
+            var conclusion = !check.CheckApplicable || !check.CheckEnabled ||
+                             check.CheckState is TsExportCheckState.NotStarted or TsExportCheckState.Aborted
+                ? strings.String_Export_Check_NotRun
+                : check.CheckState == TsExportCheckState.Failed
+                    ? strings.String_Export_Check_Failed
+                    : check.Verdict switch
+                    {
+                        TsCheckVerdict.Pass => strings.String_Export_Check_Pass,
+                        null or TsCheckVerdict.Incomplete => strings.String_Export_Check_NotRun,
+                        TsCheckVerdict.Warning => string.Format(strings.String_Export_Check_WarningCount, check.WarningCount),
+                        _ => string.Format(strings.String_Export_Check_ErrorCount, check.ErrorCount, check.WarningCount)
+                    };
+            return $"{strings.String_Export_Check_Title}: {applicability}\n{conclusion}";
+        }
+    }
 
     public void RefreshLocalizedText()
     {
         OnPropertyChanged(nameof(EstimatedSizeStr));
         OnPropertyChanged(nameof(ExportSizeStr));
         OnPropertyChanged(nameof(StatusText));
+        OnPropertyChanged(nameof(ExportCheckTooltip));
     }
 
     // 已导出的文件仅对应当时的剪辑边界和轨道设置；修改后清除记录，不删除磁盘上的文件。
@@ -142,6 +202,7 @@ public partial class PickedClip : ObservableObject, IDisposable
         MergedOutput = null;
         ExportStatus = ClipExportStatus.Pending;
         ExportPercent = 0;
+        ExportCheck = null;
     }
 
     partial void OnStartTimeChanged(double value) => InvalidateExport();
