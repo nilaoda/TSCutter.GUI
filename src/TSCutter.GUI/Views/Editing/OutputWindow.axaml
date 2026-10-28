@@ -87,7 +87,7 @@
                         <Button Width="120"
                                 HorizontalAlignment="Right"
                                 Command="{Binding CancelOutputCommand}"
-                                Content="{Binding CancelButtonText}" />
+                                Content="{Binding CancelButtonText}" IsCancel="True" />
                     </StackPanel>
                 </Grid>
             </StackPanel>

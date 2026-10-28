@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:themes="using:TSCutter.GUI.Themes"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels.TransportStream.Processing"
@@ -128,7 +129,7 @@
             </StackPanel>
         </Grid>
 
-        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
+        <Grid Grid.Row="4" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
             <TextBlock Grid.Column="0" Text="{DynamicResource String.TsBinaryMerge.Output}"
                        VerticalAlignment="Center" />
             <TextBox Grid.Column="1" Text="{Binding OutputPath, Mode=TwoWay}"
@@ -139,6 +140,8 @@
                     Command="{Binding CancelCommand}" MinWidth="80" />
             <Button Grid.Column="4" Content="{DynamicResource String.TsBinaryMerge.Merge}"
                     Command="{Binding MergeCommand}" MinWidth="120" />
+            <Button Grid.Column="5" Content="{DynamicResource String.Window.Close}" MinWidth="80" IsCancel="True"
+                    Command="{x:Static themes:WindowCommands.Close}" CommandParameter="{Binding $parent[Window]}" />
         </Grid>
     </Grid>
 </Window>

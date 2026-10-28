@@ -13,7 +13,7 @@
         WindowStartupLocation="CenterOwner"
         Closing="Window_OnClosing">
     <Grid Margin="12" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="8">
-        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="8">
+        <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="8">
             <TextBlock Grid.Column="0" Text="{DynamicResource String.KeyFrameOverview.Sampling}" VerticalAlignment="Center" />
             <ComboBox Grid.Column="1" ItemsSource="{Binding SamplingOptions}"
                       SelectedItem="{Binding SelectedSampling, Mode=TwoWay}"
@@ -22,8 +22,6 @@
             <Slider Grid.Column="3" Minimum="160" Maximum="360" Width="170"
                     Value="{Binding ThumbnailWidth, Mode=TwoWay}" />
             <TextBlock Grid.Column="4" Text="{Binding ThumbnailWidth, StringFormat={}{0}px}" VerticalAlignment="Center" MinWidth="48" />
-            <Button Grid.Column="5" Content="{DynamicResource String.Cancel}"
-                    Command="{Binding CancelCommand}" MinWidth="88" />
         </Grid>
 
         <TextBlock Grid.Row="1" Text="{Binding StatusText}" TextWrapping="Wrap" VerticalAlignment="Center" />
@@ -38,7 +36,11 @@
                                              SizeChanged="OverviewCanvas_OnSizeChanged" />
         </ScrollViewer>
 
-        <TextBlock Grid.Row="3" Text="{DynamicResource String.KeyFrameOverview.Hint}"
-                   Opacity="0.72" TextWrapping="Wrap" />
+        <Grid Grid.Row="3" ColumnDefinitions="*,Auto" ColumnSpacing="8">
+            <TextBlock Text="{DynamicResource String.KeyFrameOverview.Hint}"
+                       Opacity="0.72" TextWrapping="Wrap" VerticalAlignment="Center" />
+            <Button Grid.Column="1" Content="{DynamicResource String.Window.Close}" MinWidth="80"
+                    Command="{Binding CancelCommand}" IsCancel="True" />
+        </Grid>
     </Grid>
 </Window>

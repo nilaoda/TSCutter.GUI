@@ -229,8 +229,8 @@
             <TextBlock Grid.Column="0" Text="{Binding HintText}" TextWrapping="Wrap"
                        Foreground="{DynamicResource {x:Static common:SystemColors.GrayTextColorKey}}"
                        VerticalAlignment="Center" />
-            <Button Grid.Column="1" Content="{DynamicResource String.TsRepair.Map.Close}" Width="100"
-                    Click="Close_OnClick" />
+            <Button Grid.Column="1" Content="{DynamicResource String.Window.Close}" Width="100"
+                    Click="Close_OnClick" IsCancel="True" />
         </Grid>
     </Grid>
 </Window>

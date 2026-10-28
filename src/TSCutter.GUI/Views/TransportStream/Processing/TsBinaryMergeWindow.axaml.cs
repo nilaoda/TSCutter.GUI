@@ -7,6 +7,7 @@ using Avalonia.Input;
 using Avalonia.Threading;
 using Classic.Avalonia.Theme;
 using TSCutter.GUI.Models.TransportStream.Processing;
+using TSCutter.GUI.Themes;
 using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.ViewModels.TransportStream.Processing;
 
@@ -87,8 +88,9 @@ public partial class TsBinaryMergeWindow : ClassicWindow
     {
         if (DataContext is not TsBinaryMergeWindowViewModel { IsBusy: true } viewModel)
             return;
-        viewModel.CancelCommand.Execute(null);
         eventArgs.Cancel = true;
+        WindowCommands.CloseWhenIdle(this, viewModel, () => viewModel.IsBusy);
+        viewModel.CancelCommand.Execute(null);
     }
 
     private void OnClosed(object? sender, EventArgs eventArgs)

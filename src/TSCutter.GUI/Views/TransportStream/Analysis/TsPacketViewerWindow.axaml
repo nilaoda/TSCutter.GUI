@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:themes="using:TSCutter.GUI.Themes"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels.TransportStream.Analysis"
@@ -182,10 +183,12 @@
             </ClassicBorderDecorator>
         </Grid>
 
-        <Grid Grid.Row="5" ColumnDefinitions="*,Auto" ColumnSpacing="10">
+        <Grid Grid.Row="5" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="10">
             <TextBlock Grid.Column="0" Text="{Binding SelectedPacketSummaryText}"
-                       TextTrimming="CharacterEllipsis" />
-            <TextBlock Grid.Column="1" Text="{Binding StatusText}" />
+                       TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+            <TextBlock Grid.Column="1" Text="{Binding StatusText}" VerticalAlignment="Center" />
+            <Button Grid.Column="2" Content="{DynamicResource String.Window.Close}" MinWidth="80" IsCancel="True"
+                    Command="{x:Static themes:WindowCommands.Close}" CommandParameter="{Binding $parent[Window]}" />
         </Grid>
     </Grid>
 </Window>

@@ -209,7 +209,7 @@
                 <Button Content="{DynamicResource String.ThumbnailSheet.SaveAs}"
                         Command="{Binding SaveCommand}"
                         MinWidth="120" />
-                <Button Content="{DynamicResource String.ThumbnailSheet.CloseButton}"
+                <Button Content="{DynamicResource String.Window.Close}"
                         Command="{Binding CloseCommand}"
                         IsCancel="True"
                         MinWidth="80" />

@@ -148,7 +148,20 @@ public sealed class PreviewOptionsTests
                 Assert.True(settings.ShowKeyFrameStrip);
                 settings.ShowImageNavigator = false;
                 settings.ShowKeyFrameStrip = false;
-                settings.CancelCommand.Execute(null);
+                // Esc 必须取消窗口，不能触发“应用”而意外保存尚未确认的设置。
+                var settingsWindow = new SettingsWindow { DataContext = settings };
+                try
+                {
+                    settingsWindow.Show();
+                    Dispatcher.UIThread.RunJobs();
+                    Assert.True(settingsWindow.GetVisualDescendants().OfType<CheckBox>().First().Focus());
+                    settingsWindow.KeyPressQwerty(PhysicalKey.Escape, RawInputModifiers.None);
+                    Assert.False(settingsWindow.IsVisible);
+                }
+                finally
+                {
+                    settingsWindow.Close();
+                }
                 Assert.True(vm.ShowImageNavigator);
                 Assert.True(vm.ShowKeyFrameStrip);
                 Assert.Equal(0, config.SaveCount);

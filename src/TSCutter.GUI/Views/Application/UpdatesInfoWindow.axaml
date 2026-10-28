@@ -1,5 +1,6 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:themes="using:TSCutter.GUI.Themes"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:local="clr-namespace:TSCutter.GUI"
@@ -12,9 +13,15 @@
         CanResize="False"
         x:Class="TSCutter.GUI.Views.Application.UpdatesInfoWindow"
         Title="{DynamicResource String.UpdatesInfo.Title}">
-    <Border BorderThickness="1" BorderBrush="#808080" Margin="0,10,0,10">
-        <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="4">
-            TODO
-        </ScrollViewer>
-    </Border>
+    <DockPanel Margin="12">
+        <StackPanel DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Content="{DynamicResource String.Window.Close}" MinWidth="80" IsCancel="True"
+                    Command="{x:Static themes:WindowCommands.Close}" CommandParameter="{Binding $parent[Window]}" />
+        </StackPanel>
+        <Border BorderThickness="1" BorderBrush="#808080" Margin="0,10,0,10">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="4">
+                TODO
+            </ScrollViewer>
+        </Border>
+    </DockPanel>
 </Window>
