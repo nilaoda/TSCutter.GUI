@@ -29,6 +29,7 @@
 | `Application` | 配置、语言、主题、关于与更新 |
 | `Editing` | 片段、工程、导出队列、剪辑与合并 |
 | `Preview` | 视频与字幕预览、关键帧总览、图集、截图和媒体信息 |
+| `Media` | 媒体混流与轨道信息编辑 |
 | `Discs` | 光盘标题选择、DVD／蓝光元数据及 ISO／文件夹输入流程 |
 | `FrameSearch` | 画面搜索、匹配及模板管理 |
 | `TransportStream/Analysis` | TS 检查、节目表解析、包查看及报告 |

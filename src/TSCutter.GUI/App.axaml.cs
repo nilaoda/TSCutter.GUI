@@ -19,6 +19,7 @@ using TSCutter.GUI.ViewModels.Application;
 using TSCutter.GUI.ViewModels.Discs;
 using TSCutter.GUI.ViewModels.Editing;
 using TSCutter.GUI.ViewModels.FrameSearch;
+using TSCutter.GUI.ViewModels.Media;
 using TSCutter.GUI.ViewModels.Preview;
 using TSCutter.GUI.ViewModels.TransportStream.Analysis;
 using TSCutter.GUI.ViewModels.TransportStream.Processing;
@@ -58,6 +59,7 @@ public partial class App : Application
         SplatRegistrations.Register<FrameTemplateManagerWindowViewModel>();
         SplatRegistrations.Register<FrameSearchWindowViewModel>();
         SplatRegistrations.Register<ThumbnailSheetWindowViewModel>();
+        SplatRegistrations.Register<MediaMuxWindowViewModel>();
         SplatRegistrations.Register<TsRemuxWindowViewModel>();
         SplatRegistrations.Register<TsEsExtractorWindowViewModel>();
         SplatRegistrations.Register<AboutWindowViewModel>();

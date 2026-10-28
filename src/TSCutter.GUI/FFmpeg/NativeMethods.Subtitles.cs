@@ -8,6 +8,7 @@ public static unsafe partial class NativeMethods
 {
     internal const int AssFeatureWrapUnicode = 3;
     internal const int CodecPropBitmapSubtitle = 1 << 16;
+    internal const int CodecPropTextSubtitle = 1 << 17;
 
     [LibraryImport("tscutter.avcodec")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
@@ -16,6 +17,18 @@ public static unsafe partial class NativeMethods
     [LibraryImport("tscutter.avcodec")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void avsubtitle_free(AVSubtitle* subtitle);
+
+    [LibraryImport("tscutter.avcodec")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial AVCodec* avcodec_find_encoder(AVCodecID id);
+
+    [LibraryImport("tscutter.avcodec")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int avcodec_encode_subtitle(AVCodecContext* context, byte* buffer, int size, AVSubtitle* subtitle);
+
+    [LibraryImport("tscutter.avcodec")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int avcodec_parameters_from_context(AVCodecParameters* parameters, AVCodecContext* context);
 
     [LibraryImport("tscutter.ass")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

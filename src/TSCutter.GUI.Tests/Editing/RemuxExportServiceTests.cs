@@ -12,8 +12,14 @@ namespace TSCutter.GUI.Tests.Editing;
 
 public sealed class RemuxExportFactAttribute : TSCutter.GUI.Tests.FFmpeg.NativeMediaFactAttribute
 {
-    public RemuxExportFactAttribute(string? requiredVariable = null)
-        : base(requiredVariable is null ? "remux" : null, requiredVariable) { }
+    public unsafe RemuxExportFactAttribute(string? requiredVariable = null, bool requireSubtitleEncoders = false)
+        : base(requiredVariable is null ? "remux" : null, requiredVariable)
+    {
+        if (Skip is null && requireSubtitleEncoders &&
+            (NativeMethods.avcodec_find_encoder(AVCodecID.AV_CODEC_ID_SUBRIP) == null ||
+             NativeMethods.avcodec_find_encoder(AVCodecID.AV_CODEC_ID_MOV_TEXT) == null))
+            Skip = "Subtitle conversion requires an FFmpeg runtime with SRT and mov_text encoders. See src/TSCutter.GUI.Tests/README.md.";
+    }
 }
 
 public sealed class RemuxExportServiceTests
@@ -262,7 +268,7 @@ public sealed class RemuxExportServiceTests
         }
     }
 
-    private static unsafe List<(double Time, string Hash)> DecodeVideoFrames(string path)
+    internal static unsafe List<(double Time, string Hash)> DecodeVideoFrames(string path)
     {
         using var input = Open(path);
         var stream = input.GetVideoStream();
@@ -676,6 +682,17 @@ public sealed class RemuxExportServiceTests
             Assert.NotEmpty(actual);
             Assert.Equal(expected.Take(actual.Length), actual);
             AssertVideoParameters(source, target.Path);
+            if (container == "mp4")
+            {
+                using var mp4 = Open(target.Path);
+                Assert.Equal(VideoDynamicRangeDetector.MakeCodecTag('d', 'v', 'h', '1'), mp4.GetVideoStream().Codecpar!.CodecTag);
+            }
+            else
+            {
+                using var mkv = Open(target.Path);
+                Assert.Equal(AVCodecID.AV_CODEC_ID_HEVC, mkv.GetVideoStream().Codecpar!.CodecId);
+                Assert.Equal(0u, mkv.GetVideoStream().Codecpar!.CodecTag);
+            }
         }
     }
 

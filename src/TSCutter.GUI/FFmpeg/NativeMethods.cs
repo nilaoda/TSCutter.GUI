@@ -72,6 +72,10 @@ public static unsafe partial class NativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial AVStream* avformat_new_stream(AVFormatContext* context, AVCodec* codec);
 
+    [LibraryImport("tscutter.avformat", EntryPoint = "av_guess_format", StringMarshalling = StringMarshalling.Utf8)]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial AVOutputFormat* av_guess_format(string shortName, string filename, string mimeType);
+
     [LibraryImport("tscutter.avformat", EntryPoint = "avformat_query_codec", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int avformat_query_codec(AVOutputFormat* format, AVCodecID codec, int compliance);
@@ -99,6 +103,14 @@ public static unsafe partial class NativeMethods
     [LibraryImport("tscutter.avformat", EntryPoint = "avio_closep", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int avio_closep(AVIOContext** context);
+
+    [LibraryImport("tscutter.avformat", EntryPoint = "avio_open_dyn_buf")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int avio_open_dyn_buf(AVIOContext** context);
+
+    [LibraryImport("tscutter.avformat", EntryPoint = "avio_close_dyn_buf")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int avio_close_dyn_buf(AVIOContext* context, byte** buffer);
 
     [LibraryImport("tscutter.avformat", EntryPoint = "avio_flush", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 from pgs_sample import write_pgs_sample
 
 
@@ -88,6 +89,20 @@ def main():
            "-preset", "ultrafast", "-x265-params",
            "pools=1:log-level=error:keyint=50:min-keyint=50:scenecut=0:open-gop=1:bframes=4",
            root / "open-gop.mp4")
+    # 两段使用相同 PPS 编号但不同去块参数，覆盖帧内参数更新时 hvc1 丢失配置的问题。
+    with tempfile.TemporaryDirectory(prefix="dynamic-hevc-", dir=root) as temp:
+        parts = []
+        for index, deblock in enumerate(("-1,-1", "2,2")):
+            part = Path(temp) / f"part{index}.hevc"
+            ffmpeg("-f", "lavfi", "-i", "testsrc2=size=128x72:rate=25:duration=1",
+                   "-c:v", "libx265", "-preset", "ultrafast", "-x265-params",
+                   f"pools=1:log-level=error:keyint=25:min-keyint=25:scenecut=0:bframes=0:repeat-headers=1:deblock={deblock}",
+                   part)
+            parts.append(part.read_bytes())
+        combined = Path(temp) / "combined.hevc"
+        combined.write_bytes(b"".join(parts))
+        ffmpeg("-fflags", "+genpts", "-r", "25", "-i", combined, "-map", "0:v:0", "-c", "copy",
+               "-f", "mpegts", root / "dynamic-hevc.ts")
     # 后半段改为 10 fps，验证截止帧时长不能从平均帧率推算。
     ffmpeg("-f", "lavfi", "-i", "testsrc2=size=128x72:rate=25:duration=6",
            "-vf", "settb=1/1000,setpts='if(lt(N,50),N*40,2000+(N-50)*100)'",

@@ -985,6 +985,13 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     }
 
     [RelayCommand]
+    private void MediaMuxClick()
+    {
+        var dialogViewModel = _dialogService.CreateViewModel<Media.MediaMuxWindowViewModel>();
+        _dialogService.Show(null, dialogViewModel);
+    }
+
+    [RelayCommand]
     private void TsBinaryMergeClick()
     {
         var dialogViewModel = _dialogService.CreateViewModel<TsBinaryMergeWindowViewModel>();

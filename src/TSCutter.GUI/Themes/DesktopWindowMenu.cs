@@ -6,9 +6,9 @@ using Avalonia.Controls.Chrome;
 using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.Input;
-using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.VisualTree;
 using Classic.Avalonia.Theme;
+using TSCutter.GUI.Utils.Application;
 
 namespace TSCutter.GUI.Themes;
 
@@ -57,10 +57,14 @@ internal sealed class DesktopWindowMenu : AvaloniaObject
             PlacementGravity = PopupGravity.BottomRight,
             PlacementRect = new Rect(point, new Size(1, 1)),
         };
-        MenuItem Item(string name, Func<bool> canExecute, Action execute)
+        var localization = App.LocalizationService;
+        var strings = new LocalizationManager(localization);
+        MenuItem Item(Func<string> textProvider, Func<bool> canExecute, Action execute)
         {
-            var item = new MenuItem { IsEnabled = canExecute() };
-            item.Bind(MenuItem.HeaderProperty, new DynamicResourceExtension("String.Window." + name));
+            var item = new MenuItem { Header = textProvider(), IsEnabled = canExecute() };
+            void RefreshHeader() => item.Header = textProvider();
+            localization.LanguageChanged += RefreshHeader;
+            menu.Closed += (_, _) => localization.LanguageChanged -= RefreshHeader;
             item.Click += (_, _) =>
             {
                 if (!canExecute())
@@ -70,11 +74,11 @@ internal sealed class DesktopWindowMenu : AvaloniaObject
             };
             return item;
         }
-        menu.Items.Add(Item("Restore", CanRestore, () => window.WindowState = WindowState.Normal));
-        menu.Items.Add(Item("Minimize", CanMinimize, () => window.WindowState = WindowState.Minimized));
-        menu.Items.Add(Item("Maximize", CanMaximize, () => window.WindowState = WindowState.Maximized));
+        menu.Items.Add(Item(() => strings.String_Window_Restore, CanRestore, () => window.WindowState = WindowState.Normal));
+        menu.Items.Add(Item(() => strings.String_Window_Minimize, CanMinimize, () => window.WindowState = WindowState.Minimized));
+        menu.Items.Add(Item(() => strings.String_Window_Maximize, CanMaximize, () => window.WindowState = WindowState.Maximized));
         menu.Items.Add(new Separator());
-        menu.Items.Add(Item("Close", () => CanUse(captions, "PART_CloseButton"), window.Close));
+        menu.Items.Add(Item(() => strings.String_Window_Close, () => CanUse(captions, "PART_CloseButton"), window.Close));
 
         // 只在菜单打开期间监听窗口关闭，关闭菜单后释放订阅和保存的引用。
         void WindowClosed(object? sender, EventArgs args) => menu.Close();

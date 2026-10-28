@@ -55,6 +55,8 @@ for dependencies and coverage.
 
 ## FFmpeg runtime
 
+Subtitle conversion tests also require the SRT and mov_text encoders. Older runtimes without these encoders skip only the corresponding conversion and muxer UI tests.
+
 Fixture generation uses the `ffmpeg` / `ffprobe` command-line tools. The C# decoding tests load the application's **FFmpeg 9 shared libraries**; `ffmpeg.exe` alone does not replace them.
 
 Prepare the complete runtime from [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries), matching the operating system and test process architecture. Automatic lookup includes:

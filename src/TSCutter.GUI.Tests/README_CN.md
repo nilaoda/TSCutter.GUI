@@ -53,6 +53,8 @@ python tools/prepare-test-media.py --group remux subtitles
 
 ## FFmpeg 运行库
 
+字幕转换测试还需要 SRT 和 mov_text 编码器；旧运行库缺少这些编码器时，仅跳过对应的转换和混流窗口测试。
+
 生成素材使用 `ffmpeg` / `ffprobe` 命令行工具；C# 解码测试加载的是应用使用的 **FFmpeg 9 共享库**，仅有 `ffmpeg.exe` 并不能代替它。
 
 从 [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries) 准备与当前系统和测试进程架构匹配的完整运行库。自动查找位置包括：
