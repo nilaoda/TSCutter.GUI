@@ -7,13 +7,19 @@ public sealed class ThemePickerItem
 {
     public string Name { get; }
     public ThemeModel? Theme { get; }
-    public bool IsSelectable => Theme != null;
+    public bool IsCustom { get; }
+    public bool IsSelectable => Theme != null || IsCustom;
 
-    private ThemePickerItem(string name, ThemeModel? theme = null)
+    private ThemePickerItem(string name, ThemeModel? theme = null, bool isCustom = false)
     {
         Name = name;
         Theme = theme;
+        IsCustom = isCustom;
     }
+
+    // 自定义项使用独立对象，避免空的选中值被 ComboBox 当作未选择。
+    public static IReadOnlyList<ThemePickerItem> CreatePresets(IEnumerable<ThemeModel> themes) =>
+        [new ThemePickerItem(string.Empty, isCustom: true), .. Create(themes)];
 
     public static IReadOnlyList<ThemePickerItem> Create(IEnumerable<ThemeModel> themes)
     {

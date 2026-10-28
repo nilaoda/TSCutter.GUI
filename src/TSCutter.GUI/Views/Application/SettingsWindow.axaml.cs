@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data.Converters;
 using Classic.Avalonia.Theme;
@@ -13,13 +14,29 @@ public partial class SettingsWindow : ClassicWindow
 {
     // 预先创建条目，使未展开的下拉框也能识别禁用标题，避免键盘选中标题。
     public static FuncValueConverter<IReadOnlyList<ThemePickerItem>?, ComboBoxItem[]?> ThemeItemsConverter { get; } =
-        new(items => items?.Select(item => new ComboBoxItem
+        new(items => CreateThemeItems(items, false));
+
+    public static FuncValueConverter<IReadOnlyList<ThemePickerItem>?, ComboBoxItem[]?> ThemePresetItemsConverter { get; } =
+        new(items => CreateThemeItems(items, true));
+
+    private static ComboBoxItem[]? CreateThemeItems(IReadOnlyList<ThemePickerItem>? items, bool presets) =>
+        items?.Select(item =>
         {
-            Content = item.Name,
-            DataContext = item,
-            Tag = item.Theme,
-            IsEnabled = item.IsSelectable
-        }).ToArray());
+            var control = new ComboBoxItem
+            {
+                DataContext = item,
+                Tag = presets ? item : item.Theme,
+                IsEnabled = item.IsSelectable
+            };
+            if (item.IsCustom)
+            {
+                // 未展开的条目还没有逻辑父级，直接监听应用资源以显示并更新本地化文案。
+                control.Bind(ContentProperty, Avalonia.Application.Current!.GetResourceObservable("String.Settings.CustomTheme"));
+            }
+            else
+                control.Content = item.Name;
+            return control;
+        }).ToArray();
 
     private SettingsWindowViewModel? _closeRequestSource;
 

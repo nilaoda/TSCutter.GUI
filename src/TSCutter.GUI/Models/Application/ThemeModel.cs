@@ -38,6 +38,12 @@ public class ThemeModel
         IsDarkTheme = isDarkTheme;
     }
 
+    // 同系列的浅色配色共用对应的深色主题，例如 Luna Silver 与 Luna (Dark)。
+    public static ThemeModel? GetPairedDarkTheme(ThemeModel? lightTheme) =>
+        lightTheme is { IsDarkTheme: false }
+            ? AllDarkThemes.FirstOrDefault(theme => theme.Family == lightTheme.Family)
+            : null;
+
     private static ThemeModel DarkTheme { get; } = new("Standard (Dark)", CustomTheme.DarkStandard, true);
     // macOS 外观只在 macOS 上提供，其他平台没有原生标题栏可依附。
     private static bool ShowMacOSFamily => OperatingSystem.IsMacOS();

@@ -9,6 +9,8 @@ namespace TSCutter.GUI.Models.Application;
 
 public class AppConfig : ObservableObject
 {
+    private string _themeName = ThemeModel.AllThemes[0].Name;
+    private string _darkThemeName = ThemeModel.AllDarkThemes[0].Name;
     private bool _showImageNavigator = true;
     private bool _showKeyFrameStrip = true;
     private bool _enableSdrToneMapping = true;
@@ -23,8 +25,16 @@ public class AppConfig : ObservableObject
     public ThemeModel DarkThemeModel => ThemeModel.AllDarkThemes.FirstOrDefault(x => x.Name == DarkThemeName) ?? ThemeModel.AllDarkThemes[0];
 
     public string Language { get; set; } = "en-US";
-    public string ThemeName { get; set; } = ThemeModel.AllThemes[0].Name;
-    public string DarkThemeName { get; set; } = ThemeModel.AllDarkThemes[0].Name;
+    public string ThemeName
+    {
+        get => _themeName;
+        set => SetProperty(ref _themeName, value);
+    }
+    public string DarkThemeName
+    {
+        get => _darkThemeName;
+        set => SetProperty(ref _darkThemeName, value);
+    }
     public ThemeVariantMode ThemeVariantMode { get; set; } = ThemeVariantMode.Automatic;
     public bool AutoDetectLanguage { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;

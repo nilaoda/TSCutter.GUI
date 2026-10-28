@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
@@ -43,6 +44,12 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     private bool _enableSdrToneMapping;
     [ObservableProperty]
     private bool _tsCheckOnExport;
+    private bool _updatingThemePreset;
+
+    [ObservableProperty]
+    private int _selectedTabIndex;
+    [ObservableProperty]
+    private ThemePickerItem? _selectedThemePreset;
     [ObservableProperty]
     private ThemeModel _selectedTheme;
     [ObservableProperty]
@@ -54,6 +61,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
 
     public bool IsLanguageEnable => !AutoDetectLanguage;
     public bool IsHardwareDecodingAvailable => AppConfig.IsHardwareDecodingSupported;
+    public IReadOnlyList<ThemePickerItem> ThemePresetOptions { get; } = ThemePickerItem.CreatePresets(ThemeModel.AllThemes);
     public IReadOnlyList<ThemePickerItem> ThemeOptions { get; } = ThemePickerItem.Create(ThemeModel.AllThemes);
     public IReadOnlyList<ThemePickerItem> DarkThemeOptions { get; } = ThemePickerItem.Create(ThemeModel.AllDarkThemes);
     public List<SupportedLang> Languages => _locService.SupportedLanguages;
@@ -79,6 +87,47 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
             SelectedLanguage = selectedLanguage;
     }
     
+    partial void OnSelectedThemePresetChanged(ThemePickerItem? value)
+    {
+        if (_updatingThemePreset || value?.Theme is not { } light)
+            return;
+        var dark = ThemeModel.GetPairedDarkTheme(light);
+        if (dark is null)
+            return;
+
+        _updatingThemePreset = true;
+        try
+        {
+            SelectedTheme = light;
+            SelectedDarkTheme = dark;
+        }
+        finally
+        {
+            _updatingThemePreset = false;
+        }
+    }
+
+    partial void OnSelectedThemeChanged(ThemeModel value) => UpdateThemePreset();
+    partial void OnSelectedDarkThemeChanged(ThemeModel value) => UpdateThemePreset();
+
+    private void UpdateThemePreset()
+    {
+        if (_updatingThemePreset || SelectedTheme is null || SelectedDarkTheme is null)
+            return;
+
+        _updatingThemePreset = true;
+        try
+        {
+            SelectedThemePreset = ThemeModel.GetPairedDarkTheme(SelectedTheme) == SelectedDarkTheme
+                ? ThemePresetOptions.Single(item => item.Theme == SelectedTheme)
+                : ThemePresetOptions[0];
+        }
+        finally
+        {
+            _updatingThemePreset = false;
+        }
+    }
+
     [RelayCommand(CanExecute = nameof(IsOutputTemplateValid))]
     private void Apply()
     {
@@ -103,7 +152,10 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     
     private void CommitChanges()
     {
-        if (!IsOutputTemplateValid) return;
+        if (!IsOutputTemplateValid)
+            return;
+        // 自定义项允许直接编辑；提交时按最终组合重新识别，与菜单的勾选保持一致。
+        UpdateThemePreset();
         _configService.CurrentConfig.ClipOutputTemplate = ClipOutputTemplate.Trim();
         // 更新配置
         _configService.CurrentConfig.AutoDetectLanguage = AutoDetectLanguage;
