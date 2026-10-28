@@ -346,6 +346,38 @@ public sealed class TsTimelineRepairServiceTests
     }
 
     [Fact]
+    public async Task NonPcrDiscontinuityDoesNotHideLaterClockDamage()
+    {
+        var fixture = await CreateFixtureAsync(static sample =>
+            (sample >= 100 ? 27_000 : 0) +
+            (sample is >= 120 and < 145 ? (sample - 120) * 9_000L : 0) +
+            (sample >= 150 ? 450_000 : 0));
+        try
+        {
+            var bytes = await File.ReadAllBytesAsync(fixture.Path);
+            // 合法相位切换先在不带 PCR 的同 PID 包中声明。
+            var offset = 999 * TsStreamAnalyzer.PacketSize;
+            bytes[offset + 3] = 0x26;
+            bytes[offset + 4] = 183;
+            bytes[offset + 5] = 0x80;
+            // 损坏的 adaptation field 不能冒充合法切换，掩盖随后真正的时钟跳变。
+            offset = 1499 * TsStreamAnalyzer.PacketSize;
+            bytes[offset + 3] = 0x26;
+            bytes[offset + 4] = 184;
+            bytes[offset + 5] = 0x80;
+            await File.WriteAllBytesAsync(fixture.Path, bytes);
+            var analysis = await AnalyzeAsync(fixture);
+            Assert.Equal(2, analysis.Issues.Count);
+            Assert.Contains(analysis.Issues, issue => issue.Kind == TsTimelineIssueKind.GradualPcrDrift);
+            var persistent = Assert.Single(analysis.Issues, issue =>
+                issue.Kind == TsTimelineIssueKind.PersistentClockDiscontinuity);
+            Assert.Equal(1500, persistent.StartPacket);
+            Assert.Equal(-5, persistent.CorrectionSeconds);
+        }
+        finally { DeleteFixture(fixture); }
+    }
+
+    [Fact]
     public async Task TemporaryPcrStepIsRepairedWithoutChangingFileSize()
     {
         var fixture = await CreateFixtureAsync(static sample => sample is >= 50 and < 80 ? 450_000 : 0);

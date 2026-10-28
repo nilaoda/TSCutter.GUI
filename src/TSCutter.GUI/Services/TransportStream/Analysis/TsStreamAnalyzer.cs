@@ -1199,7 +1199,7 @@ public sealed class TsStreamAnalyzer : IDisposable
             state.LastRawPts = rawPts.Value;
             state.PtsWrapOffset = pts - rawPts.Value;
             if (HasFeature(TsStreamAnalyzeFeatures.TimestampValidation))
-                CheckPts(pid, state, pts, fileOffset);
+                CheckPts(pid, state, pts, fileOffset, payload[3]);
             state.LastPts90k = pts;
             _lastKnownClock90k = pts;
             SetTimelineOrigin(pts);
@@ -1350,24 +1350,29 @@ public sealed class TsStreamAnalyzer : IDisposable
         TsSupplementaryStreamType? SupplementaryStreamType,
         string? Language);
 
-    private void CheckPts(int pid, PidState state, long pts, long fileOffset)
+    private void CheckPts(int pid, PidState state, long pts, long fileOffset, byte streamId)
     {
         if (state.LastPts90k == long.MinValue)
             return;
 
         var delta = (pts - state.LastPts90k) / 90_000.0;
-        var isVideo = state.Summary.StreamType is { } type && TsStreamTypes.IsVideo(type);
-        if (!isVideo && delta < -0.001)
+        var type = state.Summary.StreamType;
+        var isVideo = type is { } videoType && TsStreamTypes.IsVideo(videoType) ||
+            type is null && streamId is >= 0xE0 and <= 0xEF;
+        var isAudio = type is { } audioType && TsStreamTypes.IsAudio(audioType, state.Summary.SupplementaryStreamType) ||
+            type is null && streamId is >= 0xC0 and <= 0xDF;
+        // 字幕和定时元数据可稀疏出现或按非播放顺序传输，不能套用音频的单调性与间隔规则。
+        if (isAudio && delta < -0.001)
         {
             AddEvent(TsCheckSeverity.Error, TsCheckEventType.PtsBackward, pid, _packetIndex, fileOffset,
                 TsCheckMessageCode.PtsBackward, [-delta], ptsToSeconds(pts), false);
         }
-        else if (delta > TimestampJumpThresholdSeconds)
+        else if ((isVideo || isAudio) && delta > TimestampJumpThresholdSeconds)
         {
             AddEvent(TsCheckSeverity.Error, TsCheckEventType.PtsJump, pid, _packetIndex, fileOffset,
                 TsCheckMessageCode.PtsJump, [delta], ptsToSeconds(pts), false);
         }
-        else if (delta > 2 && !isVideo)
+        else if (delta > 2 && isAudio)
         {
             AddEvent(TsCheckSeverity.Warning, TsCheckEventType.StreamGap, pid, _packetIndex, fileOffset,
                 TsCheckMessageCode.AudioGap, [delta], ptsToSeconds(pts), false);

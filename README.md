@@ -29,6 +29,8 @@ TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. I
 - **DVD / Blu-ray preview**: Open DVD-Video and unencrypted Blu-ray sources from ISO images or disc folders (`VIDEO_TS` / `BDMV`), choose a title or playlist, navigate across its files, and preview VOB or PGS subtitles. Cut without re-encoding, defaulting to VOB for DVD and M2TS for Blu-ray; MP4/MKV remain available for compatible tracks. DVD CSS protection is supported where the runtime can handle it. Lossless export rejects playlist joins that enter a clip inside a GOP. Disc M2TS output is remuxed with timestamps rebuilt for the exported timeline. Playlists whose stream layout changes between PlayItems have not been validated; track selection reflects the streams detected when opening the title. Disc menus, protected Blu-ray discs and saving disc sources in projects are not supported. Standalone VOB does not carry the IFO subtitle palette; use MKV to preserve subtitle colors in one file.
 - **General video preview**: Open MP4, MKV, MOV, WebM, and other FFmpeg-supported video files for preview, seeking, screenshots, and media information. MP4/MOV and MKV/WebM inputs can be exported to MP4 or MKV; other non-TS formats are preview-only.
 
+Merging clips from one TS file joins timestamps and continuity counters, completes boundary audio PES packets, and handles AC-3/E-AC-3 frames spanning PES boundaries. Audio/video is not re-encoded, and existing transport errors inside retained segments are preserved.
+
 ### MP4 / MKV remux editing and merging
 
 - Choose the output container and retained tracks in **MP4 / MKV export settings**. Track order, language, titles, and default/forced flags follow the source.
