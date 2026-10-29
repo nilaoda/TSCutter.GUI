@@ -2,6 +2,9 @@
   <img src="design/icons/app/logo.svg" alt="TSCutter.GUI" width="112">
   <h1>TSCutter.GUI</h1>
   <p><a href="README.md">English</a> | <strong>中文版</strong></p>
+  <p>
+    <a href="https://discord.gg/qG7kk9GQ44"><img src="https://img.shields.io/badge/Discord-Community-5865F2?logo=discord&amp;logoColor=white" alt="加入 Discord 社区"></a>
+  </p>
 </div>
 
 TSCutter.GUI 是一个跨平台的视频剪辑与 MPEG-TS 诊断工具。它支持 TS/M2TS 关键帧剪辑和 MP4/MKV 重封装导出，还提供流检查、提取、过滤、结构编辑、修复、合并和逐包分析能力，不重新编码原始音视频。

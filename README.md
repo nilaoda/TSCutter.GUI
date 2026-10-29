@@ -2,6 +2,9 @@
   <img src="design/icons/app/logo.svg" alt="TSCutter.GUI" width="112">
   <h1>TSCutter.GUI</h1>
   <p><strong>English</strong> | <a href="README_CN.md">中文版</a></p>
+  <p>
+    <a href="https://discord.gg/qG7kk9GQ44"><img src="https://img.shields.io/badge/Discord-Community-5865F2?logo=discord&amp;logoColor=white" alt="Join the Discord community"></a>
+  </p>
 </div>
 
 TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. It supports keyframe-based TS/M2TS cutting and MP4/MKV remux exports, along with stream inspection, extraction, filtering, structural editing, repair, merging, and packet analysis, without re-encoding the original audio or video.
