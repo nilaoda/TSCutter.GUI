@@ -121,8 +121,8 @@
                                 <Button x:Name="LanguagePickerButton" Grid.Column="1" Content="▾" MinWidth="0" Padding="4"
                                         HorizontalAlignment="Stretch" VerticalAlignment="Stretch">
                                     <Button.Flyout>
-                                        <Flyout Placement="BottomEdgeAlignedRight">
-                                            <ListBox ItemsSource="{Binding Languages}" SelectionChanged="LanguageChoice_OnChanged" MaxHeight="280" MinWidth="170">
+                                        <Flyout Placement="BottomEdgeAlignedRight" FlyoutPresenterClasses="language-picker">
+                                            <ListBox Name="LanguageChoices" ItemsSource="{Binding Languages}" SelectionChanged="LanguageChoice_OnChanged" MaxHeight="280" MinWidth="170">
                                                 <ListBox.ItemTemplate>
                                                     <DataTemplate x:DataType="vm:MediaMuxLanguageChoice">
                                                         <TextBlock Text="{Binding Label}" />

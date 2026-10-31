@@ -1,4 +1,5 @@
 using System;
+using Avalonia;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
@@ -16,10 +17,10 @@ public partial class VideoInstance
     private int retainedPreviewWidth, retainedPreviewHeight;
 
     // 仅主预览保留一帧 CPU 数据引用，开关映射时不重新 seek，也不改变标记位置。
-    private unsafe void RetainPreviewFrame(Frame source, DecodeResult result)
+    private unsafe void RetainPreviewFrame(Frame source, DecodeResult result, bool retainStandardFrame = false)
     {
         if (!retainPreviewFrame || isSearchScan) return;
-        if (result.VideoDynamicRange == VideoDynamicRange.Standard)
+        if (result.VideoDynamicRange == VideoDynamicRange.Standard && !retainStandardFrame)
         {
             retainedPreviewFrame?.Unref();
             retainedPreviewInfo = CopyPreviewInfo(result);
@@ -29,9 +30,28 @@ public partial class VideoInstance
         retainedPreviewFrame.Unref();
         FFmpegException.Check(FF.av_frame_ref(retainedPreviewFrame, source));
         retainedPreviewInfo = CopyPreviewInfo(result);
-        retainedPreviewWidth = result.Bitmap!.PixelSize.Width;
-        retainedPreviewHeight = result.Bitmap.PixelSize.Height;
+        var size = result.Bitmap?.PixelSize ?? result.GpuFrame?.PixelSize ?? new PixelSize(source.Width, source.Height);
+        retainedPreviewWidth = size.Width;
+        retainedPreviewHeight = size.Height;
     }
+
+    internal void RetainPlaybackFrame(Frame source, DecodeResult result)
+    {
+        lock (decoderSync)
+        {
+            if (!closed)
+                RetainPreviewFrame(source, result, retainStandardFrame: true);
+        }
+    }
+
+    internal Task<DecodeResult?> CapturePlaybackFrameAsync(long expectedPts) => Task.Run(() =>
+        RunReadOperation(() =>
+        {
+            if (retainedPreviewFrame is null || retainedPreviewInfo?.FramePts != expectedPts)
+                return DecodeContinuousPreviewFrame(expectedPts, CancellationToken.None);
+            var bitmap = ConvertPreviewFrame(retainedPreviewFrame, 0, 0, out var lease);
+            return CopyPreviewInfo(retainedPreviewInfo, bitmap, lease);
+        }, CancellationToken.None));
 
     // TS 的定位结果可能略晚于请求点，提前喂入关键帧再核对原始 PTS。
     internal Task<DecodeResult?> DecodePreviewFrameAtPtsAsync(long targetPts, CancellationToken cancellationToken = default)
@@ -51,7 +71,51 @@ public partial class VideoInstance
             result.GpuFrame?.Dispose();
             if (result.FramePts > targetPts) break;
         }
-        return null;
+        return DecodeContinuousPreviewFrame(targetPts, cancellationToken);
+    }
+
+    private DecodeResult? DecodeContinuousPreviewFrame(long targetPts, CancellationToken token)
+    {
+        using var queue = new Player.Video.VideoFrameQueue(1);
+        var engine = new Player.Video.VideoPlaybackEngine(new Player.PlaybackOptions
+        {
+            FilePath = videoPath, Disc = Disc, StreamSelection = StreamSelection,
+            StartSeconds = PtsToTimeSpan(targetPts).TotalSeconds,
+            TimelineOriginSeconds = TimelineOriginSeconds, TsSyncOffset = TsSyncOffset,
+            EstimatedKeyFrameIntervalSeconds = EstimatedKeyFrameIntervalSeconds,
+            PreferHardwareDecoding = hardwareDecoderOpened, EnableGpuPresentation = false
+        }, queue);
+        var task = Task.Run(engine.RunAsync, token);
+        using var registration = token.Register(engine.Cancel);
+        try
+        {
+            using var frame = queue.DequeueAsync(token).AsTask().GetAwaiter().GetResult();
+            if (frame.Pts != targetPts)
+                return null;
+            var bitmap = ConvertPreviewFrame(frame.Frame, 0, 0, out var lease);
+            var result = new DecodeResult
+            {
+                Bitmap = bitmap, BitmapLease = lease, FramePts = frame.Pts, FramePts90k = frame.Pts90k,
+                FrameTimestamp = TimeSpan.FromSeconds(frame.TimelineSeconds), FramePosition = frame.Position,
+                SourcePixelSize = frame.PixelSize, RequiresSampleAspectRatioCorrection = frame.RequiresCorrection,
+                VideoDynamicRange = frame.Range, PresentationMode = frame.Mode
+            };
+            RetainPreviewFrame(frame.Frame, result);
+            IsHardwareDecoding = frame.Mode == VideoPresentationMode.HardwareCpuTransfer;
+            PresentationMode = frame.Mode;
+            return result;
+        }
+        finally
+        {
+            engine.Cancel();
+            // 已主动停止引擎，清理时的内部取消不应覆盖刚取到的画面。
+            try { task.GetAwaiter().GetResult(); }
+            catch (OperationCanceledException) { }
+            finally
+            {
+                engine.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+        }
     }
 
     public Task<DecodeResult?> RefreshCurrentFrameAsync(CancellationToken cancellationToken = default, long? expectedPts = null)

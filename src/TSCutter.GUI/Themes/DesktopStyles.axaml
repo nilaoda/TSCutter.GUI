@@ -60,6 +60,24 @@
     <Style Selector="ToolTip.desktop-theme:not(.luna) /template/ ContentPresenter#PART_ContentPresenter, MenuFlyoutPresenter.desktop-theme:not(.luna) /template/ classic|ClassicBorderDecorator#LayoutRoot, FlyoutPresenter.desktop-theme:not(.luna) /template/ classic|ClassicBorderDecorator#LayoutRoot">
         <Setter Property="(local:ThemeRenderOptions.EdgeMode)" Value="Antialias" />
     </Style>
+    <!-- 普通弹层也使用细外框，避免内容外围仍保留 Classic 的双层立体边。 -->
+    <Style Selector="FlyoutPresenter.desktop-theme:not(.luna):not(.fluent)">
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <Style Selector="FlyoutPresenter.desktop-theme:not(.luna):not(.fluent) /template/ classic|ClassicBorderDecorator#LayoutRoot">
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+    </Style>
+    <!-- 语言列表由弹层负责外框，列表自身不重复绘制凹陷边框。 -->
+    <Style Selector="FlyoutPresenter.language-picker.desktop-theme:not(.luna) ListBox">
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <Style Selector="FlyoutPresenter.language-picker.desktop-theme:not(.luna) ListBoxItem">
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="MinHeight" Value="26" />
+    </Style>
     <!-- 原生标题按钮均有文字提示；Snap 最大化按钮在 Windows 11 样式中单独交给系统。 -->
     <Style Selector=":is(classic|ClassicWindow)">
         <!-- 标题按钮提示跟随语言资源，最大化后将操作文案切换为还原。 -->

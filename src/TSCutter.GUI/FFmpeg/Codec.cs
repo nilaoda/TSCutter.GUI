@@ -96,6 +96,7 @@ public sealed unsafe class CodecContext : SafeHandle
         => value is null ? null : (AVCodecContext*)value.handle;
     public AVRational PacketTimeBase { set => Raw->pkt_timebase = value; }
     public AVDiscard SkipFrame { set => Raw->skip_frame = value; }
+    public int ThreadCount { set => Raw->thread_count = value; }
     public void FillParameters(CodecParameters parameters)
         => FFmpegException.Check(FF.avcodec_parameters_to_context(Raw, parameters));
     public void Open() => Open("export_packet_pos");

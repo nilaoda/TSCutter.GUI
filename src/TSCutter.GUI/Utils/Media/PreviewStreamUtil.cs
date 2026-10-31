@@ -67,6 +67,24 @@ internal static class PreviewStreamUtil
             }).ToArray();
     }
 
+    public static IReadOnlyList<PreviewAudioTrackOption> CreateAudioOptions(FormatContext context,
+        PreviewStreamSelection? video)
+    {
+        var program = video?.ProgramId is { } id ? context.Programs.Where(p => p.Id == id).ToArray() : [];
+        return context.Streams.Where(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO &&
+                (program.Length == 0 || program[0].ContainsStream(stream.Index)))
+            .Select(stream =>
+            {
+                stream.Metadata.TryGetValue("language", out var language);
+                stream.Metadata.TryGetValue("title", out var title);
+                var identifier = context.InputFormat?.Name == "mpegts" ? $"PID 0x{stream.Id:X4}" : $"#{stream.Index + 1}";
+                var details = new[] { identifier, title, language, stream.Codecpar!.CodecName.ToUpperInvariant() };
+                return new PreviewAudioTrackOption(new(stream.Index, stream.Id, video?.ProgramId),
+                    string.Join(" · ", details.Where(text => !string.IsNullOrWhiteSpace(text))),
+                    TSCutter.GUI.Player.Audio.AudioPlaybackPipeline.CanDecode(stream));
+            }).ToArray();
+    }
+
     public static IReadOnlyList<PreviewProgramOption> CreateOptions(FormatContext context)
     {
         var options = new List<PreviewProgramOption>();

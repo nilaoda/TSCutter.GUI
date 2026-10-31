@@ -60,6 +60,7 @@ public partial class App : Application
         SplatRegistrations.Register<FrameSearchWindowViewModel>();
         SplatRegistrations.Register<ThumbnailSheetWindowViewModel>();
         SplatRegistrations.Register<MediaMuxWindowViewModel>();
+        SplatRegistrations.Register<TSCutter.GUI.ViewModels.Player.PlaybackBenchmarkWindowViewModel>();
         SplatRegistrations.Register<TsRemuxWindowViewModel>();
         SplatRegistrations.Register<TsEsExtractorWindowViewModel>();
         SplatRegistrations.Register<AboutWindowViewModel>();

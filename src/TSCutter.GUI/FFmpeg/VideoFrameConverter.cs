@@ -4,6 +4,7 @@ using System;
 using System.Runtime.InteropServices;
 using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.Rendering.Colors;
+using TSCutter.GUI.Extensions;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 
 namespace TSCutter.GUI.FFmpeg;
@@ -21,7 +22,14 @@ public sealed unsafe class VideoFrameConverter() : SafeHandle(IntPtr.Zero, true)
         ObjectDisposedException.ThrowIf(IsClosed, this);
         try
         {
-            ConvertFrameCore(source, destination);
+            // 截图、CPU 自检和失败回退按需回读；正常硬件纹理播放不走此分支。
+            if (source.HasHardwareFramesContext)
+            {
+                using var software = source.TransferToSoftwareFrame();
+                ConvertFrameCore(software, destination);
+            }
+            else
+                ConvertFrameCore(source, destination);
         }
         finally
         {
@@ -60,6 +68,12 @@ public sealed unsafe class VideoFrameConverter() : SafeHandle(IntPtr.Zero, true)
         if (IsInvalid) throw new OutOfMemoryException("Cannot create swscale context.");
         AVFrame* src = source;
         AVFrame* dst = destination;
+        // swscale 默认使用 BT.601；显式应用帧的矩阵和范围，保证 GPU 播放与 CPU 暂停/截图一致。
+        var sourceCoefficients = FF.sws_getCoefficients((int)VideoColorSpace.ResolveMatrix(src));
+        var destinationCoefficients = FF.sws_getCoefficients((int)VideoColorSpace.ResolveMatrix(dst));
+        FFmpegException.Check(FF.sws_setColorspaceDetails((SwsContext*)handle,
+            sourceCoefficients, VideoColorSpace.IsFullRange(src) ? 1 : 0,
+            destinationCoefficients, VideoColorSpace.IsFullRange(dst) ? 1 : 0, 0, 1 << 16, 1 << 16));
         FFmpegException.Check(FF.sws_scale((SwsContext*)handle,
             (byte**)&src->data, (int*)&src->linesize, 0, src->height,
             (byte**)&dst->data, (int*)&dst->linesize));

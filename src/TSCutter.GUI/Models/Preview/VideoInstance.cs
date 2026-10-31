@@ -57,6 +57,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     public IReadOnlyList<PreviewProgramOption> PreviewPrograms { get; private set; } = [];
     public PreviewStreamSelection? StreamSelection { get; private set; }
     public IReadOnlyList<PreviewSubtitleTrackOption> PreviewSubtitleTracks { get; private set; } = [];
+    internal IReadOnlyList<PreviewAudioTrackOption> PreviewAudioTracks { get; private set; } = [];
     internal int AudioTrackCount => inFc.Streams.Count(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO);
     internal double TimelineOriginSeconds => firstFrameTimestamp * timeBase.num / (double)timeBase.den;
     internal Avalonia.PixelSize CodedVideoSize => new(inVideoStream.Codecpar!.Width, inVideoStream.Codecpar.Height);
@@ -204,6 +205,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         inVideoStream = PreviewStreamUtil.ResolveVideo(inFc, streamSelection);
         StreamSelection = PreviewStreamUtil.GetSelection(inFc, inVideoStream, streamSelection);
         PreviewSubtitleTracks = PreviewStreamUtil.CreateSubtitleOptions(inFc, StreamSelection);
+        PreviewAudioTracks = PreviewStreamUtil.CreateAudioOptions(inFc, StreamSelection);
         if (inVideoStream.Codecpar?.CodecId is null)
         {
             throw new Exception("Read Failed!");
@@ -504,6 +506,14 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         }
         return null;
     }
+
+    /// <summary>
+    /// 定位并解码不晚于目标 PTS 的第一个关键帧（用于播放画面标记后吸附合法剪辑边界）。
+    /// 返回 null 表示范围内找不到关键帧；调用方负责释放结果位图。
+    /// </summary>
+    internal Task<DecodeResult?> DecodeKeyFrameAtOrBeforePtsAsync(long targetPts, CancellationToken cancellationToken = default) =>
+        Task.Run(() => RunReadOperation<DecodeResult?>(() =>
+            DecodePreviousKeyFrame(-1, targetPts + 1, cancellationToken), cancellationToken), cancellationToken);
 
     internal Task SeekBeforeTimeAsync(TimeSpan time, CancellationToken cancellationToken) =>
         Task.Run(() => RunReadOperation(() =>
@@ -1517,7 +1527,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             raw->color_range = parameters.ColorRange;
     }
 
-    private static unsafe VideoDynamicRange GetVideoDynamicRange(Frame frame)
+    // 播放会话复用同一动态范围判定，保证预览与播放的状态栏一致。
+    internal static unsafe VideoDynamicRange GetVideoDynamicRange(Frame frame)
     {
         AVFrame* rawFrame = frame;
         var hasDolbyVisionMetadata =

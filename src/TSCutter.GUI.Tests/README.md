@@ -83,6 +83,17 @@ TSCUTTER_FFMPEG_ROOT=/path/to/ffmpeg-runtime dotnet test src/TSCutter.GUI.Tests 
 
 If library files are found but loading fails, or their architecture or ABI is incompatible, the tests fail with a loading error rather than treating a broken runtime as a normal skip.
 
+## Playback and audio devices
+
+Playback tests use the generated `keyframes` and `remux` fixtures. Most audio tests
+use an in-memory output and do not open a speaker. The three real-device checks are
+opt-in and output digital silence. Set `TSCUTTER_ENABLE_AUDIO_DEVICE_TESTS=1` to run
+them on a machine with an available default audio device; they are skipped otherwise.
+
+The application build compiles a small native PCM output bridge. Compiler prerequisites
+and the silent-build option are documented in the [audio bridge guide](../TSCutter.GUI/native/audio/README.md).
+FFmpeg decoding and resampling reuse the existing runtime described above.
+
 ## Optional custom directories and real media
 
 The default synthetic tests do not depend on the following environment variables. These overrides let you reuse existing directories or run checks that require real media:

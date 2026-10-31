@@ -1,6 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:TSCutter.GUI.ViewModels"
+        xmlns:views="using:TSCutter.GUI.Views"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:ia="using:Avalonia.Xaml.Interactivity"
@@ -24,6 +25,12 @@
         DataContext="{x:Static local:App.MainWindow}"
         WindowStartupLocation="CenterScreen"
         Title="{Binding WindowTitle}">
+
+    <Window.DataTemplates>
+        <DataTemplate DataType="{x:Type modelsPreview:PreviewAudioTrackOption}" x:DataType="modelsPreview:PreviewAudioTrackOption">
+            <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding DisplayText}" />
+        </DataTemplate>
+    </Window.DataTemplates>
 
     <Window.Resources>
         <converters:SecondsToStringConverter x:Key="SecondsConverter" />
@@ -136,6 +143,40 @@
             <Setter Property="Background" Value="Transparent"/>
             <Setter Property="BorderThickness" Value="0"/>
         </Style>
+        <Style Selector=".video-fullscreen /template/ DockPanel#RootLayout > :is(TemplatedControl)">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector=".video-fullscreen /template/ Border#MacOSHeader">
+            <Setter Property="IsVisible" Value="False" />
+        </Style>
+        <Style Selector=".video-fullscreen /template/ ClassicBorderDecorator#Bd">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="(themes:DesktopWindowChrome.FrameThickness)" Value="0" />
+        </Style>
+        <Style Selector=".video-fullscreen /template/ DockPanel#RootLayout">
+            <Setter Property="Margin" Value="0" />
+        </Style>
+        <Style Selector="Button.fullscreen-action">
+            <Setter Property="Width" Value="36" />
+            <Setter Property="Height" Value="36" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Foreground" Value="White" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="ToolTip.Placement" Value="Top" />
+            <Setter Property="Template">
+                <ControlTemplate>
+                    <Border Background="{TemplateBinding Background}" CornerRadius="5">
+                        <ContentPresenter Content="{TemplateBinding Content}" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                </ControlTemplate>
+            </Setter>
+            <Style Selector="^:pointerover"><Setter Property="Background" Value="#35FFFFFF" /></Style>
+            <Style Selector="^:pressed"><Setter Property="Background" Value="#55FFFFFF" /></Style>
+            <Style Selector="^:focus-visible"><Setter Property="Background" Value="#35FFFFFF" /></Style>
+            <Style Selector="^:disabled"><Setter Property="Opacity" Value="0.4" /></Style>
+        </Style>
     </Window.Styles>
     
     <!-- Don't know why NativeMenuItem's Gesture only works on macOS, so here add KeyBindings -->
@@ -182,6 +223,7 @@
                                  Color="{DynamicResource {x:Static commonControls:SystemColors.ActiveCaptionTextColorKey}}" />
             </ResourceDictionary>
         </Grid.Resources>
+        <Grid x:Name="EditingSurface" Grid.RowSpan="2" RowDefinitions="Auto,*">
         <ClassicBorderDecorator x:Name="AppMenuFrame" Grid.Row="0" DockPanel.Dock="Top" Classes="app-section-frame app-menu-frame" BorderStyle="Etched">
             <DockPanel Margin="0, 2">
                 <commonControls:RebarHandle />
@@ -243,6 +285,8 @@
                             </MenuItem>
                             <MenuItem Header="{DynamicResource String.Menu.TsPacketViewer}"
                                       Command="{Binding TsPacketViewerClickCommand}" />
+                            <MenuItem x:Name="OpenPlaybackBenchmarkItem" Header="{DynamicResource String.Menu.PlaybackBenchmark}"
+                                      Command="{Binding PlaybackBenchmarkClickCommand}" />
                         </MenuItem>
                         <MenuItem Header="{DynamicResource String.Menu.ToolGroupExtract}">
                             <MenuItem Header="{DynamicResource String.Menu.RawCutter}"
@@ -273,6 +317,11 @@
                                   Command="{Binding SettingsClickCommand}" />
                     </MenuItem>
                     <MenuItem Header="{DynamicResource String.Menu.View}">
+                        <MenuItem Name="VideoFullScreenMenuItem" Header="{DynamicResource String.Playback.FullScreen}"
+                                  Command="{Binding #CutterMainWindow.ToggleVideoFullScreenCommand}"
+                                  ToggleType="CheckBox" IsChecked="{Binding #CutterMainWindow.IsVideoFullScreen, Mode=OneWay}"
+                                  InputGesture="{OnPlatform F11, macOS=Ctrl+⌘+F}" />
+                        <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.ZoomIn}" Command="{Binding ZoomInCommand}"/>
                         <MenuItem Header="{DynamicResource String.Menu.ZoomOut}" Command="{Binding ZoomOutCommand}"/>
                         <MenuItem Header="{DynamicResource String.Menu.OriginalSize}" Command="{Binding ZoomNoneCommand}"/>
@@ -338,6 +387,26 @@
                             Content="{Binding DecodeModeText}"
                             Command="{Binding ToggleHardwareDecodingCommand}"
                             ToolTip.Tip="{DynamicResource String.Status.ToggleHardwareDecodingTip}" />
+                </commonControls:StatusBarItem>
+                <commonControls:StatusBarItem IsVisible="{Binding IsPlaybackActive}">
+                    <TextBlock Name="PlaybackFps" MinWidth="104" TextAlignment="Center" VerticalAlignment="Center"
+                               FontFamily="Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, $Default"
+                               FontFeatures="tnum" Text="{Binding PlaybackFpsText}"
+                               Classes.smooth="{Binding IsPlaybackSmooth}"
+                               Classes.limited="{Binding IsPlaybackLimited}"
+                               Classes.slow="{Binding IsPlaybackSlow}">
+                        <TextBlock.Styles>
+                            <Style Selector="TextBlock.smooth">
+                                <Setter Property="Foreground" Value="{DynamicResource AppStatusSuccessForegroundBrush}" />
+                            </Style>
+                            <Style Selector="TextBlock.limited">
+                                <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+                            </Style>
+                            <Style Selector="TextBlock.slow">
+                                <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
+                            </Style>
+                        </TextBlock.Styles>
+                    </TextBlock>
                 </commonControls:StatusBarItem>
                 <commonControls:StatusBarItem IsVisible="{Binding HasHdrPreview}">
                     <Button x:Name="ToneMappingToggle" Classes="desktop-template-button"
@@ -406,33 +475,37 @@
                                                       LargeIcon="/Assets/file_tools.png" Classes="themed-icon"
                                                       themes:ThemeIcons.Source="{DynamicResource Icon.tools}"
                                                       Text="{DynamicResource String.ToolBar.FileTools}"
-                                                      IsEnabled="{Binding CanUseCurrentFileTools}">
+                                                      IsEnabled="{Binding CanUseFileToolsMenu}">
                             <commonControls:ToolBarButton.Flyout>
                                 <MenuFlyout Placement="Bottom">
-                                    <MenuItem Header="{DynamicResource String.FileTools.TsCheck}"
+                                    <MenuItem x:Name="CurrentPlaybackBenchmarkItem" Header="{DynamicResource String.Menu.PlaybackBenchmark}"
+                                              Command="{Binding PlaybackBenchmarkClickCommand}" CommandParameter="{Binding VideoPath}"
+                                              IsEnabled="{Binding CanUsePlaybackBenchmark}" />
+                                    <Separator />
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsCheck}" IsEnabled="{Binding CanUseCurrentFileTools}"
                                               Command="{Binding TsCheckClickCommand}"
                                               CommandParameter="{Binding VideoPath}" />
-                                    <MenuItem Header="{DynamicResource String.FileTools.TsPacketViewer}"
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsPacketViewer}" IsEnabled="{Binding CanUseCurrentFileTools}"
                                               Command="{Binding TsPacketViewerClickCommand}"
                                               CommandParameter="{Binding VideoPath}" />
                                     <Separator />
-                                    <MenuItem Header="{DynamicResource String.FileTools.RawCutter}"
+                                    <MenuItem Header="{DynamicResource String.FileTools.RawCutter}" IsEnabled="{Binding CanUseCurrentFileTools}"
                                               Command="{Binding RawCutterClickCommand}"
                                               CommandParameter="{Binding VideoPath}" />
-                                    <MenuItem Header="{DynamicResource String.FileTools.TsFilterPid}"
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsFilterPid}" IsEnabled="{Binding CanUseCurrentFileTools}"
                                               Command="{Binding TsFilterClickCommand}"
                                               CommandParameter="{Binding VideoPath}" />
-                                    <MenuItem Header="{DynamicResource String.FileTools.TsFilterService}"
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsFilterService}" IsEnabled="{Binding CanUseCurrentFileTools}"
                                               Command="{Binding TsServiceFilterClickCommand}"
                                               CommandParameter="{Binding VideoPath}" />
-                                    <MenuItem Header="{DynamicResource String.FileTools.TsEsExtractor}"
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsEsExtractor}" IsEnabled="{Binding CanUseCurrentFileTools}"
                                               Command="{Binding TsEsExtractorClickCommand}"
                                               CommandParameter="{Binding VideoPath}" />
                                     <Separator />
-                                    <MenuItem Header="{DynamicResource String.FileTools.TsRemux}"
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsRemux}" IsEnabled="{Binding CanUseCurrentFileTools}"
                                               Command="{Binding TsRemuxClickCommand}"
                                               CommandParameter="{Binding VideoPath}" />
-                                    <MenuItem Header="{DynamicResource String.FileTools.TsTimelineRepair}"
+                                    <MenuItem Header="{DynamicResource String.FileTools.TsTimelineRepair}" IsEnabled="{Binding CanUseCurrentFileTools}"
                                               Command="{Binding TsTimelineRepairClickCommand}"
                                               CommandParameter="{Binding VideoPath}" />
                                 </MenuFlyout>
@@ -451,80 +524,90 @@
                         <Grid Grid.Row="0" ColumnDefinitions="*, Auto, 240">
                             <!-- 图片预览区域 -->
                             <ClassicBorderDecorator Grid.Column="0" Classes="app-preview-frame" BorderStyle="Etched">
-                                <Grid RowDefinitions="Auto,*">
-                                    <StackPanel Grid.Row="0" Margin="6,4"
-                                                IsVisible="{Binding ShowPreviewTrackSelector}">
-                                        <WrapPanel IsVisible="{Binding HasPreviewPrograms}" Margin="0,0,0,4">
-                                            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,12,0">
-                                                <TextBlock Grid.Column="0" VerticalAlignment="Center"
-                                                           Text="{DynamicResource String.PreviewTrack.Program}" />
-                                                <ComboBox Grid.Column="1" Width="180" MinHeight="28"
-                                                          IsEnabled="{Binding CanSelectPreviewProgram}"
-                                                          ItemsSource="{Binding PreviewPrograms}"
-                                                          ToolTip.Tip="{Binding SelectedPreviewProgram.DisplayText}"
-                                                          SelectedItem="{Binding SelectedPreviewProgram, Mode=TwoWay}">
-                                                    <ComboBox.ItemTemplate>
-                                                        <DataTemplate x:DataType="modelsPreview:PreviewProgramOption">
-                                                            <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
-                                                                       ToolTip.Tip="{Binding DisplayText}" />
-                                                        </DataTemplate>
-                                                    </ComboBox.ItemTemplate>
-                                                </ComboBox>
-                                            </Grid>
-                                            <CheckBox IsVisible="{Binding ShowProgramExportChoice}"
-                                                      IsEnabled="{Binding CanChooseProgramExport}"
-                                                      IsChecked="{Binding ExportCurrentProgramOnly, Mode=TwoWay}"
-                                                      Content="{DynamicResource String.PreviewTrack.ExportCurrentProgramOnly}"
-                                                      ToolTip.Tip="{DynamicResource String.PreviewTrack.ExportTip}" />
-                                        </WrapPanel>
-                                        <Grid ColumnDefinitions="*,140" ColumnSpacing="12">
-                                            <UniformGrid Rows="1">
-                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,12,0">
-                                                    <TextBlock VerticalAlignment="Center"
-                                                               Text="{DynamicResource String.PreviewTrack.Video}" />
-                                                    <ComboBox Grid.Column="1" MinHeight="28" HorizontalAlignment="Stretch"
-                                                              IsEnabled="{Binding CanSelectPreviewVideo}"
-                                                              ItemsSource="{Binding PreviewVideoTracks}"
-                                                              ToolTip.Tip="{Binding SelectedPreviewVideoTrack.DisplayText}"
-                                                              SelectedItem="{Binding SelectedPreviewVideoTrack, Mode=TwoWay}">
-                                                        <ComboBox.ItemTemplate>
-                                                            <DataTemplate x:DataType="modelsPreview:PreviewVideoTrackOption">
-                                                                <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
-                                                                           ToolTip.Tip="{Binding DisplayText}" />
-                                                            </DataTemplate>
-                                                        </ComboBox.ItemTemplate>
-                                                    </ComboBox>
-                                                </Grid>
-                                                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="6"
-                                                      IsVisible="{Binding HasPreviewSubtitles}">
-                                                    <TextBlock VerticalAlignment="Center" Text="{DynamicResource String.SubtitlePreview.Label}"
-                                                               ToolTip.Tip="{DynamicResource String.SubtitlePreview.Tip}" />
-                                                    <ComboBox Grid.Column="1" MinHeight="28" HorizontalAlignment="Stretch"
-                                                              IsEnabled="{Binding CanSelectPreviewSubtitle}"
-                                                              ItemsSource="{Binding PreviewSubtitleTracks}"
-                                                              SelectedItem="{Binding SelectedPreviewSubtitleTrack, Mode=TwoWay}"
-                                                              ToolTip.Tip="{Binding SelectedPreviewSubtitleTrack.DisplayText}">
-                                                        <ComboBox.ItemTemplate>
-                                                            <DataTemplate x:DataType="modelsPreview:PreviewSubtitleTrackOption">
-                                                                <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
-                                                                           ToolTip.Tip="{Binding DisplayText}" />
-                                                            </DataTemplate>
-                                                        </ComboBox.ItemTemplate>
-                                                    </ComboBox>
-                                                    <ProgressBar Grid.Column="1" Height="2" MinHeight="0" VerticalAlignment="Bottom"
-                                                                 BorderThickness="0" Padding="0" ClipToBounds="True"
-                                                                 IsIndeterminate="True" IsVisible="{Binding IsSubtitleLoading}"
-                                                                 ToolTip.Tip="{DynamicResource String.SubtitlePreview.Loading}" />
-                                                </Grid>
-                                            </UniformGrid>
-                                            <TextBlock Grid.Column="1" VerticalAlignment="Center"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       ToolTip.Tip="{Binding SelectedPreviewProgram.AudioDescription}">
+                                <Grid x:Name="PreviewImageHost" RowDefinitions="Auto,*">
+                                    <Grid Grid.Row="0" Margin="6,4" IsVisible="{Binding ShowPreviewTrackSelector}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="{Binding HasPreviewPrograms, Converter={x:Static views:MainWindow.OptionalTrackColumnWidthConverter}}" MaxWidth="220" />
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="2*" />
+                                            <ColumnDefinition Width="{Binding HasPreviewSubtitles, Converter={x:Static views:MainWindow.OptionalTrackColumnWidthConverter}}" />
+                                            <ColumnDefinition Width="*" MaxWidth="200" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,12,0"
+                                              IsVisible="{Binding HasPreviewPrograms}">
+                                            <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                                       Text="{DynamicResource String.PreviewTrack.Program}" />
+                                            <ComboBox Grid.Column="1" MinHeight="28" HorizontalAlignment="Stretch"
+                                                      IsEnabled="{Binding CanSelectPreviewProgram}"
+                                                      ItemsSource="{Binding PreviewPrograms}"
+                                                      ToolTip.Tip="{Binding SelectedPreviewProgram.DisplayText}"
+                                                      SelectedItem="{Binding SelectedPreviewProgram, Mode=TwoWay}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="modelsPreview:PreviewProgramOption">
+                                                        <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                                                                   ToolTip.Tip="{Binding DisplayText}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </Grid>
+                                        <CheckBox Grid.Column="1" Margin="0,0,12,0" IsVisible="{Binding ShowProgramExportChoice}"
+                                                  IsEnabled="{Binding CanChooseProgramExport}"
+                                                  IsChecked="{Binding ExportCurrentProgramOnly, Mode=TwoWay}"
+                                                  Content="{DynamicResource String.PreviewTrack.ExportCurrentProgramOnly}"
+                                                  ToolTip.Tip="{DynamicResource String.PreviewTrack.ExportTip}" />
+                                        <Grid Grid.Column="2" ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,12,0">
+                                            <TextBlock VerticalAlignment="Center"
+                                                       Text="{DynamicResource String.PreviewTrack.Video}" />
+                                            <ComboBox Grid.Column="1" MinHeight="28" HorizontalAlignment="Stretch"
+                                                      IsEnabled="{Binding CanSelectPreviewVideo}"
+                                                      ItemsSource="{Binding PreviewVideoTracks}"
+                                                      ToolTip.Tip="{Binding SelectedPreviewVideoTrack.DisplayText}"
+                                                      SelectedItem="{Binding SelectedPreviewVideoTrack, Mode=TwoWay}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="modelsPreview:PreviewVideoTrackOption">
+                                                        <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                                                                   ToolTip.Tip="{Binding DisplayText}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </Grid>
+                                        <Grid Grid.Column="3" ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,12,0"
+                                              IsVisible="{Binding HasPreviewSubtitles}">
+                                            <TextBlock VerticalAlignment="Center" Text="{DynamicResource String.SubtitlePreview.Label}"
+                                                       ToolTip.Tip="{DynamicResource String.SubtitlePreview.Tip}" />
+                                            <ComboBox Grid.Column="1" MinHeight="28" HorizontalAlignment="Stretch"
+                                                      IsEnabled="{Binding CanSelectPreviewSubtitle}"
+                                                      ItemsSource="{Binding PreviewSubtitleTracks}"
+                                                      SelectedItem="{Binding SelectedPreviewSubtitleTrack, Mode=TwoWay}"
+                                                      ToolTip.Tip="{Binding SelectedPreviewSubtitleTrack.DisplayText}">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate x:DataType="modelsPreview:PreviewSubtitleTrackOption">
+                                                        <TextBlock Text="{Binding DisplayText}" TextTrimming="CharacterEllipsis"
+                                                                   ToolTip.Tip="{Binding DisplayText}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                            <ProgressBar Grid.Column="1" Height="2" MinHeight="0" VerticalAlignment="Bottom"
+                                                         BorderThickness="0" Padding="0" ClipToBounds="True"
+                                                         IsIndeterminate="True" IsVisible="{Binding IsSubtitleLoading}"
+                                                         ToolTip.Tip="{DynamicResource String.SubtitlePreview.Loading}" />
+                                        </Grid>
+                                        <Grid Grid.Column="4">
+                                            <TextBlock VerticalAlignment="Center" IsVisible="{Binding !HasPreviewAudioTracks}"
+                                                       TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedPreviewProgram.AudioDescription}">
                                                 <Run Text="{DynamicResource String.PreviewTrack.Audio}" />
                                                 <Run Text="{Binding SelectedPreviewProgram.AudioDescription}" />
                                             </TextBlock>
+                                            <ComboBox Name="PreviewAudioPicker" IsVisible="{Binding HasPreviewAudioTracks}"
+                                                      MinHeight="28" ItemsSource="{Binding PreviewAudioTracks, Converter={x:Static views:MainWindow.AudioTrackItemsConverter}}"
+                                                      IsEnabled="{Binding CanSelectPreviewAudio}"
+                                                      SelectedValue="{Binding SelectedPreviewAudioTrack, Mode=TwoWay}"
+                                                      SelectedValueBinding="{CompiledBinding Tag, DataType={x:Type ComboBoxItem}}"
+                                                      PlaceholderText="{DynamicResource String.Playback.AudioTrackUnsupported}"
+                                                      ToolTip.Tip="{Binding SelectedPreviewAudioTrack.DisplayText}">
+                                            </ComboBox>
                                         </Grid>
-                                    </StackPanel>
+                                    </Grid>
                                     <controls:ImageViewer Grid.Row="1" Name="ImageViewer"
                                                           IsEnabled="{Binding IsVideoInitialized}"
                                                           MaxZoomFactor="{Binding MaxZoomFactor}"
@@ -538,6 +621,16 @@
                                                           SubtitleOverlay="{Binding SubtitleOverlay}"
                                                           Zoom="{Binding ZoomFactor, Mode=TwoWay}">
                                     </controls:ImageViewer>
+                                    <Border Grid.Row="1" Name="PlaybackLoadingPanel" IsVisible="{Binding ShowPlaybackLoading}"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16"
+                                            Background="#DD202124" CornerRadius="8" Padding="18,12" IsHitTestVisible="False">
+                                        <StackPanel Spacing="10">
+                                            <TextBlock Text="{DynamicResource String.Playback.Starting}" Foreground="White"
+                                                       HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="260" />
+                                            <ProgressBar IsIndeterminate="True" Width="180" Height="3" MinHeight="0"
+                                                         BorderThickness="0" Background="#30FFFFFF" Foreground="White" />
+                                        </StackPanel>
+                                    </Border>
                                     <Border Grid.Row="1" IsVisible="{Binding IsToolsOnly}"
                                             Background="{DynamicResource {x:Static commonControls:SystemColors.ControlBrushKey}}"
                                             Padding="24">
@@ -896,9 +989,15 @@
                                                       ZoomTip="{DynamicResource String.Timeline.ZoomTip}"
                                                       ScrollTip="{DynamicResource String.Timeline.ScrollTip}" />
                         </StackPanel>
-                        <!-- 导航等控制键的一行 -->
-                        <Grid Grid.Row="2" ColumnDefinitions="*, Auto, *" Margin="0,2,0,0"
+                        <!-- 时间码与摘要共用上行，剪辑、播放、音量和保存共用操作行。 -->
+                        <Grid Grid.Row="2" Name="PlaybackControls"
+                              RowDefinitions="26,Auto" ColumnSpacing="10" RowSpacing="4" Margin="4,2,4,4"
                               IsEnabled="{Binding IsVideoInitialized}">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" MinWidth="132" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" MinWidth="132" />
+                            </Grid.ColumnDefinitions>
                             <Grid.Styles>
                                 <!-- 底部操作提示固定在按钮上方，避免最大化时被屏幕边界挤回鼠标位置。 -->
                                 <Style Selector="Button">
@@ -916,8 +1015,12 @@
                                     <Setter Property="FontWeight" Value="Bold" />
                                     <Setter Property="Padding" Value="4,6" />
                                 </Style>
+                                <Style Selector="Button.LeftBtn, Button.CenterBtn">
+                                    <Setter Property="Height" Value="32" />
+                                    <Setter Property="MinHeight" Value="0" />
+                                </Style>
                             </Grid.Styles>
-                            <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4" Margin="4, 4">
+                            <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Spacing="4" Margin="0" VerticalAlignment="Center">
                                 <Button Command="{Binding MarkClipStartCommand}"
                                         Classes="LeftBtn"
                                         ToolTip.Tip="{DynamicResource String.Navigate.MarkStart}">
@@ -939,85 +1042,91 @@
                                     -
                                 </Button>
                             </StackPanel>
-                            <StackPanel Grid.Column="1" HorizontalAlignment="Center" Orientation="Horizontal"
-                                        Spacing="4"
-                                        Margin="4, 4">
-                                <!-- LEFT -->
-                                <Button Command="{Binding Prev20GopClickCommand}"
-                                        Classes="CenterBtn"
-                                        ToolTip.Tip="{DynamicResource String.Navigate.Previous20}">
-                                    &lt;&lt;&lt;
-                                </Button>
-                                <Button Command="{Binding Prev10GopClickCommand}"
-                                        Classes="CenterBtn"
-                                        ToolTip.Tip="{DynamicResource String.Navigate.Previous10}">
-                                    &lt;&lt;
-                                </Button>
-                                <Button Command="{Binding PrevGopClickCommand}"
-                                        Classes="CenterBtn"
-                                        ToolTip.Tip="{DynamicResource String.Navigate.Previous}">
-                                    &lt;
-                                </Button>
-                                <!-- CENTER -->
-                                <Button
+                            <Button Grid.Row="0" Grid.Column="0" Name="VideoFullScreenButton"
+                                    Command="{Binding #CutterMainWindow.ToggleVideoFullScreenCommand}"
+                                    ToolTip.Tip="{DynamicResource String.Playback.FullScreen}" Width="28" Height="26"
+                                    MinHeight="0" MinWidth="0" Padding="5" HorizontalAlignment="Left">
+                                <Path Stroke="{Binding $parent[Button].Foreground}" StrokeThickness="1.5" Stretch="Uniform"
+                                      Data="M 5,0 H 0 V 5 M 9,0 H 14 V 5 M 0,9 V 14 H 5 M 9,14 H 14 V 9" />
+                            </Button>
+                            <Button Grid.Row="0" Grid.Column="1" Name="PlaybackTimeButton" Width="150" Height="26"
                                     Content="{Binding CurrentTime, Converter={StaticResource SecondsConverter}}"
-                                    Command="{Binding JumpToClickCommand}"
+                                    Command="{Binding JumpToClickCommand}" Classes="hyperlink"
                                     ToolTip.Tip="{DynamicResource String.Navigate.JumpTo}"
-                                    VerticalAlignment="Center"
-                                    FontWeight="Bold"
-                                    FontSize="22"
-                                    Margin="4,0"
-                                    Width="150"
-                                    Classes="hyperlink" />
-                                <!-- RIGHT -->
-                                <Button Command="{Binding NextGopClickCommand}"
-                                        Classes="CenterBtn"
-                                        ToolTip.Tip="{DynamicResource String.Navigate.Next}">
-                                    &gt;
+                                    FontSize="19" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <StackPanel Grid.Row="1" Grid.Column="1" Name="PlaybackNavigationControls" Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                <Button Command="{Binding Prev20GopClickCommand}" Classes="CenterBtn"
+                                        ToolTip.Tip="{DynamicResource String.Navigate.Previous20}" Content="&lt;&lt;&lt;" />
+                                <Button Command="{Binding Prev10GopClickCommand}" Classes="CenterBtn"
+                                        ToolTip.Tip="{DynamicResource String.Navigate.Previous10}" Content="&lt;&lt;" />
+                                <Button Command="{Binding PrevGopClickCommand}" Classes="CenterBtn"
+                                        ToolTip.Tip="{DynamicResource String.Navigate.Previous}" Content="&lt;" />
+                                <Button Name="PlayPauseButton" Command="{Binding TogglePlaybackCommand}"
+                                        Classes="CenterBtn" Width="38" Margin="4,0"
+                                        ToolTip.Tip="{Binding PlaybackButtonToolTip}">
+                                    <Grid Width="14" Height="14">
+                                        <Grid IsVisible="{Binding !IsPlaybackStarting}">
+                                            <Path Data="M 2,0 L 14,7 L 2,14 Z" Stretch="Uniform"
+                                                  Fill="{Binding $parent[Button].Foreground}" IsVisible="{Binding !IsPlaybackActive}" />
+                                            <Path Data="M 1,0 L 5,0 L 5,14 L 1,14 Z M 9,0 L 13,0 L 13,14 L 9,14 Z"
+                                                  Stretch="Uniform" Fill="{Binding $parent[Button].Foreground}"
+                                                  IsVisible="{Binding IsPlaybackActive}" />
+                                        </Grid>
+                                        <Border Width="9" Height="9" Background="{Binding $parent[Button].Foreground}"
+                                                IsVisible="{Binding IsPlaybackStarting}" />
+                                    </Grid>
+                                    <Button.ContextMenu>
+                                        <ContextMenu>
+                                            <MenuItem Header="{DynamicResource String.Playback.PlayClip}"
+                                                      Command="{Binding PlaySelectedClipCommand}" />
+                                        </ContextMenu>
+                                    </Button.ContextMenu>
                                 </Button>
-                                <Button Command="{Binding Next10GopClickCommand}"
-                                        Classes="CenterBtn"
-                                        ToolTip.Tip="{DynamicResource String.Navigate.Next10}">
-                                    &gt;&gt;
-                                </Button>
-                                <Button Command="{Binding Next20GopClickCommand}"
-                                        Classes="CenterBtn"
-                                        ToolTip.Tip="{DynamicResource String.Navigate.Next20}">
-                                    &gt;&gt;&gt;
-                                </Button>
+                                <Button Command="{Binding NextGopClickCommand}" Classes="CenterBtn"
+                                        ToolTip.Tip="{DynamicResource String.Navigate.Next}" Content="&gt;" />
+                                <Button Command="{Binding Next10GopClickCommand}" Classes="CenterBtn"
+                                        ToolTip.Tip="{DynamicResource String.Navigate.Next10}" Content="&gt;&gt;" />
+                                <Button Command="{Binding Next20GopClickCommand}" Classes="CenterBtn"
+                                        ToolTip.Tip="{DynamicResource String.Navigate.Next20}" Content="&gt;&gt;&gt;" />
                             </StackPanel>
-                            <Grid Grid.Column="2" ColumnDefinitions="*,Auto"
-                                  ColumnSpacing="4" Margin="4, 4">
-                                <Grid.Styles>
-                                    <Style Selector="Button:disabled Image">
-                                        <Setter Property="Opacity" Value="0.3" />
-                                    </Style>
-                                </Grid.Styles>
-                                <!-- 摘要使用剩余空间，窗口变窄时截断文本，不挤出输出按钮。 -->
-                                <Grid MaxWidth="180"
-                                      Height="34"
-                                      RowDefinitions="16,18"
-                                      ClipToBounds="True"
-                                      VerticalAlignment="Center"
-                                      HorizontalAlignment="Right">
-                                    <TextBlock Grid.Row="0"
-                                               Text="{Binding SelectedClipsSummaryStr}"
-                                               HorizontalAlignment="Right"
-                                               VerticalAlignment="Center"
-                                               TextAlignment="Right"
-                                               TextTrimming="CharacterEllipsis"
-                                               FontSize="11"
-                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                                    <TextBlock Grid.Row="1"
-                                               Text="{Binding SelectedClipEstimatedSizeStr, Mode=OneWay}"
-                                               HorizontalAlignment="Right"
-                                               VerticalAlignment="Center"
-                                               TextTrimming="CharacterEllipsis"
-                                               TextAlignment="Right" />
+                            <TextBlock Grid.Row="0" Grid.Column="2" HorizontalAlignment="Left" Text="!" Width="28" TextAlignment="Center" VerticalAlignment="Center"
+                                       IsVisible="{Binding HasPlaybackAudioProblem}"
+                                       ToolTip.Tip="{Binding PlaybackAudioStatusText}" />
+                            <!-- 摘要放在保存按钮上方；窄窗口截断文字，不挤占播放操作。 -->
+                            <Grid Grid.Row="0" Grid.Column="2" ColumnDefinitions="*,Auto" ColumnSpacing="6"
+                                  MaxWidth="240" Margin="34,0,0,0" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                <TextBlock Text="{Binding SelectedClipsSummaryStr}" FontSize="11"
+                                           TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                                           ToolTip.Tip="{Binding SelectedClipsSummaryStr}"
+                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                <TextBlock Grid.Column="1" Text="{Binding SelectedClipEstimatedSizeStr, Mode=OneWay}"
+                                           FontSize="11" VerticalAlignment="Center" />
+                            </Grid>
+                            <Grid Grid.Row="1" Grid.Column="2" ColumnDefinitions="*,Auto" ColumnSpacing="10"
+                                  VerticalAlignment="Center">
+                                <Grid Name="PlaybackAudioControls" ColumnDefinitions="28,*"
+                                      HorizontalAlignment="Stretch" VerticalAlignment="Center" ColumnSpacing="6">
+                                    <Button Command="{Binding TogglePreviewMuteCommand}" Name="PreviewMuteButton"
+                                            Padding="3" Width="28" Height="32" MinHeight="0" MinWidth="0"
+                                            ToolTip.Tip="{Binding MuteButtonToolTip}">
+                                        <Grid Width="15" Height="14">
+                                            <Path Data="M 0,5 L 4,5 L 9,1 L 9,13 L 4,9 L 0,9 Z"
+                                                  Stretch="Uniform" Fill="{Binding $parent[Button].Foreground}" />
+                                            <Path Data="M 0,0 L 14,14 M 0,14 L 14,0" StrokeThickness="1.5"
+                                                  Stroke="{Binding $parent[Button].Foreground}" IsVisible="{Binding PreviewMuted}" />
+                                        </Grid>
+                                    </Button>
+                                    <Grid Grid.Column="1" Name="PreviewVolumeSlot" SizeChanged="PreviewVolumeSlot_OnSizeChanged">
+                                        <Slider Name="PreviewVolumeSlider" MinWidth="24" MaxWidth="72"
+                                                Width="72" Minimum="0" Maximum="1"
+                                                SmallChange="0.05" Value="{Binding PreviewVolume, Mode=TwoWay}"
+                                                HorizontalAlignment="Left" VerticalAlignment="Center"
+                                                ToolTip.Tip="{DynamicResource String.Playback.Volume}" />
+                                    </Grid>
                                 </Grid>
-                                <!-- 单选保存、多选合并；保持精简文案，沿用原按钮的自适应宽度。 -->
                                 <Button Grid.Column="1" Command="{Binding ClipOutputCommand}"
-                                        Classes="accent"
+                                        Classes="accent" Height="32" MinHeight="0"
+                                        HorizontalAlignment="Right" VerticalAlignment="Center"
                                         VerticalContentAlignment="Center"
                                         ToolTip.Tip="{Binding ClipOutputToolTip}">
                                     <StackPanel Orientation="Horizontal">
@@ -1035,5 +1144,77 @@
               ZIndex="99"
               IsVisible="{Binding IsDecoding}"
               Background="Transparent" />
+        </Grid>
+        <Grid Name="FullScreenSurface" Grid.RowSpan="2" ZIndex="100" Background="Black" IsVisible="False" Focusable="True">
+            <Border Name="FullScreenVideoHost" />
+            <Border Name="FullScreenPlaybackLoadingPanel" IsVisible="{Binding ShowPlaybackLoading}"
+                    HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16"
+                    Background="#DD202124" CornerRadius="8" Padding="18,12" IsHitTestVisible="False">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="{DynamicResource String.Playback.Starting}" Foreground="White"
+                               HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="260" />
+                    <ProgressBar IsIndeterminate="True" Width="180" Height="3" MinHeight="0"
+                                 BorderThickness="0" Background="#30FFFFFF" Foreground="White" />
+                </StackPanel>
+            </Border>
+            <Border Name="FullScreenControls" VerticalAlignment="Bottom" Padding="24,40,24,20">
+                <Border.Background>
+                    <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%">
+                        <GradientStop Color="#00000000" Offset="0" />
+                        <GradientStop Color="#E6101114" Offset="1" />
+                    </LinearGradientBrush>
+                </Border.Background>
+                <Border.Transitions>
+                    <Transitions><DoubleTransition Property="Opacity" Duration="0:0:0.15" /></Transitions>
+                </Border.Transitions>
+                <Grid RowDefinitions="Auto,Auto" RowSpacing="8" MaxWidth="1200">
+                    <Slider Name="FullScreenSeekSlider" Focusable="True" Minimum="0" Maximum="{Binding DurationMax}"
+                            Value="{Binding CurrentTime, Mode=OneWay}" SmallChange="5" LargeChange="30"
+                            HorizontalAlignment="Stretch" Foreground="White" />
+                    <Grid Grid.Row="1" ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="16">
+                        <Button Name="FullScreenPlayPauseButton" Classes="fullscreen-action"
+                                Command="{Binding TogglePlaybackCommand}" ToolTip.Tip="{Binding PlaybackButtonToolTip}">
+                            <Grid Width="16" Height="16">
+                                <Grid IsVisible="{Binding !IsPlaybackStarting}">
+                                    <Path Data="M 2,0 L 16,8 L 2,16 Z" Fill="White" IsVisible="{Binding !IsPlaybackActive}" />
+                                    <Path Data="M 2,0 H 6 V 16 H 2 Z M 10,0 H 14 V 16 H 10 Z"
+                                          Fill="White" IsVisible="{Binding IsPlaybackActive}" />
+                                </Grid>
+                                <Border Width="10" Height="10" Background="White" IsVisible="{Binding IsPlaybackStarting}" />
+                            </Grid>
+                        </Button>
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <TextBlock Foreground="White" FontFamily="Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, $Default"
+                                       FontFeatures="tnum" Text="{Binding CurrentTime, Converter={StaticResource SecondsConverter}}" />
+                            <TextBlock Foreground="#BFC3CA" Text="/" />
+                            <TextBlock Foreground="#BFC3CA" FontFamily="Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, $Default"
+                                       FontFeatures="tnum" Text="{Binding DurationMax, Converter={StaticResource SecondsConverter}}" />
+                            <TextBlock Foreground="#FFD287" Text="!" IsVisible="{Binding HasPlaybackAudioProblem}"
+                                       ToolTip.Tip="{Binding PlaybackAudioStatusText}" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Button Name="FullScreenMuteButton" Classes="fullscreen-action" Command="{Binding TogglePreviewMuteCommand}"
+                                    ToolTip.Tip="{Binding MuteButtonToolTip}">
+                                <Grid Width="16" Height="16">
+                                    <Path Data="M 0,5 H 4 L 9,1 V 15 L 4,11 H 0 Z" Fill="White" />
+                                    <Path Data="M 1,1 L 15,15 M 1,15 L 15,1" Stroke="White" StrokeThickness="1.5"
+                                          IsVisible="{Binding PreviewMuted}" />
+                                </Grid>
+                            </Button>
+                            <Slider Name="FullScreenVolumeSlider" Focusable="True" Width="88" Minimum="0" Maximum="1" SmallChange="0.05"
+                                    Value="{Binding PreviewVolume, Mode=TwoWay}" VerticalAlignment="Center"
+                                    ToolTip.Tip="{DynamicResource String.Playback.Volume}" />
+                        </StackPanel>
+                        <Button Grid.Column="3" Classes="fullscreen-action" Name="ExitVideoFullScreenButton"
+                                Command="{Binding #CutterMainWindow.ToggleVideoFullScreenCommand}"
+                                ToolTip.Tip="{DynamicResource String.Window.ExitFullScreen}">
+                            <Path Width="16" Height="16" Stroke="White" StrokeThickness="1.5" Stretch="Uniform"
+                                  Data="M 0,5 H 5 V 0 M 9,0 V 5 H 14 M 0,9 H 5 V 14 M 9,14 V 9 H 14" />
+                        </Button>
+                    </Grid>
+                </Grid>
+            </Border>
+            <Border IsVisible="{Binding IsDecoding}" Background="Transparent" />
+        </Grid>
     </Grid>
 </Window>

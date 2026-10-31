@@ -14,6 +14,7 @@ English | [简体中文](README_CN.md)
 | `Views` | Window XAML and event handlers |
 | `Utils` | Reusable file, media, timestamp, and reporting helpers |
 | `FFmpeg` | Native API declarations and codec wrappers |
+| `Player` | Continuous playback sessions, clock, audio decode/resample/output, and video scheduling |
 | `Rendering` | Video frame presentation and thumbnail sheet composition |
 | `Controls`, `Converters` | Shared controls and binding converters |
 | `Themes`, `Lang`, `Assets` | Themes, translations, and static resources |
@@ -30,11 +31,14 @@ Larger layer directories are organized by feature:
 | `Editing` | Clips, projects, export queue, cutting, and merging |
 | `Preview` | Video and subtitle preview, keyframe overview, thumbnail sheets, screenshots, and media information |
 | `Media` | Media muxing and track metadata editing |
+| `Player` | Playback performance test windows and their state |
 | `Discs` | Disc title selection, DVD/Blu-ray metadata, and ISO/folder input workflows |
 | `FrameSearch` | Frame searching, matching, and template management |
 | `TransportStream/Analysis` | TS inspection, program tables, packet viewing, and reports |
 | `TransportStream/Processing` | Binary TS merging, ES extraction, stream filtering, and editing |
 | `TransportStream/Repair` | TS timeline repair, repair from multiple sources, and result inspection |
+
+`Player` owns the continuous playback engine: `PlaybackSession` coordinates a per-session input context and decoders isolated from keyframe navigation, `PlaybackClock` follows the audio device's actual playback position (falling back to a monotonic clock), and `Audio/` contains the swresample resampler, the PCM pipeline, and the miniaudio-backed device output compiled from `native/audio`. Pausing retains the session and bounded queues; seeking stops the previous tasks, clears their queues and decoder state, and reuses the input, codecs, audio device and presenter with a new generation. `Diagnostics/` reuses these paths for the playback performance test. The main-window playback partials coordinate UI integration; export and keyframe navigation keep their own paths.
 
 `Utils/Files` contains file path, natural sorting, and drag-and-drop helpers. `Utils/Media` handles runtime loading and general media reading. `Utils/TransportStream/Packets` contains lower-level TS packet and timestamp helpers. Collections and basic utilities shared across features remain in the `Utils` root.
 

@@ -292,6 +292,15 @@ public static unsafe partial class NativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial SwsContext* sws_getCachedContext(SwsContext* @context, int @srcW, int @srcH, AVPixelFormat @srcFormat, int @dstW, int @dstH, AVPixelFormat @dstFormat, int @flags, SwsFilter* @srcFilter, SwsFilter* @dstFilter, double* @param);
 
+    [LibraryImport("tscutter.swscale", EntryPoint = "sws_getCoefficients")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int* sws_getCoefficients(int colorspace);
+
+    [LibraryImport("tscutter.swscale", EntryPoint = "sws_setColorspaceDetails")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int sws_setColorspaceDetails(SwsContext* context, int* inverseTable, int sourceRange,
+        int* table, int destinationRange, int brightness, int contrast, int saturation);
+
     [LibraryImport("tscutter.swscale", EntryPoint = "sws_scale", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int sws_scale(SwsContext* @c, byte** @srcSlice, int* @srcStride, int @srcSliceY, int @srcSliceH, byte** @dst, int* @dstStride);

@@ -398,6 +398,13 @@ public sealed class PreviewOptionsTests
             try
             {
                 window.Show();
+                window.UpdateLayout();
+                var preview = window.FindControl<Control>("ImageViewer")!;
+                Assert.NotNull(vm.PlaybackTargetSizeProvider);
+                Assert.Equal(new PixelSize(
+                    Math.Max(1, (int)Math.Ceiling(preview.Bounds.Width * window.RenderScaling)),
+                    Math.Max(1, (int)Math.Ceiling(preview.Bounds.Height * window.RenderScaling))),
+                    vm.PlaybackTargetSizeProvider());
                 var mapping = window.FindControl<Button>("ToneMappingToggle")!;
                 var mappingItem = Assert.IsAssignableFrom<Control>(mapping.Parent);
                 Assert.False(mappingItem.IsVisible);
@@ -564,6 +571,8 @@ public sealed class PreviewOptionsTests
                     typeof(MainWindowViewModel).GetField("_discInput", flags)!.SetValue(vm, input);
                     var apply = typeof(MainWindowViewModel).GetMethod("ApplyDecodeResult", flags)!;
                     apply.Invoke(vm, [VideoInstance.DecodeAtTimeSync(video, TimeSpan.FromSeconds(3))]);
+                    Assert.True(vm.CanTogglePlayback);
+                    Assert.True(vm.TogglePlaybackCommand.CanExecute(null));
                     Assert.True(vm.AddClipCommand.CanExecute(null));
                     vm.AddClipCommand.Execute(null);
                     var clip = Assert.Single(vm.Clips);

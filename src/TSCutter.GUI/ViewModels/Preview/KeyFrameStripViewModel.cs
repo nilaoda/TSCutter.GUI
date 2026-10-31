@@ -48,6 +48,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
     }
     internal Task IdleTask { get; private set; } = Task.CompletedTask;
     internal int CachedCount => cache.Count;
+    internal bool IsSuspended { get; private set; }
 
     internal void SetSource(KeyFrameStripSource? value)
     {
@@ -58,6 +59,8 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         sourceGeneration++;
         targetTime = null;
         Items = [];
+        if (IsSuspended && source is not null)
+            PublishEmpty();
         firstPts = lastPts = null;
         previousFrames.Clear();
         nextFrames.Clear();
@@ -74,6 +77,11 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         if (VisibleCount == count)
             return;
         VisibleCount = count;
+        if (IsSuspended)
+        {
+            PublishEmpty();
+            return;
+        }
         if (source is null || targetTime is not { } time)
             return;
         var current = FindCachedTarget(time, requested?.Pts);
@@ -82,6 +90,19 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         // 缩放时先复用已有图片，停住后再补齐，避免每跨过一个槽位就重启解码。
         requested = null;
         RequestAt(time);
+    }
+
+    // 播放时保留缓存，但只显示占位并停止补图；恢复位置由主窗口在暂停时指定。
+    internal void SetSuspended(bool value)
+    {
+        if (IsSuspended == value)
+            return;
+        IsSuspended = value;
+        if (value)
+        {
+            Cancel();
+            PublishEmpty();
+        }
     }
 
     public void Cancel()
@@ -128,7 +149,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
 
     public void RequestAt(double time, bool immediate = false, long? currentPts = null)
     {
-        if (source is null || !double.IsFinite(time))
+        if (IsSuspended || source is null || !double.IsFinite(time))
             return;
         time = Math.Max(0, time);
         targetTime = time;

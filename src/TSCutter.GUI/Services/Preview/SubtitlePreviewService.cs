@@ -47,6 +47,17 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
     private long cacheBytes;
     private int eventCount;
     private bool disposed;
+    private FormatContext? readInput;
+    private CodecContext? readDecoder;
+    private MediaReadDeadline? readDeadline;
+    private MediaStream readStream, readClock, readReference;
+    private bool readBitmap, readPgs, pgsReady, readEof;
+    private readonly List<(byte[] Text, long Start, long Duration)> textCues = [];
+    private int provisionalTextCount;
+    private SubtitleOverlay? cachedOverlay;
+    private BitmapCue? cachedBitmapCue;
+    private PixelSize cachedSize;
+    private bool overlayCacheValid;
     private readonly List<(long Start, byte[] Text)> pendingText = [];
 
     private sealed record BitmapPart(int X, int Y, int Width, int Height, byte[] Data);
@@ -102,14 +113,15 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
     {
         subtitleSegment = null;
         var deadline = new MediaReadDeadline(ReadTimeout, cancellationToken);
-        using var input = OpenInput();
+        readDeadline = deadline;
+        var input = readInput = OpenInput();
         FormatContext OpenInput()
         {
             try
             {
                 return disc is { } title
-                    ? InterruptibleInputFormatContext.Open(title, () => deadline.ShouldInterrupt)
-                    : InterruptibleInputFormatContext.Open(path, () => deadline.ShouldInterrupt, tsSyncOffset);
+                    ? InterruptibleInputFormatContext.Open(title, () => readDeadline?.ShouldInterrupt == true)
+                    : InterruptibleInputFormatContext.Open(path, () => readDeadline?.ShouldInterrupt == true, tsSyncOffset);
             }
             catch { deadline.ThrowIfInterrupted(); throw; }
         }
@@ -129,7 +141,7 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
             if (codec == null)
                 throw new NotSupportedException(string.Format(LocalizationManager.Instance.String_SubtitlePreview_Unsupported,
                     stream.Codecpar.CodecName));
-            using var decoder = new CodecContext(Codec.FindDecoderById(stream.Codecpar.CodecId));
+            var decoder = readDecoder = new CodecContext(Codec.FindDecoderById(stream.Codecpar.CodecId));
             decoder.FillParameters(stream.Codecpar);
             decoder.PacketTimeBase = stream.TimeBase;
             FFmpegException.Check(FF.avcodec_open2(decoder, null, null));
@@ -193,15 +205,43 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
             if (startSeconds > 0)
                 input.SeekFrame((long)Math.Floor((originSeconds + startSeconds) / reference.TimeBase.ToDouble()), reference.Index);
             ReadThroughSeconds = startSeconds;
-            var isPgs = stream.Codecpar.CodecId == AVCodecID.AV_CODEC_ID_HDMV_PGS_SUBTITLE;
-            var pgsReady = startSeconds == 0;
+            readStream = stream;
+            readClock = clock;
+            readReference = reference;
+            readBitmap = isBitmap;
+            readPgs = stream.Codecpar.CodecId == AVCodecID.AV_CODEC_ID_HDMV_PGS_SUBTITLE;
+            pgsReady = startSeconds == 0;
+            ReadMore(endSeconds, cancellationToken);
+        }
+        catch
+        {
+            deadline.ThrowIfInterrupted();
+            throw;
+        }
+    }
+
+    private void ReadMore(double endSeconds, CancellationToken cancellationToken)
+    {
+        var input = readInput!;
+        var decoder = readDecoder!;
+        var stream = readStream;
+        var clock = readClock;
+        var reference = readReference;
+        var isBitmap = readBitmap;
+        var isPgs = readPgs;
+        if (!readEof)
+        {
             using var packet = new Packet();
             while (true)
             {
-                deadline = new MediaReadDeadline(ReadTimeout, cancellationToken);
+                readDeadline = new MediaReadDeadline(ReadTimeout, cancellationToken);
                 var result = input.ReadPacket(packet);
-                deadline.ThrowIfInterrupted();
-                if (result == FF.AVERROR_EOF) break;
+                readDeadline.ThrowIfInterrupted();
+                if (result == FF.AVERROR_EOF)
+                {
+                    readEof = true;
+                    break;
+                }
                 FFmpegException.Check(result);
                 try
                 {
@@ -255,19 +295,17 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
                 }
                 finally { packet.Unref(); }
             }
+        }
+        if (readEof)
+        {
             AVPacket empty = default;
             empty.pts = empty.dts = FF.AV_NOPTS_VALUE;
             Decode(decoder, &empty, stream.TimeBase, isBitmap, cancellationToken);
-            FlushPending((long)Math.Ceiling((originSeconds + endSeconds + 1) * 1000));
-            bitmapCues.Sort((a, b) => a.Start.CompareTo(b.Start));
-            for (var i = 0; i + 1 < bitmapCues.Count; i++)
-                bitmapCues[i] = bitmapCues[i] with { End = Math.Min(bitmapCues[i].End, bitmapCues[i + 1].Start) };
         }
-        catch
-        {
-            deadline.ThrowIfInterrupted();
-            throw;
-        }
+        FlushPending((long)Math.Ceiling((originSeconds + endSeconds + 1) * 1000), keepPending: !readEof);
+        bitmapCues.Sort((a, b) => a.Start.CompareTo(b.Start));
+        for (var index = 0; index + 1 < bitmapCues.Count; index++)
+            bitmapCues[index] = bitmapCues[index] with { End = Math.Min(bitmapCues[index].End, bitmapCues[index + 1].Start) };
     }
 
     internal static string GetSystemSubtitleFontFamily()
@@ -423,16 +461,53 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
         }
     }
 
-    private void FlushPending(long end)
+    private void FlushPending(long end, bool keepPending = false)
     {
+        if (provisionalTextCount > 0)
+        {
+            textCues.RemoveRange(textCues.Count - provisionalTextCount, provisionalTextCount);
+            provisionalTextCount = 0;
+            RebuildTextEvents();
+        }
         foreach (var item in pendingText)
-            if (end > item.Start) ProcessText(item.Text, item.Start, end - item.Start);
-        pendingText.Clear();
+        {
+            if (end <= item.Start)
+                continue;
+            ProcessText(item.Text, item.Start, end - item.Start);
+            if (keepPending)
+                provisionalTextCount++;
+        }
+        if (!keepPending)
+            pendingText.Clear();
     }
 
     private void ProcessText(byte[] bytes, long start, long duration)
     {
-        fixed (byte* data = bytes) FF.ass_process_chunk(track, data, bytes.Length, start, duration);
+        textCues.Add((bytes, start, duration));
+        fixed (byte* data = bytes)
+            FF.ass_process_chunk(track, data, bytes.Length, start, duration);
+    }
+
+    private void RebuildTextEvents()
+    {
+        if (track == 0)
+            return;
+        overlayCacheValid = false;
+        FF.ass_flush_events(track);
+        foreach (var cue in textCues)
+            fixed (byte* data = cue.Text)
+                FF.ass_process_chunk(track, data, cue.Text.Length, cue.Start, cue.Duration);
+    }
+
+    private void PrunePlaybackCache(double displayedSeconds)
+    {
+        var cutoff = (long)((originSeconds + Math.Max(0, displayedSeconds - SubtitleReadDefaults.LookbackSeconds)) * 1000);
+        bitmapCues.RemoveAll(cue => cue.End <= cutoff);
+        if (textCues.RemoveAll(cue => cue.Start + cue.Duration <= cutoff) > 0)
+            RebuildTextEvents();
+        cacheBytes = bitmapCues.Sum(cue => cue.Parts.Sum(part => (long)part.Data.Length))
+            + textCues.Sum(cue => (long)cue.Text.Length) + pendingText.Sum(cue => (long)cue.Text.Length);
+        eventCount = bitmapCues.Count + textCues.Count + pendingText.Count;
     }
 
     private void AddBitmap(AVSubtitle subtitle, long start, long end, CodecContext decoder, CancellationToken token)
@@ -476,7 +551,8 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
         bitmapCues.Add(new(start, end, canvas, parts));
     }
 
-    public SubtitleOverlay? Render(double displayedSeconds, PixelSize displaySize, CancellationToken token = default)
+    public SubtitleOverlay? Render(double displayedSeconds, PixelSize displaySize, CancellationToken token = default,
+        bool continuousPlayback = false)
     {
         lock (sync)
         {
@@ -485,7 +561,19 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
             if (!double.IsFinite(displayedSeconds) || displayedSeconds < 0 || displayedSeconds > durationSeconds ||
                 displaySize.Width <= 0 || displaySize.Height <= 0)
                 return null;
-            if (!(displayedSeconds >= loadedStart && displayedSeconds <= loadedEnd))
+            if (continuousPlayback && readInput is not null && displayedSeconds >= loadedStart && displayedSeconds <= loadedEnd + 1)
+            {
+                if (displayedSeconds + 1 >= loadedEnd)
+                {
+                    var end = Math.Min(durationSeconds, displayedSeconds + LookaheadSeconds);
+                    try { ReadMore(end, token); }
+                    catch { ClearCache(); throw; }
+                    loadedEnd = end;
+                    PrunePlaybackCache(displayedSeconds);
+                    loadedStart = Math.Max(loadedStart, displayedSeconds - SubtitleReadDefaults.LookbackSeconds);
+                }
+            }
+            else if (!(displayedSeconds >= loadedStart && displayedSeconds <= loadedEnd))
                 LoadWindow(displayedSeconds, token);
             var time = (long)Math.Round((displayedSeconds + originSeconds) * 1000);
             var parts = new List<SubtitleOverlayPart>();
@@ -501,7 +589,10 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
                     FF.ass_set_pixel_aspect(renderer, size.Width / (double)size.Height /
                         (codedSize.Width / (double)codedSize.Height));
                     var changed = 0;
-                    for (var image = FF.ass_render_frame(renderer, track, time, &changed); image != null; image = image->Next)
+                    var images = FF.ass_render_frame(renderer, track, time, &changed);
+                    if (changed == 0 && overlayCacheValid && cachedSize == displaySize)
+                        return cachedOverlay?.Retain();
+                    for (var image = images; image != null; image = image->Next)
                     {
                         token.ThrowIfCancellationRequested();
                         if (image->Width <= 0 || image->Height <= 0 || (image->Color & 255) == 255) continue;
@@ -529,12 +620,15 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
                             }
                         parts.Add(new(CreateBitmap(bytes, content.Size), image->X + content.X, image->Y + content.Y));
                     }
-                    return parts.Count == 0 ? null : useDefaultTextStyle
-                        ? CreateDefaultTextOverlay(size, parts) : new SubtitleOverlay(size, parts);
+                    return CacheOverlay(parts.Count == 0 ? null : useDefaultTextStyle
+                        ? CreateDefaultTextOverlay(size, parts) : new SubtitleOverlay(size, parts), displaySize);
                 }
                 // 位图事件按显示顺序结束；清屏事件没有矩形，但仍会终止前一幅字幕。
                 var cue = FindBitmapCue(time);
-                if (cue is null) return null;
+                if (overlayCacheValid && ReferenceEquals(cue, cachedBitmapCue) && cachedSize == displaySize)
+                    return cachedOverlay?.Retain();
+                if (cue is null)
+                    return CacheOverlay(null, displaySize);
                 foreach (var part in cue.Parts)
                 {
                     token.ThrowIfCancellationRequested();
@@ -544,7 +638,7 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
                     decompressor.ReadExactly(bytes);
                     parts.Add(new(CreateBitmap(bytes, new(part.Width, part.Height)), part.X, part.Y));
                 }
-                return parts.Count == 0 ? null : new SubtitleOverlay(cue.Canvas, parts);
+                return CacheOverlay(parts.Count == 0 ? null : new SubtitleOverlay(cue.Canvas, parts), displaySize, cue);
             }
             catch
             {
@@ -552,6 +646,16 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
                 throw;
             }
         }
+    }
+
+    private SubtitleOverlay? CacheOverlay(SubtitleOverlay? value, PixelSize size, BitmapCue? cue = null)
+    {
+        cachedOverlay?.Dispose();
+        cachedOverlay = value?.Retain();
+        cachedBitmapCue = cue;
+        cachedSize = size;
+        overlayCacheValid = true;
+        return value;
     }
 
     internal static PixelRect? GetVisibleTextBounds(ReadOnlySpan<byte> mask, int width, int height, int stride, uint opacity)
@@ -616,6 +720,18 @@ internal sealed unsafe class SubtitlePreviewService : IDisposable
 
     private void ClearCache()
     {
+        cachedOverlay?.Dispose();
+        cachedOverlay = null;
+        cachedBitmapCue = null;
+        overlayCacheValid = false;
+        readDecoder?.Dispose();
+        readDecoder = null;
+        readInput?.Dispose();
+        readInput = null;
+        readDeadline = null;
+        readEof = false;
+        textCues.Clear();
+        provisionalTextCount = 0;
         if (track != 0)
             FF.ass_free_track(track);
         if (renderer != 0)

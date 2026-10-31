@@ -33,11 +33,13 @@ public partial class MainWindowViewModel
     private bool _exportCurrentProgramOnly;
 
     public bool ShowPreviewTrackSelector => PreviewPrograms.Count > 1 || PreviewVideoTracks.Count > 1 ||
-                                            _videoInstance?.ProgramCount > 1 || HasPreviewSubtitles;
+                                            _videoInstance?.ProgramCount > 1 || HasPreviewSubtitles || HasPreviewAudioTracks;
     public bool HasPreviewPrograms => PreviewPrograms.Any(program => program.Id is not null);
     public bool CanSelectPreviewProgram => CanSwitchPreviewTrack && PreviewPrograms.Count > 1;
     public bool CanSelectPreviewVideo => CanSwitchPreviewTrack && PreviewVideoTracks.Count > 1;
-    public bool CanSwitchPreviewTrack => HasCurrentFile && !_isLoadingVideo && !IsDecoding && !_isResolvingClipEnd;
+    // 整次拖动期间保持禁用，避免每次预览解码结束时短暂重新启用。
+    public bool CanSwitchPreviewTrack => HasCurrentFile && !_isLoadingVideo && !timelineScrubActive
+                                         && !IsDecoding && !_isResolvingClipEnd;
     public bool CanChooseProgramExport => CanEditVideo && ShowProgramExportChoice;
     public bool ShowProgramExportChoice => _videoInstance is { CanBinaryClip: true, ProgramCount: > 1 } &&
                                           _activePreviewSelection?.ProgramId is not null;
@@ -115,6 +117,7 @@ public partial class MainWindowViewModel
         OnPropertyChanged(nameof(CanSelectPreviewProgram));
         OnPropertyChanged(nameof(CanSelectPreviewVideo));
         OnPropertyChanged(nameof(CanSelectPreviewSubtitle));
+        OnPropertyChanged(nameof(CanSelectPreviewAudio));
         OnPropertyChanged(nameof(CanChooseProgramExport));
         OnPropertyChanged(nameof(ShowProgramExportChoice));
         OnPropertyChanged(nameof(IsProgramExportFiltered));
@@ -149,6 +152,7 @@ public partial class MainWindowViewModel
                     LocalizationManager.Instance.String_PreviewTrack_ClearClipsConfirm))
                 return;
             cancellation.Token.ThrowIfCancellationRequested();
+            StopPlaybackSession();
             CancelClipEndScan();
             await CompleteScrubPreviewAsync();
             candidate = new VideoInstance(VideoPath,
@@ -174,6 +178,7 @@ public partial class MainWindowViewModel
             TimelineViewport.Reset(duration, _videoInstance.EstimatedKeyFrameIntervalSeconds);
             SetPreviewTrackChoices(_videoInstance.PreviewPrograms, _videoInstance.StreamSelection);
             SetSubtitleTrackChoices(_videoInstance.PreviewSubtitleTracks);
+            SetPlaybackTrackChoices(_videoInstance.PreviewAudioTracks);
             ApplyDecodeResult(frame);
             RequestKeyFrameStrip(CurrentTime, immediate: true, currentPts: _displayedFramePts);
             frame = null;

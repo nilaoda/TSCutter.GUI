@@ -1,0 +1,131 @@
+<Styles xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:common="clr-namespace:Classic.CommonControls;assembly=Classic.CommonControls.Avalonia">
+    <Styles.Resources>
+        <!-- 保留 Spinner 的标准部件名称、范围限制、长按和验证行为，只替换外观。 -->
+        <ControlTemplate x:Key="DesktopNumericSpinnerTemplate" TargetType="ButtonSpinner">
+            <DataValidationErrors>
+                <Border Name="NumericSpinnerBorder" ClipToBounds="True" Background="{TemplateBinding Background}"
+                        BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}">
+                    <Grid>
+                        <DockPanel>
+                            <UniformGrid Name="PART_SpinnerPanel" DockPanel.Dock="Right" Rows="2" Width="20"
+                                         IsVisible="{TemplateBinding ShowButtonSpinner}">
+                                <RepeatButton Name="PART_IncreaseButton" MinWidth="0" MinHeight="0" Padding="0"
+                                              IsTabStop="{TemplateBinding IsTabStop}">
+                                    <Path Width="7" Height="4" Data="M0,4 L3.5,0 L7,4" StrokeThickness="1.2"
+                                          Stroke="{Binding $parent[RepeatButton].Foreground}" />
+                                </RepeatButton>
+                                <RepeatButton Name="PART_DecreaseButton" MinWidth="0" MinHeight="0" Padding="0"
+                                              IsTabStop="{TemplateBinding IsTabStop}">
+                                    <Path Width="7" Height="4" Data="M0,0 L3.5,4 L7,0" StrokeThickness="1.2"
+                                          Stroke="{Binding $parent[RepeatButton].Foreground}" />
+                                </RepeatButton>
+                            </UniformGrid>
+                            <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                                              ContentTemplate="{TemplateBinding ContentTemplate}" Padding="{TemplateBinding Padding}"
+                                              HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                              VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
+                        </DockPanel>
+                        <Border Name="NumericInputUnderline" Height="1" VerticalAlignment="Bottom" IsVisible="False"
+                                IsHitTestVisible="False" Background="{DynamicResource DesktopInputBorderBrush}" />
+                    </Grid>
+                </Border>
+            </DataValidationErrors>
+        </ControlTemplate>
+        <ControlTemplate x:Key="DesktopNumericSpinButtonTemplate" TargetType="RepeatButton">
+            <Border Background="{TemplateBinding Background}">
+                <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}"
+                                  ContentTemplate="{TemplateBinding ContentTemplate}"
+                                  HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+        </ControlTemplate>
+    </Styles.Resources>
+
+    <!-- Classic / Luna 保留立体外观，其余主题由一个外框包住文本和步进按钮。 -->
+    <Style Selector="NumericUpDown.desktop-theme:not(.luna)">
+        <Setter Property="Background" Value="{DynamicResource {x:Static common:SystemColors.WindowBrushKey}}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopInputBorderBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Style Selector="^ /template/ ButtonSpinner#PART_Spinner">
+            <Setter Property="Template" Value="{StaticResource DesktopNumericSpinnerTemplate}" />
+        </Style>
+        <Style Selector="^ /template/ ButtonSpinner:left /template/ UniformGrid#PART_SpinnerPanel">
+            <Setter Property="DockPanel.Dock" Value="Left" />
+        </Style>
+        <!-- 内部文本框不再重复画边框或悬停底色；焦点反馈由外框统一呈现。 -->
+        <Style Selector="^ /template/ TextBox#PART_TextBox">
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="CornerRadius" Value="0" />
+        </Style>
+        <Style Selector="^ /template/ ButtonSpinner /template/ RepeatButton">
+            <Setter Property="Template" Value="{StaticResource DesktopNumericSpinButtonTemplate}" />
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonBrush}" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="FocusAdorner" Value="{x:Null}" />
+        </Style>
+        <Style Selector="^ /template/ ButtonSpinner /template/ RepeatButton:pointerover:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource DesktopToolbarHoverBrush}" />
+        </Style>
+        <Style Selector="^ /template/ ButtonSpinner /template/ RepeatButton:pressed:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource DesktopButtonPressedBrush}" />
+        </Style>
+        <Style Selector="^ /template/ ButtonSpinner /template/ RepeatButton:disabled">
+            <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+        </Style>
+    </Style>
+    <Style Selector="NumericUpDown.desktop-theme:not(.luna):pointerover:not(:disabled)">
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopHoverAccentBrush}" />
+    </Style>
+    <Style Selector="NumericUpDown.desktop-theme:not(.luna):focus-within:not(:disabled)">
+        <Setter Property="BorderBrush" Value="{DynamicResource {x:Static common:SystemColors.HighlightBrushKey}}" />
+    </Style>
+    <Style Selector="NumericUpDown.desktop-theme:not(.luna):disabled">
+        <Setter Property="BorderBrush" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+        <Setter Property="Background" Value="{DynamicResource DesktopDisabledBackgroundBrush}" />
+    </Style>
+    <Style Selector="NumericUpDown.aero /template/ ButtonSpinner /template/ Border#NumericSpinnerBorder">
+        <Setter Property="CornerRadius" Value="2" />
+    </Style>
+
+    <!-- Win11 / macOS 的底线贯穿整个控件，避免数字区像嵌套了另一个输入框。 -->
+    <Style Selector="NumericUpDown.fluent">
+        <Setter Property="Background" Value="{DynamicResource DesktopButtonBrush}" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        <Style Selector="^ /template/ ButtonSpinner /template/ Border#NumericSpinnerBorder">
+            <Setter Property="CornerRadius" Value="4" />
+        </Style>
+        <Style Selector="^ /template/ ButtonSpinner /template/ Border#NumericInputUnderline">
+            <Setter Property="IsVisible" Value="True" />
+        </Style>
+        <Style Selector="^ /template/ ButtonSpinner /template/ UniformGrid#PART_SpinnerPanel">
+            <Setter Property="Width" Value="24" />
+        </Style>
+        <Style Selector="^ /template/ ButtonSpinner /template/ RepeatButton">
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="^ /template/ ButtonSpinner /template/ RepeatButton:pointerover:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11SubtleBrush}" />
+        </Style>
+        <Style Selector="^ /template/ ButtonSpinner /template/ RepeatButton:pressed:not(:disabled)">
+            <Setter Property="Background" Value="{DynamicResource Windows11SubtlePressedBrush}" />
+        </Style>
+    </Style>
+    <Style Selector="NumericUpDown.fluent:pointerover:not(:disabled)">
+        <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        <Setter Property="Background" Value="{DynamicResource FlatButtonHoverBrush}" />
+    </Style>
+    <Style Selector="NumericUpDown.fluent:focus-within:not(:disabled)">
+        <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
+        <Setter Property="Background" Value="{DynamicResource Windows11InputActiveBrush}" />
+        <Style Selector="^ /template/ ButtonSpinner /template/ Border#NumericInputUnderline">
+            <Setter Property="Height" Value="2" />
+            <Setter Property="Background" Value="{DynamicResource Windows11AccentBrush}" />
+        </Style>
+    </Style>
+    <Style Selector="NumericUpDown.fluent:disabled /template/ ButtonSpinner /template/ Border#NumericInputUnderline">
+        <Setter Property="Background" Value="{DynamicResource DesktopDisabledBorderBrush}" />
+    </Style>
+</Styles>

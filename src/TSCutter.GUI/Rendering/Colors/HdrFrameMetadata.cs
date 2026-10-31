@@ -15,6 +15,7 @@ internal sealed unsafe class HdrFrameMetadata
     internal int BitDepth { get; init; }
     internal float PeakNits { get; init; }
     internal HdrTransfer Transfer { get; init; }
+    internal ColorMatrix GamutTo709 { get; init; } = From2020To709;
 
     private static readonly ColorMatrix Identity = new(1, 0, 0, 0, 1, 0, 0, 0, 1);
     private static readonly ColorMatrix LmsTo2020 = new(
@@ -81,7 +82,7 @@ internal sealed unsafe class HdrFrameMetadata
         {
             Nonlinear = nonlinear, Linear = linear,
             Offset = [full ? 0 : 16 * codeScale, 128 * codeScale, 128 * codeScale],
-            BitDepth = depth, Transfer = hlg ? HdrTransfer.Hlg : HdrTransfer.Pq,
+            BitDepth = depth, Transfer = hlg ? HdrTransfer.Hlg : HdrTransfer.Pq, GamutTo709 = linear,
             // HLG 使用 BT.2100 的 1000 nit、gamma=1.2 参考显示，不依赖系统 HDR 状态。
             PeakNits = hlg ? 1000 : peakNits
         };

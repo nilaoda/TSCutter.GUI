@@ -102,13 +102,16 @@ public sealed class HdrToneMapperTests
     [InlineData(false, true)]
     [InlineData(true, false)]
     [InlineData(true, true)]
-    public void HdrYuvRampPreservesBlackWhiteAndSimdParity(bool hlg, bool fullRange)
+    [InlineData(false, false, 203)]
+    [InlineData(false, false, 10000)]
+    [InlineData(false, true, 4000)]
+    public void HdrYuvRampPreservesBlackWhiteAndSimdParity(bool hlg, bool fullRange, float peakNits = 1000)
     {
         var metadata = HdrFrameMetadata.Create(
             hlg ? AVColorTransferCharacteristic.AVCOL_TRC_ARIB_STD_B67 : AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084,
             AVColorPrimaries.AVCOL_PRI_BT2020, AVColorSpace.AVCOL_SPC_BT2020_NCL,
-            fullRange ? AVColorRange.AVCOL_RANGE_JPEG : AVColorRange.AVCOL_RANGE_MPEG, 10);
-        const int count = 37;
+            fullRange ? AVColorRange.AVCOL_RANGE_JPEG : AVColorRange.AVCOL_RANGE_MPEG, 10, peakNits);
+        const int count = 257;
         var signal = Enumerable.Range(0, count).Select(i =>
             fullRange ? i / (float)(count - 1) : (64 + 876f * i / (count - 1)) / 1023).ToArray();
         var chroma = Enumerable.Repeat(512f / 1023, count).ToArray();
@@ -135,6 +138,74 @@ public sealed class HdrToneMapperTests
         Assert.Equal(0, HdrToneMapper.HlgToLinear(0));
         Assert.Equal(1f / 12, HdrToneMapper.HlgToLinear(0.5f), 6);
         Assert.Equal(1, HdrToneMapper.HlgToLinear(1), 6);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void BrightColoredHighlightsKeepTheirColorInPqAndHlg(bool hlg)
+    {
+        var identity = new ColorMatrix(1, 0, 0, 0, 1, 0, 0, 0, 1);
+        var metadata = new HdrFrameMetadata
+        {
+            Nonlinear = identity, Linear = identity, Offset = [0, 0, 0],
+            BitDepth = 10, PeakNits = 1000, Transfer = hlg ? HdrTransfer.Hlg : HdrTransfer.Pq
+        };
+        var redSignal = Enumerable.Repeat(1f, 37).ToArray();
+        var greenSignal = Enumerable.Repeat(0.8f, 37).ToArray();
+        var blueSignal = Enumerable.Repeat(0.05f, 37).ToArray();
+        var scalar = new[] { new float[37], new float[37], new float[37] };
+        var simd = new[] { new float[37], new float[37], new float[37] };
+        var mapper = new HdrToneMapper();
+        mapper.MapSignals(metadata, redSignal, greenSignal, blueSignal, scalar[0], scalar[1], scalar[2], false);
+        mapper.MapSignals(metadata, redSignal, greenSignal, blueSignal, simd[0], simd[1], simd[2], true);
+        for (var index = 0; index < 37; index++)
+        {
+            Assert.InRange(simd[0][index], 0.99f, 1);
+            Assert.True(simd[0][index] > simd[1][index]);
+            Assert.True(simd[1][index] > simd[2][index]);
+            Assert.True(simd[0][index] - simd[2][index] > 0.5f);
+            for (var channel = 0; channel < 3; channel++)
+            {
+                Assert.InRange(simd[channel][index], 0, 1);
+                Assert.InRange(Math.Abs(simd[channel][index] - scalar[channel][index]), 0, 0.00001f);
+            }
+        }
+    }
+
+    [Fact]
+    public void HlgMidtonesStayBrightWithoutClippingSaturatedRed()
+    {
+        var metadata = HdrFrameMetadata.Create(AVColorTransferCharacteristic.AVCOL_TRC_ARIB_STD_B67,
+            AVColorPrimaries.AVCOL_PRI_BT2020, AVColorSpace.AVCOL_SPC_BT2020_NCL, AVColorRange.AVCOL_RANGE_MPEG, 10);
+        var y = Enumerable.Repeat(400f / 1023, 37).ToArray();
+        var u = Enumerable.Repeat(450f / 1023, 37).ToArray();
+        var v = Enumerable.Repeat(700f / 1023, 37).ToArray();
+        var red = new float[37]; var green = new float[37]; var blue = new float[37];
+        new HdrToneMapper().MapSignals(metadata, y, u, v, red, green, blue, true);
+        // 合成 HLG 红色色块：中间调保持亮度和通道余量，色相保持正确的分量顺序。
+        Assert.InRange(red[0], 0.65f, 0.85f);
+        Assert.InRange(green[0], 0.02f, 0.08f);
+        Assert.InRange(blue[0], 0.025f, 0.12f);
+        Assert.True(red[0] > blue[0] && blue[0] > green[0]);
+    }
+
+    [Fact]
+    public void PqMidtonesKeepBrightnessWhileBlackAndPeakRemainAnchored()
+    {
+        var metadata = HdrFrameMetadata.Create(AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084,
+            AVColorPrimaries.AVCOL_PRI_BT709, AVColorSpace.AVCOL_SPC_BT709, AVColorRange.AVCOL_RANGE_JPEG, 10);
+        var signal = new[] { 0f, 20, 50, 100, 1000 }.Select(HdrToneMapper.NitsToPq).ToArray();
+        var chroma = Enumerable.Repeat(512f / 1023, signal.Length).ToArray();
+        var red = new float[signal.Length]; var green = new float[signal.Length]; var blue = new float[signal.Length];
+        new HdrToneMapper().MapSignals(metadata, signal, chroma, chroma, red, green, blue, true);
+        Assert.InRange(red[0], 0, 0.000001f);
+        // 50/100 nit 中间调接近原始亮度，高光压缩不应使整个画面明显变暗。
+        Assert.InRange(red[2] * 203, 45, 55);
+        Assert.InRange(red[3] * 203, 90, 105);
+        Assert.InRange(red[^1], 0.99f, 1);
+        for (var index = 1; index < red.Length; index++)
+            Assert.True(red[index] > red[index - 1]);
     }
 
     [Fact]

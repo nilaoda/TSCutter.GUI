@@ -65,4 +65,6 @@
         <!-- 将语言文件作为附加文件暴露给生成器 -->
         <AdditionalFiles Include="Lang\en-US.axaml" />
     </ItemGroup>
+
+    <Import Project="native/audio/AudioBridge.targets" />
 </Project>
