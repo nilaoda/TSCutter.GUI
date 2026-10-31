@@ -6,6 +6,7 @@ using FFmpeg.AutoGen.Abstractions;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Utils.Media;
+using TSCutter.GUI.Utils.TransportStream.Packets;
 
 namespace TSCutter.GUI.FFmpeg;
 
@@ -133,16 +134,32 @@ public readonly unsafe struct NativeMetadata(AVDictionary* raw)
     public bool TryGetValue(string key, out string value)
     {
         var entry = FF.av_dict_get(raw, key, null, 0);
-        value = entry == null ? "" : Marshal.PtrToStringUTF8((IntPtr)entry->value) ?? "";
+        value = entry == null ? "" : DecodeValue(key, entry->value);
         return entry != null;
     }
+    private static string DecodeValue(string key, byte* value)
+    {
+        if (value == null)
+            return string.Empty;
+        // FFmpeg 可能原样保留带 GB2312 标识的 SDT 文本，须在 UTF-8 转换丢失字节前解码。
+        if (*value == 0x13 && (key.Equals("service_name", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("service_provider", StringComparison.OrdinalIgnoreCase)))
+            return TsDvbTextCodec.Decode(MemoryMarshal.CreateReadOnlySpanFromNullTerminated(value));
+        return Marshal.PtrToStringUTF8((IntPtr)value) ?? string.Empty;
+    }
+
     public Enumerator GetEnumerator() => new(raw);
     public unsafe struct Enumerator(AVDictionary* raw)
     {
         private AVDictionaryEntry* entry;
         public bool MoveNext() { entry = FF.av_dict_iterate(raw, entry); return entry != null; }
-        public KeyValuePair<string, string> Current => new(
-            Marshal.PtrToStringUTF8((IntPtr)entry->key) ?? "",
-            Marshal.PtrToStringUTF8((IntPtr)entry->value) ?? "");
+        public KeyValuePair<string, string> Current
+        {
+            get
+            {
+                var key = Marshal.PtrToStringUTF8((IntPtr)entry->key) ?? "";
+                return new(key, DecodeValue(key, entry->value));
+            }
+        }
     }
 }

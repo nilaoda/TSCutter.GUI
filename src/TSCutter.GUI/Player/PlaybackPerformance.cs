@@ -16,12 +16,16 @@ internal readonly record struct PlaybackPerformance
     public PlaybackPerformance(double decodeFps, double presentedFps, double sourceFps,
         double frameRateTolerance = 0, long droppedFrames = 0)
     {
-        // 显示和判色使用同一精度，避免 49.99 显示为 50.0 却被判为未达 50 FPS。
         DecodeFps = Math.Round(decodeFps, 1);
         PresentedFps = Math.Round(presentedFps, 1);
         SourceFps = Math.Round(sourceFps, 1);
-        FrameRateTolerance = frameRateTolerance;
         DroppedFrames = droppedFrames;
+        // 解码队列会预读并按场成对产出，短窗口吞吐不代表播放是否跟得上。
+        // 以实际呈现速度和丢帧判色，容限与速率相加后才按显示精度取整。
+        Fluency = sourceFps <= 0 ? PlaybackFluency.Unknown
+            : droppedFrames == 0 && Math.Round(presentedFps + frameRateTolerance, 1) >= SourceFps ? PlaybackFluency.Smooth
+            : presentedFps / sourceFps >= 0.7 ? PlaybackFluency.Limited
+            : PlaybackFluency.Slow;
     }
 
     public double DecodeFps { get; }
@@ -31,35 +35,30 @@ internal readonly record struct PlaybackPerformance
     public double PlaybackFps => Fluency == PlaybackFluency.Smooth ? SourceFps
         : SourceFps > 0 ? Math.Min(PresentedFps, SourceFps) : PresentedFps;
     public long DroppedFrames { get; }
-    private double FrameRateTolerance { get; }
-
-    // 同时参考显示速度，避免解码足够快、UI 丢帧时仍显示流畅。
-    public PlaybackFluency Fluency => SourceFps <= 0 ? PlaybackFluency.Unknown
-        : DroppedFrames == 0 && Math.Min(DecodeFps, PresentedFps) + FrameRateTolerance >= SourceFps ? PlaybackFluency.Smooth
-        : Math.Min(DecodeFps, PresentedFps) / SourceFps >= 0.7 ? PlaybackFluency.Limited
-        : PlaybackFluency.Slow;
+    public PlaybackFluency Fluency { get; }
 }
 
 /// <summary>以实际经过的时间统计约两秒内的吞吐；不把起播预滚计入 FPS。</summary>
 internal sealed class PlaybackPerformanceCounter
 {
     private readonly List<Sample> samples = [];
-    private readonly record struct Sample(double Seconds, long Decoded, long Presented, long Dropped);
+    private readonly record struct Sample(double Seconds, long Decoded, long Presented, long Dropped, double PresentedAt);
 
-    public void Reset(double seconds, long decoded, long presented, long dropped = 0)
+    public void Reset(double seconds, long decoded, long presented, long dropped = 0, double? presentedAt = null)
     {
         samples.Clear();
-        samples.Add(new(seconds, decoded, presented, dropped));
+        samples.Add(new(seconds, decoded, presented, dropped, presentedAt ?? seconds));
     }
 
-    public PlaybackPerformance? Measure(double seconds, long decoded, long presented, double sourceFps, long dropped = 0)
+    public PlaybackPerformance? Measure(double seconds, long decoded, long presented, double sourceFps,
+        long dropped = 0, double? presentedAt = null)
     {
         if (samples.Count == 0)
         {
-            Reset(seconds, decoded, presented, dropped);
+            Reset(seconds, decoded, presented, dropped, presentedAt);
             return null;
         }
-        samples.Add(new(seconds, decoded, presented, dropped));
+        samples.Add(new(seconds, decoded, presented, dropped, presentedAt ?? seconds));
         // 保留跨越窗口起点的样本；UI 长时间繁忙时仍能统计整段停顿。
         while (samples.Count > 2 && seconds - samples[1].Seconds >= 2)
             samples.RemoveAt(0);
@@ -67,9 +66,13 @@ internal sealed class PlaybackPerformanceCounter
         var elapsed = seconds - first.Seconds;
         if (elapsed < 1)
             return null;
-        // 有限窗口的帧计数有最多一帧的量化误差；真正丢帧单独计数，不能用误差掩盖。
+        // 用实际呈现时刻消除 UI 采样与渲染线程的相位差；超过一帧仍无新画面时，
+        // 分母继续走表，不能让卡住的画面一直保持停顿前的 FPS。
+        var frameDuration = sourceFps > 0 ? 1 / sourceFps : 0;
+        var presentationElapsed = Math.Max(presentedAt ?? seconds, seconds - frameDuration) - first.PresentedAt;
         return new(Math.Max(0, decoded - first.Decoded) / elapsed,
-            Math.Max(0, presented - first.Presented) / elapsed, sourceFps,
-            frameRateTolerance: 1 / elapsed, droppedFrames: Math.Max(0, dropped - first.Dropped));
+            presentationElapsed > 0 ? Math.Max(0, presented - first.Presented) / presentationElapsed : 0, sourceFps,
+            frameRateTolerance: presentationElapsed > 0 ? 1 / presentationElapsed : 0,
+            droppedFrames: Math.Max(0, dropped - first.Dropped));
     }
 }

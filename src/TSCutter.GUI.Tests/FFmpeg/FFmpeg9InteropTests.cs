@@ -1,3 +1,4 @@
+using System.Text;
 using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.Extensions;
 using TSCutter.GUI.FFmpeg;
@@ -36,6 +37,44 @@ public sealed class FFmpeg9InteropTests(ITestOutputHelper output)
         Assert.Equal(188, FramePacketPosition.Resolve(&frame));
         Assert.Equal(-1, FramePacketPosition.Resolve(&frame, FramePacketPositionSource.DecoderMetadata));
         Assert.Equal(-1, FramePacketPosition.Resolve(&frame, FramePacketPositionSource.Unknown));
+    }
+
+    [NativeRuntimeFact]
+    public unsafe void ServiceMetadataDecodesDeclaredChineseAndPreservesUtf8()
+    {
+        AVDictionary* dictionary = null;
+        try
+        {
+            foreach (var (bytes, expected) in new (byte[], string)[]
+            {
+                ([0x13, 0xD6, 0xD0], "中"),
+                ([0x13, 0xD6, 0xD0, 0xCE, 0xC4, 0xBD, 0xDA, 0xC4, 0xBF], "中文节目"),
+                (Encoding.UTF8.GetBytes("中文节目"), "中文节目"),
+                (Encoding.UTF8.GetBytes("Café"), "Café")
+            })
+            {
+                // 字典保留广播原始字节，与未转换 GB2312 的 FFmpeg 元数据一致。
+                FFmpegException.Check(FF.av_dict_set(&dictionary, "service_name", new string('x', bytes.Length), 0));
+                var entry = FF.av_dict_get(dictionary, "service_name", null, 0);
+                bytes.CopyTo(new Span<byte>(entry->value, bytes.Length));
+                FFmpegException.Check(FF.av_dict_set(&dictionary, "service_provider", "\u0013Provider", 0));
+                FFmpegException.Check(FF.av_dict_set(&dictionary, "title", "UTF-8 标题", 0));
+                var metadata = new NativeMetadata(dictionary);
+                Assert.True(metadata.TryGetValue("SERVICE_NAME", out var name));
+                Assert.Equal(expected, name);
+                Assert.True(metadata.TryGetValue("service_provider", out var provider));
+                Assert.Equal("Provider", provider);
+                Assert.True(metadata.TryGetValue("title", out var title));
+                Assert.Equal("UTF-8 标题", title);
+                var fields = new Dictionary<string, string>();
+                foreach (var field in metadata)
+                    fields.Add(field.Key, field.Value);
+                Assert.Equal(expected, fields["service_name"]);
+                Assert.Equal("Provider", fields["service_provider"]);
+                Assert.Equal(title, fields["title"]);
+            }
+        }
+        finally { FF.av_dict_free(&dictionary); }
     }
 
     [NativeRuntimeFact]

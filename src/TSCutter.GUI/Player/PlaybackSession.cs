@@ -28,6 +28,7 @@ public sealed class PlaybackSession : IAsyncDisposable
     private Action gpuFrameDropped = null!;
     private long gpuPresentedFrameCount, hardwareSurfaceFrameCount;
     private TaskCompletionSource? firstGpuFrameReady;
+    private Task pendingPresentation = Task.CompletedTask;
     private readonly CancellationTokenSource lifecycle;
     private readonly CancellationTokenRegistration cancelEngine;
     private readonly Action<Action> uiPost;
@@ -47,6 +48,7 @@ public sealed class PlaybackSession : IAsyncDisposable
     private TaskCompletionSource? resumeSignal;
     private long generation;
     private double lastPresentedSeconds;
+    private double lastPresentationAt;
     private Func<IAudioOutput?>? audioOutputFactory;
     private int stopped, disposed, presentationPending, terminalReported;
     private volatile PlaybackState state;
@@ -76,6 +78,7 @@ public sealed class PlaybackSession : IAsyncDisposable
                 if (capturedGeneration != Interlocked.Read(ref generation) || token.IsCancellationRequested)
                     return;
                 Interlocked.Increment(ref presentedFrameCount);
+                lastPresentationAt = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
                 if (gpu)
                     Interlocked.Increment(ref gpuPresentedFrameCount);
                 if (hardwareSurface)
@@ -182,7 +185,9 @@ public sealed class PlaybackSession : IAsyncDisposable
         if (audioPipeline is { } active)
             _ = ObserveAudioCompletionAsync(active, token);
         token.ThrowIfCancellationRequested();
-        // 首次界面采样建立统计起点，排除音频设备刚启动时的回调延迟。
+        // 预滚首帧在时钟启动前已经显示；不能把等待设备启动的时间计入呈现速率。
+        lock (publicationSync)
+            lastPresentationAt = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
         state = PlaybackState.Playing;
         presentTask = Task.Run(() => PresentLoopAsync(token));
         _ = decodeTask.ContinueWith(task =>
@@ -225,7 +230,11 @@ public sealed class PlaybackSession : IAsyncDisposable
                 && !await Task.Run(audio.Start).ConfigureAwait(false))
                 await DisableAudioAsync().ConfigureAwait(false);
             clock.Resume(audioAnchor);
-            Volatile.Write(ref performanceCounter, new());
+            lock (publicationSync)
+            {
+                lastPresentationAt = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+                Volatile.Write(ref performanceCounter, new());
+            }
             state = PlaybackState.Playing;
             Interlocked.Exchange(ref resumeSignal, null)?.TrySetResult();
         }
@@ -254,6 +263,7 @@ public sealed class PlaybackSession : IAsyncDisposable
             engine.ResetForSeek(options, frameQueue, runCancellation.Token);
             await ResetAudioForSeekAsync(runCancellation.Token).ConfigureAwait(false);
             presentationPending = terminalReported = 0;
+            pendingPresentation = Task.CompletedTask;
             presentedFrameCount = gpuPresentedFrameCount = hardwareSurfaceFrameCount = 0;
             droppedFrameCount = lateDroppedFrameCount = busyDroppedFrameCount = 0;
             Volatile.Write(ref performanceCounter, new());
@@ -428,6 +438,14 @@ public sealed class PlaybackSession : IAsyncDisposable
             while (true)
             {
                 await WaitUntilResumedAsync(token).ConfigureAwait(false);
+                // 输入、hover 和布局更新可能让 UI/合成晚一拍。短暂等待上一帧真正呈现，
+                // 避免直接丢弃下一帧或覆盖尚未绘制的画面；窗口不绘制时最多等待 50ms。
+                var waitingForPresentation = !pendingPresentation.IsCompleted;
+                if (waitingForPresentation)
+                {
+                    try { await pendingPresentation.WaitAsync(TimeSpan.FromMilliseconds(50), token).ConfigureAwait(false); }
+                    catch (TimeoutException) { }
+                }
                 QueuedVideoFrame item;
                 try { item = await frameQueue.DequeueAsync(token).ConfigureAwait(false); }
                 catch (ChannelClosedException)
@@ -465,7 +483,11 @@ public sealed class PlaybackSession : IAsyncDisposable
                 {
                     await WaitUntilResumedAsync(token).ConfigureAwait(false);
                     var lag = clock.CurrentSeconds - item.TimelineSeconds;
-                    if (lag > LateDropSeconds)
+                    // 持续绘制不足（包括片源帧率高于屏幕刷新率）时跳过积压画面，
+                    // 等待呈现不能让视频逐渐落后于音频；短暂输入延迟保留两个帧间隔的余量。
+                    var maximumLag = waitingForPresentation && engine.SourceFrameRate > 0
+                        ? Math.Min(LateDropSeconds, 2 / engine.SourceFrameRate) : LateDropSeconds;
+                    if (lag > maximumLag)
                     {
                         if (lag > CatchUpLagSeconds)
                             engine.RequestCatchUp(clock.CurrentSeconds);
@@ -488,11 +510,15 @@ public sealed class PlaybackSession : IAsyncDisposable
         catch (Exception exception) { ReportFailure(exception, capturedGeneration); }
     }
 
-    // 仅由 UI 定时器读取；解码和呈现热路径只增加计数，不向 UI 逐帧发布统计。
-    internal PlaybackPerformance? MeasurePerformance() => Volatile.Read(ref performanceCounter).Measure(
-        Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency,
-        engine.PlaybackFrameCount, Interlocked.Read(ref presentedFrameCount), engine.SourceFrameRate,
-        Interlocked.Read(ref droppedFrameCount));
+    // 计数和呈现时刻必须一起取样，避免渲染线程恰好跨过采样边界。
+    internal PlaybackPerformance? MeasurePerformance()
+    {
+        lock (publicationSync)
+            return Volatile.Read(ref performanceCounter).Measure(
+                Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency,
+                engine.PlaybackFrameCount, presentedFrameCount, engine.SourceFrameRate,
+                droppedFrameCount, lastPresentationAt);
+    }
 
     public void SetPresentationSize(Avalonia.PixelSize size)
     {
@@ -512,6 +538,10 @@ public sealed class PlaybackSession : IAsyncDisposable
             Interlocked.Increment(ref busyDroppedFrameCount);
             return;
         }
+        var presented = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var rendered = gpuFrameRendered;
+        var dropped = gpuFrameDropped;
+        pendingPresentation = presented.Task;
         IBitmapFrameLease? lease = null;
         SkiaVideoFrame? gpuFrame = null;
         var published = false;
@@ -526,7 +556,9 @@ public sealed class PlaybackSession : IAsyncDisposable
                 ? item.Frame.TransferToSoftwareFrame() : null;
             var displaySource = softwareFrame ?? item.Frame;
             if ((!options.EnableGpuPresentation || !gpuPresenter.TryPresent(displaySource, options.EnableSdrToneMapping, size,
-                    options.RenderAtRequestedSize, gpuFrameRendered, gpuFrameDropped, out gpuFrame))
+                    options.RenderAtRequestedSize,
+                    (gpu, hardware) => { rendered(gpu, hardware); presented.TrySetResult(); },
+                    () => { dropped(); presented.TrySetResult(); }, out gpuFrame))
                 && !hostPresenter.TryConvert(displaySource, size.Width, size.Height,
                     out lease, options.EnableSdrToneMapping))
             {
@@ -562,6 +594,7 @@ public sealed class PlaybackSession : IAsyncDisposable
                 firstReady?.TrySetResult();
                 if (capturedGeneration == Interlocked.Read(ref generation))
                     Volatile.Write(ref presentationPending, 0);
+                presented.TrySetResult();
             }
             async Task PublishAfterResumeAsync()
             {
@@ -594,6 +627,7 @@ public sealed class PlaybackSession : IAsyncDisposable
                             if (result.GpuFrame is null)
                             {
                                 Interlocked.Increment(ref presentedFrameCount);
+                                lastPresentationAt = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
                                 firstReady?.TrySetResult();
                             }
                         }
@@ -615,6 +649,8 @@ public sealed class PlaybackSession : IAsyncDisposable
                         sourceFrame?.Dispose();
                         if (capturedGeneration == Interlocked.Read(ref generation))
                             Volatile.Write(ref presentationPending, 0);
+                        if (result.GpuFrame is null)
+                            presented.TrySetResult();
                     }
                 }
             }
@@ -633,6 +669,7 @@ public sealed class PlaybackSession : IAsyncDisposable
             if (!published)
             {
                 Volatile.Write(ref presentationPending, 0);
+                presented.TrySetResult();
                 firstReady?.TrySetResult();
             }
         }

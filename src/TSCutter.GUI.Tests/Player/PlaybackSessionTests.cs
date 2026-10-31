@@ -88,6 +88,60 @@ public sealed class PlaybackSessionTests
     }
 
     [NativeMediaFact("keyframes")]
+    public async Task UiPresentationWaitAbsorbsBriefDelaysAndBoundsSustainedLag()
+    {
+        using var headless = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await headless.Dispatch<bool>(async () =>
+        {
+            using var instance = await OpenSampleAsync("interlaced.mp4");
+            var path = Path.Combine(NativeTestEnvironment.FixtureDirectory("keyframes"), "interlaced.mp4");
+            var frames = new System.Collections.Concurrent.ConcurrentQueue<double>();
+            var ended = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            var callbacks = 0;
+            await using var session = await PlaybackSession.StartAsync(BuildOptions(instance, path, endSeconds: 0.5),
+                uiPost: action =>
+                {
+                    if (System.Threading.Interlocked.Increment(ref callbacks) == 2)
+                    {
+                        // 模拟一次 hover/布局更新，让界面投递跨过一个 20ms 的场间隔。
+                        _ = Task.Run(async () => { await Task.Delay(30); action(); });
+                    }
+                    else
+                        action();
+                }, initialize: owner =>
+                {
+                    owner.FramePresented += frame => { frames.Enqueue(frame.FrameTimestamp.TotalSeconds); DisposeResult(frame); };
+                    owner.Ended += () => ended.TrySetResult();
+                }, audioOutputFactory: () => null);
+            await ended.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.Equal(0, session.BusyDroppedFrameCount);
+            var times = frames.ToArray();
+            Assert.True(times.Length >= 20);
+            for (var index = 1; index < times.Length; index++)
+                Assert.InRange(times[index] - times[index - 1], 0.01999, 0.02001);
+
+            // 持续慢于片源时应追赶，不能为了保留每帧而累积音画延迟。
+            ended = new(TaskCreationOptions.RunContinuationsAsynchronously);
+            var maximumLag = 0.0;
+            await using var slow = await PlaybackSession.StartAsync(BuildOptions(instance, path, endSeconds: 1),
+                uiPost: action => { _ = Task.Run(async () => { await Task.Delay(30); action(); }); },
+                initialize: owner =>
+                {
+                    owner.FramePresented += frame =>
+                    {
+                        maximumLag = Math.Max(maximumLag, owner.Clock.CurrentSeconds - frame.FrameTimestamp.TotalSeconds);
+                        DisposeResult(frame);
+                    };
+                    owner.Ended += () => ended.TrySetResult();
+                }, audioOutputFactory: () => null);
+            await ended.Task.WaitAsync(TimeSpan.FromSeconds(5));
+            Assert.True(slow.LateDroppedFrameCount > 0);
+            Assert.InRange(maximumLag, 0, 0.2);
+            return true;
+        }, System.Threading.CancellationToken.None);
+    }
+
+    [NativeMediaFact("keyframes")]
     public async Task StartupCancellationEmptyRangesAndPendingUiFramesStopCleanly()
     {
         using var headless = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));

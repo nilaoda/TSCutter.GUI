@@ -27,6 +27,12 @@ internal static class TsDvbTextCodec
             encoding = Encoding.BigEndianUnicode;
             offset = 1;
         }
+        else if (value[0] == 0x13)
+        {
+            // DVB 的 GB2312 标识；GB18030 同时兼容常见的 GBK 扩展。
+            encoding = Gb18030Encoding;
+            offset = 1;
+        }
         else if (value[0] is >= 0x01 and <= 0x0B)
         {
             var isoPart = value[0] switch

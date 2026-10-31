@@ -6,7 +6,7 @@ namespace TSCutter.GUI.Tests.Player;
 public sealed class PlaybackPerformanceTests
 {
     [Fact]
-    public void FluencyUsesTheSlowerRateRelativeToTheSource()
+    public void FluencyUsesPresentationAndDropsRatherThanBufferedDecodeThroughput()
     {
         Assert.Equal(PlaybackFluency.Smooth, new PlaybackPerformance(60, 60, 60).Fluency);
         var ahead = new PlaybackPerformance(70, 45, 50);
@@ -18,9 +18,9 @@ public sealed class PlaybackPerformanceTests
         var rounded = new PlaybackPerformance(49.99, 49.98, 50);
         Assert.Equal(50, rounded.DecodeFps);
         Assert.Equal(PlaybackFluency.Smooth, rounded.Fluency);
-        Assert.Equal(PlaybackFluency.Limited, new PlaybackPerformance(49.94, 50, 50).Fluency);
+        Assert.Equal(PlaybackFluency.Smooth, new PlaybackPerformance(49.94, 50, 50).Fluency);
         Assert.Equal(PlaybackFluency.Limited, new PlaybackPerformance(50, 49.94, 50).Fluency);
-        Assert.Equal(PlaybackFluency.Limited, new PlaybackPerformance(42, 60, 60).Fluency);
+        Assert.Equal(PlaybackFluency.Smooth, new PlaybackPerformance(42, 60, 60).Fluency);
         Assert.Equal(PlaybackFluency.Slow, new PlaybackPerformance(60, 41, 60).Fluency);
         Assert.Equal(PlaybackFluency.Smooth, new PlaybackPerformance(24, 24, 24).Fluency);
         Assert.Equal(PlaybackFluency.Unknown, new PlaybackPerformance(24, 24, 0).Fluency);
@@ -30,6 +30,29 @@ public sealed class PlaybackPerformanceTests
         Assert.Equal(25, new PlaybackPerformance(25, 24.9, 25, 0.5).PlaybackFps);
         Assert.Equal(24.9, new PlaybackPerformance(25, 24.9, 25, 0.5, 1).PlaybackFps);
         Assert.Equal(24, new PlaybackPerformance(25, 24, 25, 0.5).PlaybackFps);
+        // 先把容限加入原始速率再取整，避免浮点边界导致显示 50.0 却变黄。
+        Assert.Equal(PlaybackFluency.Smooth, new PlaybackPerformance(49.49, 49.49, 50, 0.499).Fluency);
+        Assert.Equal(PlaybackFluency.Limited, new PlaybackPerformance(60, 50, 50, 0.499, 1).Fluency);
+    }
+
+    [Fact]
+    public void RenderTimesRemovePollingPhaseJitterButDoNotHideStallsOrDrops()
+    {
+        var counter = new PlaybackPerformanceCounter();
+        counter.Reset(0.012, 100, 20, presentedAt: 0);
+        // UI 轮询相位变化，解码端按场成对填充队列；实际每秒呈现 50 帧。
+        var first = counter.Measure(1.017, 149, 70, 50, presentedAt: 1)!.Value;
+        Assert.Equal(50, first.PresentedFps);
+        Assert.Equal(PlaybackFluency.Smooth, first.Fluency);
+        var second = counter.Measure(2.006, 199, 120, 50, presentedAt: 2)!.Value;
+        Assert.Equal(50, second.PlaybackFps);
+        Assert.Equal(PlaybackFluency.Smooth, second.Fluency);
+        // 即使最后一次呈现时刻不再变化，停顿仍计入统计分母。
+        Assert.Equal(PlaybackFluency.Slow, counter.Measure(3.006, 199, 120, 50, presentedAt: 2)!.Value.Fluency);
+        counter.Reset(10, 500, 400, presentedAt: 10);
+        Assert.Equal(PlaybackFluency.Limited, counter.Measure(12.005, 600, 499, 50, 1, 12)!.Value.Fluency);
+        counter.Reset(20, 700, 600, presentedAt: 20);
+        Assert.Equal(PlaybackFluency.Slow, counter.Measure(22, 720, 620, 50, presentedAt: 22)!.Value.Fluency);
     }
 
     [Fact]

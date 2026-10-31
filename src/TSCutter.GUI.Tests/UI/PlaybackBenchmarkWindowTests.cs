@@ -119,7 +119,8 @@ public sealed class PlaybackBenchmarkWindowTests
                 vm.SelectedTrack = sdrTrack;
                 vm.Tracks = [sdrTrack];
                 Assert.Equal(3, vm.Rows.Count);
-                foreach (var theme in new[] { CustomTheme.MacOS, CustomTheme.MacOSDark, CustomTheme.Windows11, ClassicTheme.Standard })
+                foreach (var theme in new[] { CustomTheme.MacOS, CustomTheme.MacOSDark, CustomTheme.Windows8,
+                             CustomTheme.Windows10, CustomTheme.Windows11, ClassicTheme.Standard })
                 {
                     Avalonia.Application.Current.RequestedThemeVariant = theme;
                     window.RequestedThemeVariant = theme;
@@ -139,6 +140,11 @@ public sealed class PlaybackBenchmarkWindowTests
                         .OfType<TextBlock>(), text => text.Text == row.StageText));
                     var startButton = window.FindControl<Button>("StartBenchmarkButton")!;
                     Assert.True(startButton.TranslatePoint(new Point(0, startButton.Bounds.Height), window)!.Value.Y <= window.ClientSize.Height);
+                    var progress = window.FindControl<ProgressBar>("BenchmarkProgress")!;
+                    var progressBottom = progress.TranslatePoint(new Point(0, progress.Bounds.Height), window)!.Value.Y;
+                    var buttonsTop = startButton.TranslatePoint(default, window)!.Value.Y;
+                    Assert.True(progress.Bounds.Height > 0);
+                    Assert.True(progressBottom <= buttonsTop, $"Progress bar overlaps buttons in {theme}.");
                 }
                 var test = vm.StartCommand.ExecuteAsync(null);
                 var deadline = DateTime.UtcNow.AddSeconds(20);

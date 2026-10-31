@@ -1183,9 +1183,11 @@
                             </Grid>
                         </Button>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                            <TextBlock Foreground="White" Text="{Binding CurrentTime, Converter={StaticResource SecondsConverter}}" />
+                            <TextBlock Foreground="White" FontFamily="Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, $Default"
+                                       FontFeatures="tnum" Text="{Binding CurrentTime, Converter={StaticResource SecondsConverter}}" />
                             <TextBlock Foreground="#BFC3CA" Text="/" />
-                            <TextBlock Foreground="#BFC3CA" Text="{Binding DurationMax, Converter={StaticResource SecondsConverter}}" />
+                            <TextBlock Foreground="#BFC3CA" FontFamily="Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, $Default"
+                                       FontFeatures="tnum" Text="{Binding DurationMax, Converter={StaticResource SecondsConverter}}" />
                             <TextBlock Foreground="#FFD287" Text="!" IsVisible="{Binding HasPlaybackAudioProblem}"
                                        ToolTip.Tip="{Binding PlaybackAudioStatusText}" />
                         </StackPanel>
