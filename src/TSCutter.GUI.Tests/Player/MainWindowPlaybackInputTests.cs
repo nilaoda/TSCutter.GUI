@@ -226,6 +226,7 @@ public sealed class MainWindowPlaybackInputTests
                 window.ToggleVideoFullScreenCommand.Execute(null);
                 seek.Focus();
                 window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
                 await WaitForAsync(() => !vm.IsPlaybackActive);
                 Assert.False(vm.IsPlaybackActive);
                 var point = seek.TranslatePoint(new Point(seek.Bounds.Width * 0.25, seek.Bounds.Height / 2), window)!.Value;
@@ -240,6 +241,7 @@ public sealed class MainWindowPlaybackInputTests
                 window.KeyPressQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
                 Assert.Equal(0.55, vm.PreviewVolume, 6);
                 window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
                 await WaitForAsync(() => vm.IsPlaybackPlaying);
                 Assert.True(vm.IsPlaybackPlaying);
                 Assert.Same(session, sessionField.GetValue(vm));
@@ -280,16 +282,33 @@ public sealed class MainWindowPlaybackInputTests
                 Assert.True(await (Task<bool>)load.Invoke(vm, new object?[] { null })!);
                 Assert.True(vm.TogglePlaybackCommand.CanExecute(null));
 
-                // 空格开始播放。
-                window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                // 鼠标点击播放后按钮持有焦点，空格的松开不能再次触发按钮。
+                var play = window.FindControl<Button>("PlayPauseButton")!;
+                var point = play.TranslatePoint(new Point(play.Bounds.Width / 2, play.Bounds.Height / 2), window)!.Value;
+                window.MouseDown(point, MouseButton.Left);
+                window.MouseUp(point, MouseButton.Left);
+                Assert.True(play.Focus());
                 await WaitForAsync(() => vm.IsPlaybackPlaying);
-                Assert.True(vm.IsPlaybackActive);
-
-                // 空格停止播放。
-                while (!vm.TogglePlaybackCommand.CanExecute(null))
-                    await Task.Delay(30);
+                Assert.True(vm.IsPlaybackPlaying);
                 window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
-                await WaitForAsync(() => !vm.IsPlaybackActive);
+                await WaitForAsync(() => !vm.IsPlaybackActive && vm.TogglePlaybackCommand.CanExecute(null));
+                window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                await Task.Delay(150);
+                Dispatcher.UIThread.RunJobs();
+                Assert.False(vm.IsPlaybackActive);
+
+                // 下一次完整按键正常恢复播放。
+                window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                await WaitForAsync(() => vm.IsPlaybackPlaying);
+                Assert.True(vm.IsPlaybackPlaying);
+                window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                await WaitForAsync(() => !vm.IsPlaybackActive && vm.TogglePlaybackCommand.CanExecute(null));
+                // 长按产生的重复按下不得恢复播放。
+                window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                await Task.Delay(150);
+                Dispatcher.UIThread.RunJobs();
                 Assert.False(vm.IsPlaybackActive);
 
                 // 文本框持有焦点时，空格属于文本输入，不触发播放。
@@ -300,6 +319,7 @@ public sealed class MainWindowPlaybackInputTests
                 textBox.Focus();
                 Dispatcher.UIThread.RunJobs();
                 window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
                 await Task.Delay(150);
                 Dispatcher.UIThread.RunJobs();
                 Assert.False(vm.IsPlaybackActive);

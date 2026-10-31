@@ -124,7 +124,7 @@ public partial class MainWindow
             {
                 Gesture = new KeyGesture(key), Command = new RelayCommand(() => AdjustFullScreenSeek(key))
             });
-        var togglePlayback = new RelayCommand(() => ViewModel.TogglePlaybackCommand.Execute(null),
+        var togglePlayback = new RelayCommand(TogglePlaybackFromSpace,
             () => DataContext is MainWindowViewModel { CanTogglePlayback: true });
         foreach (var key in new[] { Key.Left, Key.Right })
             FullScreenVolumeSlider.KeyBindings.Add(new KeyBinding

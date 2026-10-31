@@ -36,6 +36,7 @@ public partial class MainWindow : ClassicWindow
     private bool _restoreFocusOnActivation;
     private bool _closePromptActive;
     private bool _closeApproved;
+    private bool _playbackSpacePressed;
     private readonly DispatcherTimer _dropMaskWatchdog = new()
     {
         Interval = TimeSpan.FromMilliseconds(500)
@@ -75,12 +76,17 @@ public partial class MainWindow : ClassicWindow
         ImageViewer.SizeChanged += (_, _) => (DataContext as MainWindowViewModel)?.UpdatePlaybackPresentationSize();
         ScalingChanged += (_, _) => (DataContext as MainWindowViewModel)?.UpdatePlaybackPresentationSize();
         Activated += MainWindow_OnActivated;
-        Deactivated += (_, _) => HideDropMask();
+        Deactivated += (_, _) =>
+        {
+            _playbackSpacePressed = false;
+            HideDropMask();
+        };
         AddHandler(PointerPressedEvent, (_, _) => HideDropMask(),
             RoutingStrategies.Tunnel, handledEventsToo: true);
-        // 空格没有窗口级 KeyBinding；在隧道阶段先于聚焦按钮处理，
-        // 避免同一次按键二次触发；文本输入控件在处理函数内排除。
+        // 播放空格接管完整的按下/松开序列：Button 在 KeyUp 仍可能触发点击，
+        // 仅拦截 KeyDown 无法避免重复切换；文本输入控件在处理函数内排除。
         AddHandler(KeyDownEvent, MainWindow_OnPreviewKeyDown, RoutingStrategies.Tunnel);
+        AddHandler(KeyUpEvent, MainWindow_OnPreviewKeyUp, RoutingStrategies.Tunnel);
         AddHandler(DragDrop.DragEnterEvent, DropSurface_OnDragActive,
             RoutingStrategies.Bubble, handledEventsToo: true);
         AddHandler(DragDrop.DragOverEvent, DropSurface_OnDragActive,
@@ -125,6 +131,11 @@ public partial class MainWindow : ClassicWindow
 
     private void MainWindow_OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
+        if (e.Key == Key.Space && _playbackSpacePressed)
+        {
+            e.Handled = true;
+            return;
+        }
         if (HandleFullScreenKey(e))
             return;
         if (e.Key != Key.Space || e.KeyModifiers != KeyModifiers.None)
@@ -134,7 +145,23 @@ public partial class MainWindow : ClassicWindow
             return;
         if (IsTextInputFocused())
             return;
-        vm.TogglePlaybackCommand.Execute(null);
+        e.Handled = true;
+        TogglePlaybackFromSpace();
+    }
+
+    private void TogglePlaybackFromSpace()
+    {
+        if (_playbackSpacePressed)
+            return;
+        _playbackSpacePressed = true;
+        ViewModel.TogglePlaybackCommand.Execute(null);
+    }
+
+    private void MainWindow_OnPreviewKeyUp(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Space || !_playbackSpacePressed)
+            return;
+        _playbackSpacePressed = false;
         e.Handled = true;
     }
 
