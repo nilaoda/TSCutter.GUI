@@ -1419,7 +1419,7 @@
     <x:String x:Key="String.PlaybackBenchmark.CurrentPreview">目前預覽</x:String>
     <x:String x:Key="String.PlaybackBenchmark.StartPosition">起點（秒）</x:String>
     <x:String x:Key="String.PlaybackBenchmark.Mapping">HDR 轉 SDR</x:String>
-    <x:String x:Key="String.PlaybackBenchmark.Hint">使用目前執行階段測試短片段，播放階段靜音。尺寸為實體像素；播放時優先使用 GPU 呈現，不支援時退回 CPU。</x:String>
+    <x:String x:Key="String.PlaybackBenchmark.Hint">使用目前執行階段測試短片段，播放階段靜音。尺寸為實體像素；播放時優先使用 GPU 呈現，不支援時退回 CPU。播放 FPS 按最近約兩秒統計。</x:String>
     <x:String x:Key="String.PlaybackBenchmark.GpuDirectPresentation">GPU 直傳</x:String>
     <x:String x:Key="String.PlaybackBenchmark.GpuPresentation">GPU 呈現</x:String>
     <x:String x:Key="String.PlaybackBenchmark.CpuPresentation">CPU 呈現</x:String>

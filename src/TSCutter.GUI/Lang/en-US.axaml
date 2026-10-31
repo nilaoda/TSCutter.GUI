@@ -1419,7 +1419,7 @@
     <x:String x:Key="String.PlaybackBenchmark.CurrentPreview">Current preview</x:String>
     <x:String x:Key="String.PlaybackBenchmark.StartPosition">Start (seconds)</x:String>
     <x:String x:Key="String.PlaybackBenchmark.Mapping">HDR to SDR</x:String>
-    <x:String x:Key="String.PlaybackBenchmark.Hint">Tests a short video segment using the current runtime. Playback is silent. Sizes are physical pixels. Playback uses GPU presentation when available, with CPU fallback.</x:String>
+    <x:String x:Key="String.PlaybackBenchmark.Hint">Tests a short video segment using the current runtime. Playback is silent. Sizes are physical pixels. Playback uses GPU presentation when available, with CPU fallback. Playback FPS uses a rolling window of about two seconds.</x:String>
     <x:String x:Key="String.PlaybackBenchmark.GpuDirectPresentation">GPU direct</x:String>
     <x:String x:Key="String.PlaybackBenchmark.GpuPresentation">GPU presentation</x:String>
     <x:String x:Key="String.PlaybackBenchmark.CpuPresentation">CPU presentation</x:String>

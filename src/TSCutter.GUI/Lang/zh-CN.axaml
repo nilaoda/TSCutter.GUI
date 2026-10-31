@@ -1419,7 +1419,7 @@
     <x:String x:Key="String.PlaybackBenchmark.CurrentPreview">当前预览</x:String>
     <x:String x:Key="String.PlaybackBenchmark.StartPosition">起点（秒）</x:String>
     <x:String x:Key="String.PlaybackBenchmark.Mapping">HDR 转 SDR</x:String>
-    <x:String x:Key="String.PlaybackBenchmark.Hint">使用当前运行库测试短片段，播放阶段静音。尺寸为物理像素；播放时优先使用 GPU 呈现，不支持时回退 CPU。</x:String>
+    <x:String x:Key="String.PlaybackBenchmark.Hint">使用当前运行库测试短片段，播放阶段静音。尺寸为物理像素；播放时优先使用 GPU 呈现，不支持时回退 CPU。播放 FPS 按最近约两秒统计。</x:String>
     <x:String x:Key="String.PlaybackBenchmark.GpuDirectPresentation">GPU 直传</x:String>
     <x:String x:Key="String.PlaybackBenchmark.GpuPresentation">GPU 呈现</x:String>
     <x:String x:Key="String.PlaybackBenchmark.CpuPresentation">CPU 呈现</x:String>

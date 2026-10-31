@@ -72,6 +72,11 @@ public sealed class PlaybackSessionTests
             Assert.True(frames.Length >= 2);
             Assert.Equal(0, frames[0], 6);
             Assert.Equal(3, frames[^1], 6);
+            var timing = session.MeasurePresentationTiming();
+            Assert.Equal(frames.LongLength, timing.FrameCount);
+            Assert.True(timing.ElapsedSeconds > 0);
+            await Task.Delay(300);
+            Assert.Equal(timing, session.MeasurePresentationTiming());
             for (var index = 1; index < frames.Length; index++)
                 Assert.True(frames[index] > frames[index - 1]);
             // 未缓存的播放帧也能重新解码截图，回收临时引擎不能让成功结果变成取消。
@@ -136,6 +141,8 @@ public sealed class PlaybackSessionTests
                 }, audioOutputFactory: () => null);
             await ended.Task.WaitAsync(TimeSpan.FromSeconds(5));
             Assert.True(slow.LateDroppedFrameCount > 0);
+            var slowTiming = slow.MeasurePresentationTiming();
+            Assert.True((slowTiming.FrameCount - 1) / slowTiming.ElapsedSeconds < slow.OutputFrameRate);
             Assert.InRange(maximumLag, 0, 0.2);
             return true;
         }, System.Threading.CancellationToken.None);

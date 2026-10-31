@@ -49,6 +49,7 @@ public sealed class PlaybackSession : IAsyncDisposable
     private long generation;
     private double lastPresentedSeconds;
     private double lastPresentationAt;
+    private double firstPresentationElapsed, lastPresentationElapsed;
     private Func<IAudioOutput?>? audioOutputFactory;
     private int stopped, disposed, presentationPending, terminalReported;
     private volatile PlaybackState state;
@@ -77,8 +78,7 @@ public sealed class PlaybackSession : IAsyncDisposable
             {
                 if (capturedGeneration != Interlocked.Read(ref generation) || token.IsCancellationRequested)
                     return;
-                Interlocked.Increment(ref presentedFrameCount);
-                lastPresentationAt = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+                RecordPresentation();
                 if (gpu)
                     Interlocked.Increment(ref gpuPresentedFrameCount);
                 if (hardwareSurface)
@@ -265,6 +265,7 @@ public sealed class PlaybackSession : IAsyncDisposable
             presentationPending = terminalReported = 0;
             pendingPresentation = Task.CompletedTask;
             presentedFrameCount = gpuPresentedFrameCount = hardwareSurfaceFrameCount = 0;
+            firstPresentationElapsed = lastPresentationElapsed = 0;
             droppedFrameCount = lateDroppedFrameCount = busyDroppedFrameCount = 0;
             Volatile.Write(ref performanceCounter, new());
             lastPresentedSeconds = startSeconds;
@@ -521,6 +522,32 @@ public sealed class PlaybackSession : IAsyncDisposable
                 droppedFrameCount, lastPresentationAt);
     }
 
+    // 与计数一起在 publicationSync 内更新，CPU 发布和 GPU 实际绘制使用同一个口径。
+    private void RecordPresentation()
+    {
+        var now = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+        var elapsed = state == PlaybackState.Starting ? 0 : clock.ActiveElapsedSeconds;
+        if (presentedFrameCount == 0)
+            firstPresentationElapsed = elapsed;
+        lastPresentationElapsed = elapsed;
+        lastPresentationAt = now;
+        Interlocked.Increment(ref presentedFrameCount);
+    }
+
+    internal (long FrameCount, double ElapsedSeconds) MeasurePresentationTiming()
+    {
+        lock (publicationSync)
+        {
+            if (presentedFrameCount < 2)
+                return (presentedFrameCount, 0);
+            // 活跃时钟在暂停和结束时冻结，既不计自检轮询尾部，也不丢失末尾的真实停顿。
+            // 一帧以内的采样相位差沿用实际绘制时刻，超过一帧无新画面时继续走表。
+            var frameSeconds = engine.SourceFrameRate > 0 ? 1 / engine.SourceFrameRate : 0;
+            var end = Math.Max(lastPresentationElapsed, clock.ActiveElapsedSeconds - frameSeconds);
+            return (presentedFrameCount, Math.Max(0, end - firstPresentationElapsed));
+        }
+    }
+
     public void SetPresentationSize(Avalonia.PixelSize size)
     {
         lock (targetSizeSync)
@@ -628,8 +655,7 @@ public sealed class PlaybackSession : IAsyncDisposable
                             handler(result);
                             if (result.GpuFrame is null)
                             {
-                                Interlocked.Increment(ref presentedFrameCount);
-                                lastPresentationAt = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
+                                RecordPresentation();
                                 firstReady?.TrySetResult();
                             }
                         }

@@ -232,13 +232,11 @@ internal static class PlaybackBenchmarkService
     private static async Task<PlaybackBenchmarkResult> PlayAsync(PlaybackOptions options, PlaybackBenchmarkLimits limits, double sourceFrameRate,
         Action<DecodeResult>? present, IProgress<PlaybackBenchmarkProgress>? progress, CancellationToken token, Action<Action>? uiPost)
     {
-        var count = 0;
         Exception? failure = null;
         await using var session = await PlaybackSession.StartAsync(options, uiPost, token, owner =>
         {
             owner.FramePresented += frame =>
             {
-                Interlocked.Increment(ref count);
                 if (present is not null)
                     present(frame);
                 else
@@ -252,19 +250,28 @@ internal static class PlaybackBenchmarkService
             owner.Failed += exception => Volatile.Write(ref failure, exception);
         }, audioOutputFactory: static () => null).ConfigureAwait(false);
         var time = Stopwatch.StartNew();
+        PlaybackPerformance? latestPerformance = null;
+        session.MeasurePerformance();
         do
         {
             await Task.Delay(250, token).ConfigureAwait(false);
+            // 与主窗口共用约两秒的滑动窗口；结束后的轮询不再污染最后一个有效窗口。
+            if (session.State == PlaybackState.Playing)
+                latestPerformance = session.MeasurePerformance() ?? latestPerformance;
             progress?.Report(new(PlaybackBenchmarkStage.Playback, Math.Min(1, time.Elapsed.TotalSeconds / limits.PlaybackSeconds),
-                FramesPerSecond: session.PresentedFrameCount / time.Elapsed.TotalSeconds));
+                FramesPerSecond: latestPerformance?.PlaybackFps));
         } while (session.State == PlaybackState.Playing && time.Elapsed.TotalSeconds < limits.PlaybackSeconds);
         if (Volatile.Read(ref failure) is { } error)
             throw error;
-        count = (int)session.PresentedFrameCount;
-        if (count < 2)
+        var measured = session.MeasurePresentationTiming();
+        if (measured.FrameCount < 2 || measured.ElapsedSeconds <= 0)
             throw new PlaybackBenchmarkException(PlaybackBenchmarkFailure.TooFewFrames);
-        return new(PlaybackBenchmarkStage.Playback, count / time.Elapsed.TotalSeconds, session.OutputFrameRate > 0 ? session.OutputFrameRate : sourceFrameRate,
-            count, time.Elapsed.TotalSeconds, session.IsHardwareDecodingAware, OutputSize: new(options.MaxPresentWidth, options.MaxPresentHeight),
+        // N 帧之间有 N-1 个间隔，与纯解码阶段的计时口径一致；不计首帧等待和结束轮询。
+        var count = (int)measured.FrameCount - 1;
+        // 不足一秒的短片段尚无完整窗口，使用实际呈现区间兜底；丢帧记录仍保留整段统计。
+        return new(PlaybackBenchmarkStage.Playback, latestPerformance?.PlaybackFps ?? count / measured.ElapsedSeconds,
+            session.OutputFrameRate > 0 ? session.OutputFrameRate : sourceFrameRate,
+            count, measured.ElapsedSeconds, session.IsHardwareDecodingAware, OutputSize: new(options.MaxPresentWidth, options.MaxPresentHeight),
             LateDrops: session.LateDroppedFrameCount, BusyDrops: session.BusyDroppedFrameCount, Recoveries: session.CatchUpCount, GpuPresentation: session.UsesGpuPresentation, HardwareSurfacePresentation: session.UsesHardwareSurfacePresentation);
     }
 }
