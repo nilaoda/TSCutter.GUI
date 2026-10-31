@@ -336,6 +336,9 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
         TimelineBuckets = progress.Timeline;
         foreach (var pid in progress.Pids)
             UpdatePidSummary(pid, progress.PacketCount);
+        // 扫描器在后台合并已有事件，沿用约 10 Hz 的进度刷新更新行内次数和包范围。
+        foreach (var row in Events)
+            row.RefreshAggregation();
         if (progress.NewEvent is not null && Events.Count < MaxUiEvents)
         {
             Events.Add(new TsCheckEventView(progress.NewEvent, _text));

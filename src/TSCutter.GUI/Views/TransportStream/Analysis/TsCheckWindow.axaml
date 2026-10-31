@@ -188,6 +188,8 @@
                     <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.SourceTime}" Binding="{Binding SourceTime}" Width="120" />
                     <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.ZeroBasedTime}" Binding="{Binding ZeroBasedTime}" Width="120" />
                     <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Type}" Binding="{Binding Type}" Width="175" />
+                    <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Occurrences}"
+                                        Binding="{Binding Occurrences, StringFormat={}{0:N0}}" Width="110" />
                     <DataGridTextColumn Header="PID" Binding="{Binding Pid}" Width="80" />
                     <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Stream}" Binding="{Binding Stream}" Width="220" />
                     <DataGridTextColumn Header="{DynamicResource String.TsCheck.Column.Packet}" Binding="{Binding Packet}" Width="135" />

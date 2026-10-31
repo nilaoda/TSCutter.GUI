@@ -626,6 +626,7 @@
     <x:String x:Key="String.TsCheck.Timeline.NoData">正在等待有效的 PCR 時間軸...</x:String>
     <x:String x:Key="String.TsCheck.Timeline.Hint">懸停查看位元率；點擊紅色或黃色標記可開啟對應詳細資料。</x:String>
     <x:String x:Key="String.TsCheck.Column.Type">類型</x:String>
+    <x:String x:Key="String.TsCheck.Column.Occurrences">發生次數</x:String>
     <x:String x:Key="String.TsCheck.Column.Packet">Packet</x:String>
     <x:String x:Key="String.TsCheck.Column.Description">說明</x:String>
     <x:String x:Key="String.TsCheck.Status.Ready">就緒</x:String>

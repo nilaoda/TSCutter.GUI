@@ -1,9 +1,10 @@
+using CommunityToolkit.Mvvm.ComponentModel;
 using TSCutter.GUI.Utils.TransportStream.Analysis;
 
 
 namespace TSCutter.GUI.Models.TransportStream.Analysis;
 
-public sealed class TsCheckEventView
+public sealed partial class TsCheckEventView : ObservableObject
 {
     public TsCheckEventView(TsCheckEvent item, TsCheckTextFormatter text, TsCheckResult? result = null)
     {
@@ -14,9 +15,7 @@ public sealed class TsCheckEventView
         Type = text.FormatEventType(item);
         Pid = item.PidText;
         Stream = text.FormatPidDescription(item, result);
-        Packet = item.StartPacket == item.EndPacket
-            ? item.StartPacket.ToString("N0")
-            : $"{item.StartPacket:N0}-{item.EndPacket:N0}";
+        RefreshAggregation();
         Message = text.FormatEventMessage(item);
     }
 
@@ -27,6 +26,15 @@ public sealed class TsCheckEventView
     public string Type { get; }
     public string Pid { get; }
     public string Stream { get; }
-    public string Packet { get; }
+    public string Packet => Item.StartPacket == Item.EndPacket
+        ? Item.StartPacket.ToString("N0")
+        : $"{Item.StartPacket:N0}-{Item.EndPacket:N0}";
     public string Message { get; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(Packet))]
+    private int _occurrences;
+
+    // 由 UI 进度回调刷新；没有新增合并时不发送绑定通知。
+    internal void RefreshAggregation() => Occurrences = Item.Occurrences;
 }
