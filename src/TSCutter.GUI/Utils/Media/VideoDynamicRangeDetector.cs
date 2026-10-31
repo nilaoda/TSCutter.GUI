@@ -7,6 +7,33 @@ namespace TSCutter.GUI.Utils.Media;
 
 internal static class VideoDynamicRangeDetector
 {
+    public static VideoDynamicRange Detect(CodecParameters codecParameters)
+    {
+        var hasDolbyVisionConfig = HasCodecSideData(codecParameters, AVPacketSideDataType.AV_PKT_DATA_DOVI_CONF);
+        var hasHdrMetadata =
+            HasCodecSideData(codecParameters, AVPacketSideDataType.AV_PKT_DATA_MASTERING_DISPLAY_METADATA)
+            || HasCodecSideData(codecParameters, AVPacketSideDataType.AV_PKT_DATA_CONTENT_LIGHT_LEVEL)
+            || HasCodecSideData(codecParameters, AVPacketSideDataType.AV_PKT_DATA_DYNAMIC_HDR10_PLUS);
+        return Detect(
+            codecParameters.ColorTrc,
+            hasDolbyVisionConfig,
+            hasHdrMetadata,
+            codecParameters.CodecTag);
+    }
+
+    private static unsafe bool HasCodecSideData(CodecParameters codecParameters, AVPacketSideDataType type)
+    {
+        AVCodecParameters* rawParameters = codecParameters;
+        var sideData = rawParameters->coded_side_data;
+        for (var index = 0; sideData != null && index < rawParameters->nb_coded_side_data; index++)
+        {
+            if (sideData[index].type == type)
+                return true;
+        }
+
+        return false;
+    }
+
     public static VideoDynamicRange Detect(
         AVColorTransferCharacteristic colorTransfer,
         bool hasDolbyVisionMetadata,

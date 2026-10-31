@@ -119,6 +119,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             program.RefreshLocalizedText();
         foreach (var subtitle in PreviewSubtitleTracks)
             subtitle.RefreshLocalizedText();
+        foreach (var audio in PreviewAudioTracks)
+            audio.RefreshLocalizedText();
         foreach (var clip in Clips)
             clip.RefreshLocalizedText();
         foreach (var item in ExportQueue)
@@ -127,6 +129,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         OnPropertyChanged(nameof(ZoomFactorStr));
         OnPropertyChanged(nameof(DecodeModeText));
         OnPropertyChanged(nameof(ToneMappingStatusText));
+        OnPropertyChanged(nameof(PlaybackButtonToolTip));
+        OnPropertyChanged(nameof(MuteButtonToolTip));
+        OnPropertyChanged(nameof(PlaybackAudioStatusText));
         OnPropertyChanged(nameof(StatusInfoText));
         OnPropertyChanged(nameof(ToolsOnlyMessage));
         OnPropertyChanged(nameof(FilteredClipSizeStr));
@@ -301,6 +306,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     private void NotifyClipSelectionChanged()
     {
+        PlaySelectedClipCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(SelectedClipCount));
         OnPropertyChanged(nameof(ClipOutputCommand));
         OnPropertyChanged(nameof(ClipOutputText));
@@ -465,8 +471,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     }
 
     [RelayCommand(CanExecute = nameof(CanMarkVideo))]
-    private void AddClip()
+    private async Task AddClipAsync()
     {
+        await PausePlaybackForNavigationAsync();
+        if (!await SnapDisplayedFrameToKeyFrameAsync())
+            return;
         RecordHistory();
         AddClipCore();
     }
@@ -506,8 +515,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     }
 
     [RelayCommand(CanExecute = nameof(CanMarkSelectedClip))]
-    private void MarkClipStart()
+    private async Task MarkClipStartAsync()
     {
+        await PausePlaybackForNavigationAsync();
+        if (!await SnapDisplayedFrameToKeyFrameAsync())
+            return;
         RecordHistory();
         MarkClipStartCore();
     }
@@ -534,6 +546,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private async Task MarkClipEndCoreAsync(bool ensureSelectedClip)
     {
         if (!CanMarkVideo || (!ensureSelectedClip && SelectedClip is null))
+            return;
+        await PausePlaybackForNavigationAsync();
+        if (!await SnapDisplayedFrameToKeyFrameAsync())
             return;
         // 先冻结当前显示帧。扫描期间允许导航，结果仍属于点击时的画面和片段。
         var video = _videoInstance;
@@ -605,8 +620,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     }
 
     [RelayCommand(CanExecute = nameof(CanMarkVideo))]
-    private void MarkClipStartShortcut()
+    private async Task MarkClipStartShortcutAsync()
     {
+        await PausePlaybackForNavigationAsync();
+        if (!await SnapDisplayedFrameToKeyFrameAsync())
+            return;
         RecordHistory();
         EnsureSelectedClipCore();
         MarkClipStartCore();
@@ -1191,6 +1209,20 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     [RelayCommand(CanExecute = nameof(CanUsePreview))]
     private async Task SaveFrameClickAsync()
     {
+        await PausePlaybackForNavigationAsync();
+        if (lastFrameFromPlayback && _videoInstance is { } video)
+        {
+            await RunDecodeOperationAsync(async () =>
+            {
+                var frame = await video.CapturePlaybackFrameAsync(_displayedFramePts);
+                if (frame is null)
+                    return;
+                if (ReferenceEquals(video, _videoInstance))
+                    ApplyDecodedFrame(frame, fromPlayback: true);
+                else
+                    DisposePreviewResult(frame);
+            });
+        }
         if (DecodedBitmap is null) return;
 
         var captureVm = _dialogService.CreateViewModel<CaptureFrameViewModel>();
@@ -1267,6 +1299,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     private void SetDecodedBitmap(Bitmap? value, IBitmapFrameLease? bitmapLease = null)
     {
+        // GPU 帧没有 CPU 位图；播放时不重复发布 null，也不逐帧刷新无变化的命令状态。
+        if (ReferenceEquals(decodedBitmap, value) && ReferenceEquals(decodedBitmapLease, bitmapLease))
+            return;
         var previousBitmap = decodedBitmap;
         var previousLease = decodedBitmapLease;
 
@@ -1335,7 +1370,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     partial void OnCurrentTimeChanged(double value)
     {
         TimelineViewport.SetPlayhead(value);
-        if (!keyFrameStripScrubbing && !_isLoadingVideo)
+        // 播放期间挂起缩略图条，暂停或导航后再按当前画面刷新。
+        if (!keyFrameStripScrubbing && !_isLoadingVideo && !IsPlaybackActive)
             RequestKeyFrameStrip(value, currentPts: _displayedFramePts);
     }
 
@@ -1926,6 +1962,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     public void RequestScrubPreview(double timeSeconds, PixelSize targetSize = default)
     {
+        // 拖动预览暂停连续输出，保留播放会话供新位置复用。
+        PausePlaybackForNavigation();
         var startWorker = false;
         lock (_scrubPreviewSync)
         {
@@ -2124,8 +2162,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         _activeScrubPreviewCancellation?.Cancel();
     }
 
-    private void ApplyDecodeResult(DecodeResult decodeResult)
+    private void ApplyDecodeResult(DecodeResult decodeResult) => ApplyDecodedFrame(decodeResult, fromPlayback: false);
+
+    private void ApplyDecodedFrame(DecodeResult decodeResult, bool fromPlayback)
     {
+        lastFrameFromPlayback = fromPlayback;
         SetDisplayedVideoDynamicRange(decodeResult.VideoDynamicRange);
         _displayedFramePosition = decodeResult.FramePosition;
         _displayedFramePts = decodeResult.FramePts;
@@ -2191,7 +2232,25 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             DecodeCost = 0;
             var stopwatch = Stopwatch.StartNew();
             var instance = _videoInstance!;
-            var decodeResult = await instance.DecodeNextFrameAsync(count);
+            DecodeResult decodeResult;
+            if (lastFrameFromPlayback)
+            {
+                var targetPts = _displayedFramePts;
+                var snapped = await instance.DecodeKeyFrameAtOrBeforePtsAsync(targetPts);
+                if (snapped is null)
+                    throw new InvalidOperationException(LocalizationManager.Instance.String_Playback_BoundarySnapFailed);
+                if (count < 0 && snapped.FramePts < targetPts)
+                    count++;
+                if (count == 0)
+                    decodeResult = snapped;
+                else
+                {
+                    DisposePreviewResult(snapped);
+                    decodeResult = await instance.DecodeNextFrameAsync(count);
+                }
+            }
+            else
+                decodeResult = await instance.DecodeNextFrameAsync(count);
             if (!ReferenceEquals(instance, _videoInstance))
             {
                 DisposePreviewResult(decodeResult);
@@ -2226,10 +2285,15 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     private void ClearVars()
     {
+        StopPlaybackSession();
+        timelineScrubActive = false;
+        scrubResumePlayback = false;
+        lastFrameFromPlayback = false;
         ResetKeyFrameStrip();
         SetDisplayedVideoDynamicRange(VideoDynamicRange.Standard);
         SetPreviewTrackChoices([], null);
         SetSubtitleTrackChoices([]);
+        SetPlaybackTrackChoices([]);
         _currentFileSupportsTsTools = false;
         _previewFailure = null;
         CancelClipEndScan();
@@ -2289,6 +2353,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 _remuxExportSettings = null;
                 SetPreviewTrackChoices(_videoInstance.PreviewPrograms, _videoInstance.StreamSelection);
                 SetSubtitleTrackChoices(_videoInstance.PreviewSubtitleTracks);
+                SetPlaybackTrackChoices(_videoInstance.PreviewAudioTracks);
                 UpdateDecodeMode();
                 VideoInfoText = _discInput is { } disc
                     ? string.Format(LocalizationManager.Instance.String_Disc_InfoText,
@@ -2388,11 +2453,16 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     private async Task RunDecodeOperationAsync(Func<Task> action)
     {
+        var instance = _videoInstance;
+        // 等待暂停也属于本次操作，关闭或换源时必须等待它退出。
         if (activeDecodeOperations++ == 0)
             decodeIdleCompletion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         DecodingOpCount++;
         try
         {
+            await PausePlaybackForNavigationAsync();
+            if (!ReferenceEquals(instance, _videoInstance))
+                return;
             await action();
         }
         finally
@@ -2485,10 +2555,12 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     public void Close()
     {
+        StopPlaybackSession();
         ResetKeyFrameStrip();
         _previewSelectionCancellation?.Cancel();
         SetPreviewTrackChoices([], null);
         SetSubtitleTrackChoices([]);
+        SetPlaybackTrackChoices([]);
         CancelClipEndScan();
         keyFrameOverviewWindow?.CloseWindow();
         keyFrameOverviewWindow = null;
@@ -2509,9 +2581,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         DecodedGpuFrame?.Dispose();
         DecodedGpuFrame = null;
         DisposeClipThumbnails();
-        if (videoInstance is not null)
-            previewDisposalTask = DisposeVideoAfterScrubStopsAsync(Task.WhenAll(scrubWorker, toneMappingRefreshTask,
-                decodeIdleCompletion?.Task ?? Task.CompletedTask), videoInstance);
+        var pendingPreview = Task.WhenAll(scrubWorker, toneMappingRefreshTask, playbackStopTask,
+            decodeIdleCompletion?.Task ?? Task.CompletedTask);
+        previewDisposalTask = videoInstance is not null
+            ? DisposeVideoAfterScrubStopsAsync(pendingPreview, videoInstance) : pendingPreview;
         VideoPath = string.Empty;
         _discInput = null;
         _discTitleInfo = null;
@@ -2563,7 +2636,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private bool CanEditSelectedClip => CanEditVideo && HasSelectedClip;
     // 标记取已显示帧的快照，后台 seek 不影响可用状态；加载、边界扫描和无效帧仍需禁用。
     private bool CanMarkVideo => CanEditVideo && !_isResolvingClipEnd
-        && (PositionInFile >= 0 || IsRemuxExport) && CurrentPts != long.MinValue;
+        && (lastFrameFromPlayback || PositionInFile >= 0 || IsRemuxExport) && CurrentPts != long.MinValue;
     private bool CanMarkSelectedClip => CanMarkVideo && HasSelectedClip;
 
     private void NotifyVideoCapabilityChanged()
@@ -2574,6 +2647,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         OnPropertyChanged(nameof(CanTogglePreviewOptions));
         OnPropertyChanged(nameof(CanToggleHardwareDecoding));
         OnPropertyChanged(nameof(CanToggleSdrToneMapping));
+        // Avalonia 按钮只在 CanExecuteChanged 时重查可用性：加载/忙碌变化必须显式通知。
+        OnPropertyChanged(nameof(CanTogglePlayback));
+        OnPropertyChanged(nameof(CanPlaySelectedClip));
+        TogglePlaybackCommand.NotifyCanExecuteChanged();
+        PlaySelectedClipCommand.NotifyCanExecuteChanged();
         ToggleHardwareDecodingCommand.NotifyCanExecuteChanged();
         ToggleSdrToneMappingCommand.NotifyCanExecuteChanged();
         StartToneMappingRefresh();
@@ -2583,6 +2661,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         FrameSearchClickCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(CanUseCurrentFile));
         OnPropertyChanged(nameof(CanUseCurrentFileTools));
+        OnPropertyChanged(nameof(CanUseFileToolsMenu));
+        OnPropertyChanged(nameof(CanUsePlaybackBenchmark));
         OnPropertyChanged(nameof(IsToolsOnly));
         OnPropertyChanged(nameof(ToolsOnlyMessage));
         CloseVideoClickCommand.NotifyCanExecuteChanged();

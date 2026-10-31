@@ -60,6 +60,17 @@ public sealed unsafe class Frame : SafeHandle
         FF.av_frame_unref(Raw);
         PacketPositionSource = FramePacketPositionSource.Opaque;
     }
+    internal Frame CloneReference()
+    {
+        var frame = new Frame();
+        try
+        {
+            FFmpegException.Check(FF.av_frame_ref(frame, this));
+            frame.PacketPositionSource = PacketPositionSource;
+            return frame;
+        }
+        catch { frame.Dispose(); throw; }
+    }
     public static Frame CreateVideo(int width, int height, AVPixelFormat format)
     {
         var frame = new Frame { Width = width, Height = height, Format = (int)format };

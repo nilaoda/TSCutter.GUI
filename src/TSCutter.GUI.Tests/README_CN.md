@@ -81,6 +81,15 @@ TSCUTTER_FFMPEG_ROOT=/path/to/ffmpeg-runtime dotnet test src/TSCutter.GUI.Tests 
 
 找到库文件后，如果加载失败、架构或 ABI 不匹配，测试会失败并显示加载错误，不会把损坏的运行库当成正常跳过。
 
+## 播放与音频设备
+
+播放测试使用生成的 `keyframes` 和 `remux` 素材。多数音频测试使用内存输出，不会打开扬声器。
+三项真实设备测试为可选测试，输出数字静音；需要时设置 `TSCUTTER_ENABLE_AUDIO_DEVICE_TESTS=1`，
+并确保机器有可用的默认音频设备。未启用时会明确跳过。
+
+应用构建时会编译一个小型原生 PCM 输出桥，编译工具要求及无声构建选项见[音频桥说明](../TSCutter.GUI/native/audio/README_CN.md)。
+FFmpeg 解码和重采样仍复用上文所述的现有运行库。
+
 ## 可选的自定义目录和真实素材
 
 默认的合成测试不依赖下面的环境变量。它们用于复用已有目录或运行无法通用生成的真实素材检查：

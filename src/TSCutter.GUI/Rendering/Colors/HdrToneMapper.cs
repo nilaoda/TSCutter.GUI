@@ -12,6 +12,8 @@ internal sealed unsafe partial class HdrToneMapper
 {
     private const int TableSize = 16384;
     private const float SdrWhiteNits = 203f;
+    private const float SdrBlackRatio = 1f / 1000;
+    private static readonly float SdrBlackPq = NitsToPq(SdrWhiteNits * SdrBlackRatio);
     private static readonly float[] PqTable = BuildTable(PqToNits);
     private static readonly float[] SrgbTable = BuildTable(x => 255f *
         (x <= 0.0031308f ? 12.92f * x : 1.055f * MathF.Pow(x, 1f / 2.4f) - 0.055f));
@@ -27,7 +29,6 @@ internal sealed unsafe partial class HdrToneMapper
     private SamplingGrid? samplingGrid;
     private readonly float[] toneTable = new float[TableSize + 1];
     private float previousPeak;
-    private HdrTransfer previousTransfer;
     private static readonly float[] HlgTable = BuildTable(HlgToLinear);
 
     internal void Convert(AVFrame* source, AVFrame* destination, HdrFrameMetadata metadata, bool useSimd = true)
@@ -49,30 +50,31 @@ internal sealed unsafe partial class HdrToneMapper
         // 每个分区至少承担约 12.8 万像素，避免小缩略图的调度成本超过计算收益。
         var pixels = destination->width * (long)destination->height;
         var workerCount = (int)Math.Min(Math.Min(maximumParallelism, destination->height), Math.Max(1, pixels / 128_000));
-        Prepare(destination->width, metadata.PeakNits, metadata.Transfer, workerCount);
+        Prepare(destination->width, metadata.PeakNits, workerCount);
+        var gamut = GetGamut(metadata.GamutTo709);
         var destinationAddress = (nint)destination->data[0];
         var stride = destination->linesize[0];
         var height = destination->height;
         var width = destination->width;
         if (workerCount == 1)
-            ConvertRows(0, 1, height, width, destinationAddress, stride, ySampler, uSampler, vSampler, metadata, useSimd);
+            ConvertRows(0, 1, height, width, destinationAddress, stride, ySampler, uSampler, vSampler, metadata, useSimd, gamut);
         else
-            ConvertParallel(workerCount, height, width, destinationAddress, stride, ySampler, uSampler, vSampler, metadata, useSimd);
+            ConvertParallel(workerCount, height, width, destinationAddress, stride, ySampler, uSampler, vSampler, metadata, useSimd, gamut);
     }
 
     private void ConvertParallel(int workerCount, int height, int width, nint address, int stride,
         ComponentSampler ySampler, ComponentSampler uSampler, ComponentSampler vSampler,
-        HdrFrameMetadata metadata, bool useSimd)
+        HdrFrameMetadata metadata, bool useSimd, GamutDescription gamut)
     {
         // 每个分区独占行缓冲，所有任务返回后才允许解除目标位图锁。
         // 闭包限于此方法，小预览的单分区路径不产生调度分配。
         Parallel.For(0, workerCount, worker => ConvertRows(worker, workerCount, height, width,
-            address, stride, ySampler, uSampler, vSampler, metadata, useSimd));
+            address, stride, ySampler, uSampler, vSampler, metadata, useSimd, gamut));
     }
 
     private void ConvertRows(int worker, int workerCount, int height, int width, nint address, int stride,
         ComponentSampler ySampler, ComponentSampler uSampler, ComponentSampler vSampler,
-        HdrFrameMetadata metadata, bool useSimd)
+        HdrFrameMetadata metadata, bool useSimd, GamutDescription gamut)
     {
         var buffer = rowBuffers[worker];
         var a = buffer.Red; var b = buffer.Green; var c = buffer.Blue;
@@ -81,14 +83,14 @@ internal sealed unsafe partial class HdrToneMapper
             ySampler.SampleRow(y, a);
             uSampler.SampleRow(y, b);
             vSampler.SampleRow(y, c);
-            ProcessSignals(metadata, metadata.Linear, buffer, width, useSimd);
+            ProcessSignals(metadata, metadata.Linear, buffer, width, useSimd, gamut);
             var pixels = new Span<uint>((byte*)address + y * stride, width);
             for (var x = 0; x < pixels.Length; x++)
                 pixels[x] = (uint)(Encode(c[x]) | Encode(b[x]) << 8 | Encode(a[x]) << 16) | 0xff000000u;
         }
     }
 
-    private void Prepare(int width, float peak, HdrTransfer transfer, int workerCount = 1)
+    private void Prepare(int width, float peak, int workerCount = 1)
     {
         var length = (width + Vector<float>.Count - 1) / Vector<float>.Count * Vector<float>.Count;
         // 行缓冲按容量复用，分辨率缩小时只处理有效 Span，切回大尺寸无需重新分配。
@@ -103,28 +105,33 @@ internal sealed unsafe partial class HdrToneMapper
             if (rowBuffers[worker].Red.Length < length) rowBuffers[worker] = new RowBuffer(length);
         peak = Math.Clamp(peak, SdrWhiteNits, 10000f);
         if (!float.IsFinite(peak)) throw new InvalidOperationException("Invalid HDR source peak.");
-        if (peak == previousPeak && transfer == previousTransfer) return;
+        if (peak == previousPeak) return;
         previousPeak = peak;
-        previousTransfer = transfer;
-        // BT.2390 的 PQ 域 Hermite 肩部。提前生成亮度比例表，像素循环中不计算幂函数。
+        // BT.2390 曲线保留中间调亮度，仅在高光侧平滑压缩；固定源峰值避免逐帧亮度波动。
+        var black = NitsToPq(0);
         var sourcePq = NitsToPq(peak);
-        var target = NitsToPq(SdrWhiteNits) / sourcePq;
+        var targetPq = NitsToPq(SdrWhiteNits);
+        var range = sourcePq - black;
+        var target = (targetPq - black) / range;
+        var minimum = (SdrBlackPq - black) / range;
         var knee = 1.5f * target - 0.5f;
+        var gain = target < 1 ? 1 / (1 + minimum / target * MathF.Pow(1 - target, 4)) : 1;
         for (var i = 0; i <= TableSize; i++)
         {
-            var input = i / (float)TableSize;
-            var nits = transfer == HdrTransfer.Hlg ? 1000 * MathF.Pow(input, 1.2f) : input * 10000;
-            var value = Math.Min(NitsToPq(nits) / sourcePq, 1);
+            var value = Math.Clamp((i / (float)TableSize - black) / range, 0, 1);
             if (value > knee && target < 1)
             {
                 var t = (value - knee) / (1 - knee);
-                var t2 = t * t; var t3 = t2 * t;
+                var t2 = t * t;
+                var t3 = t2 * t;
                 value = (2 * t3 - 3 * t2 + 1) * knee
-                    + (t3 - 2 * t2 + t) * (1 - knee) + (-2 * t3 + 3 * t2) * target;
+                    + (t3 - 2 * t2 + t) * (1 - knee)
+                    + (-2 * t3 + 3 * t2) * target;
             }
-            var denominator = transfer == HdrTransfer.Hlg ? input : nits;
-            toneTable[i] = denominator > 0 ? PqToNits(value * sourcePq) / (SdrWhiteNits * denominator)
-                : transfer == HdrTransfer.Hlg ? 0 : 1 / SdrWhiteNits;
+            // 黑位补偿在暗部平滑衰减，并保持输出白点不变。
+            value += minimum * MathF.Pow(1 - value, 4);
+            value = gain * (value - minimum) + minimum;
+            toneTable[i] = Math.Clamp(value * range + black, SdrBlackPq, targetPq);
         }
     }
 
@@ -134,19 +141,18 @@ internal sealed unsafe partial class HdrToneMapper
     {
         if (y.Length != u.Length || y.Length != v.Length || r.Length != y.Length || g.Length != y.Length || blue.Length != y.Length)
             throw new ArgumentException("Signal lengths must match.");
-        Prepare(y.Length, metadata.PeakNits, metadata.Transfer);
+        Prepare(y.Length, metadata.PeakNits);
         var buffer = rowBuffers[0];
         var a = buffer.Red; var b = buffer.Green; var c = buffer.Blue;
         y.CopyTo(a); u.CopyTo(b); v.CopyTo(c);
-        ProcessSignals(metadata, metadata.Linear, buffer, y.Length, useSimd);
+        ProcessSignals(metadata, metadata.Linear, buffer, y.Length, useSimd, GetGamut(metadata.GamutTo709));
         a.AsSpan(0, y.Length).CopyTo(r); b.AsSpan(0, y.Length).CopyTo(g); c.AsSpan(0, y.Length).CopyTo(blue);
     }
 
-    private void ProcessSignals(HdrFrameMetadata metadata, ColorMatrix linear, RowBuffer buffer, int width, bool useSimd)
+    private void ProcessSignals(HdrFrameMetadata metadata, ColorMatrix linear, RowBuffer buffer, int width, bool useSimd, GamutDescription gamut)
     {
-        var a = buffer.Red; var b = buffer.Green; var c = buffer.Blue; var toneScale = buffer.ToneScale;
+        var a = buffer.Red; var b = buffer.Green; var c = buffer.Blue;
         var decodingTable = metadata.Transfer == HdrTransfer.Hlg ? HlgTable : PqTable;
-        var luminanceRange = metadata.Transfer == HdrTransfer.Hlg ? 1f : 10000f;
         var vectorWidth = (width + Vector<float>.Count - 1) / Vector<float>.Count * Vector<float>.Count;
         if (useSimd && Vector.IsHardwareAccelerated && width >= Vector<float>.Count)
         {
@@ -181,34 +187,6 @@ internal sealed unsafe partial class HdrToneMapper
             {
                 a[x] = Lookup(decodingTable, a[x]); b[x] = Lookup(decodingTable, b[x]); c[x] = Lookup(decodingTable, c[x]);
             }
-            for (var x = 0; x < vectorWidth; x += Vector<float>.Count)
-            {
-                linear.Transform(new Vector<float>(a, x), new Vector<float>(b, x), new Vector<float>(c, x),
-                    out var r, out var g, out var blue);
-                var luminance = Vector.Max(Vector<float>.Zero,
-                    r * new Vector<float>(0.2126f) + g * new Vector<float>(0.7152f) + blue * new Vector<float>(0.0722f));
-                luminance.CopyTo(toneScale, x);
-                r.CopyTo(a, x); g.CopyTo(b, x); blue.CopyTo(c, x);
-            }
-            for (var x = 0; x < width; x++) toneScale[x] = Lookup(toneTable, toneScale[x] / luminanceRange);
-            for (var x = 0; x < vectorWidth; x += Vector<float>.Count)
-            {
-                var scale = new Vector<float>(toneScale, x);
-                var r = new Vector<float>(a, x) * scale;
-                var g = new Vector<float>(b, x) * scale;
-                var blue = new Vector<float>(c, x) * scale;
-                var gray = Vector.Min(Vector<float>.One, Vector.Max(Vector<float>.Zero,
-                    r * new Vector<float>(0.2126f) + g * new Vector<float>(0.7152f) + blue * new Vector<float>(0.0722f)));
-                var minimum = Vector.Min(r, Vector.Min(g, blue));
-                var maximum = Vector.Max(r, Vector.Max(g, blue));
-                var epsilon = new Vector<float>(1e-6f);
-                var saturation = Vector.Min(Vector<float>.One, Vector.Min(
-                    gray / Vector.Max(gray - minimum, epsilon),
-                    (Vector<float>.One - gray) / Vector.Max(maximum - gray, epsilon)));
-                (gray + saturation * (r - gray)).CopyTo(a, x);
-                (gray + saturation * (g - gray)).CopyTo(b, x);
-                (gray + saturation * (blue - gray)).CopyTo(c, x);
-            }
         }
         else
         {
@@ -219,16 +197,12 @@ internal sealed unsafe partial class HdrToneMapper
                 var s1 = (metadata.Curves is { } curves1 ? Reshape(curves1[1], y, u, v, u) : u) - metadata.Offset[1];
                 var s2 = (metadata.Curves is { } curves2 ? Reshape(curves2[2], y, u, v, v) : v) - metadata.Offset[2];
                 metadata.Nonlinear.Transform(s0, s1, s2, out var l, out var m, out var s);
-                linear.Transform(Lookup(decodingTable, l), Lookup(decodingTable, m), Lookup(decodingTable, s), out var r, out var g, out var blue);
-                var scale = Lookup(toneTable, Math.Max(0, 0.2126f * r + 0.7152f * g + 0.0722f * blue) / luminanceRange);
-                r *= scale; g *= scale; blue *= scale;
-                var gray = Math.Clamp(0.2126f * r + 0.7152f * g + 0.0722f * blue, 0, 1);
-                var minimum = Math.Min(r, Math.Min(g, blue)); var maximum = Math.Max(r, Math.Max(g, blue));
-                var saturation = Math.Min(1, Math.Min(gray / Math.Max(gray - minimum, 1e-6f),
-                    (1 - gray) / Math.Max(maximum - gray, 1e-6f)));
-                a[x] = gray + saturation * (r - gray); b[x] = gray + saturation * (g - gray); c[x] = gray + saturation * (blue - gray);
+                a[x] = Lookup(decodingTable, l);
+                b[x] = Lookup(decodingTable, m);
+                c[x] = Lookup(decodingTable, s);
             }
         }
+        MapLinearColors(metadata, linear, buffer, width, useSimd, gamut);
     }
 
     internal static float Reshape(ReshapeCurve curve, float y, float u, float v, float signal)

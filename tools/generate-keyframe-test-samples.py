@@ -43,7 +43,7 @@ def main():
     # 使用较短的 POC 周期和 CRA，覆盖跨回绕的连续扫描；不包含真实节目画面。
     ffmpeg("-f", "lavfi", "-i", "testsrc2=size=128x72:rate=50:duration=24",
            "-an", "-c:v", "libx265", "-preset", "ultrafast", "-crf", 38,
-           "-x265-params", "keyint=32:min-keyint=32:scenecut=0:open-gop=1:log2-max-poc-lsb=6:repeat-headers=1:pools=1:frame-threads=1:log-level=error",
+           "-x265-params", "keyint=32:min-keyint=32:scenecut=0:open-gop=1:log2-max-poc-lsb=6:repeat-headers=1:pools=1:frame-threads=1:log-level=error:colorprim=bt2020:transfer=arib-std-b67:colormatrix=bt2020nc",
            "-pix_fmt", "yuv420p10le", "-color_primaries", "bt2020", "-color_trc", "arib-std-b67",
            "-colorspace", "bt2020nc", root / "hevc.mp4")
     ffmpeg("-i", root / "hevc.mp4", "-c", "copy", "-output_ts_offset", 41852, root / "hevc-hlg.ts")

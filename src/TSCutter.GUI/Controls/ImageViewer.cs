@@ -9,6 +9,7 @@ using Avalonia.Media.Imaging;
 using Avalonia.Interactivity;
 using CommunityToolkit.Mvvm.Input;
 using TSCutter.GUI.Rendering;
+using TSCutter.GUI.Rendering.Gpu;
 using TSCutter.GUI.Models.Preview;
 
 namespace TSCutter.GUI.Controls;
@@ -225,11 +226,10 @@ public class ImageViewer : Control
     {
         var result = base.ArrangeOverride(finalSize);
 
-        if (AutoFit && (Image is not null || GpuFrame is not null) && finalSize != _previousBounds)
-        {
-            _previousBounds = finalSize;
+        var boundsChanged = finalSize != _previousBounds;
+        _previousBounds = finalSize;
+        if (AutoFit && (Image is not null || GpuFrame is not null) && boundsChanged)
             ApplyFitTransform(finalSize);
-        }
 
         return result;
     }
@@ -408,7 +408,7 @@ public class ImageViewer : Control
             contentSize.Width * Zoom / scalingFactor, contentSize.Height * Zoom / scalingFactor);
     }
 
-    private NavigatorLayout? GetNavigatorLayout() => ShowNavigator && Image is not null && GpuFrame is null
+    private NavigatorLayout? GetNavigatorLayout() => ShowNavigator && (Image is not null || GpuFrame is SkiaVideoFrame)
         ? CalculateNavigatorLayout(Bounds.Size, GetImageDestinationRect())
         : null;
 
@@ -490,6 +490,7 @@ public class ImageViewer : Control
         var backgroundRect = new Rect(0, 0, Bounds.Width, Bounds.Height);
         var customColorBrush = new SolidColorBrush(Colors.Black);
         dc.FillRectangle(customColorBrush, backgroundRect);
+        SkiaVideoFramePresenter.Probe(dc, backgroundRect);
         
         if (Image is null && GpuFrame is null) return;
 
@@ -504,6 +505,14 @@ public class ImageViewer : Control
         if (GpuFrame is not null)
         {
             if (visibleRect is not { Width: > 0, Height: > 0 }) return;
+            if (GpuFrame is SkiaVideoFrame shaderFrame)
+            {
+                shaderFrame.Draw(dc, destRect, visibleRect);
+                DrawSubtitles(dc, destRect, visibleRect);
+                if (GetNavigatorLayout() is { } navigator)
+                    RenderNavigator(dc, navigator);
+                return;
+            }
             // The native visual owns the GPU image; only its viewport changes
             // while the user zooms, pans, or resizes the control.
             if (!GpuFrame.TryAttach(this))
@@ -580,7 +589,10 @@ public class ImageViewer : Control
     {
         dc.DrawRectangle(NavigatorBackground, NavigatorBorder, layout.Bounds, 4, 4);
         // 复用当前位图，平移与缩放只更新坐标，不生成或缓存新的缩略图。
-        dc.DrawImage(Image!, new Rect(0, 0, Image!.PixelSize.Width, Image.PixelSize.Height), layout.Image);
+        if (GpuFrame is SkiaVideoFrame shaderFrame)
+            shaderFrame.Draw(dc, layout.Image, layout.Image);
+        else if (Image is not null)
+            dc.DrawImage(Image, new Rect(0, 0, Image.PixelSize.Width, Image.PixelSize.Height), layout.Image);
         if (layout.Viewport is not { Width: > 0, Height: > 0 })
         {
             dc.FillRectangle(NavigatorMask, layout.Image);

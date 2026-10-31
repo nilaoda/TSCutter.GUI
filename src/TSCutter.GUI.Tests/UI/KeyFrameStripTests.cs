@@ -654,6 +654,42 @@ public sealed class KeyFrameStripTests
     }
 
     [Fact]
+    public async Task PlaybackSuspensionShowsOnlyPlaceholdersUntilResumed()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            var fake = new FakeService { PauseAfterFirst = new(TaskCreationOptions.RunContinuationsAsynchronously) };
+            var vm = new KeyFrameStripViewModel(() => fake);
+            vm.SetSource(new("one.mp4", null, true));
+            try
+            {
+                vm.RequestAt(0, immediate: true);
+                await fake.FirstFrameReady.Task;
+                var firstBitmap = vm.Items[0].Bitmap;
+                vm.SetSuspended(true);
+                fake.PauseAfterFirst.SetResult();
+                await vm.IdleTask;
+                Assert.Equal(vm.VisibleCount, vm.Items.Count);
+                Assert.All(vm.Items, item => Assert.True(item.IsPlaceholder));
+                vm.SetVisibleCount(12);
+                vm.RequestAt(100, immediate: true);
+                await vm.IdleTask;
+                Assert.Equal(12, vm.Items.Count);
+                Assert.All(vm.Items, item => Assert.True(item.IsPlaceholder));
+                Assert.Single(fake.Targets);
+                vm.SetSuspended(false);
+                vm.RequestAt(0, immediate: true);
+                await vm.IdleTask;
+                Assert.DoesNotContain(vm.Items, item => item.IsPlaceholder);
+                Assert.Same(firstBitmap, vm.Items[0].Bitmap);
+            }
+            finally { fake.PauseAfterFirst.TrySetResult(); vm.SetSource(null); await vm.IdleTask; }
+            return true;
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task ResizingReusesPicturesAndDebouncesAdditionalDecoding()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));

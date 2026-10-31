@@ -41,6 +41,19 @@ internal sealed class MacOsBackdropClip : AvaloniaObject
         finally { window.ClearValue(RefreshingTransparencyProperty); }
     }
 
+    internal static void EnsureResizableWindow(Window window)
+    {
+        if (!OperatingSystem.IsMacOS() || window.TryGetPlatformHandle() is not { HandleDescriptor: "NSWindow" } handle)
+            return;
+        // Classic 只在激活时补回缩放标记；主题切换和全屏退出也需要恢复。
+        if (window.SystemDecorations == SystemDecorations.None && window.CanResize)
+        {
+            var style = GetInteger(handle.Handle, Selector("styleMask"));
+            if ((style & ResizableWindowMask) == 0)
+                SetInteger(handle.Handle, Selector("setStyleMask:"), style | ResizableWindowMask);
+        }
+    }
+
     public static void Update(Window window, double? radius, bool useAeroMaterial = true, bool clearWindowBackground = true,
         bool useNativeFrame = false)
     {
@@ -52,13 +65,7 @@ internal sealed class MacOsBackdropClip : AvaloniaObject
             return;
         }
 
-        // Classic 只在 Activated 时补回无边框窗口的原生缩放能力；切换主题时可能一直处于激活状态。
-        if (window.SystemDecorations == SystemDecorations.None && window.CanResize)
-        {
-            var style = GetInteger(handle.Handle, Selector("styleMask"));
-            if ((style & ResizableWindowMask) == 0)
-                SetInteger(handle.Handle, Selector("setStyleMask:"), style | ResizableWindowMask);
-        }
+        EnsureResizableWindow(window);
 
         var saved = window.GetValue(SavedStateProperty);
         if (radius == null && saved == null)

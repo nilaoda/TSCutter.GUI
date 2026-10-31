@@ -109,6 +109,8 @@ public readonly unsafe struct MediaStream
     public AVRational SampleAspectRatio => raw == null ? default : raw->sample_aspect_ratio;
     public NativeMetadata Metadata => new(raw == null ? null : raw->metadata);
     public static implicit operator AVStream*(MediaStream stream) => stream.raw;
+    /// <summary>默认结构体（没有对应流）为 false；调用方用它区分“没有音轨”。</summary>
+    public bool IsValid => raw != null;
 }
 
 public readonly unsafe struct MediaProgram(AVProgram* raw)

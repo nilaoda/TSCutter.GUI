@@ -313,27 +313,6 @@
             </Panel>
         </Border>
     </ControlTemplate>
-    <ControlTemplate x:Key="Windows11SpinnerTemplate" TargetType="ButtonSpinner">
-        <DataValidationErrors>
-            <Border CornerRadius="4" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
-                    BorderThickness="{TemplateBinding BorderThickness}">
-                <DockPanel>
-                    <UniformGrid Name="PART_SpinnerPanel" DockPanel.Dock="Right" Rows="2" Width="24"
-                                 IsVisible="{TemplateBinding ShowButtonSpinner}">
-                        <RepeatButton Name="PART_IncreaseButton" Padding="0" MinHeight="0" IsTabStop="{TemplateBinding IsTabStop}">
-                            <Path Width="8" Height="4" Data="M0,4 L4,0 L8,4" Stroke="{DynamicResource ThemeForegroundBrush}" StrokeThickness="1.2" />
-                        </RepeatButton>
-                        <RepeatButton Name="PART_DecreaseButton" Padding="0" MinHeight="0" IsTabStop="{TemplateBinding IsTabStop}">
-                            <Path Width="8" Height="4" Data="M0,0 L4,4 L8,0" Stroke="{DynamicResource ThemeForegroundBrush}" StrokeThickness="1.2" />
-                        </RepeatButton>
-                    </UniformGrid>
-                    <ContentPresenter Name="PART_ContentPresenter" Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}"
-                                      Padding="{TemplateBinding Padding}" HorizontalContentAlignment="{TemplateBinding HorizontalContentAlignment}"
-                                      VerticalContentAlignment="{TemplateBinding VerticalContentAlignment}" />
-                </DockPanel>
-            </Border>
-        </DataValidationErrors>
-    </ControlTemplate>
     <ControlTemplate x:Key="Windows11FlyoutTemplate" TargetType="FlyoutPresenter">
         <Border CornerRadius="8" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
                 BorderThickness="1" Margin="6,4,6,8" BoxShadow="0 4 10 0 #26000000" RenderOptions.EdgeMode="Antialias">

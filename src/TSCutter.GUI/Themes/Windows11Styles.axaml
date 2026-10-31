@@ -477,38 +477,6 @@
         <Style Selector="^ TabItem[TabStripPlacement=Right] /template/ Border#Windows11TabIndicator">
             <Setter Property="HorizontalAlignment" Value="Left" />
         </Style>
-        <Style Selector="^ NumericUpDown">
-            <Setter Property="Height" Value="28" />
-            <Setter Property="Background" Value="{DynamicResource DesktopButtonBrush}" />
-            <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-        </Style>
-        <Style Selector="^ ButtonSpinner">
-            <Setter Property="Template" Value="{StaticResource Windows11SpinnerTemplate}" />
-        </Style>
-        <Style Selector="^ ButtonSpinner:left /template/ UniformGrid#PART_SpinnerPanel">
-            <Setter Property="DockPanel.Dock" Value="Left" />
-        </Style>
-        <Style Selector="^ ButtonSpinner /template/ RepeatButton">
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="Template">
-                <ControlTemplate>
-                    <Border Background="{TemplateBinding Background}" CornerRadius="2" Padding="{TemplateBinding Padding}">
-                        <ContentPresenter Name="PART_ContentPresenter" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                          Content="{TemplateBinding Content}" ContentTemplate="{TemplateBinding ContentTemplate}" />
-                    </Border>
-                </ControlTemplate>
-            </Setter>
-        </Style>
-        <Style Selector="^ ButtonSpinner /template/ RepeatButton:pointerover">
-            <Setter Property="Background" Value="{DynamicResource Windows11SubtleBrush}" />
-        </Style>
-        <Style Selector="^ ButtonSpinner /template/ RepeatButton:pressed">
-            <Setter Property="Background" Value="{DynamicResource Windows11SubtlePressedBrush}" />
-        </Style>
-        <Style Selector="^ ButtonSpinner /template/ RepeatButton:disabled">
-            <Setter Property="Opacity" Value="0.35" />
-        </Style>
         <Style Selector="^ TreeView, ^ ListBox">
             <Setter Property="BorderBrush" Value="{DynamicResource Windows11StrokeBrush}" />
             <Setter Property="BorderThickness" Value="1" />
@@ -643,6 +611,23 @@
     <Style Selector="ToolTip.fluent /template/ ContentPresenter#PART_ContentPresenter">
         <Setter Property="Margin" Value="6,4,6,8" />
         <Setter Property="BoxShadow" Value="0 3 8 0 #26000000" />
+    </Style>
+    <Style Selector="FlyoutPresenter.language-picker.fluent ListBox">
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+    </Style>
+    <!-- 自定义语言列表位于独立弹出根，需与窗口内列表使用同一套 Fluent 行样式。 -->
+    <Style Selector="FlyoutPresenter.language-picker.fluent ListBoxItem">
+        <Setter Property="Template" Value="{StaticResource Windows11ListItemTemplate}" />
+        <Setter Property="Padding" Value="10,5" />
+        <Setter Property="Margin" Value="0,1" />
+    </Style>
+    <Style Selector="FlyoutPresenter.language-picker.fluent ListBoxItem:pointerover:not(:disabled), FlyoutPresenter.language-picker.fluent ListBoxItem:selected:not(:disabled)">
+        <Setter Property="Foreground" Value="{DynamicResource {x:Static common:SystemColors.ControlTextBrushKey}}" />
+        <Setter Property="Background" Value="{DynamicResource Windows11SubtleBrush}" />
+    </Style>
+    <Style Selector="FlyoutPresenter.language-picker.fluent ListBoxItem:selected /template/ Border#Windows11SelectionIndicator">
+        <Setter Property="IsVisible" Value="True" />
     </Style>
     <Style Selector="FlyoutPresenter.fluent">
         <Setter Property="Template" Value="{StaticResource Windows11FlyoutTemplate}" />

@@ -71,6 +71,9 @@ public static unsafe partial class NativeMethods
     internal static partial void ass_process_chunk(nint track, byte* data, int size, long start, long duration);
     [LibraryImport("tscutter.ass")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    internal static partial void ass_flush_events(nint track);
+    [LibraryImport("tscutter.ass")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     internal static partial int ass_track_set_feature(nint track, int feature, int enabled);
     [LibraryImport("tscutter.ass")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

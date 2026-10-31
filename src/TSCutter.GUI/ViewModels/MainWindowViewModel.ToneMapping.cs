@@ -55,7 +55,12 @@ public partial class MainWindowViewModel
         : LocalizationManager.Instance.String_Status_SdrToneMappingOff;
 
     [RelayCommand(CanExecute = nameof(CanToggleSdrToneMapping))]
-    private void ToggleSdrToneMapping() => EnableSdrToneMapping = !EnableSdrToneMapping;
+    private void ToggleSdrToneMapping()
+    {
+        // 映射切换作用于静态预览；播放会话停止后按新映射重新起播。
+        StopPlaybackSession();
+        EnableSdrToneMapping = !EnableSdrToneMapping;
+    }
 
     private void ResetPreviewDefaults()
     {
@@ -67,6 +72,8 @@ public partial class MainWindowViewModel
     [RelayCommand(CanExecute = nameof(CanToggleHardwareDecoding))]
     private async Task ToggleHardwareDecodingAsync()
     {
+        StopPlaybackSession();
+        var playbackFrame = lastFrameFromPlayback;
         var previous = _videoInstance!;
         var targetHardware = !IsHardwareDecoding;
         var stopwatch = Stopwatch.StartNew();
@@ -92,7 +99,7 @@ public partial class MainWindowViewModel
             candidate = null;
             preferHardwareDecodingForPreview = targetHardware;
             DecodeCost = stopwatch.ElapsedMilliseconds;
-            ApplyDecodeResult(result);
+            ApplyDecodedFrame(result, playbackFrame);
             result = null;
             previous.Dispose();
             UpdateDecodeMode();
@@ -143,6 +150,7 @@ public partial class MainWindowViewModel
                 toneMappingRefreshPending = false;
                 instance = _videoInstance!;
                 var expectedPts = _displayedFramePts;
+                var playbackFrame = lastFrameFromPlayback;
                 await RunDecodeOperationAsync(async () =>
                 {
                     var stopwatch = Stopwatch.StartNew();
@@ -155,7 +163,7 @@ public partial class MainWindowViewModel
                         return;
                     }
                     DecodeCost = stopwatch.ElapsedMilliseconds;
-                    ApplyDecodeResult(result);
+                    ApplyDecodedFrame(result, playbackFrame);
                 });
             }
         }

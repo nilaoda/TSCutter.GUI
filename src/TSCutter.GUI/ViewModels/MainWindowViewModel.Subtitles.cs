@@ -53,6 +53,7 @@ public partial class MainWindowViewModel
 
     private async Task SwitchSubtitleTrackAsync(PreviewSubtitleTrackOption? choice)
     {
+        StopPlaybackSession();
         StopSubtitlePreview();
         if (choice?.Selection is not { } selection || _videoInstance is not { Inited: true } video) return;
         using var cancellation = new CancellationTokenSource();
@@ -99,9 +100,14 @@ public partial class MainWindowViewModel
 
     private async Task RefreshSubtitleOverlayAsync()
     {
+        if (IsPlaybackActive && _subtitleRenderCancellation is not null)
+            return;
         _subtitleRenderCancellation?.Cancel();
-        SetSubtitleOverlay(null);
-        if (_subtitlePreview is not { } service) return;
+        if (_subtitlePreview is not { } service)
+        {
+            SetSubtitleOverlay(null);
+            return;
+        }
         using var cancellation = new CancellationTokenSource();
         _subtitleRenderCancellation = cancellation;
         SubtitleOverlay? overlay = null;
@@ -109,7 +115,8 @@ public partial class MainWindowViewModel
         {
             var time = _displayedFrameTime;
             var size = DecodedFrameSourceSize;
-            overlay = await Task.Run(() => service.Render(time, size, cancellation.Token), cancellation.Token);
+            var continuousPlayback = IsPlaybackActive;
+            overlay = await Task.Run(() => service.Render(time, size, cancellation.Token, continuousPlayback), cancellation.Token);
             cancellation.Token.ThrowIfCancellationRequested();
             if (!ReferenceEquals(service, _subtitlePreview)) return;
             SetSubtitleOverlay(overlay);

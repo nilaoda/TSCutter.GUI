@@ -12,9 +12,9 @@ on:
 env:
   DOTNET_SDK_VERSION: 10.x
   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
-  FFMPEG_RUNTIME_WIN_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261028/ffmpeg-runtime-win64-gpl-shared-9.0.2.zip
-  FFMPEG_RUNTIME_LINUX_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261028/ffmpeg-runtime-linux-x64-gpl-shared-9.0.2.zip
-  FFMPEG_RUNTIME_OSX_ARM64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261028/ffmpeg-runtime-osx-arm64-gpl-shared-9.0.2.zip
+  FFMPEG_RUNTIME_WIN_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261030/ffmpeg-runtime-win64-gpl-shared-9.0.2.zip
+  FFMPEG_RUNTIME_LINUX_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261030/ffmpeg-runtime-linux-x64-gpl-shared-9.0.2.zip
+  FFMPEG_RUNTIME_OSX_ARM64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261030/ffmpeg-runtime-osx-arm64-gpl-shared-9.0.2.zip
 
 jobs:
   release-info:
@@ -109,6 +109,7 @@ jobs:
         run: | 
           cd src/TSCutter.GUI
           dotnet publish -r win-x64 -c Release -o artifact
+          if (Test-Path "artifact/tscutter_audio.dll") { throw "The AOT audio bridge must be statically linked." }
 
       - name: Download FFmpeg Runtime [win-x64]
         shell: pwsh
@@ -150,7 +151,9 @@ jobs:
           dotnet-version: ${{ needs.release-info.outputs.sdk-version }}
 
       - name: Publish [linux-x64]
-        run: dotnet publish src/TSCutter.GUI -r linux-x64 -c Release -o artifact
+        run: |
+          dotnet publish src/TSCutter.GUI -r linux-x64 -c Release -o artifact
+          test ! -e artifact/libtscutter_audio.so
 
       - name: Download FFmpeg Runtime [linux-x64]
         run: |
@@ -188,7 +191,9 @@ jobs:
           dotnet-version: ${{ needs.release-info.outputs.sdk-version }}
 
       - name: Publish [osx-arm64]
-        run: dotnet publish src/TSCutter.GUI -r osx-arm64 -c Release -o artifact
+        run: |
+          dotnet publish src/TSCutter.GUI -r osx-arm64 -c Release -o artifact
+          test ! -e artifact/libtscutter_audio.dylib
 
       - name: Assemble .app [osx-arm64]
         run: |

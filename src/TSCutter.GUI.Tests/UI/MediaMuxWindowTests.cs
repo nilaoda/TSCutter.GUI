@@ -164,6 +164,18 @@ public sealed class MediaMuxWindowTests
                                 Assert.Equal(position, start.TranslatePoint(default, window)!.Value);
                             }
                             vm.ProgressText = "";
+                            var languageButton = window.FindControl<Button>("LanguagePickerButton")!;
+                            languageButton.Flyout!.ShowAt(languageButton);
+                            Dispatcher.UIThread.RunJobs();
+                            window.UpdateLayout();
+                            var presenter = window.GetVisualDescendants().OfType<FlyoutPresenter>()
+                                .Single(item => item.Classes.Contains("language-picker"));
+                            var choices = window.FindControl<ListBox>("LanguageChoices")!;
+                            if (CustomTheme.IsDesktopTheme(theme) && !CustomTheme.IsLuna(theme))
+                                Assert.True(choices.BorderThickness == new Thickness(0), $"{theme.Key}: language list border is {choices.BorderThickness}.");
+                            Assert.Equal(CustomTheme.IsDesktopTheme(theme), presenter.Classes.Contains("desktop-theme"));
+                            Assert.Contains(choices.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == vm.Languages[0].Label);
+                            languageButton.Flyout.Hide();
                         }
 
                         Assert.Same(audio[1], vm.SelectedTrack);

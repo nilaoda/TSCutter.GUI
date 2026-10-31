@@ -258,6 +258,38 @@ public sealed class SubtitlePreviewTests
     }
 
     [NativeSubtitleFact]
+    public async Task ContinuousPlaybackExtendsSubtitleWindowsAndKeepsUnchangedBitmapsAlive()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            using var video = OpenVideo("windowed.mkv");
+            using var subtitles = Load(video, "windowed.mkv");
+            var size = new PixelSize(320, 180);
+            var previousRead = subtitles.ReadThroughSeconds;
+            for (var step = 0; step <= 260; step++)
+            {
+                var time = step / 2.0;
+                using var frame = subtitles.Render(time, size, continuousPlayback: true);
+                Assert.True(subtitles.ReadThroughSeconds >= previousRead);
+                Assert.True(subtitles.ReadThroughSeconds <= time + 8);
+                previousRead = subtitles.ReadThroughSeconds;
+                if (time is 21 or 31 or 61 or 121)
+                    Assert.NotNull(frame);
+                if (time is 25 or 36 or 65 or 125)
+                    Assert.Null(frame);
+            }
+            using var first = subtitles.Render(31, size);
+            using var unchanged = subtitles.Render(31.2, size);
+            Assert.NotNull(first);
+            Assert.NotNull(unchanged);
+            Assert.Same(first.Parts[0].Bitmap, unchanged.Parts[0].Bitmap);
+            first.Dispose();
+            Assert.NotEmpty(ReadPixels(unchanged.Parts[0]));
+        }, CancellationToken.None);
+    }
+
+    [NativeSubtitleFact]
     public async Task TrackSwitchingPublishesOnlyTheLatestOverlayAndOffClearsIt()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));

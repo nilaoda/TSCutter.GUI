@@ -1,5 +1,6 @@
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Data;
 using Avalonia.Headless;
 using Avalonia.Input;
@@ -775,6 +776,83 @@ public sealed class ThemeSwitchTests
                 Avalonia.Application.Current!.RequestedThemeVariant = CustomTheme.Windows10;
                 Flush();
                 Label("PART_RestoreButton", "還原");
+            }
+            finally
+            {
+                window.Close();
+            }
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task NumericInputsKeepEditingAndSpinnerBehaviorAcrossThemes()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var input = new NumericUpDown
+            {
+                Minimum = -2,
+                Maximum = 2,
+                Increment = 0.5m,
+                Value = 0,
+                Width = 180,
+                NumberFormat = System.Globalization.CultureInfo.InvariantCulture.NumberFormat
+            };
+            var left = new NumericUpDown { Value = 1, Width = 120, ButtonSpinnerLocation = Location.Left };
+            var noSpinner = new NumericUpDown { Value = 359, Width = 64, ShowButtonSpinner = false };
+            var window = new ClassicWindow
+            {
+                Width = 440,
+                Height = 260,
+                Content = new StackPanel { Margin = new Thickness(20), Spacing = 8, Children = { input, left, noSpinner } }
+            };
+            window.Show();
+            try
+            {
+                foreach (var theme in TSCutter.GUI.Models.Application.ThemeModel.AllThemes
+                             .Concat(TSCutter.GUI.Models.Application.ThemeModel.AllDarkThemes).Select(model => model.Variant))
+                {
+                    Avalonia.Application.Current!.RequestedThemeVariant = theme;
+                    window.RequestedThemeVariant = theme;
+                    input.Value = 0;
+                    Dispatcher.UIThread.RunJobs();
+                    window.UpdateLayout();
+                    var parts = input.GetVisualDescendants().OfType<RepeatButton>().ToArray();
+                    var up = parts.Single(button => button.Name == "PART_IncreaseButton");
+                    var down = parts.Single(button => button.Name == "PART_DecreaseButton");
+                    var text = input.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "PART_TextBox");
+                    Assert.True(up.IsEffectivelyVisible);
+                    Assert.True(up.Bounds.Height >= 10);
+                    Assert.True(text.Bounds.Height >= 20);
+                    var point = up.TranslatePoint(new Point(up.Bounds.Width / 2, up.Bounds.Height / 2), window)!.Value;
+                    window.MouseMove(point);
+                    window.MouseDown(point, MouseButton.Left);
+                    window.MouseUp(point, MouseButton.Left);
+                    Assert.Equal(0.5m, input.Value);
+                    text.Focus();
+                    text.Text = "-1.5";
+                    window.KeyPressQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                    window.KeyReleaseQwerty(PhysicalKey.Enter, RawInputModifiers.None);
+                    Assert.Equal(-1.5m, input.Value);
+                    input.Value = input.Maximum;
+                    Assert.False(up.IsEffectivelyEnabled);
+                    Assert.True(down.IsEffectivelyEnabled);
+                    input.Value = input.Minimum;
+                    Assert.False(down.IsEffectivelyEnabled);
+                    input.IsEnabled = false;
+                    Assert.False(up.IsEffectivelyEnabled);
+                    input.IsEnabled = true;
+                    if (CustomTheme.IsDesktopTheme(theme) && !CustomTheme.IsLuna(theme))
+                    {
+                        Assert.Equal(new Thickness(1), input.BorderThickness);
+                        Assert.Equal(new Thickness(0), text.BorderThickness);
+                    }
+                    var leftUp = left.GetVisualDescendants().OfType<RepeatButton>().Single(button => button.Name == "PART_IncreaseButton");
+                    var leftText = left.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "PART_TextBox");
+                    Assert.True(leftUp.TranslatePoint(default, left)!.Value.X < leftText.TranslatePoint(default, left)!.Value.X);
+                    Assert.All(noSpinner.GetVisualDescendants().OfType<RepeatButton>(), button => Assert.False(button.IsEffectivelyVisible));
+                }
             }
             finally
             {

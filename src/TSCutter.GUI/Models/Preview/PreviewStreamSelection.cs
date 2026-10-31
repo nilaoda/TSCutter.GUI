@@ -10,6 +10,14 @@ public sealed record PreviewStreamSelection(int StreamIndex, int StreamId, int? 
 
 public sealed record PreviewVideoTrackOption(PreviewStreamSelection Selection, string DisplayText);
 
+public sealed class PreviewAudioTrackOption(PreviewStreamSelection selection, string label, bool canDecode = true) : ObservableObject
+{
+    public PreviewStreamSelection Selection { get; } = selection;
+    public bool CanDecode { get; } = canDecode;
+    public string DisplayText => CanDecode ? label : $"{label} · {LocalizationManager.Instance.String_Playback_AudioTrackUnsupported}";
+    public void RefreshLocalizedText() => OnPropertyChanged(nameof(DisplayText));
+}
+
 public sealed class PreviewProgramOption(int? id, string name,
     IReadOnlyList<PreviewVideoTrackOption> videoTracks, IReadOnlyList<string> audioTracks) : ObservableObject
 {

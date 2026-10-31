@@ -1,0 +1,102 @@
+<Project>
+    <PropertyGroup>
+        <AudioBridgeRid Condition="'$(RuntimeIdentifier)' != ''">$(RuntimeIdentifier)</AudioBridgeRid>
+        <AudioBridgeRid Condition="'$(AudioBridgeRid)' == ''">$(NETCoreSdkRuntimeIdentifier)</AudioBridgeRid>
+        <AudioBridgeSourceDir>$(MSBuildThisFileDirectory)</AudioBridgeSourceDir>
+        <AppleMinOSVersion Condition="$(AudioBridgeRid.StartsWith('osx-')) And '$(AppleMinOSVersion)' == ''">12.0</AppleMinOSVersion>
+        <AudioBridgeBuildDir>$([System.IO.Path]::Combine('$(MSBuildProjectDirectory)', '$(BaseIntermediateOutputPath)', '$(Configuration)', '$(TargetFramework)', '$(AudioBridgeRid)', 'native', 'audio'))/</AudioBridgeBuildDir>
+        <AudioBridgeBuildDir Condition="$(AudioBridgeRid.StartsWith('osx-'))">$(AudioBridgeBuildDir)$(AppleMinOSVersion)/</AudioBridgeBuildDir>
+        <AudioBridgeStaticBuildDir>$(AudioBridgeBuildDir)static/</AudioBridgeStaticBuildDir>
+        <AudioBridgeLibraryName Condition="$(AudioBridgeRid.StartsWith('osx-'))">libtscutter_audio.dylib</AudioBridgeLibraryName>
+        <AudioBridgeLibraryName Condition="$(AudioBridgeRid.StartsWith('linux-'))">libtscutter_audio.so</AudioBridgeLibraryName>
+        <AudioBridgeLibraryName Condition="$(AudioBridgeRid.StartsWith('win-'))">tscutter_audio.dll</AudioBridgeLibraryName>
+        <AudioBridgeStaticLibraryName Condition="!$(AudioBridgeRid.StartsWith('win-'))">libtscutter_audio.a</AudioBridgeStaticLibraryName>
+        <AudioBridgeStaticLibraryName Condition="$(AudioBridgeRid.StartsWith('win-'))">tscutter_audio.lib</AudioBridgeStaticLibraryName>
+        <AudioBridgeLibraryPath>$(AudioBridgeBuildDir)$(AudioBridgeLibraryName)</AudioBridgeLibraryPath>
+        <AudioBridgeStaticLibraryPath>$(AudioBridgeStaticBuildDir)$(AudioBridgeStaticLibraryName)</AudioBridgeStaticLibraryPath>
+        <AudioBridgeArchitecture Condition="$(AudioBridgeRid.EndsWith('-arm64'))">arm64</AudioBridgeArchitecture>
+        <AudioBridgeArchitecture Condition="$(AudioBridgeRid.EndsWith('-x64'))">x86_64</AudioBridgeArchitecture>
+        <AudioBridgeCompiler Condition="'$(AudioBridgeCompiler)' == ''">cc</AudioBridgeCompiler>
+        <AudioBridgeArchiver Condition="'$(AudioBridgeArchiver)' == ''">ar</AudioBridgeArchiver>
+        <AudioBridgeLinkStatic Condition="'$(PublishAot)' == 'true' And '$(TSCutterSkipAudioBridge)' != 'true'">true</AudioBridgeLinkStatic>
+    </PropertyGroup>
+
+    <!-- AOT 直接解析 C ABI 并链接静态库；普通构建和非 AOT 发布使用动态桥。 -->
+    <ItemGroup Condition="'$(AudioBridgeLinkStatic)' == 'true'">
+        <DirectPInvoke Include="tscutter_audio" />
+        <NativeLibrary Include="$(AudioBridgeStaticLibraryPath)" />
+        <NativeFramework Include="CoreFoundation;CoreAudio;AudioUnit;AudioToolbox;Carbon" Condition="$(AudioBridgeRid.StartsWith('osx-'))" />
+        <NativeSystemLibrary Include="pthread;dl;m" Condition="$(AudioBridgeRid.StartsWith('linux-'))" />
+        <NativeLibrary Include="ole32.lib" Condition="$(AudioBridgeRid.StartsWith('win-'))" />
+    </ItemGroup>
+
+    <!-- 干净构建及 ProjectReference 的第一次构建都需要先生成动态桥复制项。 -->
+    <Target Name="PrepareAudioBridge" BeforeTargets="PrepareForBuild;GetCopyToOutputDirectoryItems"
+            DependsOnTargets="BuildAudioBridgeMacOS;BuildAudioBridgeLinux;BuildAudioBridgeWindows"
+            Condition="'$(TSCutterSkipAudioBridge)' != 'true'">
+        <Error Condition="'$(AudioBridgeLibraryName)' == '' Or '$(AudioBridgeArchitecture)' == ''"
+               Text="Unsupported audio output target: $(AudioBridgeRid)." />
+        <Error Condition="!Exists('$(AudioBridgeLibraryPath)') Or !Exists('$(AudioBridgeStaticLibraryPath)')"
+               Text="Audio output libraries were not built for $(AudioBridgeRid). Build on the target OS or set TSCutterSkipAudioBridge=true for silent playback." />
+        <ItemGroup>
+            <None Include="$(AudioBridgeLibraryPath)" Link="$(AudioBridgeLibraryName)"
+                  TargetPath="$(AudioBridgeLibraryName)" CopyToOutputDirectory="PreserveNewest"
+                  CopyToPublishDirectory="PreserveNewest" Visible="false">
+                <CopyToPublishDirectory Condition="'$(AudioBridgeLinkStatic)' == 'true'">Never</CopyToPublishDirectory>
+            </None>
+            <FileWrites Include="$(AudioBridgeLibraryPath);$(AudioBridgeStaticLibraryPath);$(AudioBridgeStaticBuildDir)tsaudio_bridge.o;$(AudioBridgeStaticBuildDir)tsaudio_bridge.obj;$(AudioBridgeBuildDir)tsaudio_bridge.obj;$(AudioBridgeBuildDir)tscutter_audio.import.lib;$(AudioBridgeBuildDir)tscutter_audio.import.exp" />
+        </ItemGroup>
+    </Target>
+
+    <Target Name="BuildAudioBridgeMacOS" Condition="$([MSBuild]::IsOSPlatform('OSX')) And $(AudioBridgeRid.StartsWith('osx-')) And '$(TSCutterSkipAudioBridge)' != 'true'"
+            Inputs="$(AudioBridgeSourceDir)tsaudio_bridge.c;$(AudioBridgeSourceDir)miniaudio.h;$(MSBuildThisFileFullPath)"
+            Outputs="$(AudioBridgeLibraryPath);$(AudioBridgeStaticLibraryPath)">
+        <MakeDir Directories="$(AudioBridgeBuildDir);$(AudioBridgeStaticBuildDir)" />
+        <Exec Command="clang -arch $(AudioBridgeArchitecture) -mmacosx-version-min=$(AppleMinOSVersion) -shared -O2 -fvisibility=hidden -o &quot;$(AudioBridgeLibraryPath)&quot; &quot;$(AudioBridgeSourceDir)tsaudio_bridge.c&quot; -framework CoreFoundation -framework CoreAudio -framework AudioUnit -framework AudioToolbox -framework Carbon"
+              StandardOutputImportance="low" StandardErrorImportance="high" />
+        <Exec Command="clang -arch $(AudioBridgeArchitecture) -mmacosx-version-min=$(AppleMinOSVersion) -c -O2 -fPIC -ffunction-sections -fdata-sections -fvisibility=hidden -DTSAUDIO_STATIC -o &quot;$(AudioBridgeStaticBuildDir)tsaudio_bridge.o&quot; &quot;$(AudioBridgeSourceDir)tsaudio_bridge.c&quot;"
+              StandardOutputImportance="low" StandardErrorImportance="high" />
+        <Exec Command="&quot;$(AudioBridgeArchiver)&quot; rcs &quot;$(AudioBridgeStaticLibraryPath)&quot; &quot;$(AudioBridgeStaticBuildDir)tsaudio_bridge.o&quot;"
+              StandardOutputImportance="low" StandardErrorImportance="high" />
+    </Target>
+
+    <Target Name="BuildAudioBridgeLinux" Condition="$([MSBuild]::IsOSPlatform('Linux')) And $(AudioBridgeRid.StartsWith('linux-')) And '$(TSCutterSkipAudioBridge)' != 'true'"
+            Inputs="$(AudioBridgeSourceDir)tsaudio_bridge.c;$(AudioBridgeSourceDir)miniaudio.h;$(MSBuildThisFileFullPath)"
+            Outputs="$(AudioBridgeLibraryPath);$(AudioBridgeStaticLibraryPath)">
+        <Error Condition="'$(AudioBridgeRid)' != '$(NETCoreSdkRuntimeIdentifier)' And '$(AudioBridgeCompiler)' == 'cc'"
+               Text="Cross-compiling $(AudioBridgeRid) requires AudioBridgeCompiler to identify the target C compiler." />
+        <MakeDir Directories="$(AudioBridgeBuildDir);$(AudioBridgeStaticBuildDir)" />
+        <Exec Command="&quot;$(AudioBridgeCompiler)&quot; -shared -fPIC -O2 -fvisibility=hidden -o &quot;$(AudioBridgeLibraryPath)&quot; &quot;$(AudioBridgeSourceDir)tsaudio_bridge.c&quot; -lpthread -ldl -lm"
+              StandardOutputImportance="low" StandardErrorImportance="high" />
+        <Exec Command="&quot;$(AudioBridgeCompiler)&quot; -c -fPIC -O2 -ffunction-sections -fdata-sections -fvisibility=hidden -DTSAUDIO_STATIC -o &quot;$(AudioBridgeStaticBuildDir)tsaudio_bridge.o&quot; &quot;$(AudioBridgeSourceDir)tsaudio_bridge.c&quot;"
+              StandardOutputImportance="low" StandardErrorImportance="high" />
+        <Exec Command="&quot;$(AudioBridgeArchiver)&quot; rcs &quot;$(AudioBridgeStaticLibraryPath)&quot; &quot;$(AudioBridgeStaticBuildDir)tsaudio_bridge.o&quot;"
+              StandardOutputImportance="low" StandardErrorImportance="high" />
+    </Target>
+
+    <Target Name="BuildAudioBridgeWindows" Condition="$([MSBuild]::IsOSPlatform('Windows')) And $(AudioBridgeRid.StartsWith('win-')) And '$(TSCutterSkipAudioBridge)' != 'true'"
+            Inputs="$(AudioBridgeSourceDir)tsaudio_bridge.c;$(AudioBridgeSourceDir)miniaudio.h;$(MSBuildThisFileFullPath)"
+            Outputs="$(AudioBridgeLibraryPath);$(AudioBridgeStaticLibraryPath)">
+        <MakeDir Directories="$(AudioBridgeBuildDir);$(AudioBridgeStaticBuildDir)" />
+        <Exec Command="&quot;$(MSBuildProgramFiles32)\Microsoft Visual Studio\Installer\vswhere.exe&quot; -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath"
+              ConsoleToMSBuild="true" IgnoreExitCode="true">
+            <Output TaskParameter="ConsoleOutput" PropertyName="VisualStudioInstallationPath" />
+        </Exec>
+        <Error Condition="'$(VisualStudioInstallationPath)' == ''"
+               Text="MSVC C++ build tools are required for the audio output bridge. Use TSCutterSkipAudioBridge=true for a silent build." />
+        <PropertyGroup>
+            <AudioBridgeVcArchitecture Condition="'$(AudioBridgeArchitecture)' == 'x86_64'">amd64</AudioBridgeVcArchitecture>
+            <AudioBridgeVcArchitecture Condition="'$(AudioBridgeArchitecture)' == 'arm64'">amd64_arm64</AudioBridgeVcArchitecture>
+            <AudioBridgeVcArchitecture Condition="'$(PROCESSOR_ARCHITECTURE)' == 'ARM64' And '$(AudioBridgeArchitecture)' == 'arm64'">arm64</AudioBridgeVcArchitecture>
+        </PropertyGroup>
+        <Exec Command="call &quot;$(VisualStudioInstallationPath.Trim())\VC\Auxiliary\Build\vcvarsall.bat&quot; $(AudioBridgeVcArchitecture) &gt;nul &amp;&amp; cl /nologo /O2 /LD /Fo&quot;$(AudioBridgeBuildDir)tsaudio_bridge.obj&quot; /Fe&quot;$(AudioBridgeLibraryPath)&quot; &quot;$(AudioBridgeSourceDir)tsaudio_bridge.c&quot; /link /DLL /IMPLIB:&quot;$(AudioBridgeBuildDir)tscutter_audio.import.lib&quot; ole32.lib"
+              StandardOutputImportance="low" StandardErrorImportance="high" />
+        <Exec Command="call &quot;$(VisualStudioInstallationPath.Trim())\VC\Auxiliary\Build\vcvarsall.bat&quot; $(AudioBridgeVcArchitecture) &gt;nul &amp;&amp; cl /nologo /O2 /MT /Gy /Gw /c /DTSAUDIO_STATIC /Fo&quot;$(AudioBridgeStaticBuildDir)tsaudio_bridge.obj&quot; &quot;$(AudioBridgeSourceDir)tsaudio_bridge.c&quot; &amp;&amp; lib /nologo /OUT:&quot;$(AudioBridgeStaticLibraryPath)&quot; &quot;$(AudioBridgeStaticBuildDir)tsaudio_bridge.obj&quot;"
+              StandardOutputImportance="low" StandardErrorImportance="high" />
+    </Target>
+
+    <!-- 复用旧发布目录时也不留下之前的动态桥。 -->
+    <Target Name="RemoveDynamicAudioBridgeFromAotPublish" AfterTargets="Publish" Condition="'$(AudioBridgeLinkStatic)' == 'true'">
+        <Delete Files="$(PublishDir)$(AudioBridgeLibraryName)" />
+    </Target>
+</Project>

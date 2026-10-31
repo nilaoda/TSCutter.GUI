@@ -16,6 +16,7 @@ TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. I
 ### Editing workflow
 
 - **Keyframe-accurate cutting**: Preview and navigate nearby keyframes or jump to a specific time before marking clip boundaries.
+- **Continuous playback**: Play with sound from the displayed frame, pause to inspect the exact frame, play the selected clip to its end, and control preview volume and mute with Space as the play/pause shortcut. Frames shown during playback are not treated as clip boundaries; marking snaps to the compatible keyframe and shows the aligned frame.
 - **Keyframe overview and frame search**: Browse keyframe thumbnails, manage saved frame templates, and search the video for similar images.
 - **Zoomable timeline**: Continuously zoom, pan, or return to a full-file overview for accurate navigation in long recordings.
 - **Multiple clip management**: Create and edit several clip ranges, view their positions on the timeline, and compare duration and estimated size.
@@ -23,7 +24,7 @@ TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. I
 - **Editing projects**: Save the current source, clip ranges, timeline view, and cross-file export queue in a `.tscut` file for later editing. Projects can reopen recordings that have grown since saving.
 - **Program and video track selection**: Switch previews in files with multiple programs or video tracks. Keyframe overviews, thumbnail sheets, and frame searches follow the selected track. Multi-program TS exports can preserve all programs or keep only the current program. The selection area also appears when embedded subtitles are available.
 - **Embedded subtitle preview**: Select text or bitmap subtitles in MP4, MKV and TS. ASS styles, animations and MKV font attachments are supported. Subtitles follow the displayed frame when seeking, zooming or panning. Preview loads a local window with a 30-second lookback and reloads after seeking outside it; earlier long-running subtitles may be omitted. Export tracks remain controlled by export settings.
-- **HDR to SDR preview mapping**: Use CPU/SIMD processing for HDR10/PQ, HLG and Dolby Vision Profile 5. Temporarily toggle mapping and hardware/software decoding in the status bar; Settings stores defaults. Mapping applies to previews and captured images; audio and video are not re-encoded on export.
+- **HDR to SDR preview mapping**: Map HDR10/PQ, HLG and Dolby Vision Profile 5 to SDR, with GPU acceleration during playback and CPU fallback. Temporarily toggle mapping and hardware/software decoding in the status bar; Settings stores defaults. Mapping applies to previews and captured images; audio and video are not re-encoded on export.
 - **Flexible output**: Save one clip immediately, add clips to a batch export queue, or merge multiple selected clips into one file.
 - **Export without transcoding**: Copy the original compressed audio and video packets.
 - **Frame capture and media information**: Save or copy the current preview frame and inspect the opened file's stream information.
@@ -119,6 +120,24 @@ Use **View → Theme** to switch families. In **Tools → Settings**, choose lig
 5. Use the File menu to save a `.tscut` project and reopen it later to restore clips and queued exports. A growing source is accepted when verification of its saved portion succeeds.
 
 Files with multiple programs, video tracks, or embedded subtitles show selectors above the preview. Subtitles are off by default and loaded in the background when selected; they can be changed or switched off at any time. After confirmation, switching the program or video track clears current clips and undo history; queued tasks retain their original program and track choices. For multi-program TS, “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks. New projects use version 4 and can read version 1, 2 and 3 projects; older app versions cannot open new projects.
+
+### Playback
+
+Use the play button or **Space** to play from the displayed frame and again to pause on the exact frame. Pausing retains the playback state for direct resume. Seeking within the same file reuses the input, decoders and audio device while clearing old buffered data; starting at a new position still requires keyframe preroll. The audio button and slider control preview volume only; they never affect exports. Right-click the play button and choose **Play selected clip** to play within its saved boundaries and pause at the end.
+
+Choose **View → Full-screen Playback**, click the full-screen button, or double-click the video to enter full screen. **F11** toggles full screen; macOS also supports **Control + Command + F**. Press **Esc** to return to the editor. Playback continues through the transition, and the previous window state and preview transform are restored on exit. The playback controls fade out after three seconds of inactivity while playing and remain visible while paused. Moving the pointer reveals them again; the progress bar supports seeking with the same keyframe navigation rules.
+
+Multi-track audio can be selected above the preview. The first decodable track is selected by default; unsupported tracks remain visible but disabled. Changing audio tracks during playback resumes from the displayed position and retains the selected clip’s end boundary.
+
+Playback renders every frame in display order on its own session and uses the default audio device at 1× speed. Audio is downmixed to 48 kHz stereo; files whose audio track has no decoder in the runtime (such as AV3A) play silently with a status hint, and files without audio use the wall clock. Selected subtitles are read ahead sequentially during playback, with unchanged rendered images reused. Frames shown during playback may be P or B frames: marking a boundary while paused after playback snaps to the nearest compatible keyframe at or before the displayed frame and shows the aligned frame before recording it, preserving the existing export boundaries. Ordinary single-clip TS/M2TS exports with all programs retained and no table patching remain byte-for-byte copies; remuxing and merged exports retain their existing processing rules. Timeline drags and thumbnail clicks keep the playing state — playback resumes from the new position only if it was running. DVD and Blu-ray titles also support playback.
+
+Playback uses the GPU for YUV conversion, scaling and HDR mapping when supported, and automatically falls back to CPU conversion otherwise. This works with software decoding too. On macOS, compatible progressive VideoToolbox NV12/P010 frames use IOSurface directly, without pixel readback or upload. Other hardware frames use YUV readback and GPU upload; CPU deinterlacing still requires readback. Navigation previews and captures use the same color mapping on the CPU.
+
+During playback, the status bar shows presentation FPS, capped at the source frame rate. Green means decoding and display keep up without dropping frames; yellow indicates reduced fluency, and red means the slower rate is below 70% of the source frame rate. Values use a roughly two-second rolling window, allowing for the window’s one-frame counting uncertainty.
+
+Use **Playback performance test…** in the toolbar’s Tools dropdown to test the current file, track, position, and preview settings. **Tools → Analyze and Inspect → Playback performance test…** in the menu bar always asks for another file. The tool shows live FPS while measuring decoding, CPU frame conversion, and playback through the active rendering path separately. The playback row identifies CPU, GPU upload, or direct GPU presentation; choose a physical output size to compare the available headroom against the source frame rate. Tests are short, play silently, and pause main-window playback while running. Results indicate performance for the tested section and settings, rather than guaranteeing smooth playback throughout the file.
+
+When decoding falls behind, playback keeps showing the latest available frame and can resume at a later keyframe to catch up to the clock.
 
 ### Preview options
 

@@ -11,4 +11,6 @@ public enum VideoPresentationMode
     SoftwareBitmap,
     HardwareCpuTransfer,
     HardwareGpu,
+    SoftwareGpu,
+    HardwareGpuUpload,
 }

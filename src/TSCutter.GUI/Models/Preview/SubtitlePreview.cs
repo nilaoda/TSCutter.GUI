@@ -19,14 +19,47 @@ public sealed record SubtitleOverlayPart(Bitmap Bitmap, int X, int Y);
 
 public sealed record SubtitleBackdrop(Rect Bounds, double CornerRadius);
 
-public sealed class SubtitleOverlay(PixelSize canvasSize, IReadOnlyList<SubtitleOverlayPart> parts,
-    SubtitleBackdrop? backdrop = null) : IDisposable
+// 播放时未变化的字幕可共享位图；界面和缓存各持一份引用，避免逐帧重建或提前释放。
+public sealed class SubtitleOverlay : IDisposable
 {
-    public PixelSize CanvasSize { get; } = canvasSize;
-    public SubtitleBackdrop? Backdrop { get; } = backdrop;
-    public IReadOnlyList<SubtitleOverlayPart> Parts { get; } = parts;
+    private sealed class SharedParts(IReadOnlyList<SubtitleOverlayPart> parts)
+    {
+        public readonly IReadOnlyList<SubtitleOverlayPart> Parts = parts;
+        public int References = 1;
+    }
+    private readonly SharedParts shared;
+    private int disposed;
+    public PixelSize CanvasSize { get; }
+    public SubtitleBackdrop? Backdrop { get; }
+    public IReadOnlyList<SubtitleOverlayPart> Parts => shared.Parts;
+
+    public SubtitleOverlay(PixelSize canvasSize, IReadOnlyList<SubtitleOverlayPart> parts, SubtitleBackdrop? backdrop = null)
+    {
+        CanvasSize = canvasSize;
+        Backdrop = backdrop;
+        shared = new(parts);
+    }
+
+    private SubtitleOverlay(SubtitleOverlay source)
+    {
+        CanvasSize = source.CanvasSize;
+        Backdrop = source.Backdrop;
+        shared = source.shared;
+        System.Threading.Interlocked.Increment(ref shared.References);
+    }
+
+    internal SubtitleOverlay Retain()
+    {
+        ObjectDisposedException.ThrowIf(System.Threading.Volatile.Read(ref disposed) != 0, this);
+        return new(this);
+    }
+
     public void Dispose()
     {
-        foreach (var part in Parts) part.Bitmap.Dispose();
+        if (System.Threading.Interlocked.Exchange(ref disposed, 1) != 0)
+            return;
+        if (System.Threading.Interlocked.Decrement(ref shared.References) == 0)
+            foreach (var part in shared.Parts)
+                part.Bitmap.Dispose();
     }
 }

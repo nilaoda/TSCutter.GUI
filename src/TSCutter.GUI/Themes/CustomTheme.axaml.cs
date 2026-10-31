@@ -140,11 +140,11 @@ public class CustomTheme : Styles
         TopLevel.ActualThemeVariantProperty.Changed.AddClassHandler<MenuFlyoutPresenter>((menu, _) => UpdateThemeClasses(menu));
         TopLevel.ActualThemeVariantProperty.Changed.AddClassHandler<FlyoutPresenter>((flyout, _) => UpdateThemeClasses(flyout));
         TopLevel.ActualThemeVariantProperty.Changed.AddClassHandler<ColorPicker>((picker, _) => UpdateThemeClasses(picker));
-        // 选色弹层打开时会用 PresenterClasses 覆盖样式类，加载后补回主题标记。
+        TopLevel.ActualThemeVariantProperty.Changed.AddClassHandler<NumericUpDown>((input, _) => UpdateThemeClasses(input));
+        // 弹层打开时会用 PresenterClasses 覆盖样式类，加载后补回主题标记。
         Control.LoadedEvent.AddClassHandler<FlyoutPresenter>((flyout, _) =>
         {
-            if (flyout.Classes.Contains("nopadding"))
-                UpdateThemeClasses(flyout);
+            UpdateThemeClasses(flyout);
         });
 
         // 提示框也有独立的弹出根，按自身主题更新，避免漏掉各主题的提示样式。

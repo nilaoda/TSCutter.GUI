@@ -138,7 +138,7 @@ public static class ThumbnailSheetInfoBuilder
                 ? GetVideoScanMode(videoStream.Codecpar!.FieldOrder)
                 : VideoScanMode.Unknown,
             VideoDynamicRange = hasVideo
-                ? GetVideoDynamicRange(videoStream)
+                ? VideoDynamicRangeDetector.Detect(videoStream.Codecpar!)
                 : VideoDynamicRange.Standard,
             VideoDisplayAspectRatio = hasVideo
                 ? CalculateDisplayAspectRatio(
@@ -182,34 +182,6 @@ public static class ThumbnailSheetInfoBuilder
             VideoScanMode.Interlaced,
         _ => VideoScanMode.Unknown
     };
-
-    private static VideoDynamicRange GetVideoDynamicRange(MediaStream stream)
-    {
-        var codecParameters = stream.Codecpar!;
-        var hasDolbyVisionConfig = HasCodecSideData(codecParameters, AVPacketSideDataType.AV_PKT_DATA_DOVI_CONF);
-        var hasHdrMetadata =
-            HasCodecSideData(codecParameters, AVPacketSideDataType.AV_PKT_DATA_MASTERING_DISPLAY_METADATA)
-            || HasCodecSideData(codecParameters, AVPacketSideDataType.AV_PKT_DATA_CONTENT_LIGHT_LEVEL)
-            || HasCodecSideData(codecParameters, AVPacketSideDataType.AV_PKT_DATA_DYNAMIC_HDR10_PLUS);
-        return VideoDynamicRangeDetector.Detect(
-            codecParameters.ColorTrc,
-            hasDolbyVisionConfig,
-            hasHdrMetadata,
-            codecParameters.CodecTag);
-    }
-
-    private static unsafe bool HasCodecSideData(CodecParameters codecParameters, AVPacketSideDataType type)
-    {
-        AVCodecParameters* rawParameters = codecParameters;
-        var sideData = rawParameters->coded_side_data;
-        for (var index = 0; sideData != null && index < rawParameters->nb_coded_side_data; index++)
-        {
-            if (sideData[index].type == type)
-                return true;
-        }
-
-        return false;
-    }
 
     internal static double CalculateDisplayAspectRatio(
         int width,
