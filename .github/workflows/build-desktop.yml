@@ -179,8 +179,10 @@ jobs:
           retention-days: 1
 
   build-mac-arm64:
-    runs-on: macos-14
+    runs-on: macos-15
     needs: release-info
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
 
     steps:
       - uses: actions/checkout@v4
@@ -192,7 +194,7 @@ jobs:
 
       - name: Publish [osx-arm64]
         run: |
-          dotnet publish src/TSCutter.GUI -r osx-arm64 -c Release -o artifact
+          dotnet publish src/TSCutter.GUI -r osx-arm64 -c Release -o artifact -p:AppleMinOSVersion="$MACOSX_DEPLOYMENT_TARGET"
           test ! -e artifact/libtscutter_audio.dylib
 
       - name: Assemble .app [osx-arm64]
@@ -241,7 +243,7 @@ jobs:
             <key>CFBundleVersion</key>
             <string>${{ needs.release-info.outputs.version }}</string>
             <key>LSMinimumSystemVersion</key>
-            <string>13.0</string>
+            <string>$MACOSX_DEPLOYMENT_TARGET</string>
             <key>NSHighResolutionCapable</key>
             <true/>
           </dict>
