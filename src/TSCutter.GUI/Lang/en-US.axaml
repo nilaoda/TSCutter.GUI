@@ -626,6 +626,7 @@
     <x:String x:Key="String.TsCheck.Timeline.NoData">Waiting for a valid PCR timeline...</x:String>
     <x:String x:Key="String.TsCheck.Timeline.Hint">Hover to inspect bitrate; click a red or yellow marker to open its detail.</x:String>
     <x:String x:Key="String.TsCheck.Column.Type">Type</x:String>
+    <x:String x:Key="String.TsCheck.Column.Occurrences">Occurrences</x:String>
     <x:String x:Key="String.TsCheck.Column.Packet">Packet</x:String>
     <x:String x:Key="String.TsCheck.Column.Description">Description</x:String>
     <x:String x:Key="String.TsCheck.Status.Ready">Ready</x:String>
