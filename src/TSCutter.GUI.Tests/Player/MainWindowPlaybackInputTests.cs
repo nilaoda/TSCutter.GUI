@@ -94,6 +94,24 @@ public sealed class MainWindowPlaybackInputTests
                     window.MouseUp(point, MouseButton.Left);
                     Dispatcher.UIThread.RunJobs();
                     Assert.Equal(entering, window.IsVideoFullScreen);
+                    if (entering)
+                    {
+                        Assert.Same(window.FindControl<Grid>("FullScreenSurface"), window.FocusManager!.GetFocusedElement());
+                        // 不额外点击或激活窗口，全屏后的第一个空格与方向键直接生效。
+                        window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                        window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                        await WaitForAsync(() => vm.IsPlaybackPlaying);
+                        Assert.True(vm.IsPlaybackPlaying);
+                        window.KeyPressQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                        window.KeyReleaseQwerty(PhysicalKey.Space, RawInputModifiers.None);
+                        await WaitForAsync(() => !vm.IsPlaybackActive && !vm.IsDecoding);
+                        Assert.False(vm.IsPlaybackActive);
+                        var beforeSeek = vm.CurrentTime;
+                        window.KeyPressQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
+                        window.KeyReleaseQwerty(PhysicalKey.ArrowRight, RawInputModifiers.None);
+                        await WaitForAsync(() => !vm.IsDecoding && vm.CurrentTime > beforeSeek);
+                        Assert.True(vm.CurrentTime > beforeSeek);
+                    }
                     var mute = window.FindControl<Button>(entering ? "FullScreenMuteButton" : "PreviewMuteButton")!;
                     point = mute.TranslatePoint(new Point(mute.Bounds.Width / 2, mute.Bounds.Height / 2), window)!.Value;
                     var muted = vm.PreviewMuted;

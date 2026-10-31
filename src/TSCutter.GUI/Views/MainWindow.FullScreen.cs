@@ -62,6 +62,10 @@ public partial class MainWindow
             fullScreenDecorationsOverride?.Dispose();
             fullScreenDecorationsOverride = null;
         }
+        // 装饰同步本身也可能重置第一响应者，动画开始和完成时各修复一次。
+        if (change.Property == WindowStateProperty &&
+            (change.NewValue is WindowState.FullScreen || change.OldValue is WindowState.FullScreen))
+            MacOSFullScreenNotifications.RestoreKeyboardFocus(this);
     }
 
     private void InitializeFullScreenPlayback()
@@ -86,6 +90,8 @@ public partial class MainWindow
                         || DataContext is MainWindowViewModel { IsVideoInitialized: true }))
                         RequestFullScreenWindowState(requested);
                 }
+                if (!fullScreenNativeTransition)
+                    MacOSFullScreenNotifications.RestoreKeyboardFocus(this);
             }, DispatcherPriority.Background));
         PropertyChanged += (_, change) =>
         {

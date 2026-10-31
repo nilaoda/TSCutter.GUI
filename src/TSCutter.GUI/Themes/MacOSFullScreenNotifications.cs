@@ -30,6 +30,41 @@ internal sealed class MacOSFullScreenNotifications : IDisposable
         OperatingSystem.IsMacOS() && window.TryGetPlatformHandle() is { HandleDescriptor: "NSWindow" } handle
             ? new MacOSFullScreenNotifications(handle.Handle, completed) : null;
 
+    internal static void RestoreKeyboardFocus(Window window)
+    {
+        if (!OperatingSystem.IsMacOS() || !window.IsActive ||
+            window.TryGetPlatformHandle() is not { HandleDescriptor: "NSWindow" } handle)
+            return;
+        // 无装饰主题切换全屏时，AppKit 可能把第一响应者退回 NSWindow；
+        // 托管 Focus() 此时仍成功，但按键不会进入 Avalonia。只修复这种丢失状态，
+        // 不覆盖原生输入控件等已有的第一响应者，也不激活后台窗口。
+        if (Native.GetObject(handle.Handle, Native.Selector("firstResponder")) != handle.Handle)
+            return;
+        var content = Native.GetObject(handle.Handle, Native.Selector("contentView"));
+        var view = FindAvaloniaView(content);
+        if (view != IntPtr.Zero)
+            Native.SetFirstResponder(handle.Handle, Native.Selector("makeFirstResponder:"), view);
+    }
+
+    private static IntPtr FindAvaloniaView(IntPtr parent)
+    {
+        if (parent == IntPtr.Zero)
+            return IntPtr.Zero;
+        var viewClass = Native.GetClass("AvnView");
+        if (viewClass != IntPtr.Zero && Native.IsKindOfClass(parent, Native.Selector("isKindOfClass:"), viewClass) != 0)
+            return parent;
+        var children = Native.GetObject(parent, Native.Selector("subviews"));
+        var count = Native.GetInteger(children, Native.Selector("count"));
+        for (nint index = 0; index < count; index++)
+        {
+            var child = Native.GetObjectAtIndex(children, Native.Selector("objectAtIndex:"), (nuint)index);
+            var found = FindAvaloniaView(child);
+            if (found != IntPtr.Zero)
+                return found;
+        }
+        return IntPtr.Zero;
+    }
+
     [UnmanagedCallersOnly(CallConvs = [typeof(CallConvCdecl)])]
     private static void OnTransitionCompleted(IntPtr observer, IntPtr selector, IntPtr notification)
     {
@@ -91,6 +126,14 @@ internal sealed class MacOSFullScreenNotifications : IDisposable
         private static extern void RegisterClass(IntPtr type);
         [DllImport(Library, EntryPoint = "objc_msgSend")]
         public static extern IntPtr GetObject(IntPtr target, IntPtr selector);
+        [DllImport(Library, EntryPoint = "objc_msgSend")]
+        public static extern nint GetInteger(IntPtr target, IntPtr selector);
+        [DllImport(Library, EntryPoint = "objc_msgSend")]
+        public static extern IntPtr GetObjectAtIndex(IntPtr target, IntPtr selector, nuint index);
+        [DllImport(Library, EntryPoint = "objc_msgSend")]
+        public static extern byte IsKindOfClass(IntPtr target, IntPtr selector, IntPtr type);
+        [DllImport(Library, EntryPoint = "objc_msgSend")]
+        public static extern byte SetFirstResponder(IntPtr target, IntPtr selector, IntPtr view);
         [DllImport(Library, EntryPoint = "objc_msgSend")]
         public static extern IntPtr GetString(IntPtr target, IntPtr selector,
             [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
