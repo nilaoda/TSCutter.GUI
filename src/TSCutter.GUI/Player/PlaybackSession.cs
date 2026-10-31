@@ -438,8 +438,9 @@ public sealed class PlaybackSession : IAsyncDisposable
             while (true)
             {
                 await WaitUntilResumedAsync(token).ConfigureAwait(false);
-                // 输入、hover 和布局更新可能让 UI/合成晚一拍。短暂等待上一帧真正呈现，
-                // 避免直接丢弃下一帧或覆盖尚未绘制的画面；窗口不绘制时最多等待 50ms。
+                // 等上一帧进入绘制队列后再交付下一帧，避免 hover 时覆盖尚未提交的画面。
+                // 不等待 GPU 绘制结束，让 UI 与 GPU 并行，避免接近屏幕刷新率时吞吐不足。
+                // 窗口不绘制时最多等待 50ms。
                 var waitingForPresentation = !pendingPresentation.IsCompleted;
                 if (waitingForPresentation)
                 {
@@ -558,7 +559,8 @@ public sealed class PlaybackSession : IAsyncDisposable
             if ((!options.EnableGpuPresentation || !gpuPresenter.TryPresent(displaySource, options.EnableSdrToneMapping, size,
                     options.RenderAtRequestedSize,
                     (gpu, hardware) => { rendered(gpu, hardware); presented.TrySetResult(); },
-                    () => { dropped(); presented.TrySetResult(); }, out gpuFrame))
+                    () => { dropped(); presented.TrySetResult(); }, out gpuFrame,
+                    submitted: () => presented.TrySetResult()))
                 && !hostPresenter.TryConvert(displaySource, size.Width, size.Height,
                     out lease, options.EnableSdrToneMapping))
             {

@@ -18,12 +18,13 @@ internal readonly record struct PlaybackPerformance
     {
         DecodeFps = Math.Round(decodeFps, 1);
         PresentedFps = Math.Round(presentedFps, 1);
-        SourceFps = Math.Round(sourceFps, 1);
+        SourceFps = sourceFps;
         DroppedFrames = droppedFrames;
         // 解码队列会预读并按场成对产出，短窗口吞吐不代表播放是否跟得上。
-        // 以实际呈现速度和丢帧判色，容限与速率相加后才按显示精度取整。
+        // 片源帧率保留完整精度供显示；判色仍按吞吐统计的一位小数精度比较。
+        // 容限与速率相加后再取整，避免临界值反复变色。
         Fluency = sourceFps <= 0 ? PlaybackFluency.Unknown
-            : droppedFrames == 0 && Math.Round(presentedFps + frameRateTolerance, 1) >= SourceFps ? PlaybackFluency.Smooth
+            : droppedFrames == 0 && Math.Round(presentedFps + frameRateTolerance, 1) >= Math.Round(sourceFps, 1) ? PlaybackFluency.Smooth
             : presentedFps / sourceFps >= 0.7 ? PlaybackFluency.Limited
             : PlaybackFluency.Slow;
     }

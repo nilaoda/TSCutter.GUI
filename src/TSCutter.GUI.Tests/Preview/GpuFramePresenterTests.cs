@@ -51,8 +51,9 @@ public sealed class GpuFramePresenterTests
                     converter.ConvertFrame(source, expected);
                     using var presenter = new SkiaVideoFramePresenter();
                     bool? renderedOnGpu = null;
+                    var submitted = 0;
                     Assert.True(presenter.TryCreateFrame(source, true, new(16, 8), false,
-                        (gpu, _) => renderedOnGpu = gpu, () => { }, out var presentation));
+                        (gpu, _) => renderedOnGpu = gpu, () => { }, out var presentation, () => submitted++));
                     Assert.NotNull(presentation);
                     using var gpuFrame = presentation;
                     source.Dispose();
@@ -60,7 +61,11 @@ public sealed class GpuFramePresenterTests
                     viewer.Measure(new Size(16, 8));
                     viewer.Arrange(new Rect(0, 0, 16, 8));
                     using var actual = new RenderTargetBitmap(new(16, 8), new Vector(96, 96));
+                    Assert.Equal(0, submitted);
                     actual.Render(viewer);
+                    Assert.Equal(1, submitted);
+                    actual.Render(viewer);
+                    Assert.Equal(1, submitted);
                     Assert.Equal(false, renderedOnGpu);
                     using var encoded = new MemoryStream();
                     actual.Save(encoded);

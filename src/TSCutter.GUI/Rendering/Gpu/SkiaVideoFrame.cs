@@ -23,6 +23,7 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
     private readonly PixelSize fallbackSize;
     private readonly Action<bool, bool> rendered;
     private readonly Action dropped;
+    private readonly Action? submitted;
     private readonly bool renderAtRequestedSize;
     private readonly Action<string> failure;
     private HostFramePresenter? fallbackPresenter;
@@ -30,10 +31,12 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
     private int references = 1;
     private int ownerReleased;
     private int wasRendered;
+    private int wasSubmitted;
 
     internal SkiaVideoFrame(SkiaVideoFramePresenter.ShaderPair? softwareShaders,
         SkiaVideoFramePresenter.ShaderParameters? hardwareParameters, Frame source, bool toneMapping, PixelSize fallbackSize,
-        bool renderAtRequestedSize, Action<bool, bool> rendered, Action dropped, Action<string> failure, Action validated)
+        bool renderAtRequestedSize, Action<bool, bool> rendered, Action dropped, Action<string> failure, Action validated,
+        Action? submitted = null)
     {
         this.softwareShaders = softwareShaders;
         this.hardwareParameters = hardwareParameters;
@@ -44,6 +47,7 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
         this.rendered = rendered;
         this.renderAtRequestedSize = renderAtRequestedSize;
         this.dropped = dropped;
+        this.submitted = submitted;
         this.failure = failure;
         PixelSize = new(source.Width, source.Height);
     }
@@ -63,6 +67,9 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
             {
                 try { context.Custom(new DrawOperation(this, destination, clip)); }
                 catch { Release(); throw; }
+                // DrawOperation 已持有帧引用；UI 现在可以准备下一帧，实际绘制计数仍在 Render 中更新。
+                if (Interlocked.Exchange(ref wasSubmitted, 1) == 0)
+                    submitted?.Invoke();
                 return;
             }
             count = observed;

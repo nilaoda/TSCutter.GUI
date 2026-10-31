@@ -25,7 +25,7 @@ public partial class MainWindowViewModel
     private IDisposable? playbackPerformanceTimer;
     private PlaybackPerformance? playbackPerformance;
 
-    public string PlaybackFpsText => playbackPerformance is { } value ? $"{value.PlaybackFps:F1} FPS" : "— FPS";
+    public string PlaybackFpsText => playbackPerformance is { } value ? $"{value.PlaybackFps:0.0##} FPS" : "— FPS";
     public bool IsPlaybackSmooth => playbackPerformance?.Fluency == PlaybackFluency.Smooth;
     public bool IsPlaybackLimited => playbackPerformance?.Fluency == PlaybackFluency.Limited;
     public bool IsPlaybackSlow => playbackPerformance?.Fluency == PlaybackFluency.Slow;

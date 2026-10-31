@@ -39,17 +39,19 @@ internal sealed unsafe class SkiaVideoFramePresenter : IDisposable
     internal static void Probe(DrawingContext context, Rect bounds) => context.Custom(new ProbeOperation(bounds));
 
     internal bool TryPresent(Frame source, bool toneMapping, PixelSize fallbackSize,
-        bool renderAtRequestedSize, Action<bool, bool> rendered, Action dropped, out SkiaVideoFrame? presentation)
+        bool renderAtRequestedSize, Action<bool, bool> rendered, Action dropped, out SkiaVideoFrame? presentation,
+        Action? submitted = null)
     {
         presentation = null;
         if (Volatile.Read(ref rendererAvailable) == 0 || Volatile.Read(ref failed) != 0)
             return false;
-        return TryCreateFrame(source, toneMapping, fallbackSize, renderAtRequestedSize, rendered, dropped, out presentation);
+        return TryCreateFrame(source, toneMapping, fallbackSize, renderAtRequestedSize, rendered, dropped, out presentation, submitted);
     }
 
     // 准备与 GPU 后端无关的帧资源，实际绘制仍需通过 GPU 探测。
     internal bool TryCreateFrame(Frame source, bool toneMapping, PixelSize fallbackSize,
-        bool renderAtRequestedSize, Action<bool, bool> rendered, Action dropped, out SkiaVideoFrame? presentation)
+        bool renderAtRequestedSize, Action<bool, bool> rendered, Action dropped, out SkiaVideoFrame? presentation,
+        Action? submitted = null)
     {
         presentation = null;
         AVFrame* raw = source;
@@ -90,7 +92,7 @@ internal sealed unsafe class SkiaVideoFramePresenter : IDisposable
                 parameters = null;
             }
             presentation = new SkiaVideoFrame(shaders, parameters, source, toneMapping, fallbackSize,
-                renderAtRequestedSize, rendered, dropped, disable, markValidated);
+                renderAtRequestedSize, rendered, dropped, disable, markValidated, submitted);
             return true;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)

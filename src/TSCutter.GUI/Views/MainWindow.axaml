@@ -389,8 +389,9 @@
                             ToolTip.Tip="{DynamicResource String.Status.ToggleHardwareDecodingTip}" />
                 </commonControls:StatusBarItem>
                 <commonControls:StatusBarItem IsVisible="{Binding IsPlaybackActive}">
-                    <TextBlock Name="PlaybackFps" Width="82" TextAlignment="Center" VerticalAlignment="Center"
-                               Text="{Binding PlaybackFpsText}"
+                    <TextBlock Name="PlaybackFps" MinWidth="104" TextAlignment="Center" VerticalAlignment="Center"
+                               FontFamily="Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, $Default"
+                               FontFeatures="tnum" Text="{Binding PlaybackFpsText}"
                                Classes.smooth="{Binding IsPlaybackSmooth}"
                                Classes.limited="{Binding IsPlaybackLimited}"
                                Classes.slow="{Binding IsPlaybackSlow}">

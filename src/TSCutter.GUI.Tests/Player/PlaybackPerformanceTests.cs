@@ -24,6 +24,14 @@ public sealed class PlaybackPerformanceTests
         Assert.Equal(PlaybackFluency.Slow, new PlaybackPerformance(60, 41, 60).Fluency);
         Assert.Equal(PlaybackFluency.Smooth, new PlaybackPerformance(24, 24, 24).Fluency);
         Assert.Equal(PlaybackFluency.Unknown, new PlaybackPerformance(24, 24, 0).Fluency);
+        foreach (var rate in new[] { 24000.0 / 1001, 30000.0 / 1001, 60000.0 / 1001 })
+        {
+            var fractional = new PlaybackPerformance(rate, rate, rate);
+            Assert.Equal(rate, fractional.SourceFps);
+            Assert.Equal(rate, fractional.PlaybackFps);
+            Assert.Equal(PlaybackFluency.Smooth, fractional.Fluency);
+            Assert.Equal(PlaybackFluency.Limited, new PlaybackPerformance(rate, rate, rate, droppedFrames: 1).Fluency);
+        }
         Assert.Equal(PlaybackFluency.Smooth, new PlaybackPerformance(49.7, 49.7, 50, 0.5).Fluency);
         Assert.Equal(PlaybackFluency.Limited, new PlaybackPerformance(49.7, 49.7, 50, 0.5, 1).Fluency);
         // 短窗口计数抖动不应让流畅的 25fps 画面反复显示 24.9。
