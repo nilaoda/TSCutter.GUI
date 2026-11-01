@@ -8,6 +8,7 @@ using SkiaSharp;
 using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Extensions;
 using FFmpeg.AutoGen.Abstractions;
+using TSCutter.GUI.Models.Preview;
 
 namespace TSCutter.GUI.Rendering.Gpu;
 
@@ -25,6 +26,10 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
     private readonly Action dropped;
     private readonly Action? submitted;
     private readonly bool renderAtRequestedSize;
+    private readonly WindowsVideoTexture.Owner windowsTextures;
+    internal VideoPresentationMode LastPresentationMode { get; private set; }
+    internal int HardwareReadbacks { get; private set; }
+    internal bool HasBeenRendered => Volatile.Read(ref wasRendered) != 0;
     private readonly Action<string> failure;
     private HostFramePresenter? fallbackPresenter;
     private IBitmapFrameLease? fallback;
@@ -36,12 +41,21 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
     internal SkiaVideoFrame(SkiaVideoFramePresenter.ShaderPair? softwareShaders,
         SkiaVideoFramePresenter.ShaderParameters? hardwareParameters, Frame source, bool toneMapping, PixelSize fallbackSize,
         bool renderAtRequestedSize, Action<bool, bool> rendered, Action dropped, Action<string> failure, Action validated,
-        Action? submitted = null)
+        Action? submitted = null, WindowsVideoTexture.Owner? windowsTextures = null)
     {
         this.softwareShaders = softwareShaders;
         this.hardwareParameters = hardwareParameters;
         this.validated = validated;
         this.source = source.CloneReference();
+        try
+        {
+            this.windowsTextures = windowsTextures?.Retain() ?? new();
+        }
+        catch
+        {
+            this.source.Dispose();
+            throw;
+        }
         this.toneMapping = toneMapping;
         this.fallbackSize = fallbackSize;
         this.rendered = rendered;
@@ -53,7 +67,14 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
     }
 
     public PixelSize PixelSize { get; }
-    public string Backend => hardwareParameters is null ? "Skia GPU" : "VideoToolbox / IOSurface";
+    public string Backend => LastPresentationMode switch
+    {
+        VideoPresentationMode.HardwareGpu => OperatingSystem.IsWindows() ? "D3D11 direct sampling" : "VideoToolbox / IOSurface",
+        VideoPresentationMode.HardwareGpuCopy => "D3D11 GPU copy",
+        VideoPresentationMode.HardwareGpuUpload => "Skia GPU / hardware readback",
+        VideoPresentationMode.SoftwareGpu => "Skia GPU",
+        _ => "CPU"
+    };
     public bool TryAttach(Avalonia.Visual host) => Volatile.Read(ref ownerReleased) == 0;
     public void UpdateViewport(Rect destination) { }
 
@@ -84,7 +105,7 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
             canvas.ClipRect(clip);
             canvas.Translate(destination.Left, destination.Top);
             canvas.Scale(destination.Width / PixelSize.Width, destination.Height / PixelSize.Height);
-            // Runtime shader 的输入颜色也会传给子着色器；透明度在合成层应用，避免改变 YUV/LUT 采样。
+            // 运行时着色器的输入颜色也会传给子着色器；透明度在合成层应用，避免改变 YUV/LUT 采样。
             using var paint = new SKPaint { Shader = frameShader ?? softwareShaders?.Shader };
             if (opacity < 1)
             {
@@ -114,7 +135,7 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
                     else
                     {
                         RenderWithShaders(lease, softwareShaders!, destination, clip);
-                        ReportRendered(true);
+                        ReportRendered(VideoPresentationMode.SoftwareGpu);
                     }
                     return;
                 }
@@ -127,12 +148,16 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
         gpuFailed = true;
         failure("The current drawing surface has no compatible GPU context.");
         fallbackPresenter ??= new HostFramePresenter();
-        if (fallback is null && !fallbackPresenter.TryConvert(source, fallbackSize.Width, fallbackSize.Height,
-                out fallback, toneMapping))
-            return;
+        if (fallback is null)
+        {
+            if (!fallbackPresenter.TryConvert(source, fallbackSize.Width, fallbackSize.Height, out fallback, toneMapping))
+                return;
+            if (source.HasHardwareFramesContext)
+                HardwareReadbacks++;
+        }
         using (context.PushClip(clip))
             context.DrawBitmap(fallback!.Bitmap, destination);
-        ReportRendered(false);
+        ReportRendered(source.HasHardwareFramesContext ? VideoPresentationMode.HardwareCpuTransfer : VideoPresentationMode.SoftwareBitmap);
     }
 
     private void RenderWithShaders(ISkiaSharpApiLease lease, SkiaVideoFramePresenter.ShaderPair shaders,
@@ -147,12 +172,12 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
 
     private unsafe void RenderHardware(ISkiaSharpApiLease lease, Rect destination, Rect clip)
     {
-        try
+        var mode = DrawHardware(lease.GrContext!, shaders =>
         {
-            using var textures = MacOSVideoTexture.Import(lease.GrContext!, source);
-            using var shaders = hardwareParameters!.Create(textures.Y, textures.Uv, textures.Uv,
-                !gpuValidated && hardwareParameters.NeedsValidation);
-            try { RenderWithShaders(lease, shaders, destination, clip); }
+            try
+            {
+                RenderWithShaders(lease, shaders, destination, clip);
+            }
             finally
             {
                 // 先提交采样命令，再由纹理租约的 GPU 栅栏异步归还表面。
@@ -160,22 +185,54 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
                 lease.GrContext!.Flush();
                 lease.GrContext.Submit(false);
             }
-            ReportRendered(true, true);
-            return;
-        }
-        catch (Exception exception) when (exception is not OutOfMemoryException)
+        });
+        ReportRendered(mode);
+    }
+
+    // 播放和测速共用硬件导入、着色器准备及回退逻辑。
+    private unsafe VideoPresentationMode DrawHardware(GRContext context, Action<SkiaVideoFramePresenter.ShaderPair> draw)
+    {
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            MacOSVideoTexture.Disable(exception.Message);
+            var direct = false;
+            try
+            {
+                using var textures = HardwareVideoTexture.Import(context, source, windowsTextures, attempt == 0);
+                direct = textures.Direct;
+                using var shaders = hardwareParameters!.Create(textures.Y, textures.Uv, textures.Uv,
+                    !gpuValidated && hardwareParameters.NeedsValidation);
+                try
+                {
+                    draw(shaders);
+                    if (OperatingSystem.IsWindows())
+                        WindowsAngle.CheckGl();
+                }
+                catch (Exception exception) when (direct && OperatingSystem.IsWindows() && exception is not OutOfMemoryException)
+                {
+                    textures.DisableDirect(exception.Message);
+                    throw;
+                }
+                return direct ? VideoPresentationMode.HardwareGpu : VideoPresentationMode.HardwareGpuCopy;
+            }
+            catch (Exception exception) when (exception is not OutOfMemoryException)
+            {
+                if (direct && OperatingSystem.IsWindows() && attempt == 0)
+                    continue;
+                if (exception is not WindowsVideoTexture.TexturesBusyException)
+                    HardwareVideoTexture.Disable(source, exception.Message);
+                break;
+            }
         }
         // 共享纹理不可用时，当前在途硬件帧也能立即走原来的 YUV 上传路径。
         using var software = source.TransferToSoftwareFrame();
+        HardwareReadbacks++;
         AVFrame* raw = software;
         var descriptor = NativeMethods.av_pix_fmt_desc_get((AVPixelFormat)raw->format);
         using var y = SkiaVideoFramePresenter.CreatePlane(software, descriptor, 0);
         using var uv = SkiaVideoFramePresenter.CreatePlane(software, descriptor, 1);
         using var fallbackShaders = hardwareParameters!.Create(y, uv, uv, !gpuValidated && hardwareParameters.NeedsValidation);
-        RenderWithShaders(lease, fallbackShaders, destination, clip);
-        ReportRendered(true);
+        draw(fallbackShaders);
+        return VideoPresentationMode.HardwareGpuUpload;
     }
 
     private void RenderOffscreen(ISkiaSharpApiLease lease, SKShader shader, Rect destination, Rect clip)
@@ -204,13 +261,13 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
     {
         if (hardwareParameters is not null)
         {
-            using var textures = MacOSVideoTexture.Import(context, source);
-            using var shaders = hardwareParameters.Create(textures.Y, textures.Uv, textures.Uv,
-                !gpuValidated && hardwareParameters.NeedsValidation);
-            Draw(shaders);
+            LastPresentationMode = DrawHardware(context, Draw);
         }
         else
+        {
             Draw(softwareShaders!);
+            LastPresentationMode = VideoPresentationMode.SoftwareGpu;
+        }
 
         void Draw(SkiaVideoFramePresenter.ShaderPair shaders)
         {
@@ -245,10 +302,12 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
         validated();
     }
 
-    private void ReportRendered(bool gpu, bool hardwareSurface = false)
+    private void ReportRendered(VideoPresentationMode mode)
     {
+        LastPresentationMode = mode;
         if (Interlocked.Exchange(ref wasRendered, 1) == 0)
-            rendered(gpu, hardwareSurface);
+            rendered(mode is VideoPresentationMode.HardwareGpu or VideoPresentationMode.HardwareGpuCopy
+                or VideoPresentationMode.HardwareGpuUpload or VideoPresentationMode.SoftwareGpu, mode == VideoPresentationMode.HardwareGpu);
     }
 
     private static SKRect ToSkia(Rect rect) => new((float)rect.Left, (float)rect.Top, (float)rect.Right, (float)rect.Bottom);
@@ -263,6 +322,7 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
         fallbackPresenter?.Dispose();
         softwareShaders?.Dispose();
         hardwareParameters?.Dispose();
+        windowsTextures.Dispose();
         source.Dispose();
     }
 

@@ -468,7 +468,7 @@ public partial class MainWindowViewModel
         _displayedFrameTime = result.FrameTimestamp.TotalSeconds;
         _displayedFrameEndSignature = result.FrameEndSignature;
         IsHardwareDecoding = result.PresentationMode
-            is VideoPresentationMode.HardwareCpuTransfer or VideoPresentationMode.HardwareGpu or VideoPresentationMode.HardwareGpuUpload;
+            is VideoPresentationMode.HardwareCpuTransfer or VideoPresentationMode.HardwareGpu or VideoPresentationMode.HardwareGpuCopy or VideoPresentationMode.HardwareGpuUpload;
         SetDisplayedVideoDynamicRange(result.VideoDynamicRange);
         DecodedFrameSourceSize = result.SourcePixelSize;
         decodedFrameRequiresSampleAspectRatioCorrection = result.RequiresSampleAspectRatioCorrection;

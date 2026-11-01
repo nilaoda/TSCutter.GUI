@@ -1422,6 +1422,9 @@
     <x:String x:Key="String.PlaybackBenchmark.Mapping">HDR 轉 SDR</x:String>
     <x:String x:Key="String.PlaybackBenchmark.Hint">短片段測試 · 靜音 · 實體像素</x:String>
     <x:String x:Key="String.PlaybackBenchmark.GpuDirectPresentation">GPU 直傳</x:String>
+    <x:String x:Key="String.PlaybackBenchmark.GpuCopyPresentation">GPU 內複製</x:String>
+    <x:String x:Key="String.PlaybackBenchmark.GpuCopyScope">硬體表面 → GPU 內複製 → 畫面處理</x:String>
+    <x:String x:Key="String.PlaybackBenchmark.PathGpuCopy">硬體解碼 → GPU 內複製 → GPU 畫面處理 → 顯示</x:String>
     <x:String x:Key="String.PlaybackBenchmark.Decode">讀取／解碼</x:String>
     <x:String x:Key="String.PlaybackBenchmark.Conversion">CPU 畫面轉換</x:String>
     <x:String x:Key="String.PlaybackBenchmark.Playback">實際播放</x:String>

@@ -27,6 +27,7 @@ public sealed class PlaybackSession : IAsyncDisposable
     private Action<bool, bool> gpuFrameRendered = null!;
     private Action gpuFrameDropped = null!;
     private long gpuPresentedFrameCount, hardwareSurfaceFrameCount;
+    private long gpuCopyFrameCount, presentationReadbacks;
     private TaskCompletionSource? firstGpuFrameReady;
     private Task pendingPresentation = Task.CompletedTask;
     private readonly CancellationTokenSource lifecycle;
@@ -112,7 +113,11 @@ public sealed class PlaybackSession : IAsyncDisposable
     public PlaybackAudioStatus AudioStatus { get; private set; } = PlaybackAudioStatus.Normal;
     public bool IsHardwareDecodingAware => engine.IsHardwareDecoding;
     internal double OutputFrameRate => engine.SourceFrameRate;
-    internal long HardwareReadbackFrameCount => engine.HardwareReadbackFrameCount;
+    internal long HardwareReadbackFrameCount => engine.HardwareReadbackFrameCount + Interlocked.Read(ref presentationReadbacks);
+    internal long DirectFrameCount => Interlocked.Read(ref hardwareSurfaceFrameCount);
+    internal long GpuCopyFrameCount => Interlocked.Read(ref gpuCopyFrameCount);
+    internal bool UsesHardwareGpuCopyPresentation => GpuCopyFrameCount > 0
+        && GpuCopyFrameCount + DirectFrameCount == Interlocked.Read(ref presentedFrameCount);
     internal long CatchUpCount => engine.CatchUpCount;
     internal long LateDroppedFrameCount => Interlocked.Read(ref lateDroppedFrameCount);
     internal long BusyDroppedFrameCount => Interlocked.Read(ref busyDroppedFrameCount);
@@ -273,6 +278,7 @@ public sealed class PlaybackSession : IAsyncDisposable
             presentationPending = terminalReported = 0;
             pendingPresentation = Task.CompletedTask;
             presentedFrameCount = gpuPresentedFrameCount = hardwareSurfaceFrameCount = 0;
+            gpuCopyFrameCount = presentationReadbacks = 0;
             firstPresentationElapsed = lastPresentationElapsed = 0;
             droppedFrameCount = lateDroppedFrameCount = busyDroppedFrameCount = 0;
             Volatile.Write(ref performanceCounter, new());
@@ -588,12 +594,26 @@ public sealed class PlaybackSession : IAsyncDisposable
             lock (targetSizeSync)
                 size = targetSize;
             // 直传失败后已经排队的硬件帧也先回读，再尝试 GPU 上传，避免整批落到 CPU 转色。
-            using var softwareFrame = item.Frame.HasHardwareFramesContext && !MacOSVideoTexture.CanImport(item.Frame)
+            using var softwareFrame = item.Frame.HasHardwareFramesContext && !HardwareVideoTexture.CanImport(item.Frame)
                 ? item.Frame.TransferToSoftwareFrame() : null;
+            if (softwareFrame is not null)
+                Interlocked.Increment(ref presentationReadbacks);
             var displaySource = softwareFrame ?? item.Frame;
             if ((!options.EnableGpuPresentation || !gpuPresenter.TryPresent(displaySource, options.EnableSdrToneMapping, size,
                     options.RenderAtRequestedSize,
-                    (gpu, hardware) => { rendered(gpu, hardware); presented.TrySetResult(); },
+                    (gpu, hardware) =>
+                    {
+                        lock (publicationSync)
+                        {
+                            if (capturedGeneration != Interlocked.Read(ref generation) || token.IsCancellationRequested)
+                                return;
+                            if (gpuFrame?.LastPresentationMode == VideoPresentationMode.HardwareGpuCopy)
+                                Interlocked.Increment(ref gpuCopyFrameCount);
+                            Interlocked.Add(ref presentationReadbacks, gpuFrame?.HardwareReadbacks ?? 0);
+                            rendered(gpu, hardware);
+                        }
+                        presented.TrySetResult();
+                    },
                     () => { dropped(); presented.TrySetResult(); }, out gpuFrame,
                     submitted: () => presented.TrySetResult()))
                 && !hostPresenter.TryConvert(displaySource, size.Width, size.Height,
@@ -604,9 +624,11 @@ public sealed class PlaybackSession : IAsyncDisposable
                 return;
             }
             var presentationMode = item.Mode;
+            if (gpuFrame is null && lease is not null && displaySource.HasHardwareFramesContext)
+                Interlocked.Increment(ref presentationReadbacks);
             if (gpuFrame is not null)
             {
-                presentationMode = displaySource.HasHardwareFramesContext ? VideoPresentationMode.HardwareGpu
+                presentationMode = displaySource.HasHardwareFramesContext ? VideoPresentationMode.HardwareCpuTransfer
                     : item.Mode is VideoPresentationMode.HardwareGpu or VideoPresentationMode.HardwareCpuTransfer
                         ? VideoPresentationMode.HardwareGpuUpload : VideoPresentationMode.SoftwareGpu;
             }

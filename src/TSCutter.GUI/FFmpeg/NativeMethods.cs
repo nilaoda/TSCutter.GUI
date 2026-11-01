@@ -240,6 +240,18 @@ public static unsafe partial class NativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int av_hwdevice_ctx_create(AVBufferRef** @device_ctx, AVHWDeviceType @type, string? @device, AVDictionary* @opts, int @flags);
 
+    [LibraryImport("tscutter.avutil", EntryPoint = "av_hwdevice_ctx_alloc")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial AVBufferRef* av_hwdevice_ctx_alloc(AVHWDeviceType type);
+
+    [LibraryImport("tscutter.avutil", EntryPoint = "av_hwdevice_ctx_init")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_hwdevice_ctx_init(AVBufferRef* device);
+
+    [LibraryImport("tscutter.avutil", EntryPoint = "av_buffer_unref")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial void av_buffer_unref(AVBufferRef** buffer);
+
     [LibraryImport("tscutter.avutil", EntryPoint = "av_hwframe_transfer_data", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int av_hwframe_transfer_data(AVFrame* @dst, AVFrame* @src, int @flags);

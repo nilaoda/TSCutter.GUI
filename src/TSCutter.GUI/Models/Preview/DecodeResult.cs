@@ -12,13 +12,11 @@ public class DecodeResult
     public IBitmapFrameLease? BitmapLease { get; init; }
     public IGpuFrameLease? GpuFrame { get; init; }
     /// <summary>
-    /// Frame geometry in square display pixels. This may differ from the decoded
-    /// bitmap or GPU surface size when the video uses non-square samples.
+    /// 按方形显示像素计算的画面尺寸；非方形采样时可能与位图或 GPU 表面尺寸不同。
     /// </summary>
     public PixelSize SourcePixelSize { get; init; }
     /// <summary>
-    /// True only when the decoded frame has a valid non-square sample aspect ratio.
-    /// Consumers can use this to avoid an unnecessary resample for square pixels.
+    /// 解码帧具有有效的非方形采样宽高比时为 true，用于避免对方形像素重复重采样。
     /// </summary>
     public bool RequiresSampleAspectRatioCorrection { get; init; }
     public VideoDynamicRange VideoDynamicRange { get; init; }
@@ -29,5 +27,22 @@ public class DecodeResult
     public long FramePts90k { get; init; } = long.MinValue;
     public long FramePosition { get; init; } = -1;
     internal TSCutter.GUI.Utils.Editing.PacketEndSignature FrameEndSignature { get; init; }
-    public VideoPresentationMode PresentationMode { get; init; } = VideoPresentationMode.SoftwareBitmap;
+    private VideoPresentationMode presentationMode;
+    public VideoPresentationMode PresentationMode
+    {
+        get
+        {
+            if (GpuFrame is not Rendering.Gpu.SkiaVideoFrame { HasBeenRendered: true } frame)
+                return presentationMode;
+            if (presentationMode is VideoPresentationMode.HardwareCpuTransfer or VideoPresentationMode.HardwareGpuUpload)
+                return frame.LastPresentationMode switch
+                {
+                    VideoPresentationMode.SoftwareGpu => VideoPresentationMode.HardwareGpuUpload,
+                    VideoPresentationMode.SoftwareBitmap => VideoPresentationMode.HardwareCpuTransfer,
+                    _ => frame.LastPresentationMode
+                };
+            return frame.LastPresentationMode;
+        }
+        init => presentationMode = value;
+    }
 }

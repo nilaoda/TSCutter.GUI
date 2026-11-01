@@ -9,6 +9,7 @@ using FFmpeg.AutoGen.Abstractions;
 using SkiaSharp;
 using TSCutter.GUI.Controls;
 using TSCutter.GUI.FFmpeg;
+using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Rendering;
 using TSCutter.GUI.Rendering.Gpu;
 using TSCutter.GUI.Tests.FFmpeg;
@@ -56,6 +57,15 @@ public sealed class GpuFramePresenterTests
                         (gpu, _) => renderedOnGpu = gpu, () => { }, out var presentation, () => submitted++));
                     Assert.NotNull(presentation);
                     using var gpuFrame = presentation;
+                    var hardwareResult = new DecodeResult
+                    {
+                        GpuFrame = gpuFrame, PresentationMode = VideoPresentationMode.HardwareGpuUpload
+                    };
+                    // 呈现器释放后，已有帧仍持有纹理池；重复释放不能使新帧继续创建。
+                    presenter.Dispose();
+                    presenter.Dispose();
+                    Assert.False(presenter.TryCreateFrame(source, true, new(16, 8), false,
+                        (_, _) => { }, () => { }, out _));
                     source.Dispose();
                     var viewer = new ImageViewer { GpuFrame = gpuFrame, SourcePixelSize = new(32, 16) };
                     viewer.Measure(new Size(16, 8));
@@ -67,6 +77,7 @@ public sealed class GpuFramePresenterTests
                     actual.Render(viewer);
                     Assert.Equal(1, submitted);
                     Assert.Equal(false, renderedOnGpu);
+                    Assert.Equal(VideoPresentationMode.HardwareCpuTransfer, hardwareResult.PresentationMode);
                     using var encoded = new MemoryStream();
                     actual.Save(encoded);
                     using var pixels = SKBitmap.Decode(encoded.ToArray());

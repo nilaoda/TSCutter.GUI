@@ -13,6 +13,7 @@ using TSCutter.GUI.Extensions;
 using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Rendering.Gpu;
 using TSCutter.GUI.Utils.Media;
+using TSCutter.GUI.Models.Preview;
 
 namespace TSCutter.GUI.Player.Diagnostics;
 
@@ -33,6 +34,7 @@ public sealed class PlaybackGpuBenchmarkControl : Control
         var seconds = 0.0;
         var batchSize = 4;
         var lastReport = 0.0;
+        long readbacks = 0, directFrames = 0, copyFrames = 0;
         PixelSize size = default;
         var transfer = GpuBenchmarkTransfer.HardwareSurface;
         try
@@ -60,6 +62,9 @@ public sealed class PlaybackGpuBenchmarkControl : Control
                     count += result.Count;
                     seconds += result.Seconds;
                     size = result.Size;
+                    readbacks += result.Readbacks;
+                    directFrames += result.DirectFrames;
+                    copyFrames += result.CopyFrames;
                     transfer = (GpuBenchmarkTransfer)Math.Max((int)transfer, (int)result.Transfer);
                     // 控制每次占用渲染线程的时间，批次间允许窗口重绘和处理取消操作。
                     batchSize = Math.Clamp((int)(0.012 * result.Count / result.Seconds), 1, 64);
@@ -85,7 +90,9 @@ public sealed class PlaybackGpuBenchmarkControl : Control
             }
             return new(PlaybackBenchmarkStage.GpuProcessing, count / seconds, request.FrameRate, count, seconds,
                 request.HardwareDecoding, OutputSize: size, GpuPresentation: true,
-                HardwareSurfacePresentation: transfer == GpuBenchmarkTransfer.HardwareSurface, GpuTransfer: transfer);
+                HardwareSurfacePresentation: transfer == GpuBenchmarkTransfer.HardwareSurface, GpuTransfer: transfer,
+                HardwareGpuCopyPresentation: transfer == GpuBenchmarkTransfer.GpuCopy,
+                HardwareReadbacks: readbacks, DirectFrames: directFrames, GpuCopyFrames: copyFrames);
         }
         catch (OperationCanceledException) when (!token.IsCancellationRequested)
         {
@@ -104,7 +111,8 @@ public sealed class PlaybackGpuBenchmarkControl : Control
             context.Custom(new BatchOperation(batch, new Rect(Bounds.Size)));
     }
 
-    private sealed record BatchResult(int Count, double Seconds, PixelSize Size, GpuBenchmarkTransfer Transfer);
+    private sealed record BatchResult(int Count, double Seconds, PixelSize Size, GpuBenchmarkTransfer Transfer,
+        long Readbacks, long DirectFrames, long CopyFrames);
 
     private sealed class BatchRequest : IDisposable
     {
@@ -148,18 +156,20 @@ public sealed class PlaybackGpuBenchmarkControl : Control
                     Completion.TrySetResult(null);
                     return;
                 }
-                MacOSVideoTexture.Probe(context);
+                HardwareVideoTexture.Probe(context);
                 var size = ImageUtil.CalculateDecodeSize(new(samples[0].Width, samples[0].Height), request.OutputSize);
                 using var surface = SKSurface.Create(context, true,
                     new SKImageInfo(size.Width, size.Height, SKColorType.Bgra8888, SKAlphaType.Opaque))
                     ?? throw new NotSupportedException("Cannot create the GPU benchmark surface.");
                 using var presenter = new SkiaVideoFramePresenter();
                 var transfer = GpuBenchmarkTransfer.HardwareSurface;
+                long readbacks = 0, directFrames = 0, copyFrames = 0;
                 // 预热表格、着色器和目标纹理；先排空旧命令，避免把先前的界面绘制算入本批。
                 Draw(samples[0]);
                 context.Flush();
                 context.Submit(true);
                 transfer = GpuBenchmarkTransfer.HardwareSurface;
+                readbacks = directFrames = copyFrames = 0;
                 var started = Stopwatch.GetTimestamp();
                 try
                 {
@@ -167,6 +177,14 @@ public sealed class PlaybackGpuBenchmarkControl : Control
                     {
                         token.ThrowIfCancellationRequested();
                         Draw(samples[index % samples.Length]);
+                        // 测速按四个表面分组等待 GPU，避免瞬时提交超过池容量而将回读计入测速。
+                        if (OperatingSystem.IsWindows()
+                            && index % 4 == 3 && index + 1 < count)
+                        {
+                            surface.Flush();
+                            context.Flush();
+                            context.Submit(true);
+                        }
                     }
                 }
                 finally
@@ -177,14 +195,17 @@ public sealed class PlaybackGpuBenchmarkControl : Control
                     context.Submit(true);
                 }
                 var elapsed = Math.Max(Stopwatch.GetElapsedTime(started).TotalSeconds, 0.000001);
-                Completion.TrySetResult(new(count, elapsed, size, transfer));
+                Completion.TrySetResult(new(count, elapsed, size, transfer, readbacks, directFrames, copyFrames));
 
                 void Draw(Frame source)
                 {
                     using var software = source.HasHardwareFramesContext &&
-                        (request.ForceSoftwareFrames || !MacOSVideoTexture.CanImport(source))
+                        (request.ForceSoftwareFrames || !HardwareVideoTexture.CanImport(source))
                             ? source.TransferToSoftwareFrame() : null;
                     var input = software ?? source;
+                    if (software is not null)
+                        readbacks++;
+                    var mode = software is not null ? GpuBenchmarkTransfer.ReadbackAndUpload : GpuBenchmarkTransfer.Upload;
                     if (!presenter.TryCreateFrame(input, request.ToneMapping, size, false, static (_, _) => { },
                             static () => { }, out var frame))
                         throw new NotSupportedException("The GPU cannot process this pixel format.");
@@ -193,15 +214,27 @@ public sealed class PlaybackGpuBenchmarkControl : Control
                         try { frame!.RenderBenchmark(context, surface); }
                         catch (Exception exception) when (input.HasHardwareFramesContext && exception is not OutOfMemoryException)
                         {
-                            MacOSVideoTexture.Disable(exception.Message);
+                            HardwareVideoTexture.Disable(input, exception.Message);
                             using var fallback = input.TransferToSoftwareFrame();
+                            readbacks++;
                             Draw(fallback);
                             transfer = GpuBenchmarkTransfer.ReadbackAndUpload;
                             return;
                         }
+                        readbacks += frame.HardwareReadbacks;
+                        if (frame.LastPresentationMode == VideoPresentationMode.HardwareGpu)
+                        {
+                            directFrames++;
+                            mode = GpuBenchmarkTransfer.HardwareSurface;
+                        }
+                        else if (frame.LastPresentationMode == VideoPresentationMode.HardwareGpuCopy)
+                        {
+                            copyFrames++;
+                            mode = GpuBenchmarkTransfer.GpuCopy;
+                        }
+                        else if (frame.HardwareReadbacks > 0)
+                            mode = GpuBenchmarkTransfer.ReadbackAndUpload;
                     }
-                    var mode = input.HasHardwareFramesContext ? GpuBenchmarkTransfer.HardwareSurface
-                        : software is not null ? GpuBenchmarkTransfer.ReadbackAndUpload : GpuBenchmarkTransfer.Upload;
                     transfer = (GpuBenchmarkTransfer)Math.Max((int)transfer, (int)mode);
                 }
             }
