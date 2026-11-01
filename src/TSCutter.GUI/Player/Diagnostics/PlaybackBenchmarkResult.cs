@@ -11,7 +11,7 @@ namespace TSCutter.GUI.Player.Diagnostics;
 
 public enum PlaybackBenchmarkStage { Decode, GpuProcessing, Conversion, Playback }
 public enum PlaybackBenchmarkRating { Unknown, Good, Marginal, Insufficient }
-public enum GpuBenchmarkTransfer { HardwareSurface, Upload, ReadbackAndUpload }
+public enum GpuBenchmarkTransfer { HardwareSurface, GpuCopy, Upload, ReadbackAndUpload }
 
 public sealed record PlaybackBenchmarkTrack(PreviewStreamSelection Selection, string Codec,
     int Width, int Height, double FrameRate, double OriginSeconds, VideoDynamicRange DynamicRange = VideoDynamicRange.Standard)
@@ -28,7 +28,8 @@ public sealed record PlaybackBenchmarkRequest(PlaybackBenchmarkSource Source, Pl
 public sealed record PlaybackBenchmarkResult(PlaybackBenchmarkStage Stage, double FramesPerSecond,
     double SourceFrameRate, int FrameCount, double ElapsedSeconds, bool HardwareDecoding,
     double ReadFraction = 0, PixelSize OutputSize = default, long LateDrops = 0, long BusyDrops = 0, long Recoveries = 0, bool GpuPresentation = false, bool HardwareSurfacePresentation = false,
-    bool CpuPresentation = false, GpuBenchmarkTransfer GpuTransfer = GpuBenchmarkTransfer.Upload)
+    bool CpuPresentation = false, GpuBenchmarkTransfer GpuTransfer = GpuBenchmarkTransfer.Upload,
+    bool HardwareGpuCopyPresentation = false, long HardwareReadbacks = 0, long DirectFrames = 0, long GpuCopyFrames = 0)
 {
     public double RealtimeFactor => SourceFrameRate > 0 ? FramesPerSecond / SourceFrameRate : 0;
     public PlaybackBenchmarkRating Rating => SourceFrameRate <= 0 || FrameCount == 0 ? PlaybackBenchmarkRating.Unknown

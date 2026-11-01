@@ -285,6 +285,8 @@ internal static class PlaybackBenchmarkService
             count, measured.ElapsedSeconds, session.IsHardwareDecodingAware, OutputSize: new(options.MaxPresentWidth, options.MaxPresentHeight),
             LateDrops: session.LateDroppedFrameCount, BusyDrops: session.BusyDroppedFrameCount, Recoveries: session.CatchUpCount,
             GpuPresentation: session.UsesGpuPresentation, HardwareSurfacePresentation: session.UsesHardwareSurfacePresentation,
-            CpuPresentation: session.UsesCpuPresentation);
+            CpuPresentation: session.UsesCpuPresentation, HardwareGpuCopyPresentation: session.UsesHardwareGpuCopyPresentation,
+            HardwareReadbacks: session.HardwareReadbackFrameCount, DirectFrames: session.DirectFrameCount,
+            GpuCopyFrames: session.GpuCopyFrameCount);
     }
 }

@@ -1,10 +1,8 @@
 namespace TSCutter.GUI.Models.Preview;
 
 /// <summary>
-/// Describes how the most recently decoded frame reaches the preview.
-/// Hardware decoding and GPU presentation are intentionally separate: a
-/// hardware decoder can still use the CPU bitmap path when the UI backend
-/// cannot import its native surface.
+/// 当前帧的预览呈现方式。硬件解码与 GPU 呈现分别记录；
+/// 界面无法导入硬件表面时，硬解画面仍可回退到 CPU 位图。
 /// </summary>
 public enum VideoPresentationMode
 {
@@ -13,4 +11,5 @@ public enum VideoPresentationMode
     HardwareGpu,
     SoftwareGpu,
     HardwareGpuUpload,
+    HardwareGpuCopy,
 }

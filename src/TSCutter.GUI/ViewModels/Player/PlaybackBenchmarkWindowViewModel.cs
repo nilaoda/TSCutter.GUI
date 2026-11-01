@@ -71,13 +71,14 @@ public sealed partial class PlaybackBenchmarkRow(PlaybackBenchmarkStage stage) :
     };
     private string PresentationSuffix => Result is not { } value ? string.Empty : " · "
         + (value.HardwareSurfacePresentation ? LocalizationManager.Instance.String_PlaybackBenchmark_GpuDirectPresentation
+            : value.HardwareGpuCopyPresentation ? LocalizationManager.Instance.String_PlaybackBenchmark_GpuCopyPresentation
             : value.GpuPresentation ? "GPU" : "CPU");
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FpsText))]
     [NotifyPropertyChangedFor(nameof(PlaybackRateText))]
     private double? _liveFramesPerSecond;
     public string FpsText => Result is { Stage: PlaybackBenchmarkStage.GpuProcessing, FrameCount: 0 } ? "—"
-        : (Result?.FramesPerSecond ?? LiveFramesPerSecond) is { } fps ? $"{fps:F1}" : "—";
+        : (Result?.FramesPerSecond ?? LiveFramesPerSecond) is { } fps ? $"{fps:0.0##}" : "—";
     public string FactorText => Result is { SourceFrameRate: > 0, FrameCount: > 0 } value ? $"{value.RealtimeFactor:F2}×" : "—";
     public string TargetText => Result is { SourceFrameRate: > 0 } value ? $"{value.SourceFrameRate:0.###} FPS" : "—";
     public string ThroughputText => Result is { SourceFrameRate: > 0, FrameCount: > 0 }
@@ -86,6 +87,7 @@ public sealed partial class PlaybackBenchmarkRow(PlaybackBenchmarkStage stage) :
     public string GpuScopeText => !HasGpuMeasurement ? string.Empty : Result!.GpuTransfer switch
     {
         GpuBenchmarkTransfer.HardwareSurface => LocalizationManager.Instance.String_PlaybackBenchmark_GpuDirectScope,
+        GpuBenchmarkTransfer.GpuCopy => LocalizationManager.Instance.String_PlaybackBenchmark_GpuCopyScope,
         GpuBenchmarkTransfer.ReadbackAndUpload => LocalizationManager.Instance.String_PlaybackBenchmark_GpuReadbackScope,
         _ => LocalizationManager.Instance.String_PlaybackBenchmark_GpuUploadScope
     };
@@ -170,6 +172,7 @@ public partial class PlaybackBenchmarkWindowViewModel : ViewModelBase, IModalDia
         ? LocalizationManager.Instance.String_PlaybackBenchmark_AwaitingPlayback
         : value.GpuPresentation && value.CpuPresentation ? LocalizationManager.Instance.String_PlaybackBenchmark_PathMixed
         : value.HardwareSurfacePresentation ? LocalizationManager.Instance.String_PlaybackBenchmark_PathDirect
+        : value.HardwareGpuCopyPresentation ? LocalizationManager.Instance.String_PlaybackBenchmark_PathGpuCopy
         : value.GpuPresentation ? value.HardwareDecoding
             ? LocalizationManager.Instance.String_PlaybackBenchmark_PathHardwareUpload
             : LocalizationManager.Instance.String_PlaybackBenchmark_PathSoftwareUpload

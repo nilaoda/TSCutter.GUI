@@ -44,6 +44,7 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
     private CodecContext? videoDecoder;
     private Frame? reusableSoftwareFrame;
     private bool hardwareDecoderOpened;
+    private bool rendererDirectDecoder;
     private int hardwareNoFrameCount;
     private bool waitingForKeyFrame = true;
     private MediaStream videoStream;
@@ -318,14 +319,14 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
                 try { produced = await DecodeAndEnqueueAsync(packet, destination, token).ConfigureAwait(false); }
                 catch (Exception exception) when (exception is HardwareTransferException || hardwareDecoderOpened && exception is FFmpegException)
                 {
-                    await FallbackToSoftwareDecoderAsync(token).ConfigureAwait(false);
+                    await RecoverDecoderAsync(token).ConfigureAwait(false);
                     continue;
                 }
                 if (decodedFrameCount == previousCount && hardwareDecoderOpened && !reachedEndBoundary
                     && ++hardwareNoFrameCount >= HardwareNoFrameThreshold)
                 {
-                    Console.WriteLine("Hardware decoding produced no frames; falling back to software.");
-                    if (await FallbackToSoftwareDecoderAsync(token).ConfigureAwait(false))
+                    Console.WriteLine("Hardware decoding produced no frames; recovering the decoder.");
+                    if (await RecoverDecoderAsync(token).ConfigureAwait(false))
                         continue;
                 }
                 if (decodedFrameCount == previousCount && ++failures > MaxConsecutiveDecodeFailures)
@@ -398,9 +399,9 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
 
     /// <summary>
     /// 优先硬件解码（VideoToolbox/D3D11VA）；打开成功不代表首帧一定输出，
-    /// 运行期无帧或回读失败时回退软件解码（见 FallbackToSoftwareDecoder）。
+    /// 运行期失败先重试不带 SRV 的呈现设备，再回退软件解码。
     /// </summary>
-    private bool TryOpenHardwareDecoder()
+    private bool TryOpenHardwareDecoder(bool copyOnly = false)
     {
         var codecId = videoStream.Codecpar?.CodecId;
         if (codecId is null || HardwareDevices.Length == 0)
@@ -412,28 +413,46 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
             .ToList();
         foreach (var deviceType in HardwareDevices)
         {
-            foreach (var decoder in decoders)
+            if (copyOnly && deviceType != AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA)
+                continue;
+            // 不支持解码表面同时绑定 SRV 时，使用同一设备重试仅解码绑定，保留 GPU 内复制回退。
+            foreach (var allowDirect in !copyOnly && deviceType == AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA
+                         ? new[] { true, false } : new[] { false })
             {
-                if (!decoder.SupportsHardwareDevice(deviceType))
-                    continue;
-                CodecContext? candidate = null;
-                try
+                foreach (var decoder in decoders)
                 {
-                    candidate = new CodecContext(decoder);
-                    candidate.FillParameters(videoStream.Codecpar!);
-                    candidate.PacketTimeBase = timeBase;
-                    // 播放需要全部画面：不设置 AVDISCARD_NONKEY。
-                    candidate.AttachHardwareDevice(deviceType);
-                    candidate.Open();
-                    videoDecoder = candidate;
-                    hardwareDecoderOpened = true;
-                    hardwareNoFrameCount = 0;
-                    return true;
-                }
-                catch (Exception)
-                {
-                    candidate?.Close();
-                    candidate?.Dispose();
+                    if (!decoder.SupportsHardwareDevice(deviceType))
+                        continue;
+                    CodecContext? candidate = null;
+                    try
+                    {
+                        candidate = new CodecContext(decoder);
+                        candidate.FillParameters(videoStream.Codecpar!);
+                        candidate.PacketTimeBase = timeBase;
+                        // 播放需要全部画面：不设置 AVDISCARD_NONKEY。
+                        var rendererAttached = deviceType == AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA
+                            && WindowsVideoTexture.TryAttachDecoder(candidate, allowDirect);
+                        if (!rendererAttached)
+                        {
+                            if (copyOnly)
+                            {
+                                candidate.Dispose();
+                                continue;
+                            }
+                            candidate.AttachHardwareDevice(deviceType);
+                        }
+                        candidate.Open();
+                        videoDecoder = candidate;
+                        hardwareDecoderOpened = true;
+                        rendererDirectDecoder = rendererAttached && allowDirect;
+                        hardwareNoFrameCount = 0;
+                        return true;
+                    }
+                    catch (Exception)
+                    {
+                        candidate?.Close();
+                        candidate?.Dispose();
+                    }
                 }
             }
         }
@@ -477,11 +496,11 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
     }
 
     /// <summary>
-    /// 硬件解码运行期失效（回读失败或连续无输出——硬件设备打开成功不代表首帧
-    /// 一定输出）：换软件解码器并从关键帧锚点重读。引用帧序列无法跨解码器
+    /// 硬件设备打开成功不代表首帧纹理初始化成功。SRV 解码器运行期失效时先
+    /// 重试仅解码绑定；再次失败再换软件解码器。引用帧序列无法跨解码器
     /// 续接，必须重读 GOP；预滚期尚无入队帧时，从原始预滚目标重新预滚。
     /// </summary>
-    private async Task<bool> FallbackToSoftwareDecoderAsync(CancellationToken token)
+    private async Task<bool> RecoverDecoderAsync(CancellationToken token)
     {
         if (!hardwareDecoderOpened)
             return false;
@@ -495,11 +514,16 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
             audioTailRead = false;
         }
         hardwareDecoderOpened = false;
+        var retryCopyOnly = rendererDirectDecoder;
+        rendererDirectDecoder = false;
         hardwareNoFrameCount = 0;
         videoDecoder?.Close();
         videoDecoder?.Dispose();
         videoDecoder = null;
-        OpenSoftwareDecoder();
+        if (!retryCopyOnly || !TryOpenHardwareDecoder(copyOnly: true))
+            OpenSoftwareDecoder();
+        else
+            Console.WriteLine("Renderer decoder retried without shader-resource binding; using GPU copy.");
         ResetDeinterlacer();
         // 预滚期没有任何入队帧（如硬件首帧初始化失败）时回到原始预滚目标；
         // 否则从最后一个入队帧恢复，目标帧之后的画面在预滚语义下照常入队。
@@ -567,7 +591,7 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
             try { produced = await DecodeAndEnqueueAsync(packet, destination, token, target).ConfigureAwait(false); }
             catch (Exception exception) when (exception is HardwareTransferException || hardwareDecoderOpened && exception is FFmpegException)
             {
-                await FallbackToSoftwareDecoderAsync(token).ConfigureAwait(false);
+                await RecoverDecoderAsync(token).ConfigureAwait(false);
                 return;
             }
             if (decodedFrameCount != previousCount)
@@ -577,7 +601,7 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
             if (hardwareDecoderOpened && decodedFrameCount == previousCount && !reachedEndBoundary
                 && ++hardwareNoFrameCount >= HardwareNoFrameThreshold)
             {
-                if (await FallbackToSoftwareDecoderAsync(token).ConfigureAwait(false))
+                if (await RecoverDecoderAsync(token).ConfigureAwait(false))
                     return;
             }
         }
@@ -770,7 +794,7 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
         }
         catch (Exception exception) when (exception is HardwareTransferException || hardwareDecoderOpened && exception is FFmpegException)
         {
-            await FallbackToSoftwareDecoderAsync(token).ConfigureAwait(false);
+            await RecoverDecoderAsync(token).ConfigureAwait(false);
             return true;
         }
         return produced;
@@ -789,12 +813,15 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
         return produced;
     }
 
-    /// <summary>硬件解码连续无输出的包数上限；超过即回退软件解码。</summary>
+    /// <summary>硬件解码连续无输出的包数上限；超过即重建或回退解码器。</summary>
     private const int HardwareNoFrameThreshold = 30;
 
     /// <summary>返回该帧是否真正入队（预滚参考帧与边界后的帧不计入）。</summary>
     private async Task<bool> EnqueueDecodedFrameAsync(Frame frame, CancellationToken token, long? prerollTarget)
     {
+        // FFmpeg 可能在收到数据后才拒绝 SRV 纹理并选择软件格式；此时先重试仅解码绑定。
+        if (rendererDirectDecoder && !frame.HasHardwareFramesContext)
+            throw new HardwareTransferException(new NotSupportedException("Renderer SRV decode surfaces were rejected."));
         decodedFrameCount++;
         if (!enableDeinterlacing || deinterlacer is null && (frame.Flags & FF.AV_FRAME_FLAG_INTERLACED) == 0)
             return await EnqueuePresentationFrameAsync(frame, token, prerollTarget).ConfigureAwait(false);
@@ -884,9 +911,9 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
             return false;
         }
         CompleteFrameColorMetadata(frame);
-        // 兼容的逐行 VideoToolbox 帧直接排队，由渲染线程借用 IOSurface；其余情况保留回读路径。
+        // 兼容的硬件表面直接排队，由渲染线程导入；其余情况保留回读路径。
         var hardwareSurface = options.EnableGpuPresentation && options.EnableHardwareSurfacePresentation
-            && MacOSVideoTexture.CanImport(frame);
+            && HardwareVideoTexture.CanImport(frame);
         var presentationSource = hardwareSurface ? frame : GetSoftwareFrame(frame);
         // 滤镜后的帧来自系统内存，仍保留本轮解码方式的诊断状态。
         if (presentationPts is null)

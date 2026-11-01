@@ -60,6 +60,16 @@ public sealed class PlaybackBenchmarkWindowTests
             Assert.EndsWith(" · GPU", playbackRow.StageText);
             playbackRow.Result = conclusions[2] with { HardwareSurfacePresentation = true };
             Assert.EndsWith(LocalizationManager.Instance.String_PlaybackBenchmark_GpuDirectPresentation, playbackRow.StageText);
+            playbackRow.Result = conclusions[2] with { HardwareGpuCopyPresentation = true };
+            Assert.EndsWith(LocalizationManager.Instance.String_PlaybackBenchmark_GpuCopyPresentation, playbackRow.StageText);
+            var gpuRow = new PlaybackBenchmarkRow(PlaybackBenchmarkStage.GpuProcessing)
+            {
+                Result = new(PlaybackBenchmarkStage.GpuProcessing, 100, 50, 100, 1, true,
+                    GpuPresentation: true, GpuTransfer: GpuBenchmarkTransfer.GpuCopy)
+            };
+            Assert.Equal(LocalizationManager.Instance.String_PlaybackBenchmark_GpuCopyScope, gpuRow.GpuScopeText);
+            gpuRow.Result = gpuRow.Result with { GpuTransfer = GpuBenchmarkTransfer.ReadbackAndUpload };
+            Assert.Equal(LocalizationManager.Instance.String_PlaybackBenchmark_GpuReadbackScope, gpuRow.GpuScopeText);
             playbackRow.Result = conclusions[2] with { GpuPresentation = false };
             Assert.EndsWith(" · CPU", playbackRow.StageText);
             conclusions[2] = conclusions[2] with { BusyDrops = 1 };

@@ -1422,6 +1422,9 @@
     <x:String x:Key="String.PlaybackBenchmark.Mapping">HDR to SDR</x:String>
     <x:String x:Key="String.PlaybackBenchmark.Hint">Short segment · silent · physical pixels</x:String>
     <x:String x:Key="String.PlaybackBenchmark.GpuDirectPresentation">GPU direct</x:String>
+    <x:String x:Key="String.PlaybackBenchmark.GpuCopyPresentation">GPU copy</x:String>
+    <x:String x:Key="String.PlaybackBenchmark.GpuCopyScope">Hardware surface → GPU copy → image processing</x:String>
+    <x:String x:Key="String.PlaybackBenchmark.PathGpuCopy">Hardware decode → GPU copy → GPU image processing → display</x:String>
     <x:String x:Key="String.PlaybackBenchmark.Decode">Read / decode</x:String>
     <x:String x:Key="String.PlaybackBenchmark.Conversion">CPU image conversion</x:String>
     <x:String x:Key="String.PlaybackBenchmark.Playback">Actual playback</x:String>

@@ -24,12 +24,14 @@ internal sealed unsafe class SkiaVideoFramePresenter : IDisposable
     private float previousPeak;
     private ColorMatrix? previousGamut;
     private ColorMatrix fromLms;
-    private int failed, validated;
+    private int failed, validated, disposed;
     private readonly Action<string> disable;
     private readonly Action markValidated;
+    private readonly WindowsVideoTexture.Owner windowsTextures;
 
-    internal SkiaVideoFramePresenter()
+    internal SkiaVideoFramePresenter(bool allowDirect = true)
     {
+        windowsTextures = new(allowDirect);
         disable = Disable;
         markValidated = () => Volatile.Write(ref validated, 1);
     }
@@ -54,12 +56,14 @@ internal sealed unsafe class SkiaVideoFramePresenter : IDisposable
         Action? submitted = null)
     {
         presentation = null;
+        if (Volatile.Read(ref disposed) != 0)
+            return false;
         AVFrame* raw = source;
         var metadataFrame = *raw;
         var hardware = source.HasHardwareFramesContext;
         if (hardware)
         {
-            if (!MacOSVideoTexture.IsAvailable || !MacOSVideoTexture.TryDescribe(source, out var format, out var range))
+            if (!HardwareVideoTexture.TryDescribe(source, out var format, out var range))
                 return false;
             metadataFrame.format = (int)format;
             metadataFrame.color_range = range;
@@ -92,7 +96,7 @@ internal sealed unsafe class SkiaVideoFramePresenter : IDisposable
                 parameters = null;
             }
             presentation = new SkiaVideoFrame(shaders, parameters, source, toneMapping, fallbackSize,
-                renderAtRequestedSize, rendered, dropped, disable, markValidated, submitted);
+                renderAtRequestedSize, rendered, dropped, disable, markValidated, submitted, windowsTextures);
             return true;
         }
         catch (Exception exception) when (exception is not OutOfMemoryException)
@@ -292,6 +296,9 @@ internal sealed unsafe class SkiaVideoFramePresenter : IDisposable
 
     public void Dispose()
     {
+        if (Interlocked.Exchange(ref disposed, 1) != 0)
+            return;
+        windowsTextures.Dispose();
         toneImage?.Dispose(); toneImage = null;
         gamutImage?.Dispose(); gamutImage = null;
     }
@@ -360,7 +367,7 @@ internal sealed unsafe class SkiaVideoFramePresenter : IDisposable
                 var feature = context.TryGetFeature(typeof(ISkiaSharpApiLeaseFeature)) as ISkiaSharpApiLeaseFeature;
                 using var lease = feature?.Lease();
                 Volatile.Write(ref rendererAvailable, lease?.GrContext is { IsAbandoned: false } ? 1 : 0);
-                MacOSVideoTexture.Probe(lease?.GrContext);
+                HardwareVideoTexture.Probe(lease?.GrContext);
             }
             catch (Exception exception) when (exception is not OutOfMemoryException)
             {
