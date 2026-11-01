@@ -44,10 +44,28 @@ public sealed partial class PlaybackBenchmarkRow(PlaybackBenchmarkStage stage) :
     public PlaybackBenchmarkStage Stage { get; } = stage;
     [ObservableProperty]
     private PlaybackBenchmarkResult? _result;
+    [ObservableProperty]
+    private bool? _isCurrentPath = stage is PlaybackBenchmarkStage.Conversion or PlaybackBenchmarkStage.GpuProcessing ? null : true;
+    public bool IsMuted => IsCurrentPath != true || Result is { Stage: PlaybackBenchmarkStage.GpuProcessing, FrameCount: 0 };
+    public string RoleText => IsCurrentPath switch
+    {
+        true => LocalizationManager.Instance.String_PlaybackBenchmark_CurrentPath,
+        false => Stage == PlaybackBenchmarkStage.GpuProcessing ? LocalizationManager.Instance.String_PlaybackBenchmark_Unused
+            : LocalizationManager.Instance.String_PlaybackBenchmark_Fallback,
+        _ => "—"
+    };
+    public string ConclusionText => Result is { Stage: PlaybackBenchmarkStage.GpuProcessing, FrameCount: 0 }
+        ? LocalizationManager.Instance.String_PlaybackBenchmark_GpuUnavailable : IsCurrentPath switch
+    {
+        false => LocalizationManager.Instance.String_PlaybackBenchmark_Unused,
+        null => LocalizationManager.Instance.String_PlaybackBenchmark_PathPending,
+        _ => RatingText
+    };
     public string StageText => Stage switch
     {
         PlaybackBenchmarkStage.Decode => LocalizationManager.Instance.String_PlaybackBenchmark_Decode,
         PlaybackBenchmarkStage.Conversion => LocalizationManager.Instance.String_PlaybackBenchmark_Conversion,
+        PlaybackBenchmarkStage.GpuProcessing => LocalizationManager.Instance.String_PlaybackBenchmark_GpuProcessing,
         _ => LocalizationManager.Instance.String_PlaybackBenchmark_Playback
             + PresentationSuffix
     };
@@ -56,9 +74,32 @@ public sealed partial class PlaybackBenchmarkRow(PlaybackBenchmarkStage stage) :
             : value.GpuPresentation ? "GPU" : "CPU");
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(FpsText))]
+    [NotifyPropertyChangedFor(nameof(PlaybackRateText))]
     private double? _liveFramesPerSecond;
-    public string FpsText => (Result?.FramesPerSecond ?? LiveFramesPerSecond) is { } fps ? $"{fps:F1}" : "—";
-    public string FactorText => Result is { SourceFrameRate: > 0 } value ? $"{value.RealtimeFactor:F2}×" : "—";
+    public string FpsText => Result is { Stage: PlaybackBenchmarkStage.GpuProcessing, FrameCount: 0 } ? "—"
+        : (Result?.FramesPerSecond ?? LiveFramesPerSecond) is { } fps ? $"{fps:F1}" : "—";
+    public string FactorText => Result is { SourceFrameRate: > 0, FrameCount: > 0 } value ? $"{value.RealtimeFactor:F2}×" : "—";
+    public string TargetText => Result is { SourceFrameRate: > 0 } value ? $"{value.SourceFrameRate:0.###} FPS" : "—";
+    public string ThroughputText => Result is { SourceFrameRate: > 0, FrameCount: > 0 }
+        ? string.Format(LocalizationManager.Instance.String_PlaybackBenchmark_Throughput, FactorText, TargetText) : string.Empty;
+    public bool HasGpuMeasurement => Result is { Stage: PlaybackBenchmarkStage.GpuProcessing, FrameCount: > 0 };
+    public string GpuScopeText => !HasGpuMeasurement ? string.Empty : Result!.GpuTransfer switch
+    {
+        GpuBenchmarkTransfer.HardwareSurface => LocalizationManager.Instance.String_PlaybackBenchmark_GpuDirectScope,
+        GpuBenchmarkTransfer.ReadbackAndUpload => LocalizationManager.Instance.String_PlaybackBenchmark_GpuReadbackScope,
+        _ => LocalizationManager.Instance.String_PlaybackBenchmark_GpuUploadScope
+    };
+    public string PlaybackRateText => Result is { SourceFrameRate: > 0 } ? $"{FpsText} / {TargetText}" : $"{FpsText} FPS";
+    public string PlaybackRatingText => Result?.Rating switch
+    {
+        PlaybackBenchmarkRating.Good => LocalizationManager.Instance.String_PlaybackBenchmark_PlaybackSmooth,
+        PlaybackBenchmarkRating.Marginal => LocalizationManager.Instance.String_PlaybackBenchmark_PlaybackDrops,
+        PlaybackBenchmarkRating.Insufficient => LocalizationManager.Instance.String_PlaybackBenchmark_PlaybackSlow,
+        _ => LocalizationManager.Instance.String_PlaybackBenchmark_AwaitingPlayback
+    };
+    public string DropCountsText => Result is { } value
+        ? string.Format(LocalizationManager.Instance.String_PlaybackBenchmark_PlayDetail,
+            value.LateDrops, value.BusyDrops, value.Recoveries) : "—";
     public string RatingText => Result?.Rating switch
     {
         PlaybackBenchmarkRating.Good => LocalizationManager.Instance.String_PlaybackBenchmark_Good,
@@ -66,27 +107,30 @@ public sealed partial class PlaybackBenchmarkRow(PlaybackBenchmarkStage stage) :
         PlaybackBenchmarkRating.Insufficient => LocalizationManager.Instance.String_PlaybackBenchmark_Insufficient,
         _ => "—"
     };
-    public bool IsGood => Result?.Rating == PlaybackBenchmarkRating.Good;
-    public bool IsMarginal => Result?.Rating == PlaybackBenchmarkRating.Marginal;
-    public bool IsInsufficient => Result?.Rating == PlaybackBenchmarkRating.Insufficient;
-    public string DetailText => Result is not { } value ? string.Empty : Stage switch
+    public bool IsGood => !IsMuted && Result?.Rating == PlaybackBenchmarkRating.Good;
+    public bool IsMarginal => !IsMuted && Result?.Rating == PlaybackBenchmarkRating.Marginal;
+    public bool IsInsufficient => !IsMuted && Result?.Rating == PlaybackBenchmarkRating.Insufficient;
+    public string MeasurementText => Result is not { } value ? "—" : Stage switch
     {
         PlaybackBenchmarkStage.Decode => string.Format(LocalizationManager.Instance.String_PlaybackBenchmark_ReadDetail,
-            value.ReadFraction, value.HardwareDecoding ? "H/W" : "S/W", value.FrameCount),
-        PlaybackBenchmarkStage.Conversion => string.Format(LocalizationManager.Instance.String_PlaybackBenchmark_ConvertDetail,
-            value.OutputSize.Width, value.OutputSize.Height, value.ElapsedSeconds * 1000 / value.FrameCount),
-        _ => (value.HardwareSurfacePresentation ? LocalizationManager.Instance.String_PlaybackBenchmark_GpuDirectPresentation
-            : value.GpuPresentation ? LocalizationManager.Instance.String_PlaybackBenchmark_GpuPresentation
-            : LocalizationManager.Instance.String_PlaybackBenchmark_CpuPresentation) + " · "
-            + string.Format(LocalizationManager.Instance.String_PlaybackBenchmark_PlayDetail,
-                value.LateDrops, value.BusyDrops, value.Recoveries)
+            value.FrameCount, value.ReadFraction),
+        PlaybackBenchmarkStage.Conversion or PlaybackBenchmarkStage.GpuProcessing => value.FrameCount > 0
+            ? string.Format(LocalizationManager.Instance.String_PlaybackBenchmark_ConvertDetail,
+                value.OutputSize.Width, value.OutputSize.Height, value.ElapsedSeconds * 1000 / value.FrameCount)
+            : LocalizationManager.Instance.String_PlaybackBenchmark_GpuUnavailable,
+        _ => DropCountsText
     };
+    public string DetailText => MeasurementText + (!HasGpuMeasurement ? string.Empty : " " + GpuScopeText
+        + (Result!.HardwareDecoding && Result.GpuTransfer == GpuBenchmarkTransfer.Upload
+            ? " " + LocalizationManager.Instance.String_PlaybackBenchmark_GpuReadbackExcluded : string.Empty));
     partial void OnResultChanged(PlaybackBenchmarkResult? value) => Refresh();
+    partial void OnIsCurrentPathChanged(bool? value) => Refresh();
     internal void Refresh() => OnPropertyChanged(string.Empty);
 }
 
-public partial class PlaybackBenchmarkWindowViewModel(IDialogService dialogs) : ViewModelBase, IModalDialogViewModel
+public partial class PlaybackBenchmarkWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
+    private readonly IDialogService dialogs;
     private static readonly SemaphoreSlim TestGate = new(1, 1);
     private PlaybackBenchmarkSource? source;
     private CancellationTokenSource? cancellation;
@@ -97,10 +141,52 @@ public partial class PlaybackBenchmarkWindowViewModel(IDialogService dialogs) : 
     public bool? DialogResult { get; }
     public Func<Task>? BeforeTestAsync { get; set; }
     public Action? AfterTest { get; set; }
+    internal GpuBenchmarkRunner? MeasureGpuAsync { get; set; }
     public ObservableCollection<PlaybackBenchmarkRow> Rows { get; } = new(
         Enum.GetValues<PlaybackBenchmarkStage>().Select(stage => new PlaybackBenchmarkRow(stage)));
     public IReadOnlyList<BenchmarkDecoderChoice> DecoderChoices { get; } = [new(true), new(false)];
     public ObservableCollection<BenchmarkSizeChoice> SizeChoices { get; } = [];
+
+    public PlaybackBenchmarkWindowViewModel(IDialogService dialogs)
+    {
+        this.dialogs = dialogs;
+        foreach (var row in Rows)
+            row.PropertyChanged += (_, args) =>
+            {
+                if (args.PropertyName == nameof(PlaybackBenchmarkRow.Result))
+                    RefreshResultPresentation();
+            };
+    }
+
+    public PlaybackBenchmarkRow DecodeRow => Rows[(int)PlaybackBenchmarkStage.Decode];
+    public PlaybackBenchmarkRow ConversionRow => Rows[(int)PlaybackBenchmarkStage.Conversion];
+    public PlaybackBenchmarkRow GpuRow => Rows[(int)PlaybackBenchmarkStage.GpuProcessing];
+    public PlaybackBenchmarkRow PlaybackRow => Rows[(int)PlaybackBenchmarkStage.Playback];
+    public bool HasPlaybackResult => PlaybackRow.Result is not null;
+    public bool HasPlaybackIssue => HasPlaybackResult && !PlaybackRow.IsGood;
+    public bool UsesGpuPlayback => PlaybackRow.Result is { GpuPresentation: true };
+    public bool UsesCpuPlayback => PlaybackRow.Result is { } value && (!value.GpuPresentation || value.CpuPresentation);
+    public string PlaybackPathText => PlaybackRow.Result is not { } value
+        ? LocalizationManager.Instance.String_PlaybackBenchmark_AwaitingPlayback
+        : value.GpuPresentation && value.CpuPresentation ? LocalizationManager.Instance.String_PlaybackBenchmark_PathMixed
+        : value.HardwareSurfacePresentation ? LocalizationManager.Instance.String_PlaybackBenchmark_PathDirect
+        : value.GpuPresentation ? value.HardwareDecoding
+            ? LocalizationManager.Instance.String_PlaybackBenchmark_PathHardwareUpload
+            : LocalizationManager.Instance.String_PlaybackBenchmark_PathSoftwareUpload
+        : value.HardwareDecoding ? LocalizationManager.Instance.String_PlaybackBenchmark_PathHardwareCpu
+        : LocalizationManager.Instance.String_PlaybackBenchmark_PathSoftwareCpu;
+    private void RefreshResultPresentation()
+    {
+        ConversionRow.IsCurrentPath = HasPlaybackResult ? UsesCpuPlayback : null;
+        GpuRow.IsCurrentPath = HasPlaybackResult ? UsesGpuPlayback : null;
+        OnPropertyChanged(nameof(HasResults));
+        OnPropertyChanged(nameof(CanCopy));
+        OnPropertyChanged(nameof(HasPlaybackResult));
+        OnPropertyChanged(nameof(HasPlaybackIssue));
+        OnPropertyChanged(nameof(UsesGpuPlayback));
+        OnPropertyChanged(nameof(UsesCpuPlayback));
+        OnPropertyChanged(nameof(PlaybackPathText));
+    }
 
     [ObservableProperty] private string _filePath = string.Empty;
     [ObservableProperty] private IReadOnlyList<PlaybackBenchmarkTrack> _tracks = [];
@@ -262,19 +348,16 @@ public partial class PlaybackBenchmarkWindowViewModel(IDialogService dialogs) : 
             {
                 if (closed || current != generation || !IsBusy)
                     return;
-                Progress = ((int)update.Stage + update.Fraction) / 3 * 100;
+                Progress = ((int)update.Stage + update.Fraction) / Rows.Count * 100;
                 if (update.FramesPerSecond is { } fps)
                     Rows[(int)update.Stage].LiveFramesPerSecond = fps;
                 StatusText = string.Format(LocalizationManager.Instance.String_PlaybackBenchmark_Running,
                     Rows[(int)update.Stage].StageText);
                 if (update.Completed is { } result)
-                {
                     Rows[(int)result.Stage].Result = result;
-                    OnPropertyChanged(nameof(HasResults));
-                    OnPropertyChanged(nameof(CanCopy));
-                }
             });
-            var results = await PlaybackBenchmarkService.RunAsync(request, updates, ShowPreview, operation.Token);
+            var results = await PlaybackBenchmarkService.RunAsync(request, updates, ShowPreview, operation.Token,
+                gpuBenchmark: MeasureGpuAsync);
             if (closed || current != generation)
                 return;
             foreach (var result in results)
@@ -282,8 +365,6 @@ public partial class PlaybackBenchmarkWindowViewModel(IDialogService dialogs) : 
             Progress = 100;
             DiagnosisText = DescribeConclusion(results);
             StatusText = LocalizationManager.Instance.String_PlaybackBenchmark_Completed;
-            OnPropertyChanged(nameof(HasResults));
-            OnPropertyChanged(nameof(CanCopy));
         }
         catch (Exception exception) { SetFailure(exception, operation.Token); }
         finally
@@ -308,30 +389,23 @@ public partial class PlaybackBenchmarkWindowViewModel(IDialogService dialogs) : 
     internal static string DescribeConclusion(IReadOnlyList<PlaybackBenchmarkResult> results)
     {
         var strings = LocalizationManager.Instance;
-        if (results.Any(result => result.SourceFrameRate <= 0))
-            return strings.String_PlaybackBenchmark_Unknown;
         var decode = results.First(result => result.Stage == PlaybackBenchmarkStage.Decode);
         var conversion = results.First(result => result.Stage == PlaybackBenchmarkStage.Conversion);
         var playback = results.First(result => result.Stage == PlaybackBenchmarkStage.Playback);
-        if (playback.GpuPresentation)
-        {
-            // GPU 播放不经过 CPU 转换阶段，不能把该阶段的低分误报为当前瓶颈。
-            if (playback.Rating != PlaybackBenchmarkRating.Good)
-                return decode.Rating == PlaybackBenchmarkRating.Insufficient
-                    ? strings.String_PlaybackBenchmark_DecodeLow : strings.String_PlaybackBenchmark_PipelineLow;
-            return decode.Rating == PlaybackBenchmarkRating.Marginal
-                ? strings.String_PlaybackBenchmark_Margin : strings.String_PlaybackBenchmark_Smooth;
-        }
-        if (decode.Rating == PlaybackBenchmarkRating.Insufficient && conversion.Rating == PlaybackBenchmarkRating.Insufficient)
+        if (playback.SourceFrameRate <= 0)
+            return strings.String_PlaybackBenchmark_Unknown;
+        // 实播结论只描述当前路径，不把独立测试的吞吐当作整条链路的性能余量。
+        if (playback.Rating == PlaybackBenchmarkRating.Good)
+            return strings.String_PlaybackBenchmark_Smooth;
+        var usesCpu = !playback.GpuPresentation || playback.CpuPresentation;
+        if (usesCpu && decode.Rating == PlaybackBenchmarkRating.Insufficient
+            && conversion.Rating == PlaybackBenchmarkRating.Insufficient)
             return strings.String_PlaybackBenchmark_BothLow;
         if (decode.Rating == PlaybackBenchmarkRating.Insufficient)
             return strings.String_PlaybackBenchmark_DecodeLow;
-        if (conversion.Rating == PlaybackBenchmarkRating.Insufficient)
+        if (usesCpu && conversion.Rating == PlaybackBenchmarkRating.Insufficient)
             return strings.String_PlaybackBenchmark_ConvertLow;
-        if (results.Any(result => result.Stage == PlaybackBenchmarkStage.Playback && result.Rating != PlaybackBenchmarkRating.Good))
-            return strings.String_PlaybackBenchmark_PipelineLow;
-        return results.Any(result => result.Rating == PlaybackBenchmarkRating.Marginal)
-            ? strings.String_PlaybackBenchmark_Margin : strings.String_PlaybackBenchmark_Smooth;
+        return strings.String_PlaybackBenchmark_PipelineLow;
     }
 
     private void SetFailure(Exception exception, CancellationToken token)
@@ -392,8 +466,7 @@ public partial class PlaybackBenchmarkWindowViewModel(IDialogService dialogs) : 
         }
         ClearPreview();
         Progress = 0;
-        OnPropertyChanged(nameof(HasResults));
-        OnPropertyChanged(nameof(CanCopy));
+        RefreshResultPresentation();
     }
 
     [RelayCommand(CanExecute = nameof(IsBusy))]
@@ -406,11 +479,22 @@ public partial class PlaybackBenchmarkWindowViewModel(IDialogService dialogs) : 
             return;
         var text = new StringBuilder().AppendLine(LocalizationManager.Instance.String_PlaybackBenchmark_Title)
             .AppendLine(SourceInfo).AppendLine($"{SelectedSize?.DisplayText} · {SelectedDecoder.DisplayText}");
-        foreach (var row in Rows.Where(row => row.Result is not null))
-            text.AppendLine($"{row.StageText}: {row.FpsText} FPS · {row.FactorText} · {row.RatingText}").AppendLine(row.DetailText);
+        if (HasPlaybackResult)
+        {
+            text.AppendLine($"{PlaybackRow.StageText}: {PlaybackRow.PlaybackRateText} · {PlaybackRow.PlaybackRatingText}")
+                .AppendLine(LocalizationManager.Instance.String_PlaybackBenchmark_PlaybackScope)
+                .AppendLine(PlaybackPathText).AppendLine(PlaybackRow.DropCountsText);
+        }
+        foreach (var row in new[] { DecodeRow, GpuRow, ConversionRow }.Where(row => row.Result is not null))
+        {
+            var role = row.Stage != PlaybackBenchmarkStage.Decode ? row.RoleText
+                : LocalizationManager.Instance.String_PlaybackBenchmark_Independent;
+            text.AppendLine($"{row.StageText} ({role}): {row.FpsText} FPS · {row.ThroughputText} · {row.ConclusionText}")
+                .AppendLine(row.DetailText);
+        }
         text.AppendLine(DiagnosisText);
-        if (HasError)
-            text.AppendLine(StatusText.Replace(FilePath, "<source>", StringComparison.Ordinal));
+        text.AppendLine(string.IsNullOrEmpty(FilePath) ? StatusText
+            : StatusText.Replace(FilePath, "<source>", StringComparison.Ordinal));
         await clipboard.SetTextAsync(text.ToString());
     }
 
@@ -441,6 +525,7 @@ public partial class PlaybackBenchmarkWindowViewModel(IDialogService dialogs) : 
             choice.Refresh();
         foreach (var choice in SizeChoices)
             choice.Refresh();
+        RefreshResultPresentation();
         if (Rows.All(row => row.Result is not null))
             DiagnosisText = DescribeConclusion(Rows.Select(row => row.Result!).ToArray());
     }
@@ -454,5 +539,6 @@ public partial class PlaybackBenchmarkWindowViewModel(IDialogService dialogs) : 
         ClearPreview();
         BeforeTestAsync = null;
         AfterTest = null;
+        MeasureGpuAsync = null;
     }
 }

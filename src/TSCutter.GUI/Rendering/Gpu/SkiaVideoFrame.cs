@@ -199,6 +199,31 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
         finally { lease.SkCanvas.Restore(); }
     }
 
+    /// <summary>复用播放着色器向测速目标绘制；调用方在整批结束后等待 GPU 完成。</summary>
+    internal void RenderBenchmark(GRContext context, SKSurface target)
+    {
+        if (hardwareParameters is not null)
+        {
+            using var textures = MacOSVideoTexture.Import(context, source);
+            using var shaders = hardwareParameters.Create(textures.Y, textures.Uv, textures.Uv,
+                !gpuValidated && hardwareParameters.NeedsValidation);
+            Draw(shaders);
+        }
+        else
+            Draw(softwareShaders!);
+
+        void Draw(SkiaVideoFramePresenter.ShaderPair shaders)
+        {
+            ValidateGpu(context, shaders.Validation);
+            var bounds = SKRect.Create(target.Canvas.LocalClipBounds.Width, target.Canvas.LocalClipBounds.Height);
+            RenderShader(target.Canvas, bounds, bounds, frameShader: shaders.Shader);
+            // 每帧提交，避免连续覆盖同一目标时 Skia 合并或消除前面的绘制。
+            target.Flush();
+            context.Flush();
+            context.Submit(false);
+        }
+    }
+
     private void ValidateGpu(GRContext context, SKShader? validationShader)
     {
         if (gpuValidated || validationShader is null)

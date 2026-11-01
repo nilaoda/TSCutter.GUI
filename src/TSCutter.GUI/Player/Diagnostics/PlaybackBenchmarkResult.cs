@@ -1,13 +1,17 @@
 using System;
 using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 using Avalonia;
+using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Models.Preview;
 
 namespace TSCutter.GUI.Player.Diagnostics;
 
-public enum PlaybackBenchmarkStage { Decode, Conversion, Playback }
+public enum PlaybackBenchmarkStage { Decode, GpuProcessing, Conversion, Playback }
 public enum PlaybackBenchmarkRating { Unknown, Good, Marginal, Insufficient }
+public enum GpuBenchmarkTransfer { HardwareSurface, Upload, ReadbackAndUpload }
 
 public sealed record PlaybackBenchmarkTrack(PreviewStreamSelection Selection, string Codec,
     int Width, int Height, double FrameRate, double OriginSeconds, VideoDynamicRange DynamicRange = VideoDynamicRange.Standard)
@@ -23,10 +27,11 @@ public sealed record PlaybackBenchmarkRequest(PlaybackBenchmarkSource Source, Pl
 
 public sealed record PlaybackBenchmarkResult(PlaybackBenchmarkStage Stage, double FramesPerSecond,
     double SourceFrameRate, int FrameCount, double ElapsedSeconds, bool HardwareDecoding,
-    double ReadFraction = 0, PixelSize OutputSize = default, long LateDrops = 0, long BusyDrops = 0, long Recoveries = 0, bool GpuPresentation = false, bool HardwareSurfacePresentation = false)
+    double ReadFraction = 0, PixelSize OutputSize = default, long LateDrops = 0, long BusyDrops = 0, long Recoveries = 0, bool GpuPresentation = false, bool HardwareSurfacePresentation = false,
+    bool CpuPresentation = false, GpuBenchmarkTransfer GpuTransfer = GpuBenchmarkTransfer.Upload)
 {
     public double RealtimeFactor => SourceFrameRate > 0 ? FramesPerSecond / SourceFrameRate : 0;
-    public PlaybackBenchmarkRating Rating => SourceFrameRate <= 0 ? PlaybackBenchmarkRating.Unknown
+    public PlaybackBenchmarkRating Rating => SourceFrameRate <= 0 || FrameCount == 0 ? PlaybackBenchmarkRating.Unknown
         : FramesPerSecond + 1 / Math.Max(ElapsedSeconds, 0.001) < SourceFrameRate
             ? PlaybackBenchmarkRating.Insufficient
         : LateDrops + BusyDrops + Recoveries > 0 || Stage != PlaybackBenchmarkStage.Playback && RealtimeFactor < 1.2
@@ -37,7 +42,13 @@ internal sealed record PlaybackBenchmarkProgress(PlaybackBenchmarkStage Stage, d
     PlaybackBenchmarkResult? Completed = null, double? FramesPerSecond = null);
 
 internal sealed record PlaybackBenchmarkLimits(double DecodeSeconds = 3, double ConvertSeconds = 2,
-    double PlaybackSeconds = 5, int MaxFrames = 600, double MediaSeconds = 10);
+    double PlaybackSeconds = 5, int MaxFrames = 600, double MediaSeconds = 10, double GpuSeconds = 2);
+
+internal sealed record GpuBenchmarkRequest(IReadOnlyList<Frame> Frames, PixelSize OutputSize,
+    bool ToneMapping, bool HardwareDecoding, double FrameRate, double Seconds, bool ForceSoftwareFrames);
+
+internal delegate Task<PlaybackBenchmarkResult?> GpuBenchmarkRunner(GpuBenchmarkRequest request,
+    IProgress<PlaybackBenchmarkProgress>? progress, CancellationToken token);
 
 internal enum PlaybackBenchmarkFailure { TooFewFrames, InvalidTimestamps, Timeout }
 internal sealed class PlaybackBenchmarkException(PlaybackBenchmarkFailure failure) : Exception(failure.ToString())

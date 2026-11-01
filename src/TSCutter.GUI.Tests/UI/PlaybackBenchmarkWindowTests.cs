@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -100,6 +101,7 @@ public sealed class PlaybackBenchmarkWindowTests
                 tools.Flyout.Hide();
 
                 window.Show();
+                Assert.NotNull(vm.MeasureGpuAsync);
                 await vm.InitializeAsync(path, null, null, 2, new PixelSize(96, 54), false, true);
                 Assert.Equal(2, vm.StartSeconds);
                 Assert.True(vm.CanStart);
@@ -118,7 +120,32 @@ public sealed class PlaybackBenchmarkWindowTests
                 Assert.True(vm.ToneMapping);
                 vm.SelectedTrack = sdrTrack;
                 vm.Tracks = [sdrTrack];
-                Assert.Equal(3, vm.Rows.Count);
+                Assert.Equal(4, vm.Rows.Count);
+                vm.DecodeRow.Result = conclusions[0];
+                vm.ConversionRow.Result = conclusions[1];
+                vm.PlaybackRow.Result = conclusions[2] with { BusyDrops = 0 };
+                vm.GpuRow.Result = new(PlaybackBenchmarkStage.GpuProcessing, 100, 50, 100, 1, false,
+                    OutputSize: new PixelSize(96, 54), GpuPresentation: true);
+                Assert.True(vm.GpuRow.HasGpuMeasurement);
+                Assert.True(vm.GpuRow.IsGood);
+                Assert.Equal(LocalizationManager.Instance.String_PlaybackBenchmark_GpuUploadScope, vm.GpuRow.GpuScopeText);
+                Assert.True(vm.UsesGpuPlayback);
+                Assert.Equal(LocalizationManager.Instance.String_PlaybackBenchmark_Unused, vm.ConversionRow.ConclusionText);
+                Assert.False(vm.ConversionRow.IsInsufficient);
+                Assert.True(window.FindControl<ContentControl>("CpuThroughput")!.IsVisible);
+                vm.PlaybackRow.Result = vm.PlaybackRow.Result with { GpuPresentation = false };
+                Assert.Equal(LocalizationManager.Instance.String_PlaybackBenchmark_CurrentPath, vm.ConversionRow.RoleText);
+                Assert.True(vm.ConversionRow.IsInsufficient);
+                vm.PlaybackRow.Result = vm.PlaybackRow.Result with { GpuPresentation = true };
+                vm.PlaybackRow.Result = vm.PlaybackRow.Result with { CpuPresentation = true };
+                Assert.True(vm.UsesCpuPlayback);
+                Assert.Equal(LocalizationManager.Instance.String_PlaybackBenchmark_PathMixed, vm.PlaybackPathText);
+                vm.PlaybackRow.Result = vm.PlaybackRow.Result with { CpuPresentation = false };
+                var fractionalRow = new PlaybackBenchmarkRow(PlaybackBenchmarkStage.Playback)
+                {
+                    Result = new(PlaybackBenchmarkStage.Playback, 59.94, 60000.0 / 1001, 300, 5, false)
+                };
+                Assert.Contains(59.94.ToString(CultureInfo.CurrentCulture), fractionalRow.PlaybackRateText);
                 foreach (var theme in new[] { CustomTheme.MacOS, CustomTheme.MacOSDark, CustomTheme.Windows8,
                              CustomTheme.Windows10, CustomTheme.Windows11, ClassicTheme.Standard })
                 {
@@ -132,12 +159,11 @@ public sealed class PlaybackBenchmarkWindowTests
                     mainWindow.UpdateLayout();
                     Assert.Contains(audioPicker.GetVisualDescendants().OfType<TextBlock>(), text => text.Text == secondAudio.DisplayText);
                     Assert.True(window.FindControl<Button>("StartBenchmarkButton")!.IsEffectivelyEnabled);
-                    Assert.True(window.FindControl<DataGrid>("ResultGrid")!.Bounds.Height >= 120);
-                    var rows = window.FindControl<DataGrid>("ResultGrid")!.GetVisualDescendants().OfType<DataGridRow>().ToArray();
-                    Assert.Equal(3, rows.Length);
-                    Assert.All(rows, row => Assert.True(row.Bounds.Height >= 32));
-                    Assert.All(vm.Rows, row => Assert.Contains(window.FindControl<DataGrid>("ResultGrid")!.GetVisualDescendants()
-                        .OfType<TextBlock>(), text => text.Text == row.StageText));
+                    Assert.True(window.FindControl<ContentControl>("DecodeThroughput")!.Bounds.Height > 0);
+                    Assert.Equal(vm.PlaybackRow.PlaybackRatingText, window.FindControl<TextBlock>("PlaybackVerdict")!.Text);
+                    Assert.Equal(vm.PlaybackPathText, window.FindControl<TextBlock>("PlaybackPath")!.Text);
+                    Assert.True(window.FindControl<ContentControl>("CpuThroughput")!.Bounds.Height > 0);
+                    Assert.False(window.FindControl<Expander>("MeasurementDetails")!.IsExpanded);
                     var startButton = window.FindControl<Button>("StartBenchmarkButton")!;
                     Assert.True(startButton.TranslatePoint(new Point(0, startButton.Bounds.Height), window)!.Value.Y <= window.ClientSize.Height);
                     var progress = window.FindControl<ProgressBar>("BenchmarkProgress")!;

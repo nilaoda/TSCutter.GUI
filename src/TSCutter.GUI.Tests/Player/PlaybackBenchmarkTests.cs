@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -51,10 +52,14 @@ public sealed class PlaybackBenchmarkTests
             });
             var result = await PlaybackBenchmarkService.RunAsync(request, progress, null, CancellationToken.None,
                 new(0.05, 0.03, 0.4, 60, 5), action => action());
-            Assert.Equal(3, result.Count);
-            Assert.Equal(new[] { PlaybackBenchmarkStage.Decode, PlaybackBenchmarkStage.Conversion, PlaybackBenchmarkStage.Playback }, completed);
-            Assert.All(result, value => { Assert.True(value.FramesPerSecond > 0); Assert.True(value.SourceFrameRate > 0); });
-            Assert.Equal(new PixelSize(96, 54), result[1].OutputSize);
+            Assert.Equal(4, result.Count);
+            Assert.Equal(new[] { PlaybackBenchmarkStage.Decode, PlaybackBenchmarkStage.GpuProcessing,
+                PlaybackBenchmarkStage.Conversion, PlaybackBenchmarkStage.Playback }, completed);
+            Assert.All(result, value => Assert.True(value.SourceFrameRate > 0));
+            Assert.All(result.Where(value => value.Stage != PlaybackBenchmarkStage.GpuProcessing), value => Assert.True(value.FramesPerSecond > 0));
+            Assert.Equal(PlaybackBenchmarkRating.Unknown, result[1].Rating);
+            Assert.Equal(new PixelSize(96, 54), result[2].OutputSize);
+            Assert.True(result[3].CpuPresentation);
             using var cancel = new CancellationTokenSource();
             await Assert.ThrowsAnyAsync<OperationCanceledException>(() => PlaybackBenchmarkService.RunAsync(request,
                 new ImmediateProgress(_ => cancel.Cancel()), null, cancel.Token, new(0.05, 0.03, 0.4), action => action()));
