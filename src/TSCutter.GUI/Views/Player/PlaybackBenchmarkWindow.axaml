@@ -7,9 +7,36 @@
         x:Class="TSCutter.GUI.Views.Player.PlaybackBenchmarkWindow"
         x:DataType="vm:PlaybackBenchmarkWindowViewModel"
         Title="{DynamicResource String.PlaybackBenchmark.Title}"
-        Width="820" Height="650" MinWidth="700" MinHeight="540"
+        Width="900" Height="760" MinWidth="700" MinHeight="540"
         WindowStartupLocation="CenterScreen">
+    <Window.Resources>
+        <DataTemplate x:Key="ThroughputTemplate" x:DataType="vm:PlaybackBenchmarkRow">
+            <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" Padding="0,10">
+                <Grid ColumnDefinitions="1.1*,0.85*,1.4*,1.2*" ColumnSpacing="12" MinHeight="32"
+                      Classes.benchmark-unused="{Binding IsMuted}">
+                    <TextBlock Text="{Binding StageText}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    <TextBlock Grid.Column="1" Text="{Binding RoleText}" VerticalAlignment="Center" TextWrapping="Wrap" />
+                    <StackPanel Grid.Column="2" Spacing="2" VerticalAlignment="Center">
+                        <TextBlock><Run Text="{Binding FpsText}" /> FPS</TextBlock>
+                        <TextBlock Text="{Binding ThroughputText}" TextWrapping="Wrap" FontSize="12"
+                                   Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                        <TextBlock Text="{Binding GpuScopeText}" IsVisible="{Binding HasGpuMeasurement}" TextWrapping="Wrap" FontSize="12"
+                                   Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                    </StackPanel>
+                    <TextBlock Grid.Column="3" Text="{Binding ConclusionText}" VerticalAlignment="Center" TextWrapping="Wrap"
+                               Classes.good="{Binding IsGood}" Classes.marginal="{Binding IsMarginal}"
+                               Classes.insufficient="{Binding IsInsufficient}" />
+                </Grid>
+            </Border>
+        </DataTemplate>
+    </Window.Resources>
     <Window.Styles>
+        <Style Selector="Grid.benchmark-unused TextBlock">
+            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
+        </Style>
+        <Style Selector="ProgressBar.idle">
+            <Setter Property="Opacity" Value="0" />
+        </Style>
         <Style Selector="TextBlock.good">
             <Setter Property="Foreground" Value="{DynamicResource AppStatusSuccessForegroundBrush}" />
         </Style>
@@ -22,7 +49,7 @@
     </Window.Styles>
     <Grid Margin="12" RowDefinitions="*,Auto,Auto" RowSpacing="8">
         <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
-            <Grid RowDefinitions="Auto,Auto,Auto,Auto,Auto" RowSpacing="8">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="8">
                 <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
                     <TextBox Name="SourcePathBox" Text="{Binding FilePath}" IsReadOnly="True"
                              VerticalContentAlignment="Center" ToolTip.Tip="{Binding FilePath}" />
@@ -60,89 +87,114 @@
                         </ComboBox>
                     </StackPanel>
                 </Grid>
-                <Grid Grid.Row="2" ColumnDefinitions="Auto,150,*,Auto" ColumnSpacing="8" IsEnabled="{Binding CanEdit}">
+                <Grid Grid.Row="2" ColumnDefinitions="Auto,130,*,Auto" ColumnSpacing="8" IsEnabled="{Binding CanEdit}">
                     <TextBlock VerticalAlignment="Center" Text="{DynamicResource String.PlaybackBenchmark.StartPosition}" />
                     <NumericUpDown Grid.Column="1" Value="{Binding StartSeconds}" Minimum="0" Maximum="{Binding MaximumStartSeconds}"
                                    Increment="1" FormatString="F2" />
+                    <TextBlock Grid.Column="2" Text="{DynamicResource String.PlaybackBenchmark.Hint}" TextWrapping="Wrap"
+                               VerticalAlignment="Center" FontSize="12" Margin="8,0"
+                               Foreground="{DynamicResource AppSecondaryTextBrush}" />
                     <CheckBox Name="ToneMappingCheckBox" Grid.Column="3" VerticalAlignment="Center" IsEnabled="{Binding CanToneMap}" Content="{DynamicResource String.PlaybackBenchmark.Mapping}"
                               IsChecked="{Binding ToneMapping}" />
                 </Grid>
-                <StackPanel Grid.Row="3" Spacing="6">
-                    <TextBlock Text="{Binding SourceInfo}" FontWeight="SemiBold" />
-                    <TextBlock Text="{DynamicResource String.PlaybackBenchmark.Hint}" TextWrapping="Wrap"
+                <StackPanel Grid.Row="3" Spacing="8">
+                    <Grid ColumnDefinitions="200,*" ColumnSpacing="16" Margin="0,4,0,6">
+                        <ClassicBorderDecorator Classes="app-preview-frame" BorderStyle="Sunken" Height="113"
+                                                VerticalAlignment="Top">
+                            <Grid Background="Black">
+                                <Viewbox Stretch="Uniform">
+                                    <controls:ImageViewer Name="BenchmarkPreview" Image="{Binding PreviewBitmap}"
+                                                          GpuFrame="{Binding PreviewGpuFrame}" SourcePixelSize="{Binding PreviewSourceSize}"
+                                                          Width="{Binding PreviewWidth}" Height="{Binding PreviewHeight}"
+                                                          ShowNavigator="False" IsHitTestVisible="False" />
+                                </Viewbox>
+                                <diag:PlaybackGpuBenchmarkControl Name="GpuBenchmarkHost" Width="1" Height="1"
+                                                                  HorizontalAlignment="Center" VerticalAlignment="Center" IsHitTestVisible="False" />
+                            </Grid>
+                        </ClassicBorderDecorator>
+                        <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                            <TextBlock Text="{DynamicResource String.PlaybackBenchmark.Playback}" FontWeight="SemiBold" />
+                            <WrapPanel Orientation="Horizontal">
+                                <TextBlock Name="PlaybackRate" Text="{Binding PlaybackRow.PlaybackRateText}" FontSize="20"
+                                           VerticalAlignment="Center" Margin="0,0,16,0" />
+                                <TextBlock Name="PlaybackVerdict" Text="{Binding PlaybackRow.PlaybackRatingText}"
+                                           VerticalAlignment="Center" TextWrapping="Wrap" Classes.good="{Binding PlaybackRow.IsGood}"
+                                           Classes.marginal="{Binding PlaybackRow.IsMarginal}"
+                                           Classes.insufficient="{Binding PlaybackRow.IsInsufficient}" />
+                            </WrapPanel>
+                            <TextBlock Name="PlaybackDrops" Text="{Binding PlaybackRow.DropCountsText}" TextWrapping="Wrap"
+                                       IsVisible="{Binding HasPlaybackResult}" />
+                            <TextBlock Text="{DynamicResource String.PlaybackBenchmark.PlaybackScope}" TextWrapping="Wrap"
+                                       FontSize="12" Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                            <TextBlock Name="PlaybackPath" Text="{Binding PlaybackPathText}" TextWrapping="Wrap"
+                                       FontSize="12" Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                        </StackPanel>
+                    </Grid>
+                    <StackPanel Name="ResultTable" Spacing="0">
+                        <Border BorderBrush="{DynamicResource AppBorderBrush}" BorderThickness="0,0,0,1" Padding="0,7">
+                            <Grid ColumnDefinitions="1.1*,0.85*,1.4*,1.2*" ColumnSpacing="12">
+                                <TextBlock Text="{DynamicResource String.PlaybackBenchmark.Stage}" FontSize="12"
+                                           Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                                <TextBlock Grid.Column="1" Text="{DynamicResource String.PlaybackBenchmark.Usage}" FontSize="12"
+                                           Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                                <TextBlock Grid.Column="2" Text="{DynamicResource String.PlaybackBenchmark.Metrics}" FontSize="12"
+                                           Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                                <TextBlock Grid.Column="3" Text="{DynamicResource String.PlaybackBenchmark.Result}" FontSize="12"
+                                           Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                            </Grid>
+                        </Border>
+                        <ContentControl Name="DecodeThroughput" Content="{Binding DecodeRow}"
+                                        ContentTemplate="{StaticResource ThroughputTemplate}" HorizontalContentAlignment="Stretch" />
+                        <ContentControl Name="GpuProcessing" Content="{Binding GpuRow}"
+                                        ContentTemplate="{StaticResource ThroughputTemplate}" HorizontalContentAlignment="Stretch" />
+                        <ContentControl Name="CpuThroughput" Content="{Binding ConversionRow}"
+                                        ContentTemplate="{StaticResource ThroughputTemplate}" HorizontalContentAlignment="Stretch" />
+                    </StackPanel>
+                    <Expander Name="MeasurementDetails" Header="{DynamicResource String.PlaybackBenchmark.MeasurementDetails}"
+                              HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch" IsExpanded="False">
+                        <StackPanel Spacing="6" Margin="0,8,0,0">
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="20" RowSpacing="6">
+                                <TextBlock Text="{DynamicResource String.PlaybackBenchmark.Decode}" />
+                                <TextBlock Grid.Column="1" Text="{Binding DecodeRow.MeasurementText}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                                <TextBlock Grid.Row="1" Text="{DynamicResource String.PlaybackBenchmark.GpuProcessing}" />
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="{Binding GpuRow.MeasurementText}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                                <TextBlock Grid.Row="2" Text="{DynamicResource String.PlaybackBenchmark.Conversion}" />
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding ConversionRow.MeasurementText}" TextWrapping="Wrap"
+                                           Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                            </Grid>
+                            <TextBlock Text="{DynamicResource String.PlaybackBenchmark.MeasurementScope}" TextWrapping="Wrap" FontSize="12"
+                                       Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                        </StackPanel>
+                    </Expander>
+                    <TextBlock Text="{Binding DiagnosisText}" IsVisible="{Binding HasPlaybackIssue}" TextWrapping="Wrap" />
+                    <TextBlock Text="{DynamicResource String.PlaybackBenchmark.ResultScope}" TextWrapping="Wrap" FontSize="12"
                                Foreground="{DynamicResource AppSecondaryTextBrush}" />
                 </StackPanel>
-                <Grid Grid.Row="4" RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="*,210" ColumnSpacing="12" RowSpacing="8">
-                    <!-- 固定三行的表格需要有限高度，避免外层滚动布局下的数据行被排列为零高。 -->
-                    <DataGrid Name="ResultGrid" ItemsSource="{Binding Rows}" IsReadOnly="True" AutoGenerateColumns="False"
-                              CanUserSortColumns="False" CanUserResizeColumns="False" GridLinesVisibility="None"
-                              HeadersVisibility="Column" RowHeight="32" Height="132">
-                        <DataGrid.Columns>
-                            <DataGridTemplateColumn Header="{DynamicResource String.PlaybackBenchmark.Stage}" Width="*">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate x:DataType="vm:PlaybackBenchmarkRow">
-                                        <TextBlock Text="{Binding StageText}" TextTrimming="CharacterEllipsis" Margin="6,0"
-                                                   VerticalAlignment="Center" ToolTip.Tip="{Binding StageText}" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="FPS" Binding="{Binding FpsText}" Width="85" />
-                            <DataGridTextColumn Header="{DynamicResource String.PlaybackBenchmark.Factor}" Binding="{Binding FactorText}" Width="90" />
-                            <DataGridTemplateColumn Header="{DynamicResource String.PlaybackBenchmark.Result}" Width="100">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate x:DataType="vm:PlaybackBenchmarkRow">
-                                        <TextBlock VerticalAlignment="Center" Text="{Binding RatingText}" Margin="6,0" TextTrimming="CharacterEllipsis"
-                                                   Classes.good="{Binding IsGood}" Classes.marginal="{Binding IsMarginal}"
-                                                   Classes.insufficient="{Binding IsInsufficient}">
-                                            <ToolTip.Tip><TextBlock Text="{Binding DetailText}" MaxWidth="360" TextWrapping="Wrap" /></ToolTip.Tip>
-                                        </TextBlock>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                        </DataGrid.Columns>
-                    </DataGrid>
-                    <ClassicBorderDecorator Grid.Column="1" Classes="app-preview-frame" BorderStyle="Sunken" Height="118">
-                        <Grid Background="Black">
-                            <Viewbox Stretch="Uniform">
-                                <controls:ImageViewer Name="BenchmarkPreview" Image="{Binding PreviewBitmap}"
-                                                      GpuFrame="{Binding PreviewGpuFrame}" SourcePixelSize="{Binding PreviewSourceSize}"
-                                                      Width="{Binding PreviewWidth}" Height="{Binding PreviewHeight}"
-                                                      ShowNavigator="False" IsHitTestVisible="False" />
-                            </Viewbox>
-                        </Grid>
-                    </ClassicBorderDecorator>
-                    <ItemsControl Grid.Row="1" Grid.ColumnSpan="2" ItemsSource="{Binding Rows}">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate x:DataType="vm:PlaybackBenchmarkRow">
-                                <TextBlock Text="{Binding DetailText}" TextWrapping="Wrap" Margin="0,2"
-                                           Foreground="{DynamicResource AppSecondaryTextBrush}" />
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-                    <TextBlock Grid.Row="2" Grid.ColumnSpan="2" Text="{Binding DiagnosisText}" TextWrapping="Wrap" FontWeight="SemiBold" />
-                </Grid>
             </Grid>
         </ScrollViewer>
-        <!-- 按主题的进度条最小高度预留空间，避免溢出到按钮区。 -->
-        <Grid Grid.Row="1" RowDefinitions="44,Auto" RowSpacing="5">
-            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <!-- 保留主题要求的进度条高度；完成后仅隐藏绘制，避免底部操作区移动。 -->
+        <ProgressBar Name="BenchmarkProgress" Grid.Row="1" Height="6" Classes.idle="{Binding !IsBusy}"
+                     Minimum="0" Maximum="100" Value="{Binding Progress}" />
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" MaxHeight="48"
+                          VerticalAlignment="Center">
                 <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" VerticalAlignment="Center"
-                           Classes.insufficient="{Binding HasError}" />
+                           Classes.insufficient="{Binding HasError}" ToolTip.Tip="{Binding StatusText}" />
             </ScrollViewer>
-            <ProgressBar Name="BenchmarkProgress" Grid.Row="1" Height="6"
-                         Minimum="0" Maximum="100" Value="{Binding Progress}" />
+            <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+                <Button Content="{DynamicResource String.PlaybackBenchmark.Copy}" Command="{Binding CopyCommand}"
+                        IsEnabled="{Binding CanCopy}" MinWidth="90" />
+                <Grid Width="110">
+                    <Button Name="StartBenchmarkButton" Content="{DynamicResource String.PlaybackBenchmark.Start}" Classes="accent"
+                            Command="{Binding StartCommand}" IsVisible="{Binding !IsBusy}" HorizontalAlignment="Stretch" />
+                    <Button Content="{DynamicResource String.PlaybackBenchmark.Cancel}" Command="{Binding CancelCommand}"
+                            IsVisible="{Binding IsBusy}" HorizontalAlignment="Stretch" />
+                </Grid>
+                <Button Content="{DynamicResource String.Window.Close}" MinWidth="80" IsCancel="True"
+                        Command="{x:Static themes:WindowCommands.Close}" CommandParameter="{Binding $parent[Window]}" />
+            </StackPanel>
         </Grid>
-        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
-            <Button Content="{DynamicResource String.PlaybackBenchmark.Copy}" Command="{Binding CopyCommand}"
-                    IsEnabled="{Binding CanCopy}" MinWidth="90" />
-            <Grid Width="110">
-                <Button Name="StartBenchmarkButton" Content="{DynamicResource String.PlaybackBenchmark.Start}" Classes="accent"
-                        Command="{Binding StartCommand}" IsVisible="{Binding !IsBusy}" HorizontalAlignment="Stretch" />
-                <Button Content="{DynamicResource String.PlaybackBenchmark.Cancel}" Command="{Binding CancelCommand}"
-                        IsVisible="{Binding IsBusy}" HorizontalAlignment="Stretch" />
-            </Grid>
-            <Button Content="{DynamicResource String.Window.Close}" MinWidth="80" IsCancel="True"
-                    Command="{x:Static themes:WindowCommands.Close}" CommandParameter="{Binding $parent[Window]}" />
-        </StackPanel>
     </Grid>
 </Window>

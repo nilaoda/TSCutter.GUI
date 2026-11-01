@@ -56,7 +56,7 @@ internal static class PlaybackBenchmarkService
 
     public static async Task<IReadOnlyList<PlaybackBenchmarkResult>> RunAsync(PlaybackBenchmarkRequest request,
         IProgress<PlaybackBenchmarkProgress>? progress, Action<DecodeResult>? present, CancellationToken token,
-        PlaybackBenchmarkLimits? limits = null, Action<Action>? uiPost = null)
+        PlaybackBenchmarkLimits? limits = null, Action<Action>? uiPost = null, GpuBenchmarkRunner? gpuBenchmark = null)
     {
         limits ??= new();
         var options = new PlaybackOptions
@@ -77,6 +77,15 @@ internal static class PlaybackBenchmarkService
             var decoded = await DecodeAsync(options, request, limits, captures, progress, token).ConfigureAwait(false);
             results.Add(decoded);
             progress?.Report(new(PlaybackBenchmarkStage.Decode, 1, decoded));
+            progress?.Report(new(PlaybackBenchmarkStage.GpuProcessing, 0));
+            var interlaced = captures.Any(frame => (frame.Flags & FF.AV_FRAME_FLAG_INTERLACED) != 0);
+            var gpuRate = decoded.SourceFrameRate * (interlaced ? 2 : 1);
+            var gpu = gpuBenchmark is null ? null : await gpuBenchmark(new(captures, request.OutputSize,
+                request.EnableSdrToneMapping, decoded.HardwareDecoding, gpuRate, limits.GpuSeconds, interlaced),
+                progress, token).ConfigureAwait(false);
+            gpu ??= new(PlaybackBenchmarkStage.GpuProcessing, 0, gpuRate, 0, 0, decoded.HardwareDecoding);
+            results.Add(gpu);
+            progress?.Report(new(PlaybackBenchmarkStage.GpuProcessing, 1, gpu));
             // CPU 转换阶段使用固定软件样本；不要把每次硬件回读算进缩放/HDR 吞吐。
             for (var index = 0; index < captures.Count; index++)
             {
@@ -87,7 +96,9 @@ internal static class PlaybackBenchmarkService
                 captures[index].Dispose();
                 captures[index] = software;
             }
-            var converted = await Task.Run(() => Convert(options, limits, captures, decoded, progress, token), token).ConfigureAwait(false);
+            // 画面处理按呈现帧率比较；隔行视频去隔行后通常每帧产生两个显示画面。
+            var conversionTarget = decoded with { SourceFrameRate = gpuRate };
+            var converted = await Task.Run(() => Convert(options, limits, captures, conversionTarget, progress, token), token).ConfigureAwait(false);
             results.Add(converted);
             progress?.Report(new(PlaybackBenchmarkStage.Conversion, 1, converted));
         }
@@ -272,6 +283,8 @@ internal static class PlaybackBenchmarkService
         return new(PlaybackBenchmarkStage.Playback, latestPerformance?.PlaybackFps ?? count / measured.ElapsedSeconds,
             session.OutputFrameRate > 0 ? session.OutputFrameRate : sourceFrameRate,
             count, measured.ElapsedSeconds, session.IsHardwareDecodingAware, OutputSize: new(options.MaxPresentWidth, options.MaxPresentHeight),
-            LateDrops: session.LateDroppedFrameCount, BusyDrops: session.BusyDroppedFrameCount, Recoveries: session.CatchUpCount, GpuPresentation: session.UsesGpuPresentation, HardwareSurfacePresentation: session.UsesHardwareSurfacePresentation);
+            LateDrops: session.LateDroppedFrameCount, BusyDrops: session.BusyDroppedFrameCount, Recoveries: session.CatchUpCount,
+            GpuPresentation: session.UsesGpuPresentation, HardwareSurfacePresentation: session.UsesHardwareSurfacePresentation,
+            CpuPresentation: session.UsesCpuPresentation);
     }
 }

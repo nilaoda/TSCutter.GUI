@@ -1,6 +1,7 @@
 using System;
 using Avalonia.Controls;
 using Classic.Avalonia.Theme;
+using TSCutter.GUI.Player.Diagnostics;
 using TSCutter.GUI.Themes;
 using TSCutter.GUI.ViewModels.Player;
 
@@ -27,6 +28,8 @@ public partial class PlaybackBenchmarkWindow : ClassicWindow
         viewModel?.OnClosed();
         base.OnDataContextChanged(e);
         viewModel = DataContext as PlaybackBenchmarkWindowViewModel;
+        if (viewModel is not null)
+            viewModel.MeasureGpuAsync = this.FindControl<PlaybackGpuBenchmarkControl>("GpuBenchmarkHost")!.MeasureAsync;
         if (IsVisible)
             viewModel?.OnOpened();
     }

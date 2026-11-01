@@ -120,6 +120,14 @@ public sealed class PlaybackSession : IAsyncDisposable
     internal bool UsesHardwareSurfacePresentation => Interlocked.Read(ref hardwareSurfaceFrameCount) > 0
         && Interlocked.Read(ref hardwareSurfaceFrameCount) == Interlocked.Read(ref presentedFrameCount);
     internal bool UsesGpuPresentation => Interlocked.Read(ref gpuPresentedFrameCount) > 0;
+    internal bool UsesCpuPresentation
+    {
+        get
+        {
+            lock (publicationSync)
+                return presentedFrameCount > gpuPresentedFrameCount;
+        }
+    }
 
     public static Task<PlaybackSession> StartAsync(PlaybackOptions options)
         => StartAsync(options, uiPost: null);
