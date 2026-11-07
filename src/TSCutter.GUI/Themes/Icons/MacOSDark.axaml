@@ -260,4 +260,34 @@
             </DrawingGroup>
         </DrawingImage.Drawing>
     </DrawingImage>
+    <DrawingImage x:Key="Icon.cut-frame">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F1 M4.5 8.5h23v15h-23Z M4.5 12h23 M4.5 20h23 M9 12v8M14 12v8M19 12v8M24 12v8">
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="1.6" LineCap="Round" LineJoin="Round">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#ECECEF" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 M19 4.5v23">
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="1.6" LineCap="Round" LineJoin="Round">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#ECECEF" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 M16.5 2.5h5l-2.5 2.5Z M16.5 29.5h5l-2.5-2.5Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#ECECEF" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
 </ResourceDictionary>

@@ -123,7 +123,7 @@ python tools/prepare-test-media.py --ffmpeg "D:\Media Tools\ffmpeg.exe" --ffprob
 
 C# 测试还需要应用使用的 FFmpeg 9 共享运行库。它与生成素材时使用的命令行工具是两个独立的前提，只有 `ffmpeg.exe` 不能代替共享库。
 
-统一入口默认准备以下三组素材，也可只生成指定组：
+统一入口默认准备以下四组素材，也可只生成指定组：
 
 ```sh
 python tools/prepare-test-media.py --group keyframes
@@ -135,6 +135,7 @@ python tools/prepare-test-media.py --group remux subtitles
 | `keyframes` | 固定和变长 GOP、密集 GOP、B 帧、分数帧率、非零 PTS 的 TS、H.264/HEVC、HLG、短片和单帧 |
 | `remux` | MP4/MKV 导出、多音轨、字幕、章节、附件、封面、HDR 和 open GOP |
 | `subtitles` | mov_text、ASS 动画、PGS 和 DVB 字幕 |
+| `frameaccurate` | 帧精确剪辑：带帧序号的 H.264（TS/M2TS/MP4/MKV）、HEVC（HLG/HDR10）、开放 GOP MPEG-2、PTS 回绕、开放 GOP 和隔行素材 |
 
 `--output-dir` 可指定生成目录，`--font` 可为字幕字体附件测试指定字体。
 默认目录为 `artifacts/test-media/`，已被 Git 忽略；构建测试项目时，生成素材会自动复制到测试输出目录供测试使用。

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+<defs>
+  <linearGradient id="blue" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#91D9FF"/><stop offset="100%" stop-color="#2673CD"/></linearGradient>
+  <linearGradient id="gold" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#FFF4A8"/><stop offset="100%" stop-color="#ECA726"/></linearGradient>
+  <linearGradient id="red" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#FF8C7A"/><stop offset="100%" stop-color="#C4262E"/></linearGradient>
+</defs>
+<path d="M3.5 8.5h25v15h-25Z" fill="#2E4359" stroke="#174A8B" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/><path d="M5 9.5h2v1.5h-2Z M5 21h2v1.5h-2ZM9 9.5h2v1.5h-2Z M9 21h2v1.5h-2ZM13 9.5h2v1.5h-2Z M13 21h2v1.5h-2ZM17 9.5h2v1.5h-2Z M17 21h2v1.5h-2ZM21 9.5h2v1.5h-2Z M21 21h2v1.5h-2ZM25 9.5h2v1.5h-2Z M25 21h2v1.5h-2Z" fill="#DBE9F7"/><path d="M5 12.5h3v7h-3ZM10 12.5h3v7h-3ZM15 12.5h3v7h-3ZM20 12.5h3v7h-3ZM25 12.5h3v7h-3Z" fill="url(#blue)"/>
+<path d="M18.25 5.5h1.5v21h-1.5Z M16.5 3h5l-2.5 2.5Z M16.5 29h5l-2.5-2.5Z" fill="url(#red)" stroke="#7A1018" stroke-width="0.6" stroke-linejoin="round" stroke-linecap="round"/>
+</svg>

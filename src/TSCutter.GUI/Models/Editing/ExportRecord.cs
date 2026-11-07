@@ -13,7 +13,8 @@ public enum ExportKind
     M2tsRemux,
     Mp4Remux,
     MkvRemux,
-    VobRemux
+    VobRemux,
+    FrameAccurate
 }
 
 public enum TsExportCheckState

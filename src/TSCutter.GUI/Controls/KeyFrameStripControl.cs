@@ -35,6 +35,11 @@ public sealed class KeyFrameStripControl : Control
     public IReadOnlyList<KeyFrameRetentionRange>? Ranges { get => GetValue(RangesProperty); set => SetValue(RangesProperty, value); }
     public IBrush? ClipBrush { get => GetValue(ClipBrushProperty); set => SetValue(ClipBrushProperty, value); }
     public event EventHandler<KeyFrameStripItem>? SeekRequested;
+    /// <summary>滚轮滚动的格数：正数前进（向下滚），负数后退（向上滚）。</summary>
+    public event EventHandler<int>? WheelStepRequested;
+    /// <summary>间隔不足该值的滚轮事件忽略（触控板、平滑滚动等连续事件流），与图片预览的滚轮缩放相同。</summary>
+    internal const ulong WheelIntervalMs = 16;
+    private ulong? lastWheelStep;
     private static readonly IBrush TypeBadgeBrush = new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)).ToImmutable();
 
     static KeyFrameStripControl() => AffectsRender<KeyFrameStripControl>(ItemsProperty,
@@ -176,5 +181,29 @@ public sealed class KeyFrameStripControl : Control
             e.Handled = true;
             break;
         }
+    }
+
+    protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
+    {
+        base.OnPointerWheelChanged(e);
+        e.Handled |= ApplyWheel(e.Delta.Y, e.Timestamp);
+    }
+
+    /// <summary>
+    /// 处理一次滚轮滚动：与图片预览的滚轮缩放相同，每个事件按方向移动一格，不按增量大小换算——
+    /// macOS 普通滚轮每格的增量随滚动加速变化且常小于 1（Avalonia 换算为 scrollingDeltaY / 5），
+    /// 按增量累计会出现有时滚两格才移动一次。距上一次移动不足 <see cref="WheelIntervalMs"/> 毫秒的事件忽略。
+    /// 解码期间主窗口的遮罩拦截输入，落在导航条上的滚轮由窗口转交到这里。返回是否处理了这次滚动。
+    /// </summary>
+    internal bool ApplyWheel(double deltaY, ulong timestamp)
+    {
+        if (!IsEffectivelyEnabled || deltaY == 0)
+            return false;
+        if (lastWheelStep is { } last && timestamp >= last && timestamp - last < WheelIntervalMs)
+            return true;
+        lastWheelStep = timestamp;
+        // 向上滚 Delta.Y 为正（后退），向下滚为负（前进）。
+        WheelStepRequested?.Invoke(this, deltaY < 0 ? 1 : -1);
+        return true;
     }
 }

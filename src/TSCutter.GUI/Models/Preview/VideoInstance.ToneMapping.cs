@@ -83,6 +83,7 @@ public partial class VideoInstance
             StartSeconds = PtsToTimeSpan(targetPts).TotalSeconds,
             TimelineOriginSeconds = TimelineOriginSeconds, TsSyncOffset = TsSyncOffset,
             EstimatedKeyFrameIntervalSeconds = EstimatedKeyFrameIntervalSeconds,
+            MinimumPrerollSeconds = RecoveryPrerollSeconds,
             PreferHardwareDecoding = hardwareDecoderOpened, EnableGpuPresentation = false
         }, queue);
         var task = Task.Run(engine.RunAsync, token);

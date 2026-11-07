@@ -11,7 +11,7 @@ SVG = "{http://www.w3.org/2000/svg}"
 NS = "https://github.com/avaloniaui"
 X = "http://schemas.microsoft.com/winfx/2006/xaml"
 ICONS = ("open", "zoom-in", "zoom-out", "original", "fit", "keyframes",
-         "thumbnails", "snapshot", "tools", "info", "save")
+         "thumbnails", "snapshot", "tools", "info", "save", "cut-frame")
 PALETTES = {
     "Xp": ("xp", None),
     "Aero": ("aero", None),

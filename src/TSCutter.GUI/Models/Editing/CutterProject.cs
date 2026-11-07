@@ -11,6 +11,7 @@ public sealed class CutterProject
     public PreviewStreamSelection? PreviewSelection { get; set; }
     public bool ExportCurrentProgramOnly { get; set; }
     public RemuxExportSettings? RemuxSettings { get; set; }
+    public ClipCutMode CutMode { get; set; }
     public List<ProjectClip> Clips { get; set; } = [];
     public List<ProjectQueueItem> Queue { get; set; } = [];
     public int SelectedClipIndex { get; set; } = -1;
@@ -39,6 +40,7 @@ public sealed class ProjectClip
     public long StartPosition { get; set; }
     public long EndPosition { get; set; }
     public bool IsSelected { get; set; }
+    public bool FrameAccurate { get; set; }
     public byte[]? StartThumbnailJpeg { get; set; }
     public byte[]? EndThumbnailJpeg { get; set; }
     public string? OutputFilePath { get; set; }
@@ -55,6 +57,9 @@ public sealed class ProjectQueueItem
     public string Color { get; set; } = "";
     public ProjectSource Source { get; set; } = new();
     public RemuxExportSettings? RemuxSettings { get; set; }
+    public FrameAccurateExportSettings? FrameAccurate { get; set; }
+    public long StartPts { get; set; }
+    public long? EndPts { get; set; }
     public int? ProgramId { get; set; }
     public string OutputFilePath { get; set; } = string.Empty;
     public double StartTime { get; set; }

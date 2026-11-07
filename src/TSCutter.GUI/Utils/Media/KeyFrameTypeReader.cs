@@ -7,6 +7,12 @@ namespace TSCutter.GUI.Utils.Media;
 /// <summary>从 H.264/HEVC 包的首个 VCL NAL 读取随机访问类型，兼容 Annex B 和长度前缀格式。</summary>
 internal static class KeyFrameTypeReader
 {
+    /// <summary>
+    /// H.264 恢复点：解复用器按恢复点 SEI 标为关键帧，但首个条带是 P/B（非 IDR、非 I）。
+    /// 逐行刷新（周期帧内刷新）的码流只有这种“关键帧”，单独从这里解码要经过若干秒画面才完整。
+    /// </summary>
+    internal const string RecoveryPoint = "RP";
+
     internal static unsafe string? Read(Packet packet, CodecParameters parameters)
     {
         AVPacket* raw = packet;
@@ -63,7 +69,7 @@ internal static class KeyFrameTypeReader
             {
                 var type = nal[0] & 31;
                 if (type is >= 1 and <= 5)
-                    return type == 5 ? "IDR" : null;
+                    return type == 5 ? "IDR" : IsPredictedSlice(nal) ? RecoveryPoint : null;
             }
             else
             {
@@ -82,6 +88,52 @@ internal static class KeyFrameTypeReader
             }
         }
         return null;
+    }
+
+    /// <summary>读取 slice_header 的 first_mb_in_slice 与 slice_type，判断是否为 P/B/SP 条带。</summary>
+    private static bool IsPredictedSlice(ReadOnlySpan<byte> nal)
+    {
+        // 两个指数哥伦布码最多占 66 位；去除防竞争字节后读取，无法解析时不改变原有判断。
+        Span<byte> header = stackalloc byte[12];
+        var length = 0;
+        var zeros = 0;
+        for (var index = 1; index < nal.Length && length < header.Length; index++)
+        {
+            var value = nal[index];
+            if (zeros >= 2 && value == 3)
+            {
+                zeros = 0;
+                continue;
+            }
+            zeros = value == 0 ? zeros + 1 : 0;
+            header[length++] = value;
+        }
+        var bit = 0;
+        if (ReadUnsignedExpGolomb(header[..length], ref bit) is null
+            || ReadUnsignedExpGolomb(header[..length], ref bit) is not { } sliceType)
+            return false;
+        return (sliceType % 5) is 0 or 1 or 3;
+    }
+
+    private static uint? ReadUnsignedExpGolomb(ReadOnlySpan<byte> data, ref int bit)
+    {
+        var leadingZeros = 0;
+        while (true)
+        {
+            if (bit >= data.Length * 8 || leadingZeros > 31)
+                return null;
+            if (((data[bit >> 3] >> (7 - (bit & 7))) & 1) != 0)
+                break;
+            leadingZeros++;
+            bit++;
+        }
+        bit++;
+        if (bit + leadingZeros > data.Length * 8)
+            return null;
+        ulong suffix = 0;
+        for (var index = 0; index < leadingZeros; index++, bit++)
+            suffix = (suffix << 1) | (uint)((data[bit >> 3] >> (7 - (bit & 7))) & 1);
+        return (uint)((1UL << leadingZeros) - 1 + suffix);
     }
 
     // 四字节起始码同样包含 00 00 01，返回其最后三个字节的起点即可。

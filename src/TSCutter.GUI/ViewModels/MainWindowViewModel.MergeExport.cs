@@ -21,7 +21,7 @@ public partial class MainWindowViewModel
     private sealed record MergeExportSnapshot(
         PickedClip[] Clips, VideoInstance Video, long SettingsRevision,
         string Extension, string FileFilterName, TsClipMergeRequest TsRequest,
-        IReadOnlyList<RemuxExportSegment>? RemuxSegments);
+        IReadOnlyList<RemuxExportSegment>? RemuxSegments, IReadOnlyList<FrameAccurateExportSegment>? FrameAccurateSegments);
 
     private MergeExportSnapshot? CaptureMergeExportSnapshot()
     {
@@ -41,8 +41,9 @@ public partial class MainWindowViewModel
                 clip.StartPosition, clip.EndPosition, clip.StartTime,
                 clip.EndTime < 0 ? DurationMax : clip.EndTime)).ToArray()
         };
+        var frameAccurate = UsesFrameAccurateCut ? CreateFrameAccurateSegments(selected) : null;
         return new(selected, video, _exportSettingsRevision, ClipExtension, ExportFileFilterName,
-            request, IsRemuxExport ? CreateMergedRemuxSegments(selected) : null);
+            request, IsRemuxExport && frameAccurate is null ? CreateMergedRemuxSegments(selected) : null, frameAccurate);
     }
 
     private bool IsMergeExportCurrent(MergeExportSnapshot snapshot)
@@ -69,7 +70,10 @@ public partial class MainWindowViewModel
     private static void ConfigureMergeExportTask(OutputWindowViewModel output, MergeExportSnapshot snapshot, string path)
     {
         // 选好路径后只替换目标位置，保留准备阶段已确认的节目表处理方式。
-        if (snapshot.RemuxSegments is { } segments)
+        if (snapshot.FrameAccurateSegments is { } frameAccurate)
+            output.SetFrameAccurateTask(new FrameAccurateExportRequest(path, frameAccurate), string.Join("; ",
+                snapshot.Clips.OrderBy(clip => clip.StartPts).Take(6).Select(clip => $"{clip.StartBoundaryTimeStr} – {clip.EndBoundaryTimeStr}")));
+        else if (snapshot.RemuxSegments is { } segments)
             output.SetRemuxTask(new RemuxExportRequest(path, segments));
         else
         {

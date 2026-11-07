@@ -92,6 +92,15 @@
     <SolidColorBrush x:Key="DesktopScrollPressedBrush" Color="#999999" />
     <SolidColorBrush x:Key="DesktopToolbarHoverBrush" Color="#3A3A3A" />
     <SolidColorBrush x:Key="DesktopToolbarPressedBrush" Color="#4C4C4C" />
+    <!-- 按下/选中的工具栏按钮：左上阴影、右下高光与内侧阴影，组成凹陷斜面。 -->
+    <SolidColorBrush x:Key="DesktopToolbarShadowBrush" Color="#1A1A1A" />
+    <SolidColorBrush x:Key="DesktopToolbarHighlightBrush" Color="#7A7A7A" />
+    <SolidColorBrush x:Key="DesktopToolbarInnerShadowBrush" Color="#2E2E2E" />
+    <!-- 凹陷底色：顶端 7 像素由内阴影过渡到按下底色。 -->
+    <LinearGradientBrush x:Key="DesktopToolbarSunkenBrush" StartPoint="0,0" EndPoint="0,7">
+        <GradientStop Offset="0" Color="#2E2E2E" />
+        <GradientStop Offset="1" Color="#4C4C4C" />
+    </LinearGradientBrush>
     <SolidColorBrush x:Key="DesktopToolbarBorderBrush" Color="#666666" />
     <SolidColorBrush x:Key="FlatProgressTrackBrush" Color="#3A3A3A" />
     <SolidColorBrush x:Key="DesktopGroupBorderBrush" Color="#555555" />

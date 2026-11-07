@@ -126,9 +126,10 @@ internal static class CutterProjectService
         if (project.PreviewSelection is { } selection &&
             (project.Source is null || selection.StreamIndex < 0))
             throw new InvalidDataException("The saved preview track is invalid.");
-        if (project.Version is not (1 or 2 or 3 or 4))
+        if (project.Version is not (1 or 2 or 3 or 4 or 5))
             throw new InvalidDataException($"Unsupported project version: {project.Version}.");
-        if (project.RemuxSettings is { IsValid: false })
+        if (project.RemuxSettings is { IsValid: false } ||
+            project.Queue?.Any(item => item.FrameAccurate is { IsValid: false }) == true)
             throw new InvalidDataException("Invalid media export settings.");
         if (project.Clips is null || project.Queue is null ||
             project.Clips.Count > MaximumItems || project.Queue.Count > MaximumItems)

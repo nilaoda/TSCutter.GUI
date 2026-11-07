@@ -146,7 +146,8 @@ is separate from the CLI used to generate media.
 
 The common entry point supports `--group keyframes`, `--group remux subtitles`,
 `--output-dir`, and an optional `--font` for subtitle font attachments. By default,
-it prepares all three groups in `artifacts/test-media/`, which is ignored by Git.
+it prepares the `keyframes`, `remux`, `subtitles` and `frameaccurate` groups in
+`artifacts/test-media/`, which is ignored by Git.
 The test build copies generated fixtures to its output directory and discovers
 them automatically. Media are never downloaded or checked in, and ordinary test
 runs do not regenerate them.

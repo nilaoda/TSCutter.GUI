@@ -6,6 +6,7 @@
         xmlns:local="clr-namespace:TSCutter.GUI"
         xmlns:viewModels="clr-namespace:TSCutter.GUI.ViewModels.Editing"
         xmlns:converters="clr-namespace:TSCutter.GUI.Converters"
+        xmlns:controls="clr-namespace:TSCutter.GUI.Controls"
         mc:Ignorable="d"
         Height="180" Width="420"
         x:Class="TSCutter.GUI.Views.Editing.OutputWindow"
@@ -57,6 +58,32 @@
                         <TextBlock Text="{Binding RemainingTimeStr}" FontWeight="Bold" />
                     </StackPanel>
                 </Grid>
+                <!-- 帧精确导出：重新编码/直接复制的分布与当前位置、当前阶段和累计统计 -->
+                <StackPanel IsVisible="{Binding ShowsFrameAccuratePlan}" Spacing="4" Margin="0,6,0,0">
+                    <controls:FrameAccuratePlanBar Height="12"
+                                                   Parts="{Binding FrameAccuratePlan}"
+                                                   Total="{Binding FrameAccurateTotal}"
+                                                   Position="{Binding FrameAccuratePosition}"
+                                                   EncodeBrush="{DynamicResource AppExportEncodeBrush}"
+                                                   CopyBrush="{DynamicResource AppExportCopyBrush}"
+                                                   TrackBrush="{DynamicResource AppTimelineTrackBrush}"
+                                                   MarkerBrush="{DynamicResource AppExportMarkerBrush}" />
+                    <WrapPanel Orientation="Horizontal">
+                        <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,12,0">
+                            <Border Width="10" Height="10" VerticalAlignment="Center"
+                                    Background="{DynamicResource AppExportEncodeBrush}" />
+                            <TextBlock Text="{DynamicResource String.Output.FrameAccurate.Encode}" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,0,12,0">
+                            <Border Width="10" Height="10" VerticalAlignment="Center"
+                                    Background="{DynamicResource AppExportCopyBrush}" />
+                            <TextBlock Text="{DynamicResource String.Output.FrameAccurate.Copy}" />
+                        </StackPanel>
+                    </WrapPanel>
+                    <TextBlock Text="{Binding FrameAccuratePlanText}" TextWrapping="Wrap" Opacity="0.8" />
+                    <TextBlock Text="{Binding FrameAccuratePhaseText}" FontWeight="Bold" TextWrapping="Wrap" />
+                    <TextBlock Text="{Binding FrameAccurateStatsText}" TextWrapping="Wrap" />
+                </StackPanel>
                 <!-- 队列进度（仅批量模式） -->
                 <StackPanel IsVisible="{Binding IsBatchMode}" Spacing="4">
                     <Border Height="1" Margin="0,4,0,4" Background="{DynamicResource SystemBaseLowColor}" />

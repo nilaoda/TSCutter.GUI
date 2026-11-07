@@ -18,6 +18,11 @@ Multiple NuGet packages from the same project are grouped below. Versions are sp
 | [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) | MIT |
 | [HanumanInstitute.MvvmDialogs](https://github.com/mysteryx93/HanumanInstitute.MvvmDialogs) | MIT |
 | [FFmpeg.AutoGen.Abstractions](https://github.com/Ruslan-B/FFmpeg.AutoGen) | MIT |
+| [x264](https://code.videolan.org/videolan/x264) | GPL-2.0-or-later |
+| [x265 4.3](https://github.com/Multicorewareinc/x265/tree/4.3) | GPL-2.0-or-later |
+| [libvpx 1.17.0](https://chromium.googlesource.com/webm/libvpx) | BSD-3-Clause + patent grant |
+| [libaom 3.15.3](https://aomedia.googlesource.com/aom/) | BSD-2-Clause + patent license |
+| [Opus 1.6.1](https://opus-codec.org/) | BSD-3-Clause |
 | [libass 0.17.4](https://github.com/libass/libass/tree/0.17.4) | ISC |
 | [libbluray 1.5.0](https://code.videolan.org/videolan/libbluray) | LGPL-2.1-or-later |
 | [miniaudio 0.11.25](https://github.com/mackron/miniaudio) | Unlicense / MIT |
@@ -43,6 +48,10 @@ Disc image input uses libbluray, libdvdread, libdvdnav, libdvdcss and libudfread
 The audio output bridge `tscutter_audio` is built with the app from `native/audio/tsaudio_bridge.c` and vendored miniaudio 0.11.25. It only writes decoded, resampled interleaved float32 PCM to the default audio device (WASAPI / CoreAudio / ALSA); demuxing, decoding, downmixing and resampling stay in the app's FFmpeg shared runtime. AOT releases statically link the bridge into the application; normal builds and non-AOT publishing use a shared bridge. The original license text is included with this notice.
 
 Subtitle rendering is linked statically into avfilter and includes libass 0.17.4, FreeType 2.13.3, HarfBuzz 10.2.0, FriBidi 1.0.16 and libunibreak 6.1; Linux also includes Fontconfig 2.16.0 and Expat 2.6.4. Source versions and build patches are available in [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries). Original upstream license texts are included with this notice. FriBidi uses LGPL 2.1 or later; the complete LGPL 2.1 text is included among the consolidated licenses.
+
+软件编码依赖 x264、x265、libvpx、libaom 和 Opus 静态合入 avcodec，不增加单独的运行库文件。版本、源码及构建配置见 [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries)。许可原文及上游专利授权随本声明附带。
+
+Software encoding dependencies x264, x265, libvpx, libaom and Opus are statically linked into avcodec and add no separate runtime files. Versions, sources and build configuration are documented in [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries). Original license texts and upstream patent grants are included with this notice.
 
 ## 参考代码 / Adapted code
 

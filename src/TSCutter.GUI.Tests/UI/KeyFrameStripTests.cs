@@ -784,6 +784,89 @@ public sealed class KeyFrameStripTests
         }, CancellationToken.None);
     }
 
+    /// <summary>
+    /// 帧精确模式向前单步：一次批量请求补齐左侧并多取一屏放入缓存，之后连续向前单步直接复用，不再逐张解码 GOP。
+    /// </summary>
+    [Fact]
+    public async Task BackwardStepsFillTheEdgeWithOneBatchAndReuseThePrefetchedFrames()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            var fake = new BatchFakeService();
+            var vm = new KeyFrameStripViewModel(() => fake);
+            vm.SetSource(new("one.ts", null, true, EveryFrame: true));
+            try
+            {
+                vm.RequestAt(30, true);
+                await vm.IdleTask;
+                Assert.Equal(Enumerable.Range(26, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                Assert.True(vm.PreviewStep(-1));
+                await vm.IdleTask;
+                // 左侧只缺一张，仍按一屏批量读取：25 到 17。
+                Assert.Equal([(30L - 4, -1, 9)], fake.BatchRequests);
+                Assert.Equal(Enumerable.Range(25, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                for (var current = 28; current >= 21; current--)
+                {
+                    Assert.True(vm.PreviewStep(-1));
+                    await vm.IdleTask;
+                    Assert.Equal(current, vm.Items.Single(item => item.IsCurrent).Pts);
+                    Assert.DoesNotContain(vm.Items, item => item.IsPlaceholder);
+                }
+                Assert.Single(fake.BatchRequests);
+                Assert.Empty(fake.SingleRequests);
+                // 预取用完后再次批量读取。
+                Assert.True(vm.PreviewStep(-1));
+                await vm.IdleTask;
+                Assert.Equal(2, fake.BatchRequests.Count);
+                Assert.Equal(Enumerable.Range(16, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                // 向后只取缺少的画面。
+                vm.RequestAt(60, true);
+                await vm.IdleTask;
+                Assert.True(vm.PreviewStep(1));
+                await vm.IdleTask;
+                Assert.Equal((60L + 4, 1, 1), fake.BatchRequests[^1]);
+            }
+            finally { vm.SetSource(null); await vm.IdleTask; }
+            return true;
+        }, CancellationToken.None);
+    }
+
+    private sealed class BatchFakeService : IKeyFrameStripService
+    {
+        public List<(long Pts, int Direction, int Count)> BatchRequests { get; } = [];
+        public List<long> SingleRequests { get; } = [];
+        private static KeyFrameStripFrame Frame(long pts, Func<long, bool> isCached) =>
+            new(pts, TimeSpan.FromSeconds(pts), isCached(pts) ? null :
+                new WriteableBitmap(new PixelSize(32, 18), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Opaque), "P");
+        public Task OpenAsync(KeyFrameStripSource source, CancellationToken token) => Task.CompletedTask;
+        public Task<KeyFrameStripRange> ReadAsync(double target, Func<long, bool> isCached,
+            Action<KeyFrameStripFrame> received, CancellationToken token, Action<KeyFrameStripRange>? progress = null, int frameCount = 9)
+        {
+            var start = Math.Max(0, (int)target - (frameCount - 1) / 2);
+            var frames = Enumerable.Range(start, frameCount).Select(pts => Frame(pts, isCached)).ToArray();
+            foreach (var frame in frames)
+                received(frame);
+            return Task.FromResult(new KeyFrameStripRange(frames.Select(frame => frame with { Bitmap = null }).ToArray(), start == 0, false));
+        }
+        public Task<KeyFrameStripFrame?> ReadNeighborAsync(KeyFrameStripFrame anchor, int direction,
+            Func<long, bool> isCached, CancellationToken token)
+        {
+            SingleRequests.Add(anchor.Pts);
+            return Task.FromResult<KeyFrameStripFrame?>(Frame(anchor.Pts + direction, isCached));
+        }
+        public Task<IReadOnlyList<KeyFrameStripFrame>> ReadNeighborsAsync(KeyFrameStripFrame anchor, int direction, int count,
+            Func<long, bool> isCached, CancellationToken token)
+        {
+            BatchRequests.Add((anchor.Pts, direction, count));
+            IReadOnlyList<KeyFrameStripFrame> frames = Enumerable.Range(1, count)
+                .Select(offset => anchor.Pts + offset * direction).Where(pts => pts >= 0)
+                .Select(pts => Frame(pts, isCached)).ToArray();
+            return Task.FromResult(frames);
+        }
+        public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
     private sealed class FakeService : IKeyFrameStripService
     {
         public List<double> Targets { get; } = [];

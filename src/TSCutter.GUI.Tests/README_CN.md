@@ -41,8 +41,9 @@ python tools/prepare-test-media.py --group remux subtitles
 | `keyframes` | H.264/HEVC、固定和变长 GOP、密集 GOP、B 帧、分数帧率、非零 PTS 的 TS、HLG、短片和单帧 |
 | `remux` | MP4/MKV 导出、多音轨、文字/PGS 字幕、分数帧率 HEVC、章节、附件、封面、HDR 和 open GOP |
 | `subtitles` | mov_text、ASS 动画、PGS 和 DVB 字幕的预览、局部定位、稀疏/空轨道和切换 |
+| `frameaccurate` | 帧精确剪辑：画面内绘制帧序号，TS/M2TS/MP4/MKV 中带 B 帧的闭合 GOP H.264、带 RADL 的 10 位 HEVC（HLG/HDR10）、只有 CRA 关键帧且带 RASL 前导画面的开放 GOP HEVC（TS 与 MP4）、隔行开放 GOP MPEG-2、分数帧率、很大及回绕的 TS PTS、mov_text、H.264 High 4:2:2 与 HEVC 4:2:2（HEVC：带 RADL 的 10 位 TS、8 位 MP4；H.264：8 位；10 位开放 GOP、B 帧金字塔且 SPS 不声明重排序深度；隔行 MBAFF）、MP4/MKV 中的 AV1（8 位带 Opus 音频、10 位；含隐藏帧，每个关键帧带序列头）、MP4/MKV 中的 VP9（两遍编码的 8 位带 Opus 音频、10 位 Profile 2；含带隐藏替代参考帧的超帧）、PCM 音频未声明声道布局的 MOV、带接收中断的录制（PES 不完整、时间戳跳变 90 秒、参考帧缺失），只有普通 I 帧的开放 GOP H.264（CABAC、CAVLC、MBAFF，以及前导画面中有作参考 B 帧的 B 帧金字塔），以及应被拒绝的 4:4:4 素材 |
 
-三组生成器也能单独运行；不传目录时使用相同的默认位置。`--font` 可以为字幕附件测试指定 TTF/OTF 字体。
+各组生成器也能单独运行；不传目录时使用相同的默认位置。`--font` 可以为字幕附件测试指定 TTF/OTF 字体。
 生成脚本只负责测试数据，不下载工具，不修改应用配置，也不会在每次 `dotnet test` 时重新编码。
 
 ## 可选的光盘镜像测试
@@ -100,10 +101,12 @@ FFmpeg 解码和重采样仍复用上文所述的现有运行库。
 | `TSCUTTER_REMUX_TEST_SAMPLES` | 兼容旧的封装导出素材目录，优先于公共根目录 |
 | `TSCUTTER_SUBTITLE_TEST_SAMPLES` | 兼容旧的字幕素材目录，优先于公共根目录 |
 | `TSCUTTER_FFMPEG_TEST_SAMPLES` | 可选的真实编码样本目录：`1080i.ts`、`4K.ts`、`AVS+.ts`、`AVS+_2.ts`、`AVS+_P.ts`、`AVS2.ts`、`AVS3.ts`；检查特殊解码器的位置元数据等行为 |
-| `TSCUTTER_DOVI_TEST_SAMPLE` | 可选的 Dolby Vision Profile 5 MP4，视频轨道 0、音频轨道 1，用于导出和 HDR 预览检查 |
+| `TSCUTTER_DOVI_P81_TEST_SAMPLE` | 可选的单层 Dolby Vision Profile 8.1（兼容 HDR10）MP4，用于关键帧导出检查（MP4 保留 `hvc1`）和帧精确检查；帧精确检查在 2–12 秒之间剪切，该范围内至少应有两个 IDR 帧 |
+| `TSCUTTER_DOVI_TEST_SAMPLE` | 可选的 Dolby Vision Profile 5 MP4，视频轨道 0、音频轨道 1，用于导出和 HDR 预览检查；帧精确检查在 2–12 秒之间剪切，该范围内至少应有两个 IDR 帧 |
 | `TSCUTTER_AV3A_TEST_SAMPLE` | 可选的 Audio Vivid MP4，用于 AV3A 导出检查 |
 | `TSCUTTER_SUBTITLE_REAL_SAMPLE` | 可选的 MP4，恰有一个字幕轨道且 2.5 秒处有活动字幕 |
 
 真实素材不下载、不生成、不入库。未配置时只跳过对应的真实素材用例，不影响合成测试和普通测试。
 关键帧测试使用公共的 `keyframes` 目录，不需要单独的素材目录变量。
-`TSCUTTER_KEYFRAME_STRIP_CAPTURE`、`TSCUTTER_SUBTITLE_PREVIEW_IMAGE` 只是可选的截图输出位置，不是测试运行前提。
+`TSCUTTER_KEYFRAME_STRIP_CAPTURE`、`TSCUTTER_SUBTITLE_PREVIEW_IMAGE`、`TSCUTTER_FRAME_ACCURATE_CAPTURE` 只是可选的截图输出位置，不是测试运行前提。
+帧精确剪辑的真实素材检查使用 `TSCUTTER_FFMPEG_TEST_SAMPLES` 中的 `4K.ts`（HEVC）、`1080i.ts`（隔行 H.264）和 `MPEG2.ts`（隔行开放 GOP MPEG-2），杜比视界检查使用 `TSCUTTER_DOVI_TEST_SAMPLE`（Profile 5）和 `TSCUTTER_DOVI_P81_TEST_SAMPLE`（Profile 8.1），分别按 MP4、MKV 剪切，并转为 PMT 带杜比描述符的 TS 后按 TS 剪切。将 `TSCUTTER_FRAME_ACCURATE_KEEP_DIR` 设为已存在的目录时，会保留杜比视界输出（`dovi50-cut.mp4`、`dovi81-cut.mkv` 等），便于用外部工具检查。

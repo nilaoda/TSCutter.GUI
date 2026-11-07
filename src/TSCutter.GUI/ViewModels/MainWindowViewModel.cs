@@ -139,6 +139,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         OnPropertyChanged(nameof(ClipOutputToolTip));
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
         OnPropertyChanged(nameof(SelectedClipsSummaryStr));
+        OnPropertyChanged(nameof(FrameAccurateUnavailableText));
+        OnPropertyChanged(nameof(FrameAccurateToolTip));
     }
 
     private long _displayedFramePosition = -1;
@@ -183,8 +185,12 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     public string SelectedClipEstimatedSizeStr => GetSelectedMergedOutputSize() is { } mergedSize ? mergedSize
         : SelectedClipCount > 1
-        ? IsProgramExportFiltered || IsRemuxExport ? FilteredClipSizeStr
-            : LocalizationManager.Instance.String_SizePrefix + CommonUtil.FormatFileSize(GetSelectedClipAggregate().Bytes)
+        ? IsProgramExportFiltered || IsRemuxExport || UsesFrameAccurateCut && !CanEstimateFrameAccurateSize ? FilteredClipSizeStr
+            // 帧精确导出会重新编码首尾画面，合计按源字节范围预估，与片段上的“~”一致。
+            : UsesFrameAccurateCut
+                ? LocalizationManager.Instance.String_SizePrefix + string.Format(LocalizationManager.Instance.String_SizeApproximate,
+                    CommonUtil.FormatFileSize(GetSelectedClipAggregate().Bytes))
+                : LocalizationManager.Instance.String_SizePrefix + CommonUtil.FormatFileSize(GetSelectedClipAggregate().Bytes)
         : SelectedClip is { } clip
             ? IsProgramExportFiltered || IsRemuxExport ? clip.ExportSizeStr : clip.EstimatedSizeStr ?? string.Empty
             : string.Empty;
@@ -486,6 +492,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         {
             InFileInfo = new FileInfo(VideoPath),
             RequiresRemux = IsRemuxExport,
+            RequiresFrameAccurate = UsesFrameAccurateCut,
+            UsesFrameAccurateExport = UsesFrameAccurateCut,
+            CanEstimateFrameAccurateSize = CanEstimateFrameAccurateSize,
             StartTime = _displayedFrameTime,
             StartPosition = Math.Max(0, PositionInFile),
             StartPts = CurrentPts,
@@ -528,6 +537,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         SelectedClip!.StartTime = _displayedFrameTime;
         SelectedClip!.StartPts = CurrentPts;
+        SelectedClip!.RequiresFrameAccurate |= UsesFrameAccurateCut;
         SelectedClip!.StartPosition = Math.Max(0, PositionInFile);
         SelectedClip!.ReplaceStartThumbnail(CreateCurrentFrameThumbnail());
         if (SelectedClip!.EndTime <= _displayedFrameTime)
@@ -559,6 +569,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         var position = PositionInFile;
         var pts90k = _displayedFramePts90k;
         var signature = _displayedFrameEndSignature;
+        var frameAccurate = UsesFrameAccurateCut;
         var thumbnail = CreateCurrentFrameThumbnail();
         using var cancellation = new CancellationTokenSource();
         _clipEndCancellation = cancellation;
@@ -566,7 +577,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         NotifyVideoCapabilityChanged();
         try
         {
-            var endPosition = video is { CanRemuxClip: true } ? Math.Max(1, position) :
+            // 帧精确导出按 PTS 定位，不需要关键帧模式的 TS 字节终点。
+            var endPosition = video is { CanRemuxClip: true } || frameAccurate ? Math.Max(1, position) :
                 await TsClipBoundaryResolver.ResolveEndAsync(path, position, pts90k,
                     signature, cancellation.Token);
             if (cancellation.IsCancellationRequested || !ReferenceEquals(_clipEndCancellation, cancellation)
@@ -576,19 +588,26 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             RecordHistory();
             if (clip is null)
             {
-                clip = new PickedClip { InFileInfo = new FileInfo(path), RequiresRemux = IsRemuxExport };
+                clip = new PickedClip
+                {
+                    InFileInfo = new FileInfo(path), RequiresRemux = IsRemuxExport, UsesFrameAccurateExport = frameAccurate,
+                    CanEstimateFrameAccurateSize = CanEstimateFrameAccurateSize
+                };
+                // 只标记了终点：片段从文件开头开始，起点为时间轴原点的画面（不是 PTS 0，源时间戳常常不从 0 开始）。
+                clip.StartPts = video.FirstFramePts;
                 Clips.Add(clip);
                 SelectClip(clip);
             }
             clip.EndTime = time;
             clip.EndPts = pts;
             clip.EndPosition = endPosition;
+            clip.RequiresFrameAccurate |= frameAccurate;
             clip.ReplaceEndThumbnail(thumbnail);
             thumbnail = null;
             if (clip.StartTime >= time)
             {
                 clip.StartTime = 0;
-                clip.StartPts = 0;
+                clip.StartPts = video.FirstFramePts;
                 clip.StartPosition = 0;
                 clip.ReplaceStartThumbnail(null);
             }
@@ -804,7 +823,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 {
                     clip = new PickedClip(state.ClipId)
                     {
-                        InFileInfo = new FileInfo(state.FilePath), RequiresRemux = IsRemuxExport
+                        InFileInfo = new FileInfo(state.FilePath), RequiresRemux = IsRemuxExport,
+                        UsesFrameAccurateExport = UsesFrameAccurateCut,
+                        CanEstimateFrameAccurateSize = CanEstimateFrameAccurateSize
                     };
                 }
 
@@ -857,6 +878,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         clip.OutputFileInfo = state.OutputFilePath is null ? null : new FileInfo(state.OutputFilePath);
         clip.ExportStatus = state.ExportStatus;
         clip.ExportPercent = state.ExportPercent;
+        clip.RequiresFrameAccurate = state.RequiresFrameAccurate;
 
         if (startChanged || clip.HasStartThumbnail != state.HasStartThumbnail)
         {
@@ -1125,6 +1147,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         // 节目表提示先于保存对话框；确认时尚未选路径，先用空路径准备同一份任务。
         var output = _dialogService.CreateViewModel<OutputWindowViewModel>();
         ConfigureMergeExportTask(output, snapshot, string.Empty);
+        if (!await ConfirmGradualRefreshExportAsync()) return;
         if (!await PrepareProgramTableExportAsync(output,
                 snapshot.Clips.Select(GetProgramTableClipLabel).ToArray(),
                 () => IsMergeExportCurrent(snapshot))) return;
@@ -1143,7 +1166,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private bool CanMergeSelectedClips => CanEditVideo && SelectedClipCount >= 2 &&
                                           Clips.Where(clip => clip.IsSelected).All(clip =>
                                               clip.EndTime > clip.StartTime &&
-                                              (IsRemuxExport || clip.StartPosition >= 0 &&
+                                              (IsRemuxExport || UsesFrameAccurateCut || clip.StartPosition >= 0 &&
                                               (clip.EndPosition < 0 ||
                                                clip.EndPosition > clip.StartPosition)));
 
@@ -1151,6 +1174,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         if (exception is RemuxExportException remuxException)
             return FormatRemuxExportError(remuxException);
+        if (exception is FrameAccurateExportException frameAccurateException)
+            return FormatFrameAccurateError(frameAccurateException);
         if (exception is TsFilterException filterException)
         {
             var strings = LocalizationManager.Instance;
@@ -1638,6 +1663,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     private CutterProject CaptureProject(bool includeThumbnails) => new()
     {
+        // 含帧精确内容的工程使用新版本号，旧版程序不会把它们误当作关键帧片段。
+        Version = CutMode == ClipCutMode.FrameAccurate || Clips.Any(clip => clip.RequiresFrameAccurate) ||
+                  ExportQueue.Any(item => item.FrameAccurate is not null) ? 5 : 4,
+        CutMode = CutMode,
         Source = IsVideoInitialized ? new ProjectSource { Path = VideoPath } : null,
         PreviewSelection = IsVideoInitialized ? _activePreviewSelection : null,
         ExportCurrentProgramOnly = ExportCurrentProgramOnly,
@@ -1652,6 +1681,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             StartPosition = clip.StartPosition,
             EndPosition = clip.EndPosition,
             IsSelected = clip.IsSelected,
+            FrameAccurate = clip.RequiresFrameAccurate,
             OutputFilePath = clip.OutputFileInfo?.FullName,
             MergedOutput = clip.MergedOutput,
             WasExported = clip.ExportStatus == ClipExportStatus.Done &&
@@ -1664,6 +1694,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             Source = new ProjectSource { Path = item.SourceFilePath },
             ProgramId = item.ProgramId,
             RemuxSettings = item.RemuxSettings?.Snapshot(),
+            FrameAccurate = item.FrameAccurate?.Snapshot(),
+            StartPts = item.StartPts,
+            EndPts = item.EndPts,
             OutputFilePath = item.OutputFilePath,
             StartTime = item.StartTimeSeconds,
             EndTime = item.EndTimeSeconds,
@@ -1778,6 +1811,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private async Task RestoreProjectAsync(CutterProject project)
     {
         ExportCurrentProgramOnly = project.ExportCurrentProgramOnly;
+        ApplyCutMode(project.CutMode);
         var currentSourceLength = project.Source is null ? 0 : new FileInfo(project.Source.Path).Length;
         foreach (var saved in project.Clips)
         {
@@ -1787,6 +1821,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             {
                 InFileInfo = new FileInfo(project.Source!.Path),
                 RequiresRemux = IsRemuxExport,
+                RequiresFrameAccurate = saved.FrameAccurate,
+                UsesFrameAccurateExport = UsesFrameAccurateCut,
+                CanEstimateFrameAccurateSize = CanEstimateFrameAccurateSize,
                 Name = saved.Name, Notes = saved.Notes, Color = saved.Color,
                 StartTime = saved.StartTime,
                 EndTime = saved.EndPosition < 0 ? DurationMax : saved.EndTime,
@@ -1819,12 +1856,18 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 SourceFilePath = saved.Source.Path,
                 ProgramId = saved.ProgramId,
                 RemuxSettings = saved.RemuxSettings?.Snapshot(),
+                FrameAccurate = saved.FrameAccurate?.Snapshot(),
+                StartPts = saved.StartPts,
+                EndPts = saved.EndPts,
                 SourceFileName = Path.GetFileName(saved.Source.Path),
                 OutputFilePath = saved.OutputFilePath,
                 StartTimeSeconds = saved.StartTime,
                 EndTimeSeconds = saved.EndPosition < 0 ? -1 : saved.EndTime,
                 StartPosition = saved.StartPosition,
                 EndPosition = saved.EndPosition,
+                // 只有当前打开的单节目 TS 能判断帧精确任务的大小可预估；其他来源仍导出后确定。
+                SizeIsApproximate = saved.FrameAccurate is not null && CanEstimateFrameAccurateSize &&
+                    PathsEqual(saved.Source.Path, VideoPath),
                 EstimatedBytes = Math.Max(0,
                     (saved.EndPosition > 0 ? saved.EndPosition :
                         new FileInfo(saved.Source.Path).Length) - saved.StartPosition)
@@ -2006,7 +2049,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         if (_videoInstance is { Inited: true } video && (!IsDecoding || toneMappingRefreshRunning))
             RequestKeyFrameStrip(video.PtsToTimeSpan(pts).TotalSeconds, immediate: true, currentPts: pts);
-        return SeekAndDrawFrameAsync(async instance => await instance.DecodeKeyFrameAtPtsAsync(pts)
+        // 帧精确模式的导航条包含非关键帧，按 PTS 精确解码所点的画面。
+        var everyFrame = UsesFrameAccurateCut;
+        return SeekAndDrawFrameAsync(async instance => await (everyFrame
+                ? instance.DecodeFrameAtPtsAsync(pts) : instance.DecodeKeyFrameAtPtsAsync(pts))
             ?? throw new InvalidOperationException(LocalizationManager.Instance.String_Preview_KeyFrameSeekFailed));
     }
 
@@ -2212,7 +2258,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     public async Task DrawNextFrameAsync(int count = 1)
     {
         if (!IsVideoInitialized || IsDecoding) return;
-        if ((count is 1 or -1) && ShowKeyFrameStrip)
+        // 帧精确模式的导航条按帧排列，按 GOP 跳转时不能预先移动一格。
+        if ((count is 1 or -1) && ShowKeyFrameStrip && !UsesFrameAccurateCut)
             KeyFrameStrip.PreviewStep(count);
         try
         {
@@ -2636,7 +2683,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private bool CanEditSelectedClip => CanEditVideo && HasSelectedClip;
     // 标记取已显示帧的快照，后台 seek 不影响可用状态；加载、边界扫描和无效帧仍需禁用。
     private bool CanMarkVideo => CanEditVideo && !_isResolvingClipEnd
-        && (lastFrameFromPlayback || PositionInFile >= 0 || IsRemuxExport) && CurrentPts != long.MinValue;
+        && (lastFrameFromPlayback || PositionInFile >= 0 || IsRemuxExport || UsesFrameAccurateCut) && CurrentPts != long.MinValue;
     private bool CanMarkSelectedClip => CanMarkVideo && HasSelectedClip;
 
     private void NotifyVideoCapabilityChanged()
@@ -2684,6 +2731,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         ExportAllCommand.NotifyCanExecuteChanged();
         SaveProjectCommand.NotifyCanExecuteChanged();
         SaveProjectAsCommand.NotifyCanExecuteChanged();
+        NotifyCutModeChanged();
     }
 
     private void DisposeClipThumbnails()
@@ -2709,6 +2757,12 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         dialogViewModel.EndPosition = clip.EndPosition;
         dialogViewModel.ProgramId = SelectedOutputProgramId;
         dialogViewModel.RemuxSettings = CurrentRemuxSettings?.Snapshot();
+        if (UsesFrameAccurateCut)
+        {
+            (dialogViewModel.FrameAccurate, dialogViewModel.StartPts, dialogViewModel.EndPts) = CreateFrameAccurateTask(clip);
+            dialogViewModel.ProgramId = null;
+            dialogViewModel.RemuxSettings = null;
+        }
         dialogViewModel.StartSeconds = clip.StartTime;
         dialogViewModel.EndSeconds = clip.EndPosition < 0 ? null : clip.EndTime;
         bool ClipUnchanged() => _exportSettingsRevision == exportRevision && ReferenceEquals(_videoInstance, video) && ReferenceEquals(SelectedClip, clip) &&
@@ -2716,6 +2770,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             clip.StartTime == dialogViewModel.StartSeconds &&
             (clip.EndPosition < 0 ? (double?)null : clip.EndTime) == dialogViewModel.EndSeconds;
         dialogViewModel.OutputPath = defaultName;
+        if (!await ConfirmGradualRefreshExportAsync()) return;
         if (!await PrepareProgramTableExportAsync(dialogViewModel, [GetProgramTableClipLabel(clip)], ClipUnchanged)) return;
 
         var settings = new SaveFileDialogSettings
@@ -2768,8 +2823,14 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         {
             var fileName = GenerateClipFileName(clip);
             var destPath = ClipOutputNaming.UniquePath(sourceDir, fileName, reservedPaths);
-            tasks.Add(new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition, SelectedOutputProgramId,
-                CurrentRemuxSettings?.Snapshot(), clip.StartTime, clip.EndPosition < 0 ? null : clip.EndTime));
+            var task = new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition, SelectedOutputProgramId,
+                CurrentRemuxSettings?.Snapshot(), clip.StartTime, clip.EndPosition < 0 ? null : clip.EndTime);
+            if (UsesFrameAccurateCut)
+            {
+                var (settings, startPts, endPts) = CreateFrameAccurateTask(clip);
+                task = task with { ProgramId = null, RemuxSettings = null, FrameAccurate = settings, StartPts = startPts, EndPts = endPts };
+            }
+            tasks.Add(task);
         }
 
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
@@ -2779,6 +2840,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 clip.StartPosition == tasks[index].StartPosition && clip.EndPosition == tasks[index].EndPosition &&
                 clip.StartTime == tasks[index].StartSeconds &&
                 (clip.EndPosition < 0 ? (double?)null : clip.EndTime) == tasks[index].EndSeconds).All(matches => matches);
+        if (!await ConfirmGradualRefreshExportAsync()) return;
         if (!await PrepareProgramTableExportAsync(dialogViewModel, selectionUnchanged: SourcesUnchanged)) return;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
 
@@ -2952,24 +3014,30 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             return;
         }
 
+        (FrameAccurateExportSettings Settings, long StartPts, long? EndPts)? frameAccurate =
+            UsesFrameAccurateCut ? CreateFrameAccurateTask(clip) : null;
         var item = new ExportQueueItem
         {
+            FrameAccurate = frameAccurate?.Settings,
+            StartPts = frameAccurate?.StartPts ?? 0,
+            EndPts = frameAccurate?.EndPts,
             Name = clip.Name, Notes = clip.Notes, Color = clip.Color,
             ClipIndex = Math.Max(1, Clips.IndexOf(clip) + 1),
             GeneratedFileName = generatedName,
             QueueItemId = Interlocked.Increment(ref _queueIdCounter),
             SourceFilePath = clip.InFileInfo.FullName,
-            ProgramId = programId,
-            RemuxSettings = CurrentRemuxSettings?.Snapshot(),
+            ProgramId = frameAccurate is null ? programId : null,
+            RemuxSettings = frameAccurate is null ? CurrentRemuxSettings?.Snapshot() : null,
             OutputFilePath = outputPath,
             StartPosition = clip.StartPosition,
             EndPosition = clip.EndPosition,
             SourceFileName = Path.GetFileName(clip.InFileInfo.FullName),
             StartTimeSeconds = clip.StartTime,
             EndTimeSeconds = clip.EndTime,
-            EstimatedBytes = IsRemuxExport ? 0 : Math.Max(0,
+            EstimatedBytes = IsRemuxExport || frameAccurate is not null && !CanEstimateFrameAccurateSize ? 0 : Math.Max(0,
                 (clip.EndPosition > 0 ? clip.EndPosition : clip.InFileInfo.Length)
                 - clip.StartPosition),
+            SizeIsApproximate = frameAccurate is not null && CanEstimateFrameAccurateSize,
         };
         _lastQueueOutputDirectory = Path.GetDirectoryName(outputPath);
         ExportQueue.Add(item);
@@ -3013,7 +3081,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         var submitted = ExportQueue.ToArray();
         var tasks = submitted.Select(item =>
             new BatchTask(item.SourceFilePath, item.OutputFilePath, item.StartPosition, item.EndPosition, item.ProgramId,
-                item.RemuxSettings?.Snapshot(), item.StartTimeSeconds, item.EndPosition < 0 ? null : item.EndTimeSeconds)
+                item.RemuxSettings?.Snapshot(), item.StartTimeSeconds, item.EndPosition < 0 ? null : item.EndTimeSeconds,
+                item.FrameAccurate?.Snapshot(), item.StartPts, item.EndPts)
         ).ToList();
 
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
@@ -3137,7 +3206,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         double ExportPercent,
         string Name,
         string Notes,
-        string Color)
+        string Color,
+        bool RequiresFrameAccurate)
     {
         public static ClipStateSnapshot Create(PickedClip clip) => new(
             clip.ClipID,
@@ -3157,7 +3227,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             clip.ExportPercent,
             clip.Name,
             clip.Notes,
-            clip.Color);
+            clip.Color,
+            clip.RequiresFrameAccurate);
     }
 
     private readonly record struct HistoryThumbnailKey(

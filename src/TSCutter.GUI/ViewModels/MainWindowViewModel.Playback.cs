@@ -368,6 +368,7 @@ public partial class MainWindowViewModel
                     StartSeconds = startSeconds, EndSeconds = endSeconds,
                     TimelineOriginSeconds = instance.TimelineOriginSeconds,
                     EstimatedKeyFrameIntervalSeconds = instance.EstimatedKeyFrameIntervalSeconds,
+                    MinimumPrerollSeconds = instance.RecoveryPrerollSeconds,
                     StreamSelection = instance.StreamSelection, AudioSelection = SelectedPreviewAudioTrack?.Selection,
                     TsSyncOffset = instance.TsSyncOffset,
                     EnableSdrToneMapping = EnableSdrToneMapping, Volume = EffectivePreviewVolume,
@@ -494,7 +495,7 @@ public partial class MainWindowViewModel
     /// </summary>
     private async Task<bool> SnapDisplayedFrameToKeyFrameAsync()
     {
-        if (!lastFrameFromPlayback)
+        if (!lastFrameFromPlayback || UsesFrameAccurateCut)
             return true;
         var targetPts = _displayedFramePts;
         if (_videoInstance is not { Inited: true } video || targetPts == long.MinValue)

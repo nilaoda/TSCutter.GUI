@@ -10,8 +10,9 @@ using TSCutter.GUI.Utils.Media;
 
 namespace TSCutter.GUI.Services.Preview;
 
+// EveryFrame 为帧精确模式：导航条显示每一帧及其画面类型，而不只是关键帧。
 internal sealed record KeyFrameStripSource(string Path, PreviewStreamSelection? Selection, bool ToneMapping,
-    DiscInput? Disc = null);
+    DiscInput? Disc = null, bool EveryFrame = false);
 internal sealed record KeyFrameStripFrame(long Pts, TimeSpan Timestamp, Bitmap? Bitmap, string? KeyFrameType = null);
 internal sealed record KeyFrameStripRange(IReadOnlyList<KeyFrameStripFrame> Frames, bool AtStart, bool AtEnd);
 
@@ -22,16 +23,26 @@ internal interface IKeyFrameStripService : IAsyncDisposable
         Action<KeyFrameStripFrame> received, CancellationToken token, Action<KeyFrameStripRange>? progress = null, int frameCount = 9);
     Task<KeyFrameStripFrame?> ReadNeighborAsync(KeyFrameStripFrame anchor, int direction,
         Func<long, bool> isCached, CancellationToken token);
+
+    /// <summary>
+    /// 向 direction 方向读取最多 count 帧，按与锚点的距离排序（最近的在前）；空列表表示已到片头或片尾。
+    /// 默认逐帧读取一张，能一次解码取回多帧的实现可覆盖。
+    /// </summary>
+    async Task<IReadOnlyList<KeyFrameStripFrame>> ReadNeighborsAsync(KeyFrameStripFrame anchor, int direction, int count,
+        Func<long, bool> isCached, CancellationToken token) =>
+        await ReadNeighborAsync(anchor, direction, isCached, token) is { } frame ? [frame] : [];
 }
 
-/// <summary>只扫描指针附近的真实关键帧，不创建全片索引，也不占用主预览解码器。</summary>
+/// <summary>只扫描指针附近的真实关键帧（或帧精确模式下的每一帧），不创建全片索引，也不占用主预览解码器。</summary>
 internal sealed class KeyFrameStripService : IKeyFrameStripService
 {
     private VideoInstance? decoder;
     private long? cursorPts;
+    private bool everyFrame;
 
     public async Task OpenAsync(KeyFrameStripSource source, CancellationToken token)
     {
+        everyFrame = source.EveryFrame;
         decoder = new VideoInstance(source.Path, enableHardwareDecoding: false,
             source.Selection, () => source.ToneMapping, discInput: source.Disc);
         await decoder.InitVideoAsync(token);
@@ -44,6 +55,8 @@ internal sealed class KeyFrameStripService : IKeyFrameStripService
         frameCount = Math.Clamp(frameCount, 1, 48);
         var leftCount = (frameCount - 1) / 2;
         var rightCount = frameCount - 1 - leftCount;
+        if (everyFrame)
+            return await ReadEveryFrameAsync(video, target, leftCount, rightCount, isCached, received, token);
         target = Math.Clamp(target, 0, Math.Max(0, video.GetVideoDurationInSeconds()));
         var interval = Math.Clamp(video.EstimatedKeyFrameIntervalSeconds, 0.04, 30);
         // TS seek 可能落到请求点之后的关键包，多预读一个间隔，减少因前帧不足而重复扫描。
@@ -134,10 +147,77 @@ internal sealed class KeyFrameStripService : IKeyFrameStripService
         throw new InvalidOperationException();
     }
 
+    private static async Task<KeyFrameStripRange> ReadEveryFrameAsync(VideoInstance video, double target, int leftCount,
+        int rightCount, Func<long, bool> isCached, Action<KeyFrameStripFrame> received, CancellationToken token)
+    {
+        target = Math.Clamp(target, 0, Math.Max(0, video.GetVideoDurationInSeconds()));
+        var window = await video.DecodeFrameWindowAsync(video.SecondsToPts(target), leftCount, rightCount, 320, 180, token);
+        var frames = new List<KeyFrameStripFrame>(window.Frames.Count);
+        try
+        {
+            foreach (var result in window.Frames)
+            {
+                var frame = CreateFrame(result, isCached);
+                received(frame);
+                frames.Add(frame with { Bitmap = null });
+            }
+        }
+        finally
+        {
+            foreach (var result in window.Frames)
+                DisposeResult(result);
+        }
+        return new KeyFrameStripRange(frames, window.AtStart, window.AtEnd);
+    }
+
+    /// <summary>
+    /// 帧精确模式下补齐导航条两侧：一次解码取回多帧。向前补图若逐张读取，每张都要从关键帧重新解码整个 GOP，
+    /// 4K 软解时每张约需一秒。关键帧模式仍逐张读取。
+    /// </summary>
+    public async Task<IReadOnlyList<KeyFrameStripFrame>> ReadNeighborsAsync(KeyFrameStripFrame anchor, int direction, int count,
+        Func<long, bool> isCached, CancellationToken token)
+    {
+        var video = decoder ?? throw new InvalidOperationException("Strip decoder is not initialized.");
+        if (!everyFrame || count <= 1)
+            return await ReadNeighborAsync(anchor, direction, isCached, token) is { } frame ? [frame] : [];
+        count = Math.Min(count, 48);
+        var results = direction > 0
+            ? await video.DecodeFollowingFramesAsync(anchor.Pts, count, 320, 180, token)
+            : await video.DecodePrecedingFramesAsync(anchor.Pts, count, 320, 180, token);
+        var frames = new List<KeyFrameStripFrame>(results.Count);
+        try
+        {
+            foreach (var result in results)
+                frames.Add(CreateFrame(result, isCached));
+        }
+        catch
+        {
+            foreach (var frame in frames)
+                frame.Bitmap?.Dispose();
+            throw;
+        }
+        finally
+        {
+            foreach (var result in results)
+                DisposeResult(result);
+        }
+        return frames;
+    }
+
     public async Task<KeyFrameStripFrame?> ReadNeighborAsync(KeyFrameStripFrame anchor, int direction,
         Func<long, bool> isCached, CancellationToken token)
     {
         var video = decoder ?? throw new InvalidOperationException("Strip decoder is not initialized.");
+        if (everyFrame)
+        {
+            var result = direction > 0
+                ? await video.DecodeFollowingFrameAsync(anchor.Pts, 320, 180, token)
+                : await video.DecodePrecedingFrameAsync(anchor.Pts, 320, 180, token);
+            if (result is null)
+                return null;
+            try { return CreateFrame(result, isCached); }
+            finally { DisposeResult(result); }
+        }
         if (direction > 0)
         {
             // 顺序前进时保留解码器游标，通常只需再解码一张图片。

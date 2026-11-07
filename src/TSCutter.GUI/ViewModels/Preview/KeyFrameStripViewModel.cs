@@ -313,23 +313,36 @@ public sealed class KeyFrameStripViewModel : ObservableObject
                 return;
             var direction = window[0].IsPlaceholder ? -1 : 1;
             var anchor = direction < 0 ? window.First(item => !item.IsPlaceholder) : window.Last(item => !item.IsPlaceholder);
-            var frame = await service!.ReadNeighborAsync(cache[anchor.Pts], direction, cache.ContainsKey, token);
+            // 一次请求该侧缺少的全部画面；服务能批量解码时（帧精确模式）只需定位、解码一次。
+            var missing = direction < 0
+                ? window.TakeWhile(item => item.IsPlaceholder).Count()
+                : window.Reverse().TakeWhile(item => item.IsPlaceholder).Count();
+            // 向前补图须从关键帧解码整个 GOP，顺带多取一屏放入缓存，连续向前单步时可直接复用；
+            // 向后可沿解码器游标顺序继续，只取缺少的部分。
+            // 多取的数量受缓存余量限制，避免刚取到的画面又被挤出缓存。
+            var requestCount = direction < 0
+                ? Math.Max(missing, Math.Min(VisibleCount, CacheLimit - VisibleCount))
+                : missing;
+            var frames = await service!.ReadNeighborsAsync(cache[anchor.Pts], direction, requestCount, cache.ContainsKey, token);
             if (generation != sourceGeneration)
             {
-                frame?.Bitmap?.Dispose();
+                foreach (var frame in frames)
+                    frame.Bitmap?.Dispose();
                 return;
             }
-            if (frame is null)
+            if (frames.Count == 0)
             {
                 if (direction < 0)
                     firstPts = anchor.Pts;
                 else
                     lastPts = anchor.Pts;
             }
-            else
+            var linked = anchor.Pts;
+            foreach (var frame in frames)
             {
                 Receive(frame, generation);
-                Link(direction < 0 ? frame.Pts : anchor.Pts, direction < 0 ? anchor.Pts : frame.Pts);
+                Link(direction < 0 ? frame.Pts : linked, direction < 0 ? linked : frame.Pts);
+                linked = frame.Pts;
             }
             if (IsCurrent(request, generation, token))
                 PublishCached(current);

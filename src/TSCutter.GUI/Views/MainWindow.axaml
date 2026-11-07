@@ -189,6 +189,8 @@
         <KeyBinding Gesture="Shift+Left" Command="{Binding Prev10GopClickCommand}"/>
         <KeyBinding Gesture="Right" Command="{Binding NextGopClickCommand}"/>
         <KeyBinding Gesture="Shift+Right" Command="{Binding Next10GopClickCommand}"/>
+        <KeyBinding Gesture="OemComma" Command="{Binding PreviousFrameCommand}"/>
+        <KeyBinding Gesture="OemPeriod" Command="{Binding NextFrameCommand}"/>
         <KeyBinding Gesture="I" Command="{Binding MarkClipStartShortcutCommand}"/>
         <KeyBinding Gesture="O" Command="{Binding MarkClipEndShortcutCommand}"/>
     </Window.KeyBindings>
@@ -511,8 +513,34 @@
                                 </MenuFlyout>
                             </commonControls:ToolBarButton.Flyout>
                         </commonControls:ToolBarButton>
-                        <TextBlock VerticalAlignment="Center"
+                        <TextBlock x:Name="ZoomFactorText" VerticalAlignment="Center"
                                    Text="{Binding ZoomFactorStr}" />
+                        <!-- 剪辑方式是整个文件的工作模式（选点、导航条、单帧步进与导出）：工具栏右侧一个“帧精确”开关，
+                             关闭即默认的关键帧剪辑。选中状态由窗口按实际模式设置；不支持时禁用，悬停说明原因。 -->
+                        <!-- 已开启智能剪辑但当前视频不支持：开关禁用，旁边的警告图标说明原因。 -->
+                        <Border x:Name="FrameAccurateWarning" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                Background="Transparent" Padding="3"
+                                IsVisible="{Binding ShowFrameAccurateWarning}"
+                                ToolTip.Tip="{Binding FrameAccurateWarningToolTip}">
+                            <Viewbox Width="16" Height="16">
+                                <Canvas Width="16" Height="16">
+                                    <Path Data="M8,1.5 L15,14.5 L1,14.5 Z" Fill="#FFC83D" Stroke="#8A6100"
+                                          StrokeThickness="1" StrokeJoin="Round" />
+                                    <Path Data="M7.2,5.2 L8.8,5.2 L8.5,10.4 L7.5,10.4 Z M7.2,11.6 L8.8,11.6 L8.8,13.2 L7.2,13.2 Z"
+                                          Fill="#3B2A00" />
+                                </Canvas>
+                            </Viewbox>
+                        </Border>
+                        <commonControls:ToolBarButton x:Name="CutFrameAccurateButton"
+                                                      ToolTip.Tip="{Binding FrameAccurateToolTip}"
+                                                      ToolTip.ShowOnDisabled="True"
+                                                      LargeIcon="/Assets/cut_frame.png" Classes="themed-icon"
+                                                      themes:ThemeIcons.Source="{DynamicResource Icon.cut-frame}"
+                                                      Text="{DynamicResource String.ToolBar.CutFrameAccurate}"
+                                                      IsToggleButton="True"
+                                                      Command="{Binding ToggleFrameAccurateCommand}"
+                                                      HorizontalAlignment="Right" />
+                        <Separator HorizontalAlignment="Right" />
                         <commonControls:ToolBarButton ToolTip.Tip="{DynamicResource String.ToolBar.MediaInfoTip}"
                                                       LargeIcon="/Assets/file_eye.png" Classes="themed-icon"
                                                       themes:ThemeIcons.Source="{DynamicResource Icon.info}"
@@ -957,7 +985,8 @@
                                                           IsVisible="{Binding IsKeyFrameStripVisible}"
                                                           IsEnabled="{Binding IsVideoInitialized}"
                                                           SizeChanged="KeyFrameStrip_OnSizeChanged"
-                                                          SeekRequested="KeyFrameStrip_OnSeekRequested" />
+                                                          SeekRequested="KeyFrameStrip_OnSeekRequested"
+                                                          WheelStepRequested="KeyFrameStrip_OnWheelStepRequested" />
                             <controls:TimelineControl
                                                       Name="MainTimeline"
                                                       IsEnabled="{Binding IsVideoInitialized}"
@@ -1061,6 +1090,9 @@
                                         ToolTip.Tip="{DynamicResource String.Navigate.Previous10}" Content="&lt;&lt;" />
                                 <Button Command="{Binding PrevGopClickCommand}" Classes="CenterBtn"
                                         ToolTip.Tip="{DynamicResource String.Navigate.Previous}" Content="&lt;" />
+                                <Button Command="{Binding PreviousFrameCommand}" Classes="CenterBtn"
+                                        IsVisible="{Binding UsesFrameAccurateCut}"
+                                        ToolTip.Tip="{DynamicResource String.Navigate.PreviousFrame}" Content="|&lt;" />
                                 <Button Name="PlayPauseButton" Command="{Binding TogglePlaybackCommand}"
                                         Classes="CenterBtn" Width="38" Margin="4,0"
                                         ToolTip.Tip="{Binding PlaybackButtonToolTip}">
@@ -1082,6 +1114,9 @@
                                         </ContextMenu>
                                     </Button.ContextMenu>
                                 </Button>
+                                <Button Command="{Binding NextFrameCommand}" Classes="CenterBtn"
+                                        IsVisible="{Binding UsesFrameAccurateCut}"
+                                        ToolTip.Tip="{DynamicResource String.Navigate.NextFrame}" Content="&gt;|" />
                                 <Button Command="{Binding NextGopClickCommand}" Classes="CenterBtn"
                                         ToolTip.Tip="{DynamicResource String.Navigate.Next}" Content="&gt;" />
                                 <Button Command="{Binding Next10GopClickCommand}" Classes="CenterBtn"
@@ -1143,7 +1178,8 @@
         <Grid Grid.RowSpan="2"
               ZIndex="99"
               IsVisible="{Binding IsDecoding}"
-              Background="Transparent" />
+              Background="Transparent"
+              PointerWheelChanged="DecodingOverlay_OnPointerWheelChanged" />
         </Grid>
         <Grid Name="FullScreenSurface" Grid.RowSpan="2" ZIndex="100" Background="Black" IsVisible="False" Focusable="True">
             <Border Name="FullScreenVideoHost" />

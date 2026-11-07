@@ -74,6 +74,8 @@ public partial class MainWindow : ClassicWindow
         BindViewModel(DataContext as MainWindowViewModel);
         Closed += (_, _) => BindViewModel(null);
         ImageViewer.SizeChanged += (_, _) => (DataContext as MainWindowViewModel)?.UpdatePlaybackPresentationSize();
+        // 窗口变窄时先隐藏缩放比例文字，让工具栏右侧的剪辑方式按钮成对留在工具栏上，不被收进溢出菜单。
+        SizeChanged += (_, e) => ZoomFactorText.IsVisible = e.NewSize.Width >= CompactToolbarWidth;
         ScalingChanged += (_, _) => (DataContext as MainWindowViewModel)?.UpdatePlaybackPresentationSize();
         Activated += MainWindow_OnActivated;
         Deactivated += (_, _) =>
@@ -114,6 +116,7 @@ public partial class MainWindow : ClassicWindow
         {
             previous.Clips.CollectionChanged -= OnClipsCollectionChanged;
             previous.PropertyChanged -= FullScreenViewModelChanged;
+            previous.PropertyChanged -= CutModeViewModelChanged;
             if (previous.PlaybackTargetSizeProvider == GetPlaybackTargetSize)
                 previous.PlaybackTargetSizeProvider = null;
         }
@@ -125,9 +128,21 @@ public partial class MainWindow : ClassicWindow
         vm.UpdatePlaybackPresentationSize();
         vm.Clips.CollectionChanged += OnClipsCollectionChanged;
         vm.PropertyChanged += FullScreenViewModelChanged;
+        vm.PropertyChanged += CutModeViewModelChanged;
+        SyncCutModeButton();
         if (KeyFrameStripView.Bounds.Width >= 24)
             vm.KeyFrameStrip.SetVisibleCount(KeyFrameStripView.VisibleCapacity);
     }
+
+    private void CutModeViewModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(MainWindowViewModel.IsFrameAccurateMode))
+            SyncCutModeButton();
+    }
+
+    // 帧精确开关的选中状态始终取自实际模式：点击只请求切换，按钮自身的翻转不作数；
+    // 切换被拦截或素材不支持时，按钮回到原状态。
+    private void SyncCutModeButton() => CutFrameAccurateButton.IsChecked = _boundViewModel?.IsFrameAccurateMode == true;
 
     private void MainWindow_OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
@@ -307,6 +322,8 @@ public partial class MainWindow : ClassicWindow
     private void Timeline_OnScrubPositionChanged(object? sender, double time) =>
         ViewModel.RequestKeyFrameStrip(time);
 
+    private const double CompactToolbarWidth = 860;
+
     private void PreviewVolumeSlot_OnSizeChanged(object? sender, SizeChangedEventArgs e)
     {
         // 模板直接使用 Width 布置轨道，必须先限制实际传入值，避免滑块被放到可见区域之外。
@@ -323,6 +340,31 @@ public partial class MainWindow : ClassicWindow
     {
         if (MainTimeline.IsEffectivelyEnabled && !ViewModel.IsDecoding && ViewModel.CanTogglePreviewOptions)
             await SeekPreviewAsync(frame.Timestamp.TotalSeconds, () => ViewModel.SeekToKeyFrameAndDrawFrameAsync(frame.Pts));
+    }
+
+    // 解码期间的透明遮罩拦截全部输入；滚轮落在导航条上时仍交给导航条，定位过程中继续滚动的格数得以累计。
+    private void DecodingOverlay_OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
+    {
+        if (!KeyFrameStripView.IsEffectivelyVisible ||
+            !new Avalonia.Rect(KeyFrameStripView.Bounds.Size).Contains(e.GetPosition(KeyFrameStripView)))
+            return;
+        e.Handled = KeyFrameStripView.ApplyWheel(e.Delta.Y, e.Timestamp);
+    }
+
+    // 导航条上滚动滚轮：智能剪辑按 1 秒前后移动，关键帧剪辑移到上一个或下一个关键帧（与方向键的条件相同）。
+    private async void KeyFrameStrip_OnWheelStepRequested(object? sender, int steps)
+    {
+        // 是否接受由视图模型判断：滚轮定位进行中时继续累计格数。
+        if (!MainTimeline.IsEffectivelyEnabled)
+            return;
+        try
+        {
+            await ViewModel.ScrollKeyFrameStripAsync(steps);
+        }
+        catch (Exception exception)
+        {
+            Console.Error.WriteLine(exception);
+        }
     }
 
     private void Timeline_OnScrubPreviewRequested(object? sender, double time) =>

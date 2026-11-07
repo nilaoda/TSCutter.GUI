@@ -41,6 +41,7 @@ python tools/prepare-test-media.py --group remux subtitles
 | `keyframes` | H.264/HEVC, fixed and variable GOPs, dense GOPs, B frames, fractional frame rates, TS with nonzero PTS, HLG, short clips, and single frames |
 | `remux` | MP4/MKV export, multiple audio tracks, text/PGS subtitles, fractional-frame-rate HEVC, chapters, attachments, cover art, HDR, and open GOPs |
 | `subtitles` | Preview, local-window seeking, sparse/empty tracks, and track switching for mov_text, animated ASS, PGS, and DVB subtitles |
+| `frameaccurate` | Frame-accurate cuts: frame numbers drawn into each picture, closed-GOP H.264 with B frames in TS/M2TS/MP4/MKV, 10-bit HEVC with RADL pictures (HLG/HDR10), open-GOP HEVC with only CRA keyframes and RASL leading pictures (TS and MP4), interlaced open-GOP MPEG-2, fractional frame rate, large and wrapping TS PTS, mov_text, H.264 High 4:2:2 and HEVC 4:2:2 (HEVC: 10-bit TS with RADL pictures, 8-bit MP4; H.264: 8-bit, 10-bit open GOP with a B pyramid and no reorder depth in the SPS, interlaced MBAFF), AV1 in MP4/MKV (8-bit with Opus audio, 10-bit; hidden frames and a sequence header in every key frame), VP9 in MP4/MKV (two-pass 8-bit with Opus audio, 10-bit Profile 2; superframes with hidden alt-ref frames), an MOV whose PCM audio has no channel layout, a recording with a signal loss (truncated PES, 90 s timestamp jump, missing references), open-GOP H.264 with only non-IDR I frames (CABAC, CAVLC, MBAFF, and a B pyramid with referenced leading pictures), plus a 4:4:4 input that must be rejected |
 
 Each generator can also run independently. Omitting its directory argument uses the same default location. `--font` accepts a TTF/OTF font for subtitle attachment tests.
 The generators prepare test data only. They do not download tools, change application settings, or re-encode media on each `dotnet test` run.
@@ -104,10 +105,12 @@ The default synthetic tests do not depend on the following environment variables
 | `TSCUTTER_REMUX_TEST_SAMPLES` | Legacy remux fixture directory override, taking precedence over the shared root |
 | `TSCUTTER_SUBTITLE_TEST_SAMPLES` | Legacy subtitle fixture directory override, taking precedence over the shared root |
 | `TSCUTTER_FFMPEG_TEST_SAMPLES` | Optional real codec sample directory containing `1080i.ts`, `4K.ts`, `AVS+.ts`, `AVS+_2.ts`, `AVS+_P.ts`, `AVS2.ts`, and `AVS3.ts`, for checks such as packet position metadata from specialized decoders |
-| `TSCUTTER_DOVI_TEST_SAMPLE` | Optional Dolby Vision Profile 5 MP4 with video at track 0 and audio at track 1, for export and HDR preview checks |
+| `TSCUTTER_DOVI_P81_TEST_SAMPLE` | Optional single-layer Dolby Vision Profile 8.1 (HDR10-compatible) MP4 for the keyframe export check (MP4 keeps `hvc1`) and the frame-accurate check; the latter cuts it between 2 and 12 seconds, so that window should contain at least two IDR frames |
+| `TSCUTTER_DOVI_TEST_SAMPLE` | Optional Dolby Vision Profile 5 MP4 with video at track 0 and audio at track 1, for export and HDR preview checks; the frame-accurate check cuts it between 2 and 12 seconds, so that window should contain at least two IDR frames |
 | `TSCUTTER_AV3A_TEST_SAMPLE` | Optional Audio Vivid MP4 for AV3A export checks |
 | `TSCUTTER_SUBTITLE_REAL_SAMPLE` | Optional MP4 with exactly one subtitle track and an active subtitle at 2.5 seconds |
 
 Real media are not downloaded, generated, or checked in. If an override is unset, only the corresponding real-media tests are skipped; synthetic and ordinary tests remain available.
 Keyframe tests use the shared `keyframes` directory without a separate sample directory variable.
-`TSCUTTER_KEYFRAME_STRIP_CAPTURE` and `TSCUTTER_SUBTITLE_PREVIEW_IMAGE` are optional screenshot output locations, not prerequisites for running tests.
+`TSCUTTER_KEYFRAME_STRIP_CAPTURE`, `TSCUTTER_SUBTITLE_PREVIEW_IMAGE` and `TSCUTTER_FRAME_ACCURATE_CAPTURE` are optional screenshot output locations, not prerequisites for running tests.
+The frame-accurate real-media check uses `4K.ts` (HEVC), `1080i.ts` (interlaced H.264) and `MPEG2.ts` (interlaced open-GOP MPEG-2) from `TSCUTTER_FFMPEG_TEST_SAMPLES`; the Dolby Vision checks use `TSCUTTER_DOVI_TEST_SAMPLE` (Profile 5) and `TSCUTTER_DOVI_P81_TEST_SAMPLE` (Profile 8.1), cutting each sample as MP4 and MKV and, after converting it to TS with a Dolby Vision descriptor added to the PMT, as TS. Set `TSCUTTER_FRAME_ACCURATE_KEEP_DIR` to an existing directory to keep the Dolby Vision outputs (`dovi50-cut.mp4`, `dovi81-cut.mkv` and so on) for inspection with external tools.

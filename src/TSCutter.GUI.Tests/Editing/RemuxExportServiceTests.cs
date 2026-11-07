@@ -667,9 +667,18 @@ public sealed class RemuxExportServiceTests
     }
 
     [RemuxExportFact("TSCUTTER_DOVI_TEST_SAMPLE")]
-    public async Task DolbyVisionConfigAndRpuPayloadSurviveMp4AndMkvExports()
+    public Task DolbyVisionConfigAndRpuPayloadSurviveMp4AndMkvExports() =>
+        DolbyVisionSurvivesExports(Environment.GetEnvironmentVariable("TSCUTTER_DOVI_TEST_SAMPLE")!,
+            VideoDynamicRangeDetector.MakeCodecTag('d', 'v', 'h', '1'));
+
+    /// <summary>Profile 8.1 的基础层兼容 HDR10：MP4 保留 hvc1，配置记录仍写入。</summary>
+    [RemuxExportFact("TSCUTTER_DOVI_P81_TEST_SAMPLE")]
+    public Task CompatibleDolbyVisionKeepsHvc1InMp4() =>
+        DolbyVisionSurvivesExports(Environment.GetEnvironmentVariable("TSCUTTER_DOVI_P81_TEST_SAMPLE")!,
+            VideoDynamicRangeDetector.MakeCodecTag('h', 'v', 'c', '1'));
+
+    private static async Task DolbyVisionSurvivesExports(string source, uint mp4Tag)
     {
-        var source = Environment.GetEnvironmentVariable("TSCUTTER_DOVI_TEST_SAMPLE")!;
         var expected = HashPackets(source, 0, double.MaxValue);
         foreach (var container in new[] { "mp4", "mkv" })
         {
@@ -685,7 +694,7 @@ public sealed class RemuxExportServiceTests
             if (container == "mp4")
             {
                 using var mp4 = Open(target.Path);
-                Assert.Equal(VideoDynamicRangeDetector.MakeCodecTag('d', 'v', 'h', '1'), mp4.GetVideoStream().Codecpar!.CodecTag);
+                Assert.Equal(mp4Tag, mp4.GetVideoStream().Codecpar!.CodecTag);
             }
             else
             {
@@ -833,14 +842,43 @@ public sealed class RemuxExportServiceTests
         var b = right->codecpar;
         Assert.Equal((a->color_primaries, a->color_trc, a->color_space, a->color_range, a->format),
             (b->color_primaries, b->color_trc, b->color_space, b->color_range, b->format));
-        Assert.Equal(a->nb_coded_side_data, b->nb_coded_side_data);
-        for (var i = 0; i < a->nb_coded_side_data; i++)
+        // 复用器写出附加数据的顺序可能与源不同（如 MP4 的 dvvC、mdcv、clli），按类型比较内容。
+        static SortedDictionary<AVPacketSideDataType, byte[]> SideData(AVCodecParameters* parameters)
         {
-            var x = a->coded_side_data[i];
-            var y = b->coded_side_data[i];
-            Assert.Equal(x.type, y.type);
-            Assert.Equal(new ReadOnlySpan<byte>(x.data, checked((int)x.size)).ToArray(),
-                new ReadOnlySpan<byte>(y.data, checked((int)y.size)).ToArray());
+            var result = new SortedDictionary<AVPacketSideDataType, byte[]>();
+            for (var i = 0; i < parameters->nb_coded_side_data; i++)
+            {
+                var side = parameters->coded_side_data[i];
+                result.Add(side.type, new ReadOnlySpan<byte>(side.data, checked((int)side.size)).ToArray());
+            }
+            return result;
+        }
+        var x = SideData(a);
+        var y = SideData(b);
+        Assert.Equal(x.Keys, y.Keys);
+        foreach (var type in x.Keys)
+        {
+            if (type != AVPacketSideDataType.AV_PKT_DATA_MASTERING_DISPLAY_METADATA)
+            {
+                Assert.Equal(x[type], y[type]);
+                continue;
+            }
+            // 母版显示元数据为分数，MP4 的 mdcv 读回时分母可能不同（如 x/50000 与约分后的值），比较数值。
+            Assert.Equal(MasteringValues(x[type]), MasteringValues(y[type]));
+        }
+    }
+
+    private static unsafe double[] MasteringValues(byte[] data)
+    {
+        Assert.True(data.Length >= sizeof(AVMasteringDisplayMetadata));
+        fixed (byte* pointer = data)
+        {
+            var metadata = (AVMasteringDisplayMetadata*)pointer;
+            static double Value(AVRational value) => value.den == 0 ? 0 : Math.Round((double)value.num / value.den, 6);
+            var p = metadata->display_primaries;
+            return [Value(p[0][0]), Value(p[0][1]), Value(p[1][0]), Value(p[1][1]), Value(p[2][0]), Value(p[2][1]),
+                Value(metadata->white_point[0]), Value(metadata->white_point[1]),
+                Value(metadata->min_luminance), Value(metadata->max_luminance), metadata->has_primaries, metadata->has_luminance];
         }
     }
 

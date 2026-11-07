@@ -49,6 +49,7 @@ public sealed class ExportRecordView
         ExportKind.M2tsRemux => strings.String_Export_Kind_M2tsRemux,
         ExportKind.Mp4Remux => strings.String_Export_Kind_Mp4Remux,
         ExportKind.MkvRemux => strings.String_Export_Kind_MkvRemux,
+        ExportKind.FrameAccurate => strings.String_Export_Kind_FrameAccurate,
         _ => strings.String_Export_Kind_VobRemux
     };
 
