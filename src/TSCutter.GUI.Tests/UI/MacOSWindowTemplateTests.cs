@@ -128,15 +128,20 @@ public sealed class MacOSWindowTemplateTests
                     Assert.Equal(255, Alpha(timeline.BackgroundBrush));
                     Assert.Equal(255, Alpha(timeline.TrackBrush));
                     Assert.Equal(255, Alpha(timeline.EmptyTrackBrush));
-                    var materialClass = CustomTheme.IsMacOS(variant) ? "macos-backdrop" : "windows11-backdrop";
-                    window.Classes.Add(materialClass);
+                    // macOS 材质只在原生标题栏下启用，两个类在真实环境中同时存在；非 macOS 主机上补上原生标题栏类模拟该条件，
+                    // 结束时只移除测试自己加的类。
+                    var materialClasses = CustomTheme.IsMacOS(variant)
+                        ? new[] { "macos-native-titlebar", "macos-backdrop" }
+                        : new[] { "windows11-backdrop" };
+                    var added = materialClasses.Where(name => !window.Classes.Contains(name)).ToArray();
+                    window.Classes.AddRange(added);
                     Assert.Equal(0, Alpha(frame.Background));
                     Assert.Equal(0, Alpha(timeline.BackgroundBrush));
                     Assert.InRange(Alpha(timeline.TrackBrush), 1, 32);
                     Assert.InRange(Alpha(timeline.EmptyTrackBrush), 1, 32);
                     Assert.True(Alpha(timeline.BorderDarkBrush) > Alpha(fallback.BorderDarkBrush));
                     Assert.Equal(timeline.BorderDarkBrush, timeline.BorderLightBrush);
-                    window.Classes.Remove(materialClass);
+                    window.Classes.RemoveAll(added);
                     Assert.Equal(fallback, (timeline.BackgroundBrush, timeline.TrackBrush, timeline.EmptyTrackBrush,
                         timeline.BorderDarkBrush, timeline.BorderLightBrush));
                 }

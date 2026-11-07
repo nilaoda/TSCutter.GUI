@@ -118,6 +118,12 @@ public class NativeMediaFactAttribute : FactAttribute
         => Skip = NativeTestEnvironment.MissingRequirement(group, sampleVariable);
 }
 
+public sealed class NativeMediaTheoryAttribute : TheoryAttribute
+{
+    public NativeMediaTheoryAttribute(string? group = null, string? sampleVariable = null)
+        => Skip = NativeTestEnvironment.MissingRequirement(group, sampleVariable);
+}
+
 public sealed class NativeRuntimeFactAttribute : NativeMediaFactAttribute
 {
     public NativeRuntimeFactAttribute(string? requiredVariable = null) : base(sampleVariable: requiredVariable) { }

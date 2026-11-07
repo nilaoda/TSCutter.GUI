@@ -34,6 +34,13 @@ public partial class PickedClip : ObservableObject, IDisposable
 
     public bool RequiresRemux { get; init; }
 
+    /// <summary>边界在帧精确模式下标记，可能不是关键帧，只能按帧精确方式导出。</summary>
+    public bool RequiresFrameAccurate { get; set; }
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EstimatedSizeStr))]
+    private bool _usesFrameAccurateExport;
+
     public string DisplayName => string.IsNullOrWhiteSpace(Name) ? $"#{ClipID}" : $"#{ClipID} · {Name}";
     public bool HasNotes => !string.IsNullOrWhiteSpace(Notes);
     public bool HasColor => !string.IsNullOrEmpty(Color);
@@ -129,10 +136,24 @@ public partial class PickedClip : ObservableObject, IDisposable
         ? LocalizationManager.Instance.String_Clips_Merged
         : LocalizationManager.Instance.String_SizePrefix
           + (OutputFileSizeStr ?? LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport);
+    /// <summary>
+    /// 帧精确导出能否按源字节范围预估大小：单节目 TS 只在首尾重新编码，输出与源字节范围接近；
+    /// 多节目 TS 只输出预览所在节目，MP4/MKV 等需要重新封装，都只能导出后确定。
+    /// </summary>
+    public bool CanEstimateFrameAccurateSize { get; init; }
+
+    private long SourceRangeBytes => Math.Max(0, (EndPosition > 0 ? EndPosition : InFileInfo.Length) - StartPosition);
+
     // TS 合并后仍显示各片段的字节范围大小；共享输出的总大小由主界面汇总显示。
-    public string? EstimatedSizeStr => RequiresRemux ? ExportSizeStr : LocalizationManager.Instance.String_SizePrefix
-        + ((MergedOutput is null ? OutputFileSizeStr : null) ?? CommonUtil.FormatFileSize(
-            Math.Max(0, (EndPosition > 0 ? EndPosition : InFileInfo.Length) - StartPosition)));
+    // 帧精确导出前显示带“~”的预估值，导出后显示实际大小或“已合并导出”。
+    public string? EstimatedSizeStr => RequiresRemux ? ExportSizeStr
+        : UsesFrameAccurateExport
+            ? CanEstimateFrameAccurateSize && MergedOutput is null && OutputFileSizeStr is null
+                ? LocalizationManager.Instance.String_SizePrefix + string.Format(
+                    LocalizationManager.Instance.String_SizeApproximate, CommonUtil.FormatFileSize(SourceRangeBytes))
+                : ExportSizeStr
+            : LocalizationManager.Instance.String_SizePrefix
+              + ((MergedOutput is null ? OutputFileSizeStr : null) ?? CommonUtil.FormatFileSize(SourceRangeBytes));
 
     public bool HasExportStatus => ExportStatus != ClipExportStatus.Pending;
 

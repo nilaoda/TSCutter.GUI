@@ -11,13 +11,15 @@ GROUPS = {
     "keyframes": "generate-keyframe-test-samples.py",
     "remux": "generate-remux-export-samples.py",
     "subtitles": "generate-subtitle-preview-samples.py",
+    "frameaccurate": "generate-frame-accurate-test-samples.py",
     "iso": "generate-iso-test-samples.py",
 }
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--group", nargs="+", choices=GROUPS, default=["keyframes", "remux", "subtitles"])
+    parser.add_argument("--group", nargs="+", choices=GROUPS,
+                        default=["keyframes", "remux", "subtitles", "frameaccurate"])
     parser.add_argument("--output-dir", type=Path,
                         default=Path(__file__).resolve().parents[1] / "artifacts/test-media")
     parser.add_argument("--ffmpeg", default="ffmpeg")

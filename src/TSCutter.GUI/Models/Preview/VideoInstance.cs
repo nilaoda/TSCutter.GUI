@@ -34,6 +34,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
 
     private const int MAX_FAILURE_COUT = 100;
     private const int FastPathNoFrameThreshold = 8;
+    // 逐行刷新码流从恢复点起需要数秒才能刷新完整（实测最长约 9 秒），定位时从更早处连续解码。
+    internal const double GradualRefreshPrerollSeconds = 12;
     private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan KeyFrameProbeTimeout = TimeSpan.FromSeconds(5);
     private MediaReadDeadline? activeReadDeadline;
@@ -54,6 +56,10 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         : 0;
     public bool Inited { get; private set; } = false;
     public bool CanBinaryClip { get; private set; }
+    /// <summary>H.264 关键帧都是 P/B 条带的恢复点（逐行刷新）：单独从关键帧解码不完整，需预滚。</summary>
+    internal bool UsesGradualRefresh { get; private set; }
+    /// <summary>定位到关键帧前需要连续解码的秒数；0 表示关键帧可独立解码。</summary>
+    internal double RecoveryPrerollSeconds => UsesGradualRefresh ? GradualRefreshPrerollSeconds : 0;
     public IReadOnlyList<PreviewProgramOption> PreviewPrograms { get; private set; } = [];
     public PreviewStreamSelection? StreamSelection { get; private set; }
     public IReadOnlyList<PreviewSubtitleTrackOption> PreviewSubtitleTracks { get; private set; } = [];
@@ -111,6 +117,9 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     private long currentKeyFramePts;
     private long keyFrameGap;
     private long lastSeekPts;
+    private long recoveryPrerollPts;
+    // 预滚期间早于该 PTS 的画面只用于推进解码，不输出、不计为失败。
+    private long prerollUntilPts = long.MinValue;
     private double timelineDurationSeconds;
     private long timelineDurationPts;
     private bool isSearchScan;
@@ -228,9 +237,12 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         {
             Console.WriteLine($"Found decoder: {decoder.Name}");
         }
-        
+
         videoStreamIndex = inVideoStream.Index;
         timeBase = inVideoStream.TimeBase;
+        FrameAccurateSupport = Disc is not null ? FrameAccurateSupport.Disc : !CanClip ? FrameAccurateSupport.Container
+            : FrameAccurateExportService.CheckSupport(inFc, videoStreamIndex,
+                CreateFrameAccurateSettings(CanRemuxClip ? CreateExportSettings() : null).StreamIndices, ClipExtension);
         UpdateTimelineDuration();
 
         var decoderOpened = preferHardwareDecoding && TryOpenHardwareDecoder();
@@ -269,6 +281,17 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         maxPts = timelineDurationPts + firstFrameTimestamp;
         keyFrameGap = gap;
         Console.WriteLine($"keyFrameGap: {keyFrameGap}");
+        if (UsesGradualRefresh)
+        {
+            // 恢复点之间的 P 帧携带刷新内容，必须喂入完整码流；之后每次定位都从更早处预滚。
+            recoveryPrerollPts = Math.Max(1, (long)Math.Ceiling(GradualRefreshPrerollSeconds * timeBase.den / timeBase.num));
+            var reopened = hardwareDecoderOpened && TryOpenHardwareDecoder(fullPacketDecoding: true);
+            if (!reopened && !TryOpenSoftwareDecoder(fullPacketDecoding: true))
+                throw new VideoDecoderUnavailableException(inVideoStream.Codecpar.CodecId.ToString());
+            Console.WriteLine("Gradual intra refresh detected; decoding full packets with preroll.");
+            if (FrameAccurateSupport == FrameAccurateSupport.Supported)
+                FrameAccurateSupport = FrameAccurateSupport.GradualRefresh;
+        }
         RunReadOperation(() => { SeekToTime(TimeSpan.Zero); return true; }, cancellationToken);
         
         Inited = true;
@@ -350,6 +373,9 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 candidate.PacketTimeBase = inVideoStream.TimeBase;
                 if (!fullPacketDecoding)
                     candidate.SkipFrame = AVDiscard.AVDISCARD_NONKEY;
+                // 逐行刷新每次定位都要连续解码十余秒画面，默认单线程过慢；自动线程数与播放一致。
+                if (fullPacketDecoding && UsesGradualRefresh)
+                    candidate.ThreadCount = 0;
                 candidate.Open();
                 ReplaceVideoDecoder(candidate);
                 candidate = null;
@@ -544,6 +570,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             lastSeekPts = pts;
             inFc.SeekFrame(pts - keyFrameGap * 4, videoStreamIndex);
             activeReadDeadline!.ThrowIfInterrupted();
+            PrerollToRecoveredKeyFrame(pts - keyFrameGap * 4, 0);
             videoDecoder.FlushBuffers();
             Array.Clear(keyFrameTypes);
             nextKeyFrameType = 0;
@@ -564,11 +591,45 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 pts = Math.Max(0, pts);
             inFc.SeekFrame(pts, videoStreamIndex, flag);
             activeReadDeadline!.ThrowIfInterrupted();
+            PrerollToRecoveredKeyFrame(pts, flag);
             videoDecoder.FlushBuffers();
             Array.Clear(keyFrameTypes);
             nextKeyFrameType = 0;
             return true;
         }, CancellationToken.None);
+    }
+
+    /// <summary>
+    /// 逐行刷新码流：先读出普通定位会落到的关键包，再从其之前 <see cref="GradualRefreshPrerollSeconds"/> 处连续解码，
+    /// 早于该关键包的画面全部丢弃。调用方看到的仍是同一个关键帧，只是画面已刷新完整。
+    /// </summary>
+    private void PrerollToRecoveredKeyFrame(long pts, AVSEEK_FLAG flag)
+    {
+        prerollUntilPts = long.MinValue;
+        if (recoveryPrerollPts <= 0)
+            return;
+        long? landing = null;
+        foreach (var packet in inFc.ReadPackets())
+        {
+            activeReadDeadline!.ThrowIfInterrupted();
+            if (packet.StreamIndex == videoStreamIndex && packet.Pts != FF.AV_NOPTS_VALUE
+                && (packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0)
+            {
+                landing = packet.Pts;
+                break;
+            }
+        }
+        if (landing is { } target)
+        {
+            inFc.SeekFrame(target - recoveryPrerollPts, videoStreamIndex, AVSEEK_FLAG.Backward);
+            prerollUntilPts = target;
+        }
+        else
+        {
+            // 之后已没有关键包：恢复原定位，让调用方按文件尾处理。
+            inFc.SeekFrame(pts, videoStreamIndex, flag);
+        }
+        activeReadDeadline!.ThrowIfInterrupted();
     }
 
     public async Task<DecodeResult> DecodeNextFrameAsync(int count = 1, CancellationToken cancellationToken = default)
@@ -635,7 +696,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             var result = DecodeKeyFramePacket(packet, cancellationToken, maxWidth, maxHeight, preserveRemainingOutput: true);
             if (result is not null)
                 return result;
-            if (!isKeyPacket)
+            if (!isKeyPacket || packet.Pts < prerollUntilPts)
                 continue;
 
             firstFailedKeyPts ??= packet.Pts;
@@ -926,7 +987,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                     break;
                 continue;
             }
-            if (!isKeyPacket)
+            if (!isKeyPacket || packet.Pts < prerollUntilPts)
                 continue;
             failureCount++;
             if (!useFullPacketDecoding && !hardwareDecoderOpened
@@ -1114,6 +1175,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     private (long firstPts, long gap) ReadKeyFramePacketPts(CancellationToken cancellationToken, int requiredKeyFrames = 3)
     {
         var keyFramePtsList = new List<long>();
+        var recoveryPoints = 0;
         try
         {
             RunReadOperation(() =>
@@ -1126,6 +1188,9 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                         continue;
 
                     keyFramePtsList.Add(packet.Pts);
+                    if (inVideoStream.Codecpar!.CodecId == AVCodecID.AV_CODEC_ID_H264
+                        && KeyFrameTypeReader.Read(packet, inVideoStream.Codecpar) == KeyFrameTypeReader.RecoveryPoint)
+                        recoveryPoints++;
                     if (keyFramePtsList.Count >= requiredKeyFrames)
                         break;
                 }
@@ -1138,6 +1203,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             // Sampling is optional; a long GOP must not switch the selected video to audio.
             Console.WriteLine("Keyframe sampling timed out; using the available timestamps.");
         }
+        UsesGradualRefresh = Disc is null && keyFramePtsList.Count > 0 && recoveryPoints == keyFramePtsList.Count;
 
         return ResolveKeyFrameTiming(keyFramePtsList, inVideoStream.StartTime, timeBase.num, timeBase.den);
     }
@@ -1221,6 +1287,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         inFc?.Dispose();
         videoDecoder?.Close();
         videoDecoder?.Dispose();
+        CloseFullDecoder();
         reusableSoftwareFrame?.Dispose();
         reusableSoftwareFrame = null;
         reusableDecodeFrame?.Dispose();
@@ -1328,7 +1395,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 // 回退路径仍只向关键帧导航返回关键帧，但必须先喂入完整码流。
-                if (useFullPacketDecoding && !AudioMode
+                if (useFullPacketDecoding && !AudioMode && exactFrameFilter is null
                     && (frame.Flags & FF.AV_FRAME_FLAG_KEY) == 0)
                     continue;
                 if (firstFrameTimestamp == -1)
@@ -1340,9 +1407,14 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 var pts = frame.Pts;
                 if (!AudioMode && pts < 0)
                     pts = frame.BestEffortTimestamp;
+                if (pts < prerollUntilPts)
+                    continue;
                 
                 var pktPosition = frame.PacketPosition;
                 if (!IsFrameInDiscTitle(pts, pktPosition))
+                    continue;
+                // 逐帧定位只转换目标画面，其余画面仅用于推进解码。
+                if (exactFrameFilter is { } filter && !filter(pts))
                     continue;
                 currentKeyFramePts = pts;
                 if (!isSearchScan)

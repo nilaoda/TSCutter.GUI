@@ -61,8 +61,9 @@ public partial class MainWindowViewModel
     {
         if (!ShowKeyFrameStrip || !IsVideoInitialized || DurationMax <= 0)
             return;
+        // 帧精确模式下导航条显示每一帧；来源变化会清空缓存并重新解码。
         KeyFrameStrip.SetSource(new KeyFrameStripSource(VideoPath, _activePreviewSelection,
-            EnableSdrToneMapping, _videoInstance?.Disc));
+            EnableSdrToneMapping, _videoInstance?.Disc, UsesFrameAccurateCut));
         KeyFrameStrip.RequestAt(time, immediate, currentPts);
     }
 

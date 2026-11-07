@@ -10,5 +10,11 @@
     <Color x:Key="AppSelectionColor">#B3D7FF</Color>
     <Color x:Key="SystemAccentColor">#007AFF</Color>
     <Color x:Key="DesktopFocusBorderColor">#007AFF</Color>
+    <SolidColorBrush x:Key="DesktopToolbarInnerShadowBrush" Color="#8FBDF0" />
+    <!-- 按下/选中的工具栏按钮使用系统选中色的凹陷底色。 -->
+    <LinearGradientBrush x:Key="DesktopToolbarSunkenBrush" StartPoint="0,0" EndPoint="0,7">
+        <GradientStop Offset="0" Color="#8FBDF0" />
+        <GradientStop Offset="1" Color="#B3D7FF" />
+    </LinearGradientBrush>
     <SolidColorBrush x:Key="Windows11BackdropTintBrush" Color="#66F2F2F7" />
 </ResourceDictionary>

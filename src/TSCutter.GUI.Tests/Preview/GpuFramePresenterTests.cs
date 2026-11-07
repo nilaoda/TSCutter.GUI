@@ -124,10 +124,12 @@ public sealed class GpuFramePresenterTests
             var cr = 42 * (full ? 1 : 255.0 / 224);
             var kr = matrix == AVColorSpace.AVCOL_SPC_BT709 ? 0.2126 : 0.299;
             var kb = matrix == AVColorSpace.AVCOL_SPC_BT709 ? 0.0722 : 0.114;
-            Assert.InRange(Math.Abs(output->data[0][2] - (y + 2 * (1 - kr) * cr)), 0, 2);
+            // x86 上 swscale 的 YUV→RGB 走低精度 SIMD 整数路径，截断舍入可偏低约 2.7（Apple 芯片更接近理论值）；
+            // 用错矩阵或范围时偏差在 8 以上，容差 3 仍能可靠区分。
+            Assert.InRange(Math.Abs(output->data[0][2] - (y + 2 * (1 - kr) * cr)), 0, 3);
             Assert.InRange(Math.Abs(output->data[0][1] - (y - 2 * kb * (1 - kb) / (1 - kr - kb) * cb
-                - 2 * kr * (1 - kr) / (1 - kr - kb) * cr)), 0, 2);
-            Assert.InRange(Math.Abs(output->data[0][0] - (y + 2 * (1 - kb) * cb)), 0, 2);
+                - 2 * kr * (1 - kr) / (1 - kr - kb) * cr)), 0, 3);
+            Assert.InRange(Math.Abs(output->data[0][0] - (y + 2 * (1 - kb) * cb)), 0, 3);
         }
     }
 

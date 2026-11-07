@@ -730,6 +730,12 @@ public sealed class ThemeSwitchTests
                 {
                     Avalonia.Application.Current!.RequestedThemeVariant = theme;
                     Flush();
+                    // Windows 11 主机上的 Windows 11 主题自动让出最大化按钮给系统 Snap Layouts（其他系统不会）；
+                    // 先核对这一点，再移除该类检查各语言的普通提示，Snap 分支在后面单独检查。
+                    Assert.Equal(CustomTheme.IsWindows11(theme) && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000),
+                        window.Classes.Contains("windows11-snap"));
+                    window.Classes.Remove("windows11-snap");
+                    Flush();
                     foreach (var (language, minimize, maximize, restore, close) in new[]
                              {
                                  ("en-US", "Minimize", "Maximize", "Restore", "Close"),

@@ -222,6 +222,17 @@ public sealed class MediaMuxServiceTests
             AVFormatContext* raw = input;
             raw->streams[0]->codecpar->codec_tag = VideoDynamicRangeDetector.MakeCodecTag('d', 'v', 'h', 'e');
             Assert.Equal(VideoDynamicRangeDetector.MakeCodecTag('d', 'v', 'h', '1'), RemuxCodecTag.Select("mp4", raw->streams[0]->codecpar));
+            // 带杜比配置记录时按基础层兼容编号选择：0（如 Profile 5）为 dvh1，非 0（如 8.1）保留 hvc1。
+            var parameters = raw->streams[0]->codecpar;
+            var side = FF.av_packet_side_data_new(&parameters->coded_side_data, &parameters->nb_coded_side_data,
+                AVPacketSideDataType.AV_PKT_DATA_DOVI_CONF, 9, 0);
+            Assert.True(side != null);
+            byte[] record = [1, 0, 8, 6, 1, 0, 1, 1, 0];
+            record.CopyTo(new Span<byte>(side->data, record.Length));
+            Assert.Equal(VideoDynamicRangeDetector.MakeCodecTag('h', 'v', 'c', '1'), RemuxCodecTag.Select("mp4", parameters));
+            side->data[2] = 5;
+            side->data[7] = 0;
+            Assert.Equal(VideoDynamicRangeDetector.MakeCodecTag('d', 'v', 'h', '1'), RemuxCodecTag.Select("mp4", parameters));
         }
         Assert.Empty(Directory.GetFiles(directory.Path, ".tscutter-mux-*.tmp"));
     }

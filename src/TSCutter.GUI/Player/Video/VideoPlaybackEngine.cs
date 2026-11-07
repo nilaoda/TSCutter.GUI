@@ -554,13 +554,15 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
 
     private long PrerollAnchor(long target)
     {
-        // 有索引的容器已能定位到目标之前的关键帧，无需再回退两个 GOP 解码。
-        if (options.Disc is null && formatContext!.InputFormat?.Name
+        var refreshMargin = options.MinimumPrerollSeconds > 0
+            ? (long)Math.Ceiling(options.MinimumPrerollSeconds * timeBase.den / timeBase.num) : 0;
+        // 有索引的容器已能定位到目标之前的关键帧，无需再回退两个 GOP 解码；逐行刷新码流仍需预滚。
+        if (refreshMargin == 0 && options.Disc is null && formatContext!.InputFormat?.Name
             is "mov,mp4,m4a,3gp,3g2,mj2" or "matroska,webm" or "avi")
             return target;
         var minimumMargin = Math.Max(1, (long)(0.5 * timeBase.den / timeBase.num));
         var maximumMargin = Math.Max(minimumMargin, (long)(30.0 * timeBase.den / timeBase.num));
-        var margin = Math.Clamp(keyFrameGapPts * 2, minimumMargin, maximumMargin);
+        var margin = Math.Max(refreshMargin, Math.Clamp(keyFrameGapPts * 2, minimumMargin, maximumMargin));
         var anchor = target - margin;
         // MPEG-TS 在首 PTS 上定位可能落入下一个 GOP；仅片头预读才退到原点之前。
         var result = anchor <= firstPts ? firstPts - margin : anchor;

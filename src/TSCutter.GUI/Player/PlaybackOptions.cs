@@ -21,6 +21,8 @@ public sealed record PlaybackOptions
     public double TimelineOriginSeconds { get; init; }
     /// <summary>估算的关键帧间隔秒数，用于预滚锚点的向后余量。</summary>
     public double EstimatedKeyFrameIntervalSeconds { get; init; }
+    /// <summary>预滚至少回退的秒数：逐行刷新码流从恢复点起需数秒才完整，来自导航预览的检测。</summary>
+    public double MinimumPrerollSeconds { get; init; }
     /// <summary>停止播放的时间线秒数；null 表示播到文件尾。</summary>
     public double? EndSeconds { get; init; }
     /// <summary>与导航预览一致的节目/视频轨选择；null 表示默认视频轨。</summary>

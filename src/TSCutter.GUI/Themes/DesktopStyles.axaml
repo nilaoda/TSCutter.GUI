@@ -322,9 +322,15 @@
             <Setter Property="BorderBrush" Value="{DynamicResource DesktopToolbarBorderBrush}" />
             <Setter Property="Background" Value="{DynamicResource DesktopToolbarHoverBrush}" />
         </Style>
-        <Style Selector="^ common|ToolBarButton:pressed /template/ classic|ClassicBorderDecorator#PART_Border, ^ common|ToolBarButton:flyout-open /template/ classic|ClassicBorderDecorator#PART_Border">
-            <Setter Property="BorderBrush" Value="{DynamicResource DesktopToolbarBorderBrush}" />
-            <Setter Property="Background" Value="{DynamicResource DesktopToolbarPressedBrush}" />
+        <!-- 按下、展开菜单和保持选中（如帧精确开关）都画成凹陷：控件库在这些状态使用 ThinPressedInnerShadow 并把内容右下移 1 像素，
+             但只有边框画刷为 ClassicBorderBrush 时才绘制斜面，否则退化为平面描边、与悬停难以区分。
+             这里保留该画刷，只把斜面颜色换成各主题的阴影与高光；选中状态排在悬停之后，悬停时仍保持凹陷。 -->
+        <Style Selector="^ common|ToolBarButton:pressed /template/ classic|ClassicBorderDecorator#PART_Border, ^ common|ToolBarButton:flyout-open /template/ classic|ClassicBorderDecorator#PART_Border, ^ common|ToolBarButton:checked /template/ classic|ClassicBorderDecorator#PART_Border">
+            <Setter Property="BorderBrush" Value="{x:Static classic:ClassicBorderDecorator.ClassicBorderBrush}" />
+            <Setter Property="BorderDarkBrush" Value="{DynamicResource DesktopToolbarShadowBrush}" />
+            <Setter Property="BorderLightLightBrush" Value="{DynamicResource DesktopToolbarHighlightBrush}" />
+            <Setter Property="BorderControlBrush" Value="{DynamicResource DesktopToolbarInnerShadowBrush}" />
+            <Setter Property="Background" Value="{DynamicResource DesktopToolbarSunkenBrush}" />
         </Style>
         <Style Selector="^[WindowState=FullScreen] /template/ classic|ClassicBorderDecorator#Bd">
             <Setter Property="(local:DesktopWindowChrome.FrameThickness)" Value="0" />

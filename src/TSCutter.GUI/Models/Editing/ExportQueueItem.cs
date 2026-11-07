@@ -23,6 +23,10 @@ public partial class ExportQueueItem : ObservableObject
     public string GeneratedFileName { get; init; } = "";
 
     public RemuxExportSettings? RemuxSettings { get; init; }
+    // 帧精确任务按视频原始 PTS 定位，加入队列时固定设置快照。
+    public FrameAccurateExportSettings? FrameAccurate { get; init; }
+    public long StartPts { get; init; }
+    public long? EndPts { get; init; }
     public int? ProgramId { get; init; }
 
     public string SourceFilePath { get; init; } = "";
@@ -40,6 +44,9 @@ public partial class ExportQueueItem : ObservableObject
     public double EndTimeSeconds { get; init; }
 
     public long EstimatedBytes { get; init; }
+
+    /// <summary>帧精确任务按单节目 TS 的源字节范围预估大小，显示时带“~”。</summary>
+    public bool SizeIsApproximate { get; init; }
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
@@ -65,8 +72,10 @@ public partial class ExportQueueItem : ObservableObject
         : $"{CommonUtil.FormatSeconds(EndTimeSeconds)} ]";
 
     public string EstimatedSizeStr => LocalizationManager.Instance.String_SizePrefix
-        + (ProgramId is null && RemuxSettings is null ? CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes))
-            : LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport);
+        + (ProgramId is null && RemuxSettings is null && FrameAccurate is null ? CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes))
+            : FrameAccurate is not null && SizeIsApproximate
+                ? string.Format(LocalizationManager.Instance.String_SizeApproximate, CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes)))
+                : LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport);
 
     public string? OutputFilePathStr => OutputFilePath;
 

@@ -11,6 +11,10 @@
             <SolidColorBrush x:Key="AppRepairMapSelectionBrush" Color="#1A5F9E" />
             <SolidColorBrush x:Key="AppTimelineTrackBrush" Color="#E3E3E3" />
             <SolidColorBrush x:Key="AppTimelineEmptyTrackBrush" Color="#D4D4D4" />
+            <!-- 帧精确导出计划条：重新编码与直接复制。 -->
+            <SolidColorBrush x:Key="AppExportEncodeBrush" Color="#D9822B" />
+            <SolidColorBrush x:Key="AppExportCopyBrush" Color="#2F8F55" />
+            <SolidColorBrush x:Key="AppExportMarkerBrush" Color="#202020" />
         </ResourceDictionary>
         <ResourceDictionary x:Key="Dark">
             <SolidColorBrush x:Key="AppStatusSuccessForegroundBrush" Color="#72C985" />
@@ -21,6 +25,9 @@
             <SolidColorBrush x:Key="AppRepairMapSelectionBrush" Color="#72AEE6" />
             <SolidColorBrush x:Key="AppTimelineTrackBrush" Color="#181A1E" />
             <SolidColorBrush x:Key="AppTimelineEmptyTrackBrush" Color="#181A1E" />
+            <SolidColorBrush x:Key="AppExportEncodeBrush" Color="#E9A24F" />
+            <SolidColorBrush x:Key="AppExportCopyBrush" Color="#5FC285" />
+            <SolidColorBrush x:Key="AppExportMarkerBrush" Color="#F2F2F2" />
         </ResourceDictionary>
     </ResourceDictionary.ThemeDictionaries>
 </ResourceDictionary>

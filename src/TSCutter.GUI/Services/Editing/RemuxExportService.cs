@@ -481,6 +481,7 @@ internal sealed unsafe class RemuxExportService
             // 同时复制编解码配置、HDR 静态附加数据、杜比视界配置和显示矩阵。
             FFmpegException.Check(FF.avcodec_parameters_copy(stream->codecpar, source->codecpar));
             stream->codecpar->codec_tag = RemuxCodecTag.Select(first.Segment.Settings.Container, source->codecpar);
+            RemuxCodecTag.FillChannelLayout(stream->codecpar);
             stream->time_base = source->time_base;
             stream->avg_frame_rate = source->avg_frame_rate;
             stream->sample_aspect_ratio = source->sample_aspect_ratio;
@@ -1032,7 +1033,7 @@ internal sealed unsafe class RemuxExportService
         FFmpegException.Check(FF.av_interleaved_write_frame(output, raw));
     }
 
-    private static bool HasTimedAssEffects(AVPacket* packet)
+    internal static bool HasTimedAssEffects(AVPacket* packet)
     {
         var fields = Encoding.UTF8.GetString(new ReadOnlySpan<byte>(packet->data, packet->size)).Split(',', 9);
         if (fields.Length != 9) throw new RemuxExportException(RemuxExportError.UnsupportedTrack, "ASS event");

@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Controls;
 using Avalonia.Threading;
 using Classic.Avalonia.Theme;
 using TSCutter.GUI.ViewModels.Editing;
@@ -26,6 +28,14 @@ public partial class OutputWindow : ClassicWindow
         if (viewModel is null) return;
         viewModel.RequestClose += Close;
         viewModel.ConfirmProgramTableWarningAsync = ConfirmProgramTableWarningAsync;
+        viewModel.PropertyChanged += OnViewModelPropertyChanged;
+    }
+
+    // 帧精确导出的计划条在首次进度到达时出现，窗口按内容增高，避免挤压进度区域。
+    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(OutputWindowViewModel.ShowsFrameAccuratePlan) && viewModel?.ShowsFrameAccuratePlan == true)
+            SizeToContent = SizeToContent.Height;
     }
 
     protected override void OnClosed(EventArgs e)
@@ -39,6 +49,7 @@ public partial class OutputWindow : ClassicWindow
         if (viewModel is null) return;
         viewModel.RequestClose -= Close;
         viewModel.ConfirmProgramTableWarningAsync = null;
+        viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         viewModel = null;
     }
 

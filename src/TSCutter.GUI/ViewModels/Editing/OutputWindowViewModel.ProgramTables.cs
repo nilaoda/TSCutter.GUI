@@ -35,12 +35,13 @@ public partial class OutputWindowViewModel
     {
         // 开始检查前固定任务快照，检查过程不读取界面集合，也不阻塞界面线程。
         var merge = _mergeRequest;
-        if (IsRawByteRange || _mediaRequest is not null || merge?.ProgramId is not null)
+        if (IsRawByteRange || _mediaRequest is not null || _frameAccurateRequest is not null || merge?.ProgramId is not null)
             return Task.FromResult<IReadOnlyList<string>>([]);
         var batch = IsBatchMode;
         var tasks = batch ? _tasks.ToArray() :
-            [new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId, RemuxSettings)];
-        if (merge is null && tasks.All(task => task.RemuxSettings is not null || task.ProgramId is not null))
+            [new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId, RemuxSettings, FrameAccurate: FrameAccurate)];
+        // 帧精确导出由复用器重新生成节目表，不需要补充原始节目表。
+        if (merge is null && tasks.All(task => task.RemuxSettings is not null || task.ProgramId is not null || task.FrameAccurate is not null))
             return Task.FromResult<IReadOnlyList<string>>([]);
         return Task.Run<IReadOnlyList<string>>(async () =>
         {
@@ -59,7 +60,7 @@ public partial class OutputWindowViewModel
                 progress?.Report(new(index, tasks.Length, Path.GetFileName(task.DestinationPath)));
                 try
                 {
-                    if (task.RemuxSettings is null && task.ProgramId is null &&
+                    if (task.RemuxSettings is null && task.ProgramId is null && task.FrameAccurate is null &&
                         !await TsExportProgramTableProbe.HasTablesAsync(task.SourcePath,
                             task.StartPosition, task.EndPosition, token).ConfigureAwait(false))
                         warnings.Add(task.DestinationPath);

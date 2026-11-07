@@ -17,6 +17,30 @@ public sealed class KeyFrameTypeReaderTests
         Assert.Null(KeyFrameTypeReader.Read(new byte[] { 0, 0, 1, 0x61 }, AVCodecID.AV_CODEC_ID_H264));
     }
 
+    /// <summary>
+    /// 逐行刷新的 H.264 只有恢复点 SEI 标出的 P/B 条带“关键帧”，标为 RP；非 IDR 的 I 条带仍交给解码器报告 I。
+    /// 条带头读取需跳过防竞争字节。
+    /// </summary>
+    [Fact]
+    public void H264RecoveryPointsWithPredictedSlicesAreReportedSeparately()
+    {
+        // first_mb_in_slice = 0；slice_type 依次为 P(5)、B(6)、I(7)、P(0)。
+        Assert.Equal(KeyFrameTypeReader.RecoveryPoint, KeyFrameTypeReader.Read(
+            new byte[] { 0, 0, 1, 0x06, 0x06, 0x01, 0x80, 0, 0, 1, 0x41, 0x98 }, AVCodecID.AV_CODEC_ID_H264));
+        Assert.Equal(KeyFrameTypeReader.RecoveryPoint, KeyFrameTypeReader.Read(
+            new byte[] { 0, 0, 1, 0x01, 0x9C }, AVCodecID.AV_CODEC_ID_H264));
+        Assert.Null(KeyFrameTypeReader.Read(new byte[] { 0, 0, 1, 0x61, 0x88 }, AVCodecID.AV_CODEC_ID_H264));
+        Assert.Equal(KeyFrameTypeReader.RecoveryPoint, KeyFrameTypeReader.Read(
+            new byte[] { 0, 0, 1, 0x21, 0xC0 }, AVCodecID.AV_CODEC_ID_H264));
+        // first_mb_in_slice = 65535 时条带头含 00 00 03。
+        Assert.Equal(KeyFrameTypeReader.RecoveryPoint, KeyFrameTypeReader.Read(
+            new byte[] { 0, 0, 1, 0x41, 0x00, 0x00, 0x03, 0x80, 0x00, 0x0C }, AVCodecID.AV_CODEC_ID_H264));
+        // 长度前缀格式同样适用；截断的条带头不臆测类型。
+        Assert.Equal(KeyFrameTypeReader.RecoveryPoint, KeyFrameTypeReader.Read(
+            new byte[] { 0, 0, 0, 2, 0x41, 0x98 }, AVCodecID.AV_CODEC_ID_H264, 4));
+        Assert.Null(KeyFrameTypeReader.Read(new byte[] { 0, 0, 1, 0x41, 0x00 }, AVCodecID.AV_CODEC_ID_H264));
+    }
+
     [Fact]
     public void LengthPrefixedPacketsSupportAllPrefixWidthsAndHevcAccessTypes()
     {

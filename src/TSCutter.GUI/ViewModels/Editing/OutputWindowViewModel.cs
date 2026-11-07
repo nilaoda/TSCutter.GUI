@@ -21,7 +21,8 @@ using TSCutter.GUI.ViewModels;
 namespace TSCutter.GUI.ViewModels.Editing;
 
 public record BatchTask(string SourcePath, string DestinationPath, long StartPosition, long EndPosition, int? ProgramId = null,
-    RemuxExportSettings? RemuxSettings = null, double StartSeconds = 0, double? EndSeconds = null);
+    RemuxExportSettings? RemuxSettings = null, double StartSeconds = 0, double? EndSeconds = null,
+    FrameAccurateExportSettings? FrameAccurate = null, long StartPts = 0, long? EndPts = null);
 
 public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
@@ -51,7 +52,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     public partial string CancelButtonText { get; set; } = "";
 
     public bool IsBatchMode => _tasks.Count > 0;
-    public bool IsMergeMode => _mergeRequest is not null || _mediaRequest is not null;
+    public bool IsMergeMode => _mergeRequest is not null || _mediaRequest is not null || _frameAccurateRequest is not null;
     public int TotalTasks => _tasks.Count;
     public double QueueProgress => TotalTasks > 0 ? CurrentTaskIndex * 100.0 / TotalTasks : 0;
     public string QueueProgressStr => $"{CurrentTaskIndex} / {TotalTasks}";
@@ -70,7 +71,12 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private readonly List<BatchTask> _tasks = [];
     private TsClipMergeRequest? _mergeRequest;
     private RemuxExportRequest? _mediaRequest;
+    private FrameAccurateExportRequest? _frameAccurateRequest;
     public RemuxExportSettings? RemuxSettings { get; set; }
+    public FrameAccurateExportSettings? FrameAccurate { get; set; }
+    public long StartPts { get; set; }
+    public long? EndPts { get; set; }
+    private bool UsesManagedOutput => ProgramId is not null || RemuxSettings is not null || FrameAccurate is not null;
     public double StartSeconds { get; set; }
     public double? EndSeconds { get; set; }
 
@@ -93,6 +99,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     private static (ExportKind Kind, bool CheckApplicable) ResolveTaskKind(BatchTask task)
     {
+        if (task.FrameAccurate is { } frameAccurate)
+            return (ExportKind.FrameAccurate, frameAccurate.Container is "ts" or "m2ts");
         if (task.RemuxSettings is { } settings)
             return (ContainerKind(settings.Container), settings.Container == "m2ts");
         return (ExportKind.TsCopy, true);
@@ -161,6 +169,15 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         OnPropertyChanged(nameof(IsMergeMode));
     }
 
+    internal void SetFrameAccurateTask(FrameAccurateExportRequest request, string rangeSummary)
+    {
+        _frameAccurateRequest = request;
+        _frameAccurateRangeSummary = rangeSummary;
+        OnPropertyChanged(nameof(IsMergeMode));
+    }
+
+    private string _frameAccurateRangeSummary = "";
+
     public List<int> CompletedTaskIndices { get; } = [];
     public List<int> FailedTaskIndices { get; } = [];
     private CancellationTokenSource _cts = new();
@@ -212,6 +229,38 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     private async Task RunMergeAsync()
     {
+        if (_frameAccurateRequest is { } frameAccurate)
+        {
+            var checkApplicable = frameAccurate.Segments[0].Settings.Container is "ts" or "m2ts";
+            var session = CreateCheckSession(frameAccurate.OutputPath, checkApplicable);
+            var stopwatch = Stopwatch.StartNew();
+            try
+            {
+                CurrentFileName = Path.GetFileName(frameAccurate.OutputPath);
+                SetExportClipInfo(frameAccurate.Segments.Count, _frameAccurateRangeSummary);
+                await ExportFrameAccurateAsync(frameAccurate, ++_copyGeneration, session);
+                await CompleteCheckAsync(session);
+                Percent = 100;
+                RemainingSeconds = 0;
+                DialogResult = true;
+                RegisterOutcome(frameAccurate.OutputPath, true, session, ExportKind.FrameAccurate, checkApplicable, stopwatch.Elapsed);
+            }
+            catch (OperationCanceledException)
+            {
+                session?.Abort();
+                RegisterOutcome(frameAccurate.OutputPath, false, session, ExportKind.FrameAccurate, checkApplicable, stopwatch.Elapsed);
+                DialogResult = false;
+            }
+            catch (Exception exception)
+            {
+                session?.Abort();
+                RegisterOutcome(frameAccurate.OutputPath, false, session, ExportKind.FrameAccurate, checkApplicable, stopwatch.Elapsed);
+                Exception = exception;
+                DialogResult = false;
+            }
+            RequestClose?.Invoke();
+            return;
+        }
         if (_mediaRequest is { } media)
         {
             var container = media.Segments[0].Settings.Container;
@@ -324,6 +373,21 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         return new RemuxExportService().ExportAsync(request, progress, _cts.Token, checkSession);
     }
 
+    private Task ExportFrameAccurateAsync(FrameAccurateExportRequest request, int generation,
+        ExportTsCheckSession? checkSession = null)
+    {
+        var progress = new Progress<FrameAccurateExportProgress>(value =>
+        {
+            if (DialogResult is not null || generation != _copyGeneration)
+                return;
+            Percent = value.Percent;
+            Speed = value.BytesPerSecond;
+            RemainingSeconds = value.RemainingSeconds;
+            ApplyFrameAccurateProgress(value);
+        });
+        return new FrameAccurateExportService().ExportAsync(request, progress, _cts.Token, checkSession);
+    }
+
     private Task ExportTsAsync(TsClipMergeRequest request, int generation, bool addTables,
         ExportTsCheckSession? checkSession = null)
     {
@@ -344,12 +408,12 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         try
         {
             CurrentFileName = Path.GetFileName(OutputPath!);
-            _totalBytes = RemuxSettings is not null ? 0 :
+            _totalBytes = RemuxSettings is not null || FrameAccurate is not null ? 0 :
                 EndPosition > 0 ? EndPosition - StartPosition : new FileInfo(SourceFilePath!).Length - StartPosition;
             _startTime = DateTime.Now;
             _lastUpdateTime = _startTime;
             await CopyClipAsync(new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId,
-                RemuxSettings, StartSeconds, EndSeconds));
+                RemuxSettings, StartSeconds, EndSeconds, FrameAccurate, StartPts, EndPts));
             Percent = 100;
             RemainingSeconds = 0;
             DialogResult = true;
@@ -358,7 +422,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         catch (OperationCanceledException)
         {
             Console.WriteLine("File copy was canceled.");
-            if (ProgramId is not null || RemuxSettings is not null || AddsProgramTablesTo(OutputPath!))
+            if (UsesManagedOutput || AddsProgramTablesTo(OutputPath!))
             {
                 DialogResult = false;
                 RequestClose?.Invoke();
@@ -409,6 +473,9 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private Task CopyClipCoreAsync(BatchTask task, ExportTsCheckSession? checkSession)
     {
         var generation = ++_copyGeneration;
+        if (task.FrameAccurate is { } frameAccurate)
+            return ExportFrameAccurateAsync(new FrameAccurateExportRequest(task.DestinationPath,
+                [new FrameAccurateExportSegment(task.SourcePath, task.StartPts, task.EndPts, frameAccurate)]), generation, checkSession);
         if (task.RemuxSettings is { } settings)
             return ExportRemuxAsync(new RemuxExportRequest(task.DestinationPath,
                 [new RemuxExportSegment(task.SourcePath, task.StartSeconds, task.EndSeconds, settings)]), generation, checkSession);
@@ -487,7 +554,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 // 执行前再次检查全部源，避免某一项覆盖队列中另一张光盘的组成文件。
                 if (sources.Any(source => MediaFileUtil.ConflictsWithSource(task.DestinationPath, source)))
                     throw new RemuxExportException(RemuxExportError.SameFile);
-                _totalBytes = task.RemuxSettings is not null ? 0 : task.EndPosition > 0
+                _totalBytes = task.RemuxSettings is not null || task.FrameAccurate is not null ? 0 : task.EndPosition > 0
                     ? task.EndPosition - task.StartPosition
                     : new FileInfo(task.SourcePath).Length - task.StartPosition;
                 _startTime = DateTime.Now;
@@ -558,7 +625,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _batchCancelled = true;
             _cts.Cancel();
         }
-        else if (IsMergeMode || ProgramId is not null || RemuxSettings is not null || HasProgramTableSupplement)
+        else if (IsMergeMode || UsesManagedOutput || HasProgramTableSupplement)
         {
             // 过滤和合并服务在取消后删除半成品；等待清理完成再关闭窗口，避免误报成功。
             _cts.Cancel();
@@ -573,7 +640,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     
     public void OnClosing(CancelEventArgs e)
     {
-        if ((checkingProgramTables || IsMergeMode || ProgramId is not null || RemuxSettings is not null || HasProgramTableSupplement || _tasks.Exists(task => task.ProgramId is not null || task.RemuxSettings is not null)) &&
+        if ((checkingProgramTables || IsMergeMode || UsesManagedOutput || HasProgramTableSupplement ||
+             _tasks.Exists(task => task.ProgramId is not null || task.RemuxSettings is not null || task.FrameAccurate is not null)) &&
             DialogResult is null)
             e.Cancel = true;
         CancelOutput();

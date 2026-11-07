@@ -7,7 +7,7 @@
   </p>
 </div>
 
-TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. It supports keyframe-based TS/M2TS cutting and MP4/MKV remux exports, along with stream inspection, extraction, filtering, structural editing, repair, merging, and packet analysis, without re-encoding the original audio or video.
+TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. It supports keyframe-based TS/M2TS cutting, MP4/MKV remux exports, and **smart cut**, which lets you choose any frame and re-encodes only the pictures near the cut points. It also provides stream inspection, extraction, filtering, structural editing, repair, merging, and packet analysis. Keyframe cutting and the tools never re-encode the original audio or video.
 
 > TSCutter.GUI is in public **Beta**. Download the [latest release](https://github.com/nilaoda/TSCutter.GUI/releases/latest) and report problems through [GitHub Issues](https://github.com/nilaoda/TSCutter.GUI/issues). The software is still under development and may contain bugs.
 
@@ -16,7 +16,8 @@ TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. I
 ### Editing workflow
 
 - **Keyframe-accurate cutting**: Preview and navigate nearby keyframes or jump to a specific time before marking clip boundaries.
-- **Continuous playback**: Play with sound from the displayed frame, pause to inspect the exact frame, play the selected clip to its end, and control preview volume and mute with Space as the play/pause shortcut. Frames shown during playback are not treated as clip boundaries; marking snaps to the compatible keyframe and shows the aligned frame.
+- **Smart cut**: Choose clip boundaries on any frame; exports re-encode only a few pictures near the cut points and copy the rest. See [Smart cut](#smart-cut).
+- **Continuous playback**: Play with sound from the displayed frame, pause to inspect the exact frame, play the selected clip to its end, and control preview volume and mute with Space as the play/pause shortcut. Frames shown during playback are not treated as clip boundaries; marking snaps to the compatible keyframe and shows the aligned frame. In smart cut mode, marking uses the displayed frame.
 - **Keyframe overview and frame search**: Browse keyframe thumbnails, manage saved frame templates, and search the video for similar images.
 - **Zoomable timeline**: Continuously zoom, pan, or return to a full-file overview for accurate navigation in long recordings.
 - **Multiple clip management**: Create and edit several clip ranges, view their positions on the timeline, and compare duration and estimated size.
@@ -26,7 +27,7 @@ TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. I
 - **Embedded subtitle preview**: Select text or bitmap subtitles in MP4, MKV and TS. ASS styles, animations and MKV font attachments are supported. Subtitles follow the displayed frame when seeking, zooming or panning. Preview loads a local window with a 30-second lookback and reloads after seeking outside it; earlier long-running subtitles may be omitted. Export tracks remain controlled by export settings.
 - **HDR to SDR preview mapping**: Map HDR10/PQ, HLG and Dolby Vision Profile 5 to SDR, with GPU acceleration during playback and CPU fallback. Temporarily toggle mapping and hardware/software decoding in the status bar; Settings stores defaults. Mapping applies to previews and captured images; audio and video are not re-encoded on export.
 - **Flexible output**: Save one clip immediately, add clips to a batch export queue, or merge multiple selected clips into one file.
-- **Export without transcoding**: Copy the original compressed audio and video packets.
+- **Export without transcoding**: Keyframe cuts copy the original compressed audio and video packets; smart cut re-encodes only the pictures near the cut points.
 - **Frame capture and media information**: Save or copy the current preview frame and inspect the opened file's stream information.
 - **Image navigator**: Locate the visible region of a zoomed image with a floating overview in the main preview and thumbnail sheets. Click or drag to navigate; disable it in Settings.
 - **High-resolution thumbnail sheets**: Generate configurable N×M contact sheets up to 12,000 pixels wide, preview them with zoom and pan, and export PNG or JPEG images with timestamps and labeled video, audio, and subtitle metadata, including language and HDR, HLG, or Dolby Vision indicators. Choose a dark, light, or custom background with automatic text contrast.
@@ -34,6 +35,20 @@ TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. I
 - **General video preview**: Open MP4, MKV, MOV, WebM, and other FFmpeg-supported video files for preview, seeking, screenshots, and media information. MP4/MOV and MKV/WebM inputs can be exported to MP4 or MKV; other non-TS formats are preview-only.
 
 Merging clips from one TS file joins timestamps and continuity counters, completes boundary audio PES packets, and handles AC-3/E-AC-3 frames spanning PES boundaries. Audio/video is not re-encoded, and existing transport errors inside retained segments are preserved.
+
+### Smart cut
+
+Turn on the **Smart cut** switch on the right side of the toolbar to place clip boundaries on any frame instead of keyframes. On export, only a few pictures near the start and end are re-encoded; the compressed video in between is copied directly, and audio and subtitles are copied packet by packet without re-encoding. When a boundary falls exactly on a keyframe that can be joined, that side is not re-encoded at all.
+
+- **Frame-by-frame navigation**: The navigation strip shows every frame, and **,** / **.** step one frame backward or forward. Marking after pausing playback no longer snaps to a keyframe.
+- **Supported video**: H.264 (Baseline, Main, High and High 4:2:2; 8/10-bit, including interlaced), HEVC (Main, Main 10 and 4:2:2), MPEG-2 (Main and Simple, including open GOP and interlaced), AV1 (Main) and VP9 (Profile 0/2). Re-encoded pictures keep HDR10, HLG and single-layer Dolby Vision Profile 5/8.1.
+- **Broadcast recordings**: Open-GOP streams without IDR frames can be joined too. For H.264 with only non-IDR I frames, the I frame at the join is verified and rewritten as an IDR frame; HEVC CRA keyframes are rewritten as BLA, and their leading pictures that reference the previous GOP are re-encoded with the head.
+- **Output formats**: TS/M2TS sources export to the same format; MP4, MKV and other remuxable sources export to MP4 or MKV. AV1 and VP9 support MP4/MKV only.
+- **TS anomalies preserved**: TS/M2TS output is written packet by packet from the source, so continuity counter gaps, TEI, PCR/PTS jumps and similar problems in the original remain visible to TS Quick Check, and the cut itself introduces no new errors. Multi-program TS outputs only the program being previewed.
+- **Visible export progress**: The export window shows a plan bar with re-encoded (orange) and copied (green) parts, the current phase, and the share that needs no re-encoding.
+- **Same output options as keyframe cuts**: Save single clips, use the batch export queue, or merge several clips from one file.
+
+The switch is disabled for unsupported sources, and hovering over it explains why (for example 4:4:4, HDR10+, soft pulldown or disc input). Each re-encoded part is limited to 60 seconds; if no joinable keyframe can be found, the export stops with a clear error before writing. Re-encoded pictures differ slightly from the original. The runtime bundled with official releases includes the required encoders. Implementation notes are in [the smart cut design document](docs/智能剪辑实现说明.md) (Chinese).
 
 ### MP4 / MKV remux editing and merging
 
@@ -121,6 +136,14 @@ Use **View → Theme** to switch families. In **Tools → Settings**, choose lig
 
 Files with multiple programs, video tracks, or embedded subtitles show selectors above the preview. Subtitles are off by default and loaded in the background when selected; they can be changed or switched off at any time. After confirmation, switching the program or video track clears current clips and undo history; queued tasks retain their original program and track choices. For multi-program TS, “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks. New projects use version 4 and can read version 1, 2 and 3 projects; older app versions cannot open new projects.
 
+### Smart cut mode
+
+1. After opening a video, turn on the **Smart cut** switch on the right side of the toolbar.
+2. Find frames with the timeline, the navigation strip, or the **,** / **.** keys, then mark the start and end. Scrolling the mouse wheel over the navigation strip moves one second per notch (one keyframe per notch in keyframe cut mode).
+3. Save, queue, or merge the clips; the export window shows re-encoding and copying progress.
+
+The switch state is remembered and saved with projects, and queued exports keep the mode chosen when they were added. Switching back to keyframe cutting is blocked while existing clips have boundaries off keyframes, and those clips are listed.
+
 ### Playback
 
 Use the play button or **Space** to play from the displayed frame and again to pause on the exact frame. Pausing retains the playback state for direct resume. Seeking within the same file reuses the input, decoders and audio device while clearing old buffered data; starting at a new position still requires keyframe preroll. The audio button and slider control preview volume only; they never affect exports. Right-click the play button and choose **Play selected clip** to play within its saved boundaries and pause at the end.
@@ -168,7 +191,7 @@ Open any utility directly from the **Tools** menu. Each tool opens in its own wi
 
 ## Documentation
 
-Design notes for the TS tools are available in [docs](docs/README.md). Source layout and namespace conventions are described in [src/README.md](src/README.md).
+Design notes (in Chinese) for the TS tools, media muxing and smart cut are available in [docs](docs/README.md). Source layout and namespace conventions are described in [src/README.md](src/README.md).
 
 ## Thanks
 This project is inspired by an excellent editing software called [VidePub](https://sourceforge.net/projects/videpub/).
