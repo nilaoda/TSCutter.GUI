@@ -247,17 +247,20 @@ public sealed class KeyFrameStripViewModel : ObservableObject
                     }
                     if (knownPts is { } current)
                     {
-                        await FillEdgesAsync(request, current, generation, cancellation.Token);
+                        try
+                        {
+                            await FillEdgesAsync(request, current, generation, cancellation.Token);
+                        }
+                        catch (InvalidOperationException exception) when (IsCurrent(request, generation, cancellation.Token))
+                        {
+                            // 相邻帧定位的预算不足时重读当前局部窗口，不让少量缓存图片一直停在未补齐状态。
+                            Console.Error.WriteLine($"Keyframe strip neighbor lookup failed; reloading nearby frames: {exception.Message}");
+                            await ReadWindowAsync(request, generation, cancellation.Token);
+                        }
                     }
                     else
                     {
-                        var range = await service.ReadAsync(request.Time, cache.ContainsKey,
-                            frame => Receive(frame, generation), cancellation.Token,
-                            range => PublishProgress(range, request, generation, cancellation.Token), request.Count);
-                        if (IsCurrent(request, generation, cancellation.Token))
-                        {
-                            PublishProgress(range, request, generation, cancellation.Token);
-                        }
+                        await ReadWindowAsync(request, generation, cancellation.Token);
                     }
                 }
                 catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
@@ -278,6 +281,15 @@ public sealed class KeyFrameStripViewModel : ObservableObject
             }
         }
         finally { running = false; }
+    }
+
+    private async Task ReadWindowAsync(Request request, long generation, CancellationToken token)
+    {
+        var range = await service!.ReadAsync(request.Time, cache.ContainsKey,
+            frame => Receive(frame, generation), token,
+            range => PublishProgress(range, request, generation, token), request.Count);
+        if (IsCurrent(request, generation, token))
+            PublishProgress(range, request, generation, token);
     }
 
     private void PublishProgress(KeyFrameStripRange range, Request request, long generation, CancellationToken token)
