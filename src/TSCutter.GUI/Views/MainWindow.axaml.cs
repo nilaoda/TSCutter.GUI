@@ -85,6 +85,7 @@ public partial class MainWindow : ClassicWindow
         };
         AddHandler(PointerPressedEvent, (_, _) => HideDropMask(),
             RoutingStrategies.Tunnel, handledEventsToo: true);
+        AddHandler(PointerPressedEvent, ClipCard_OnPreviewPointerPressed, RoutingStrategies.Tunnel);
         // 播放空格接管完整的按下/松开序列：Button 在 KeyUp 仍可能触发点击，
         // 仅拦截 KeyDown 无法避免重复切换；文本输入控件在处理函数内排除。
         AddHandler(KeyDownEvent, MainWindow_OnPreviewKeyDown, RoutingStrategies.Tunnel);
@@ -188,7 +189,7 @@ public partial class MainWindow : ClassicWindow
              visual = visual.GetVisualParent())
         {
             if (visual is TextBox or NumericUpDown or AutoCompleteBox or ComboBox or Menu
-                or MenuItem or CalendarDatePicker or Slider)
+                or MenuItem or CalendarDatePicker or Slider or CheckBox)
                 return true;
         }
         return false;
@@ -262,11 +263,38 @@ public partial class MainWindow : ClassicWindow
         ViewModel.Close();
     }
 
+    private void ClipCard_OnPreviewPointerPressed(object? sender, PointerPressedEventArgs e)
+    {
+        if ((e.KeyModifiers & (KeyModifiers.Control | KeyModifiers.Meta | KeyModifiers.Shift)) == 0 ||
+            !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed || e.Source is not Avalonia.Visual source)
+            return;
+        var card = source.GetVisualAncestors().Prepend(source).OfType<Border>()
+            .FirstOrDefault(border => border.Classes.Contains("clip-card"));
+        if (card?.DataContext is not PickedClip clip)
+            return;
+        // 修饰键点击只改变选择，避免缩略图按钮随后跳转并覆盖多选结果。
+        ViewModel.SelectClip(clip, e.KeyModifiers);
+        e.Handled = true;
+    }
+
     private void ClipCard_OnPointerPressed(object? sender, PointerPressedEventArgs e)
     {
-        if (sender is Border { DataContext: PickedClip clip })
+        if (sender is not Border { DataContext: PickedClip clip } card ||
+            !e.GetCurrentPoint(card).Properties.IsLeftButtonPressed)
+            return;
+        // 复选框和缩略图按钮各自处理点击，避免一次操作同时切换两次选择状态。
+        if (e.Source is Avalonia.Visual source &&
+            (source is Button || source.GetVisualAncestors().OfType<Button>().Any()))
+            return;
+        ViewModel.SelectClip(clip);
+    }
+
+    private void ClipSelection_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (sender is CheckBox { DataContext: PickedClip clip })
         {
-            ViewModel.SelectClip(clip, e.KeyModifiers);
+            ViewModel.SelectClip(clip, KeyModifiers.Control);
+            e.Handled = true;
         }
     }
 

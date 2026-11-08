@@ -170,6 +170,8 @@
     <x:String x:Key="String.ExportAllConfirm">Export {0} clips as separate files to the source directory?&#10;&#10;Output: {1}</x:String>
     <x:String x:Key="String.Clips.SelectAll">Select All</x:String>
     <x:String x:Key="String.Clips.SelectAllTip">Select all clips</x:String>
+    <x:String x:Key="String.Clips.Select">Select clip</x:String>
+    <x:String x:Key="String.Clips.CurrentEditor">Editing</x:String>
     <x:String x:Key="String.Clips.Done">Done</x:String>
     <x:String x:Key="String.Clips.Failed">Failed</x:String>
     <x:String x:Key="String.Clips.Cancelled">Cancelled</x:String>
