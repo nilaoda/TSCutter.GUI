@@ -40,6 +40,8 @@
         <DirectPInvoke Include="av_libglesv2" />
         <NativeLibrary Include="lib\libANGLE_static.lib" />
         <NativeLibrary Include="lib\libGLESv2_static.lib" />
+        <!-- ANGLE 静态库依赖的 Windows SDK 系统库。 -->
+        <NativeLibrary Include="synchronization.lib;gdi32.lib;dxgi.lib;d3d9.lib;dxguid.lib" />
     </ItemGroup>
 
     <ItemGroup>
