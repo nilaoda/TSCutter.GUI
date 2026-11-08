@@ -118,15 +118,14 @@ public sealed class FrameAccurateWorkflowTests
     }
 
     /// <summary>
-    /// 在导航条上滚动滚轮（真实窗口事件）：关键帧剪辑模式每格移到下一个或上一个关键帧；
-    /// 智能剪辑模式每格前后移动 1 秒，精确定位到不早于目标时间的第一帧。向下滚前进、向上滚后退；
+    /// 在导航条上滚动滚轮（真实窗口事件）：两种剪辑模式均按关键帧移动，向下滚前进、向上滚后退；
     /// 与图片预览相同，每个滚轮事件移动一格而不按增量大小换算（macOS 普通滚轮每格的增量常小于 1 且随加速变化）；
     /// 定位期间继续滚动的格数累计后一次移动。
     /// </summary>
     [NativeMediaFact("frameaccurate")]
-    public async Task WheelOnFrameStripMovesByKeyFramesOrSeconds()
+    public async Task WheelOnFrameStripMovesByKeyFramesInBothModes()
     {
-        // 29.97 帧/秒，每 30 帧一个关键帧：1 秒与相邻关键帧的间距不同，两种模式的结果可以区分。
+        // 29.97 帧/秒，每 30 帧一个关键帧，验证按真实关键帧跳转而非固定秒数定位。
         var source = Path.Combine(NativeTestEnvironment.FixtureDirectory("frameaccurate"), "h264.ts");
         var frames = FrameAccurateExportTests.DecodeFrames(source);
         using var headless = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
@@ -171,24 +170,23 @@ public sealed class FrameAccurateWorkflowTests
                 await Wheel(1);
                 await WaitForFrame(vm, frames[60]);
 
-                // 智能剪辑：从第 40 帧起用 macOS 普通滚轮式的小增量向下三格（3 秒），再向上一格（1 秒）。
+                // 智能剪辑也按关键帧跳转；起点可以是逐帧选中的非关键帧。
                 vm.IsFrameAccurateMode = true;
                 await Settle();
                 Assert.True(vm.UsesFrameAccurateCut);
                 await StepToAsync(vm, frames, 1.0, 40);
-                long FirstAtOrAfter(long pts) => frames.First(value => value >= pts);
-                var second = 90000L;
                 await Wheel(-0.2, -0.4, -0.2);
-                var forward = FirstAtOrAfter(frames[40] + 3 * second);
-                Assert.NotEqual(0, frames.IndexOf(forward) % 30);
-                await WaitForFrame(vm, forward);
+                await WaitForFrame(vm, frames[120]);
                 await Wheel(0.2);
-                await WaitForFrame(vm, FirstAtOrAfter(forward - second));
-                // 片头之前与片尾之后分别停在第一帧和最后一帧。
+                await WaitForFrame(vm, frames[90]);
+                await StepToAsync(vm, frames, 1.0, 40);
+                await Wheel(0.2);
+                await WaitForFrame(vm, frames[30]);
+                // 片头之前与片尾之后分别停在第一帧和最后一个关键帧。
                 await Wheel(Enumerable.Repeat(0.2, 6).ToArray());
                 await WaitForFrame(vm, frames[0]);
                 await Wheel(Enumerable.Repeat(-0.2, 15).ToArray());
-                await WaitForFrame(vm, frames[^1]);
+                await WaitForFrame(vm, frames[(frames.Count - 1) / 30 * 30]);
             }
             finally
             {

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading.Tasks;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Preview;
 using TSCutter.GUI.ViewModels.Preview;
@@ -66,6 +67,40 @@ public partial class MainWindowViewModel
         KeyFrameStrip.SetSource(new KeyFrameStripSource(VideoPath, _activePreviewSelection,
             EnableSdrToneMapping, _videoInstance?.Disc, UsesFrameAccurateCut));
         KeyFrameStrip.RequestAt(time, immediate, currentPts);
+    }
+
+    private int pendingWheelSteps;
+    private bool wheelNavigationRunning;
+
+    /// <summary>
+    /// 在导航条上滚动滚轮：正数前进、负数后退，两种剪辑模式均按关键帧移动。
+    /// 定位期间继续滚动的格数累计起来，当前定位完成后一次处理。
+    /// </summary>
+    public async Task ScrollKeyFrameStripAsync(int steps)
+    {
+        // 自己的滚轮定位进行中时累计格数；其他解码、加载进行中时忽略。
+        if (!wheelNavigationRunning && !CanTogglePreviewOptions)
+            return;
+        pendingWheelSteps += steps;
+        if (wheelNavigationRunning)
+            return;
+        wheelNavigationRunning = true;
+        try
+        {
+            while (pendingWheelSteps != 0)
+            {
+                var count = pendingWheelSteps;
+                pendingWheelSteps = 0;
+                if (!IsVideoInitialized || IsDecoding || CurrentPts == long.MinValue)
+                    break;
+                await DrawNextFrameAsync(count, clampAtEnd: true);
+            }
+        }
+        finally
+        {
+            pendingWheelSteps = 0;
+            wheelNavigationRunning = false;
+        }
     }
 
     private void ResetKeyFrameStrip()
