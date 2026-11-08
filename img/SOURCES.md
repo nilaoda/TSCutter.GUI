@@ -1,8 +1,8 @@
 # Preview footage / 预览素材
 
-The video areas in `light_cn.png`, `dark_cn.png`, `light_en.png`, and `dark_en.png` use frames from **Earth Views from the ISS – No Music**, published by NASA on December 21, 2020.
+The editor, remove-mode and smart-cut export screenshots use footage from **Earth Views from the ISS – No Music**, published by NASA on December 21, 2020.
 
-`light_cn.png`、`dark_cn.png`、`light_en.png` 和 `dark_en.png` 中的视频区域使用 NASA 于 2020 年 12 月 21 日发布的《Earth Views from the ISS – No Music》中的画面。
+主界面、删除模式和智能剪辑导出截图中的视频画面来自 NASA 于 2020 年 12 月 21 日发布的《Earth Views from the ISS – No Music》。
 
 - Credit / 署名：NASA
 - NASA ID：`NHQ_2020_1221_Earth Views`
@@ -14,6 +14,14 @@ NASA states that its own imagery is generally not subject to copyright in the Un
 
 NASA 说明，其自身影像通常在美国不受版权保护，可署名用于网页等信息展示。所选素材条目未标注第三方版权持有人。使用 NASA 名称及影像不表示 NASA 对 TSCutter.GUI 的认可或推荐。
 
-Only video pixels were replaced in the existing screenshots: the main preview, nine navigation thumbnails, and the clip's start and end images. Frames were extracted around 00:04:46.560–00:04:54.240 and 00:13:21.040 of the source, resized to fit the existing video areas, and the navigation frame-type labels were retained. No video file is stored in this repository.
+## Screenshots / 截图
 
-仅替换现有截图中的视频像素：主预览、九张导航缩略图和片段起止图。画面截取自源视频约 00:04:46.560–00:04:54.240 及 00:13:21.040，按原视频区域缩放，并保留导航中的帧类型标签。仓库不保存视频文件。
+The screenshots render the application's current UI at 200% scale, with the Windows 11 light and dark themes in English and Simplified Chinese. The editor was operated through its normal load, navigation and marking commands; export progress was captured during a real smart-cut export. The sample uses a temporary excerpt from approximately 00:04:30–00:05:15 of the NASA video, with example clip labels. The path displayed in the status bar is anonymized. No source video or capture project is stored in the repository.
+
+截图按 200% 比例渲染当前应用界面，使用 Windows 11 浅色／深色主题，分别提供英文和简体中文版本。主界面通过正常的加载、定位和标记命令操作；导出进度取自实际运行的智能剪辑导出。示例使用 NASA 原视频约 00:04:30–00:05:15 的临时片段，片段标注为演示内容，状态栏路径已匿名化。仓库不保存源视频和截图临时项目。
+
+| Files / 文件 | Content / 内容 |
+| --- | --- |
+| `light_cn.png`, `dark_cn.png`, `light_en.png`, `dark_en.png` | Smart cut editor / 智能剪辑主界面 |
+| `remove_light_cn.png`, `remove_dark_cn.png`, `remove_light_en.png`, `remove_dark_en.png` | Remove mode / 删除模式 |
+| `smart-cut_light_cn.png`, `smart-cut_dark_cn.png`, `smart-cut_light_en.png`, `smart-cut_dark_en.png` | Smart cut export progress / 智能剪辑导出进度 |

@@ -7,203 +7,88 @@
   </p>
 </div>
 
-TSCutter.GUI is a cross-platform video editing and MPEG-TS diagnostic toolkit. It supports keyframe-based TS/M2TS cutting, MP4/MKV remux exports, and **smart cut**, which lets you choose any frame and re-encodes only the pictures near the cut points. It also provides stream inspection, extraction, filtering, structural editing, repair, merging, and packet analysis. Keyframe cutting and the tools never re-encode the original audio or video.
+TSCutter.GUI is a cross-platform video editor with fast keyframe cutting, frame-accurate smart cutting, media muxing, and MPEG-TS analysis and repair tools. Available for **Windows, macOS and Linux**.
 
-> TSCutter.GUI is in public **Beta**. Download the [latest release](https://github.com/nilaoda/TSCutter.GUI/releases/latest) and report problems through [GitHub Issues](https://github.com/nilaoda/TSCutter.GUI/issues). The software is still under development and may contain bugs.
-
-## Features
-
-### Editing workflow
-
-- **Keyframe-accurate cutting**: Preview and navigate nearby keyframes or jump to a specific time before marking clip boundaries.
-- **Smart cut**: Choose clip boundaries on any frame; exports re-encode only a few pictures near the cut points and copy the rest. See [Smart cut](#smart-cut).
-- **Continuous playback**: Play with sound from the displayed frame, pause to inspect the exact frame, play the selected clip to its end, and control preview volume and mute with Space as the play/pause shortcut. Frames shown during playback are not treated as clip boundaries; marking snaps to the compatible keyframe and shows the aligned frame. In smart cut mode, marking uses the displayed frame.
-- **Keyframe overview and frame search**: Browse keyframe thumbnails, manage saved frame templates, and search the video for similar images.
-- **Zoomable timeline**: Continuously zoom, pan, or return to a full-file overview for accurate navigation in long recordings.
-- **Multiple clip management**: Create and edit several clip ranges, view their positions on the timeline, and compare duration and estimated size.
-- **Clip labels and output names**: Give clips names, notes, and colors; retain them in projects and queued exports. Configure a filename template with a live preview.
-- **Editing projects**: Save the current source, clip ranges, timeline view, and cross-file export queue in a `.tscut` file for later editing. Projects can reopen recordings that have grown since saving.
-- **Program and video track selection**: Switch previews in files with multiple programs or video tracks. Keyframe overviews, thumbnail sheets, and frame searches follow the selected track. Multi-program TS exports can preserve all programs or keep only the current program. The selection area also appears when embedded subtitles are available.
-- **Embedded subtitle preview**: Select text or bitmap subtitles in MP4, MKV and TS. ASS styles, animations and MKV font attachments are supported. Subtitles follow the displayed frame when seeking, zooming or panning. Preview loads a local window with a 30-second lookback and reloads after seeking outside it; earlier long-running subtitles may be omitted. Export tracks remain controlled by export settings.
-- **HDR to SDR preview mapping**: Map HDR10/PQ, HLG and Dolby Vision Profile 5 to SDR, with GPU acceleration during playback and CPU fallback. Temporarily toggle mapping and hardware/software decoding in the status bar; Settings stores defaults. Mapping applies to previews and captured images; audio and video are not re-encoded on export.
-- **Flexible output**: Save one clip immediately, add clips to a batch export queue, or merge multiple selected clips into one file.
-- **Remove mode**: Treat clips as ranges to remove, such as commercials or opening and closing credits; exporting removes them and joins the rest into one file. Works with both keyframe cutting and smart cut.
-- **Export without transcoding**: Keyframe cuts copy the original compressed audio and video packets; smart cut re-encodes only the pictures near the cut points.
-- **Frame capture and media information**: Save or copy the current preview frame and inspect the opened file's stream information.
-- **Image navigator**: Locate the visible region of a zoomed image with a floating overview in the main preview and thumbnail sheets. Click or drag to navigate; disable it in Settings.
-- **High-resolution thumbnail sheets**: Generate configurable N×M contact sheets up to 12,000 pixels wide, preview them with zoom and pan, and export PNG or JPEG images with timestamps and labeled video, audio, and subtitle metadata, including language and HDR, HLG, or Dolby Vision indicators. Choose a dark, light, or custom background with automatic text contrast.
-- **DVD / Blu-ray preview**: Open DVD-Video and unencrypted Blu-ray sources from ISO images or disc folders (`VIDEO_TS` / `BDMV`), choose a title or playlist, navigate across its files, and preview VOB or PGS subtitles. Cut without re-encoding, defaulting to VOB for DVD and M2TS for Blu-ray; MP4/MKV remain available for compatible tracks. DVD CSS protection is supported where the runtime can handle it. Lossless export rejects playlist joins that enter a clip inside a GOP. Disc M2TS output is remuxed with timestamps rebuilt for the exported timeline. Playlists whose stream layout changes between PlayItems have not been validated; track selection reflects the streams detected when opening the title. Disc menus, protected Blu-ray discs and saving disc sources in projects are not supported. Standalone VOB does not carry the IFO subtitle palette; use MKV to preserve subtitle colors in one file. DVD seeking is only VOBU-accurate, so preview times may be off by less than a second; exports locate cut points by the keyframes seen when marking and are not affected.
-- **General video preview**: Open MP4, MKV, MOV, WebM, and other FFmpeg-supported video files for preview, seeking, screenshots, and media information. MP4/MOV and MKV/WebM inputs can be exported to MP4 or MKV; other non-TS formats are preview-only.
-
-Merging clips from one TS file joins timestamps and continuity counters, completes boundary audio PES packets, and handles AC-3/E-AC-3 frames spanning PES boundaries. Audio/video is not re-encoded, and existing transport errors inside retained segments are preserved.
-
-### Smart cut
-
-Turn on the **Smart cut** switch on the right side of the toolbar to place clip boundaries on any frame instead of keyframes. On export, only a few pictures near the start and end are re-encoded; the compressed video in between is copied directly, and audio and subtitles are copied packet by packet without re-encoding. When a boundary falls exactly on a keyframe that can be joined, that side is not re-encoded at all.
-
-- **Frame-by-frame navigation**: The navigation strip shows every frame, and **,** / **.** step one frame backward or forward. Marking after pausing playback no longer snaps to a keyframe.
-- **Supported video**: H.264 (Baseline, Main, High and High 4:2:2; 8/10-bit, including interlaced), HEVC (Main, Main 10 and 4:2:2), MPEG-2 (Main and Simple, including open GOP and interlaced), AV1 (Main) and VP9 (Profile 0/2). Re-encoded pictures keep HDR10, HLG and single-layer Dolby Vision Profile 5/8.1.
-- **Broadcast recordings**: Open-GOP streams without IDR frames can be joined too. For H.264 with only non-IDR I frames, the I frame at the join is verified and rewritten as an IDR frame; HEVC CRA keyframes are rewritten as BLA, and their leading pictures that reference the previous GOP are re-encoded with the head.
-- **Output formats**: TS/M2TS sources export to the same format; MP4, MKV and other remuxable sources export to MP4 or MKV. AV1 and VP9 support MP4/MKV only.
-- **TS anomalies preserved**: TS/M2TS output is written packet by packet from the source, so continuity counter gaps, TEI, PCR/PTS jumps and similar problems in the original remain visible to TS Quick Check, and the cut itself introduces no new errors. Multi-program TS outputs only the program being previewed.
-- **Visible export progress**: The export window shows a plan bar with re-encoded (orange) and copied (green) parts, the current phase, and the share that needs no re-encoding.
-- **Same output options as keyframe cuts**: Save single clips, use the batch export queue, or merge several clips from one file.
-
-The switch is disabled for unsupported sources, and hovering over it explains why (for example 4:4:4, HDR10+, soft pulldown or disc input). Each re-encoded part is limited to 60 seconds; if no joinable keyframe can be found, the export stops with a clear error before writing. Re-encoded pictures differ slightly from the original. The runtime bundled with official releases includes the required encoders. Implementation notes are in [the smart cut design document](docs/智能剪辑实现说明.md) (Chinese).
-
-### MP4 / MKV remux editing and merging
-
-- Choose the output container and retained tracks in **MP4 / MKV export settings**. Track order, language, titles, and default/forced flags follow the source.
-- Export individual clips or batches, or merge selected ranges from one source. Overlapping selected clips are combined once.
-- Video cuts use keyframes and include the marked end frame; audio cuts use compressed packet boundaries. Compatible text subtitles, including MP4 mov_text and MKV ASS, and chapters are trimmed and retimed. MKV also supports PGS bitmap subtitles, restoring the picture active at each cut and clearing it at the end. MKV attachments and MP4 cover art can be retained.
-- Copy compressed audio/video and codec configuration, preserving container-supported color, HDR static data, and Dolby Vision configuration. Dynamic metadata in the bitstream travels with the packets.
-- Check codec and track compatibility, with clear errors when content cannot be safely cut or merged.
-
-**MP4/MKV export does not re-encode audio/video, but is not byte-for-byte lossless.** Container structures, timestamps, and metadata are rewritten, so file hashes and sizes change. Metadata fields depend on the output container. MP4 exports retaining cover art use standard metadata fields; other MP4 exports can write custom metadata. Fast MKV text subtitle seeking is enabled by default and reads from about 30 seconds before each cut. Earlier text subtitles spanning the cut may be omitted; disable this option in export settings to retain them. PGS subtitles separately restore their required display state. Failed or cancelled exports preserve existing destinations and remove temporary output.
-
-### Media muxing
-
-Open **Tools → Merge and Mux → Media Muxer** to combine tracks from video, audio and subtitle files. Select tracks, drag them into output order, and edit their names, language codes, default/forced flags and time offsets. Output supports MKV, MP4, TS and M2TS without re-encoding audio or video. HEVC MP4 outputs use hvc1, or dvh1 when Dolby Vision is signaled, while preserving in-band decoder parameters. **Optimize for web playback** is available for MP4 and off by default; it moves the index to the beginning and requires an additional move of data within the output file when finishing.
-
-Positive offsets delay a track; negative offsets advance it, like FFmpeg `-itsoffset`. The output container handles timestamps before zero: MP4 uses an edit list to skip leading content, while MKV and TS/M2TS may shift the timeline. **Stop at the shortest track** is off by default; enable it to stop at the earliest audio/video end after offsets, and optionally include subtitles. Cover art and attachments are ignored. Cuts follow compressed packet boundaries; subtitle display durations are clipped to the end. Tracks without duration information require an initial packet read to determine their end. Compatible subtitle tracks are copied. Other text subtitles are automatically converted to mov_text for MP4 or SRT for MKV, with the conversion and possible style loss shown before starting. Bitmap subtitles are not converted to text; unsupported tracks must be deselected or use another container. Subtitle conversion requires an FFmpeg runtime with mov_text and SRT encoders enabled. TS/M2TS does not preserve track names or default/forced flags. Failed or cancelled operations retain an existing destination and remove the temporary output. Errors include the muxing stage and expandable FFmpeg diagnostics.
-
-### TS tools
-
-- **TS Raw Stream Cutter**: Extract a byte or packet range directly from a TS file.
-- **TS Quick Check**: Scan for synchronization loss, TEI/continuity/PES errors, PCR/PTS/DTS issues, A/V drift, bitrate changes, and export a text report.
-- **TS Packet Viewer**: Inspect 188-byte TS or 192-byte M2TS packets, navigate by packet number, offset, or PID, and link parsed fields to highlighted Hex bytes. M2TS arrival headers and timestamps are also shown.
-- **TS Elementary Stream Extractor**: Select one or more tracks and export their raw video, audio, subtitle, or data payload after removing TS and PES encapsulation.
-- **TS Stream Filter**: Keep selected PIDs or split selected services while rebuilding the required program and service tables.
-- **TS Stream Editor**: Remove tracks or services, remap identifiers and PIDs, and edit service or language metadata while preserving the original encoded media.
-- **TS Timeline Repair**: Analyze and safely correct supported PCR and timestamp discontinuities without hiding transport or packet-loss errors.
-- **TS Multi-source Repair**: Compare compatible recordings of the same feed and time period, then use healthy packet, PES, or elementary-stream data to repair damaged regions and long gaps where safe.
-- **TS Binary Merge**: Append ordered TS segments, remove byte-identical overlaps, or merge overlapping recordings from the same source when only TS continuity counters differ.
-
-Lossless clipping supports 188-byte TS and 192-byte M2TS based on the actual packet layout. M2TS defaults to `.m2ts` output and retains arrival headers. Quick checks (including batch checks), raw cutting, packet viewing, service splitting, and ES extraction also support M2TS. Timeline repair, stream filtering, stream editing, multi-source repair, and TS binary merge currently require 188-byte TS; unsupported packet sizes are reported explicitly.
-
-### General
-
-- **Multi-platform support**: Available for Windows, Linux, and macOS.
-- **Multilingual interface**: English, Simplified Chinese, and Traditional Chinese.
-- **Desktop themes**: Windows Classic, XP, 7, 8, 10, and 11 styles, with independent light and dark palettes and automatic switching; on macOS a macOS appearance additionally uses the native title bar.
-- **Independent tool windows**: Open multiple tools or scans at the same time for comparison.
-- **Bounded resource usage**: Large-file tools use streaming or on-demand reads instead of loading complete media files into memory.
-
-## FFmpeg Runtime
-Official release packages bundle the required **FFmpeg 9.0.2** shared libraries. End users do not need to install FFmpeg manually.
-
-Bundled runtime source: [nilaoda/FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries).
-
-> **macOS**: If the app is blocked by quarantine, run `xattr -dr com.apple.quarantine TSCutter.GUI.app`.
-
-## Preview
+**[Download the latest Beta](https://github.com/nilaoda/TSCutter.GUI/releases/latest)** · [User guide](docs/USAGE.md) · [Report an issue](https://github.com/nilaoda/TSCutter.GUI/issues)
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="img/dark_en.png">
-  <source media="(prefers-color-scheme: light)" srcset="img/light_en.png">
-  <img alt="TSCutter.GUI preview" src="img/light_en.png">
+  <img alt="Smart cut with frame thumbnails and multiple selected clips in the Windows 11 theme" src="img/light_en.png">
 </picture>
 
-Preview footage: NASA, [Earth Views from the ISS – No Music](https://images.nasa.gov/details/NHQ_2020_1221_Earth%20Views). See [media source and usage notes](img/SOURCES.md).
+## Video editing
 
-### Desktop themes
-
-Six Windows-inspired theme families are available on Windows, Linux, and macOS, with light and dark palettes.
-
-On macOS, all themes provide the system menu bar, while Windows theme families also retain their in-window menu bars.
-
-On macOS an additional **macOS** appearance keeps native traffic lights, corners and shadow, blends the title into the top of the content, and moves menus to the system menu bar while keeping the Fluent control palette. It is listed in the theme menu only on macOS.
-
-<a href="docs/THEMES.md">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="img/themes/overview-dark.png">
-    <img alt="Settings previews for Windows Classic, XP, 7, 8, 10, and 11 themes" src="img/themes/overview-light.png">
-  </picture>
-</a>
-
-Use **View → Theme** to switch families. In **Tools → Settings**, choose light and dark palettes independently and select **Auto detect** to follow the system appearance. XP offers Luna Blue, Silver, and Olive Green; Classic includes additional color schemes.
-
-[Browse the theme gallery →](docs/THEMES.md)
-
-## Usage
-
-### Main editor
-
-1. Launch the application.
-2. Open a TS, M2TS, MP4 or MKV file, or drag it into the main window.
-3. Navigate or zoom the timeline, add a clip, and mark its start and end points.
-4. Save the current clip, add it to the export queue, or select multiple clips and merge them.
-5. Use the File menu to save a `.tscut` project and reopen it later to restore clips and queued exports. A growing source is accepted when verification of its saved portion succeeds.
-
-Files with multiple programs, video tracks, or embedded subtitles show selectors above the preview. Subtitles are off by default and loaded in the background when selected; they can be changed or switched off at any time. After confirmation, switching the program or video track clears current clips and undo history; queued tasks retain their original program and track choices. For multi-program TS, “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks. New projects use version 4 and can read version 1, 2 and 3 projects; older app versions cannot open new projects.
-
-### Remove mode
-
-1. Turn on **Remove** in the toolbar, to the left of **Smart cut**. The setting is remembered across launches.
-2. Mark ranges to remove as you would mark clips: the start is the first removed frame and the end is the frame where playback resumes, which is kept. A range without an end is removed up to the end of the file.
-3. Select the ranges to remove and click **Export without ranges**; the rest is joined into one file.
-
-Ranges to remove are shown in red on the timeline, the frame strip and the clip cards (the resume frame stays unmarked). Clip cards show the removed size (N/A for sources that are remuxed), and the summary shows the number of ranges, the remaining duration and the estimated size, replaced by the actual output size after export. In keyframe cut mode both ends fall on keyframes, so an open-GOP source may lose a few leading pictures at a removal start; smart cut mode removes exact frames. Clips cannot be saved, queued or exported separately in remove mode. The mode is saved with projects (project version 6, which older versions cannot open). Disc sources export in keyframe cut mode, like other disc clips.
-
-### Smart cut mode
-
-1. After opening a video, turn on the **Smart cut** switch on the right side of the toolbar.
-2. Find frames with the timeline, the navigation strip, or the **,** / **.** keys, then mark the start and end. Scrolling the mouse wheel over the navigation strip moves one second per notch (one keyframe per notch in keyframe cut mode).
-3. Save, queue, or merge the clips; the export window shows re-encoding and copying progress.
-
-The switch state is remembered and saved with projects, and queued exports keep the mode chosen when they were added. Switching back to keyframe cutting is blocked while existing clips have boundaries off keyframes, and those clips are listed.
-
-### Playback
-
-Use the play button or **Space** to play from the displayed frame and again to pause on the exact frame. Pausing retains the playback state for direct resume. Seeking within the same file reuses the input, decoders and audio device while clearing old buffered data; starting at a new position still requires keyframe preroll. The audio button and slider control preview volume only; they never affect exports. Right-click the play button and choose **Play selected clip** to play within its saved boundaries and pause at the end.
-
-Choose **View → Full-screen Playback**, click the full-screen button, or double-click the video to enter full screen. **F11** toggles full screen; macOS also supports **Control + Command + F**. Press **Esc** to return to the editor. Playback continues through the transition, and the previous window state and preview transform are restored on exit. The playback controls fade out after three seconds of inactivity while playing and remain visible while paused. Moving the pointer reveals them again; the progress bar supports seeking with the same keyframe navigation rules.
-
-Multi-track audio can be selected above the preview. The first decodable track is selected by default; unsupported tracks remain visible but disabled. Changing audio tracks during playback resumes from the displayed position and retains the selected clip’s end boundary.
-
-Playback renders every frame in display order on its own session and uses the default audio device at 1× speed. Audio is downmixed to 48 kHz stereo; files whose audio track has no decoder in the runtime (such as AV3A) play silently with a status hint, and files without audio use the wall clock. Selected subtitles are read ahead sequentially during playback, with unchanged rendered images reused. Frames shown during playback may be P or B frames: marking a boundary while paused after playback snaps to the nearest compatible keyframe at or before the displayed frame and shows the aligned frame before recording it, preserving the existing export boundaries. Ordinary single-clip TS/M2TS exports with all programs retained and no table patching remain byte-for-byte copies; remuxing and merged exports retain their existing processing rules. Timeline drags and thumbnail clicks keep the playing state — playback resumes from the new position only if it was running. DVD and Blu-ray titles also support playback.
-
-Playback uses the GPU for YUV conversion, scaling and HDR mapping when supported, and automatically falls back to CPU conversion otherwise. This works with software decoding too. On macOS, compatible progressive VideoToolbox NV12/P010 frames use IOSurface directly, without pixel readback or upload. Other hardware frames use YUV readback and GPU upload; CPU deinterlacing still requires readback. Navigation previews and captures use the same color mapping on the CPU.
-
-During playback, the status bar shows presentation FPS, capped at the source frame rate. Green means decoding and display keep up without dropping frames; yellow indicates reduced fluency, and red means the slower rate is below 70% of the source frame rate. Values use a roughly two-second rolling window, allowing for the window’s one-frame counting uncertainty.
-
-Use **Playback performance test…** in the toolbar’s Tools dropdown to test the current file, track, position, and preview settings. **Tools → Analyze and Inspect → Playback performance test…** in the menu bar always asks for another file. The tool shows live FPS while measuring decoding, CPU frame conversion, and playback through the active rendering path separately. The playback row identifies CPU, GPU upload, or direct GPU presentation; choose a physical output size to compare the available headroom against the source frame rate. Tests are short, play silently, and pause main-window playback while running. Results indicate performance for the tested section and settings, rather than guaranteeing smooth playback throughout the file.
-
-When decoding falls behind, playback keeps showing the latest available frame and can resume at a later keyframe to catch up to the clock.
-
-### Preview options
-
-In **Tools → Settings**, choose the default HDR to SDR mapping and hardware decoding preferences for newly opened files. The status bar temporarily overrides these preferences for the current file.
-
-- The **SDR mapping** control appears only when an HDR frame is detected. The selected mapping is also used when opening keyframe overviews, thumbnail sheets, and frame searches.
-- **H/W / S/W** shows the current decoding mode. Switching is available on Windows and macOS when the current video and device support hardware decoding; the control is disabled when hardware decoding is unavailable or has failed and fallen back to software.
-- Mapping and decoder switches preserve the displayed frame and clip boundaries.
-
-### Clip labels and output filenames
-
-Click the **pencil icon** on a clip card to edit its name, notes, and color. Changes support undo/redo. Timeline bars use the assigned color, with names and notes in the hover tooltip. Adding a clip to the queue takes a snapshot of its labels and boundaries.
-
-In **Tools → Settings → Export**, set the filename template used by single-clip saves, individual batch exports, and newly queued clips. The default is `{source}_({start}-{end})`; merged output keeps its separate filename suggestion.
-
-| Placeholder | Value |
+| Mode | How it works |
 | --- | --- |
-| `{source}` | Source filename without extension |
-| `{name}` | Clip name, or `clip001` when empty (using that clip's index) |
-| `{index}` | Current position in the clip list, padded to 3 digits |
-| `{start}`, `{end}` | Start/end time, such as `00.00.10.000`; an unset end uses the video duration |
+| **Keyframe cutting** — default | Cut at compatible keyframes without re-encoding audio or video. |
+| **Smart cut** | Choose any frame. Re-encode video near the cut points and copy the middle; audio and subtitles are not re-encoded. |
 
-For example, `{source}_{index}_{name}` produces `Recording_001_Opening.ts`. The selected TS/M2TS/MP4/MKV extension is added automatically. Unsafe filename characters are replaced; batch exports append `_2`, `_3`, etc. to avoid duplicate names and existing files. The template setting applies to future exports; queued output paths stay as chosen.
+Turn on **Remove** to mark sections to discard, such as commercials or opening credits, then export the remaining video as one file. Remove mode works with either cutting mode; its end mark is the frame where playback resumes.
 
-### Independent TS tools
+Save individual clips, merge selected ranges, or queue exports from multiple files. Keep clip names, notes and colors in a `.tscut` project and resume editing later.
 
-Open any utility directly from the **Tools** menu. Each tool opens in its own window and prompts for the required source file or files; no file needs to be loaded in the main editor first.
+<details>
+  <summary>See smart cut export progress and remove mode</summary>
 
-## Documentation
+  <p>Smart cut shows which parts are re-encoded and which are copied.</p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="img/smart-cut_dark_en.png">
+    <img alt="Smart cut export with an encode/copy plan and progress" src="img/smart-cut_light_en.png" width="620">
+  </picture>
 
-Design notes (in Chinese) for the TS tools, media muxing and smart cut are available in [docs](docs/README.md). Source layout and namespace conventions are described in [src/README.md](src/README.md).
+  <p>Remove mode marks discarded ranges in red across the timeline, frame strip and clip list.</p>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="img/remove_dark_en.png">
+    <img alt="Remove mode with two marked ranges to discard" src="img/remove_light_en.png">
+  </picture>
+</details>
 
-## Thanks
-This project is inspired by an excellent editing software called [VidePub](https://sourceforge.net/projects/videpub/).
+Keyframe-mode MP4/MKV exports rewrite the container and timestamps. Smart cut supports specific video formats, and re-encoded frames may differ slightly from the original. The app explains why smart cut is unavailable for a file. See [formats and limitations](docs/USAGE.md#smart-cut).
 
-## License
-This project is licensed under the GPL-3.0 License.
+## Other features
+
+- **Preview and navigate**: Audio playback, full screen, keyframe or frame thumbnails, a zoomable timeline, embedded subtitles and image search.
+- **HDR preview**: SDR mapping for HDR10/PQ, HLG and Dolby Vision Profile 5, with GPU presentation and CPU fallback.
+- **Media muxer**: Select and reorder tracks, edit languages and time offsets, convert text subtitles to suit the output format, and output MP4, MKV, TS or M2TS.
+- **DVD and Blu-ray**: Open ISO images or disc folders, select titles and playlists, preview VOB/PGS subtitles, and export clips. Disc menus and protected Blu-ray are not supported.
+- **Export summaries**: View export records and TS check results. Checks run as the output is written, without a second scan.
+- **Capture and diagnostics**: Save frames and thumbnail sheets, inspect media information, or test playback performance.
+
+### TS inspection and repair
+
+| Tools | Purpose |
+| --- | --- |
+| **Quick Check** | Find continuity, TEI/PES, clock and timestamp problems; export reports. |
+| **Packet Viewer** | Inspect packet fields alongside Hex data and navigate by PID, packet or offset. |
+| **Stream Filter / Editor** | Select tracks or services, remap PIDs, and edit service metadata. |
+| **Multi-source Repair** | Repair damaged regions using compatible recordings of the same feed. |
+| **Timeline Repair** | Check clock and timestamp jumps and correct them where possible. |
+| **ES Extractor / Raw Stream Cutter** | Extract elementary streams or original byte and packet ranges. |
+| **Binary Merge** | Join segments in order and remove matching overlaps. |
+
+Cut TS/M2TS, remux MP4/MOV and MKV/WebM, and preview other video formats supported by FFmpeg. Supported TS packet sizes vary by tool; see the [user guide](docs/USAGE.md#ts-tools-and-packet-layouts).
+
+## Get started
+
+1. Open a video or drag it into the window.
+2. Navigate to the desired frames and mark a clip's start and end. Enable **Smart cut** for frame-level boundaries, or **Remove** to mark unwanted ranges.
+3. Save a clip, merge selected clips, or export the video without the selected ranges.
+4. Save a `.tscut` project to continue later.
+
+Official packages include the required [FFmpeg runtime](https://github.com/nilaoda/FFmpegSharedLibraries); no separate FFmpeg installation is needed.
+
+On macOS, if quarantine blocks the app, run `xattr -dr com.apple.quarantine TSCutter.GUI.app`.
+
+## Appearance and documentation
+
+Choose from Windows Classic, XP, 7, 8, 10 and 11 themes, with separate light and dark palettes. macOS also offers a native macOS appearance. The interface supports English, Simplified Chinese and Traditional Chinese.
+
+- [User guide](docs/USAGE.md) — editing, playback, muxing and format limitations.
+- [Theme gallery](docs/THEMES.md).
+- [Tool design documents](docs/README.md) · [Building and source layout](src/README.md).
+
+Screenshot footage: NASA, [Earth Views from the ISS – No Music](https://images.nasa.gov/details/NHQ_2020_1221_Earth%20Views). [Source and usage notes](img/SOURCES.md).
+
+## Thanks and license
+
+Inspired by [VidePub](https://sourceforge.net/projects/videpub/). Licensed under [GPL-3.0](LICENSE).
