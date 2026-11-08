@@ -587,6 +587,33 @@ public sealed class KeyFrameStripTests
     }
 
     [Fact]
+    public async Task FailedNeighborReadReloadsTheCurrentWindow()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            var fake = new FakeService();
+            var vm = new KeyFrameStripViewModel(() => fake);
+            vm.SetSource(new("one.mp4", null, true));
+            try
+            {
+                vm.RequestAt(10, immediate: true);
+                await vm.IdleTask;
+                fake.FailNextNeighbor = true;
+                vm.RequestAt(11, immediate: true, currentPts: 11);
+                await vm.IdleTask;
+                Assert.Equal(new double[] { 10, 11 }, fake.Targets);
+                Assert.Single(fake.NeighborRequests);
+                Assert.Equal(Enumerable.Range(7, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                Assert.Equal(11, vm.Items.Single(item => item.IsCurrent).Pts);
+                Assert.Equal(1, fake.MaximumConcurrency);
+            }
+            finally { vm.SetSource(null); await vm.IdleTask; }
+            return true;
+        }, CancellationToken.None);
+    }
+
+    [Fact]
     public async Task RepeatedStepsAndCanceledEdgeReadsKeepTheLatestWindow()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
@@ -909,6 +936,7 @@ public sealed class KeyFrameStripTests
         public TaskCompletionSource? PauseAfterFirst { get; set; }
         public TaskCompletionSource FirstFrameReady { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool Disposed { get; private set; }
+        public bool FailNextNeighbor { get; set; }
         public int MaximumConcurrency { get; private set; }
         private int concurrency;
         public Task OpenAsync(KeyFrameStripSource source, CancellationToken token) => Task.CompletedTask;
@@ -952,6 +980,11 @@ public sealed class KeyFrameStripTests
             {
                 if (Gate is not null)
                     await Gate.Task;
+                if (FailNextNeighbor)
+                {
+                    FailNextNeighbor = false;
+                    throw new InvalidOperationException("Unable to locate the adjacent keyframe within the scan budget.");
+                }
                 var pts = anchor.Pts + direction;
                 if (pts < 0)
                     return null;
