@@ -29,6 +29,7 @@ internal sealed unsafe partial class HdrToneMapper
     private SamplingGrid? samplingGrid;
     private readonly float[] toneTable = new float[TableSize + 1];
     private float previousPeak;
+    private bool previousStandardPq;
     private static readonly float[] HlgTable = BuildTable(HlgToLinear);
 
     internal void Convert(AVFrame* source, AVFrame* destination, HdrFrameMetadata metadata, bool useSimd = true)
@@ -50,7 +51,7 @@ internal sealed unsafe partial class HdrToneMapper
         // 每个分区至少承担约 12.8 万像素，避免小缩略图的调度成本超过计算收益。
         var pixels = destination->width * (long)destination->height;
         var workerCount = (int)Math.Min(Math.Min(maximumParallelism, destination->height), Math.Max(1, pixels / 128_000));
-        Prepare(destination->width, metadata.PeakNits, workerCount);
+        Prepare(destination->width, metadata.PeakNits, metadata.IsStandardPq, workerCount);
         var gamut = GetGamut(metadata.GamutTo709);
         var destinationAddress = (nint)destination->data[0];
         var stride = destination->linesize[0];
@@ -90,7 +91,7 @@ internal sealed unsafe partial class HdrToneMapper
         }
     }
 
-    private void Prepare(int width, float peak, int workerCount = 1)
+    private void Prepare(int width, float peak, bool standardPq, int workerCount = 1)
     {
         var length = (width + Vector<float>.Count - 1) / Vector<float>.Count * Vector<float>.Count;
         // 行缓冲按容量复用，分辨率缩小时只处理有效 Span，切回大尺寸无需重新分配。
@@ -105,9 +106,16 @@ internal sealed unsafe partial class HdrToneMapper
             if (rowBuffers[worker].Red.Length < length) rowBuffers[worker] = new RowBuffer(length);
         peak = Math.Clamp(peak, SdrWhiteNits, 10000f);
         if (!float.IsFinite(peak)) throw new InvalidOperationException("Invalid HDR source peak.");
-        if (peak == previousPeak) return;
+        if (peak == previousPeak && standardPq == previousStandardPq)
+            return;
         previousPeak = peak;
-        // BT.2390 曲线保留中间调亮度，仅在高光侧平滑压缩；固定源峰值避免逐帧亮度波动。
+        previousStandardPq = standardPq;
+        if (standardPq)
+        {
+            BuildPqToneTable(peak);
+            return;
+        }
+        // HLG 和杜比视界沿用原有 BT.2390 曲线。
         var black = NitsToPq(0);
         var sourcePq = NitsToPq(peak);
         var targetPq = NitsToPq(SdrWhiteNits);
@@ -135,13 +143,58 @@ internal sealed unsafe partial class HdrToneMapper
         }
     }
 
+    // 单支点双曲样条参考 libplacebo v7.351.0（LGPL-2.1-or-later），使用其默认支点、适应强度和对比度。
+    // 声明峰值用于亮度适配；额外肩部以连续斜率延伸到 PQ 上限，保留超出声明值的高光。
+    private void BuildPqToneTable(float peak)
+    {
+        const float pivotRatio = 0.4f;
+        const float adaptation = 0.4f;
+        const float highlightReserve = 0.1f;
+        var sourceBlack = NitsToPq(0);
+        var sourceWhite = NitsToPq(peak);
+        var targetWhite = NitsToPq(SdrWhiteNits);
+        // 峰值越接近 PQ 上限，需要为超范围画面保留的余量越少。
+        var nominalWhite = NitsToPq(SdrWhiteNits * (1 - highlightReserve * (1 - peak / 10000f)));
+        var sourcePivot = sourceBlack + (sourceWhite - sourceBlack) * pivotRatio;
+        var adaptedPivot = SdrBlackPq + (nominalWhite - SdrBlackPq) * pivotRatio;
+        var targetPivot = sourcePivot + adaptation * (adaptedPivot - sourcePivot);
+        var slope = (targetPivot - SdrBlackPq) / (sourcePivot - sourceBlack);
+        var contrastExponent = 0.5f * Math.Clamp(1.5f * (sourceWhite / nominalWhite - 1), 0.2f, 1.2f);
+        slope = MathF.Pow(slope, contrastExponent);
+        var inputToe = sourceBlack - sourcePivot;
+        var inputShoulder = sourceWhite - sourcePivot;
+        var outputToe = SdrBlackPq - targetPivot;
+        var outputShoulder = nominalWhite - targetPivot;
+        var toe = (slope * inputToe - outputToe) / (outputToe * inputToe);
+        var shoulder = (slope * inputShoulder - outputShoulder) / (outputShoulder * inputShoulder);
+        var endSlope = slope / MathF.Pow(1 + shoulder * inputShoulder, 2);
+        var extendHighlights = sourceWhite < 1 && nominalWhite < targetWhite;
+        var extension = extendHighlights ? endSlope / (targetWhite - nominalWhite) - 1 / (1 - sourceWhite) : 0;
+        for (var index = 0; index <= TableSize; index++)
+        {
+            var input = Math.Max(sourceBlack, index / (float)TableSize);
+            float value;
+            if (extendHighlights && input > sourceWhite)
+            {
+                var distance = input - sourceWhite;
+                value = nominalWhite + endSlope * distance / (1 + extension * distance);
+            }
+            else
+            {
+                var distance = input - sourcePivot;
+                value = targetPivot + slope * distance / (1 + (distance > 0 ? shoulder : toe) * distance);
+            }
+            toneTable[index] = Math.Clamp(value, SdrBlackPq, targetWhite);
+        }
+    }
+
     // 分离信号处理，便于在没有 FFmpeg 动态库的机器上对比标量和 SIMD 结果。
     internal void MapSignals(HdrFrameMetadata metadata, ReadOnlySpan<float> y, ReadOnlySpan<float> u,
         ReadOnlySpan<float> v, Span<float> r, Span<float> g, Span<float> blue, bool useSimd)
     {
         if (y.Length != u.Length || y.Length != v.Length || r.Length != y.Length || g.Length != y.Length || blue.Length != y.Length)
             throw new ArgumentException("Signal lengths must match.");
-        Prepare(y.Length, metadata.PeakNits);
+        Prepare(y.Length, metadata.PeakNits, metadata.IsStandardPq);
         var buffer = rowBuffers[0];
         var a = buffer.Red; var b = buffer.Green; var c = buffer.Blue;
         y.CopyTo(a); u.CopyTo(b); v.CopyTo(c);

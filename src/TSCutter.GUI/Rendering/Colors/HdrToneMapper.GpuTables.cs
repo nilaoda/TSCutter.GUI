@@ -23,9 +23,9 @@ internal sealed unsafe partial class HdrToneMapper
         return values;
     }
 
-    internal float[] CreateGpuToneTable(float peak)
+    internal float[] CreateGpuToneTable(HdrFrameMetadata metadata)
     {
-        Prepare(1, peak);
+        Prepare(1, metadata.PeakNits, metadata.IsStandardPq);
         var values = new float[GpuTableWidth * GpuTableHeight * 4];
         for (var index = 0; index < values.Length / 4; index++)
         {
