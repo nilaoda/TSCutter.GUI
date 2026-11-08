@@ -64,6 +64,9 @@
     <x:String x:Key="String.Project.FileEnd">File end</x:String>
     <x:String x:Key="String.Project.SourceMissing">Source file is missing: {0}</x:String>
     <x:String x:Key="String.Project.SourceChanged">The saved part of this source file has changed or been shortened: {0}</x:String>
+    <x:String x:Key="String.Project.SourceLocate">Locate source file</x:String>
+    <x:String x:Key="String.Project.SourceLocateConfirm">Source file is missing: {0}&#10;&#10;Would you like to locate the moved file?</x:String>
+    <x:String x:Key="String.Project.SourceLocateMismatch">The source file does not match the contents saved in this project: {0}&#10;&#10;Would you like to locate the original file?</x:String>
     <x:String x:Key="String.Project.Invalid">The project file or its saved ranges are invalid.</x:String>
     <x:String x:Key="String.Menu.SaveClip">_Save Clip...</x:String>
     <x:String x:Key="String.Menu.ExportQueue">Export Queue</x:String>
