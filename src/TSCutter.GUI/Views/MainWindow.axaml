@@ -206,13 +206,13 @@
                 <ResourceDictionary.ThemeDictionaries>
                     <ResourceDictionary x:Key="Light">
                         <SolidColorBrush x:Key="ClipSelectionBackgroundBrush"
-                                         Color="{DynamicResource SystemAccentColorLight1}" />
+                                         Color="{DynamicResource {x:Static commonControls:SystemColors.HighlightColorKey}}" Opacity="0.12" />
                         <SolidColorBrush x:Key="ClipThumbnailBackgroundBrush" Color="#303236" />
                         <SolidColorBrush x:Key="ClipThumbnailPlaceholderBrush" Color="#D8DADD" />
                     </ResourceDictionary>
                     <ResourceDictionary x:Key="Dark">
-                        <!-- 选中卡片只做轻微蓝色染色，避免与标题栏、进度条争夺视觉焦点。 -->
-                        <SolidColorBrush x:Key="ClipSelectionBackgroundBrush" Color="#2B3B4B" />
+                        <SolidColorBrush x:Key="ClipSelectionBackgroundBrush"
+                                         Color="{DynamicResource {x:Static commonControls:SystemColors.HighlightColorKey}}" Opacity="0.16" />
                         <SolidColorBrush x:Key="ClipThumbnailBackgroundBrush" Color="#111316" />
                         <SolidColorBrush x:Key="ClipThumbnailPlaceholderBrush" Color="#969DA5" />
                     </ResourceDictionary>
@@ -733,57 +733,62 @@
                                                         <ItemsControl.ItemTemplate>
                                                             <DataTemplate>
                                                                 <Border Margin="0,0,0,4"
-                                                                        Padding="6"
+                                                                        Padding="4" BorderThickness="2"
+                                                                        Classes="clip-card"
                                                                         Classes.selected="{Binding IsSelected}"
                                                                         Classes.removal="{Binding IsRemoval}"
                                                                         PointerPressed="ClipCard_OnPointerPressed">
                                                                     <Border.Styles>
-                                                                        <Style Selector="Border">
+                                                                        <Style Selector="Border.clip-card">
+                                                                            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static commonControls:SystemColors.ControlDarkBrushKey}}" />
                                                                             <Setter Property="Background" Value="Transparent" />
                                                                         </Style>
-                                                                        <Style Selector="Border.selected">
+                                                                        <Style Selector="Border.clip-card.selected">
                                                                             <Setter Property="Background" Value="{DynamicResource ClipSelectionBackgroundBrush}" />
+                                                                            <Setter Property="BorderBrush" Value="{DynamicResource {x:Static commonControls:SystemColors.HighlightBrushKey}}" />
                                                                         </Style>
-                                                                        <!-- 删除模式：片段是要删除的范围，用删除颜色标出，与时间轴、导航条一致。 -->
-                                                                        <Style Selector="Border.removal">
+                                                                        <Style Selector="Border.clip-card.removal.selected">
                                                                             <Setter Property="BorderBrush" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
-                                                                            <Setter Property="BorderThickness" Value="3,0,0,0" />
-                                                                        </Style>
-                                                                        <Style Selector="Border.removal.selected">
                                                                             <Setter Property="Background" Value="{DynamicResource AppStatusErrorBackgroundBrush}" />
                                                                         </Style>
                                                                     </Border.Styles>
                                                                     <Grid>
-                                                                        <!-- Inactive: Raised border -->
-                                                                        <ClassicBorderDecorator Classes="app-item-frame" BorderStyle="Raised"
-                                                                                                IsVisible="{Binding IsActive, Converter={x:Static local:App.InverseBoolConverter}}" />
-                                                                        <!-- Active editor: Sunken border -->
-                                                                        <ClassicBorderDecorator Classes="app-item-frame" BorderStyle="Sunken"
-                                                                                                IsVisible="{Binding IsActive}" />
+                                                                        <Border Width="3" Background="{DynamicResource AppStatusErrorForegroundBrush}"
+                                                                                HorizontalAlignment="Left" IsHitTestVisible="False"
+                                                                                IsVisible="{Binding IsRemoval}" />
                                                                         <!-- Content -->
                                                                         <Grid Margin="4"
                                                                               RowDefinitions="Auto,64,Auto,Auto"
                                                                               ColumnDefinitions="*,8,*">
                                                                             <Grid Grid.Row="0" Grid.ColumnSpan="3"
-                                                                                  RowDefinitions="Auto,Auto" ColumnDefinitions="6,*,Auto,Auto" ColumnSpacing="6">
-                                                                                <Border Background="{Binding LabelBrush}" IsVisible="{Binding HasColor}" Height="12" VerticalAlignment="Center" />
-                                                                                <TextBlock Grid.Column="1" Text="{Binding DisplayName}" MaxLines="1" ToolTip.Tip="{Binding DisplayName}" FontWeight="Bold" FontSize="12"
+                                                                                  RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,*,Auto,Auto" Margin="0,0,0,4">
+                                                                                <CheckBox IsChecked="{Binding IsSelected, Mode=OneWay}"
+                                                                                          Click="ClipSelection_OnClick"
+                                                                                          MinWidth="0" MinHeight="20" Padding="0" Margin="0,0,6,0"
+                                                                                          VerticalAlignment="Center"
+                                                                                          AutomationProperties.Name="{DynamicResource String.Clips.Select}"
+                                                                                          ToolTip.Tip="{DynamicResource String.Clips.Select}" />
+                                                                                <Border Grid.Column="1" Background="{Binding LabelBrush}" IsVisible="{Binding HasColor}" Width="6" Height="12" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                                                                <TextBlock Grid.Column="2" Text="{Binding DisplayName}" MaxLines="1" ToolTip.Tip="{Binding DisplayName}" FontWeight="Bold" FontSize="12"
                                                                                            TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                                                                                <Button Grid.Column="2" Theme="{StaticResource ClipEditButtonTheme}" Classes="desktop-template-button"
+                                                                                <TextBlock Grid.Column="3" Classes="clip-current-editor" Classes.active="{Binding IsActive}"
+                                                                                           Text="{DynamicResource String.Clips.CurrentEditor}"
+                                                                                           FontSize="11" VerticalAlignment="Center" Margin="6,0,6,0"
+                                                                                           Foreground="{DynamicResource AppSecondaryTextBrush}">
+                                                                                    <TextBlock.Styles>
+                                                                                        <Style Selector="TextBlock.clip-current-editor">
+                                                                                            <Setter Property="Opacity" Value="0" />
+                                                                                        </Style>
+                                                                                        <Style Selector="TextBlock.clip-current-editor.active">
+                                                                                            <Setter Property="Opacity" Value="1" />
+                                                                                        </Style>
+                                                                                    </TextBlock.Styles>
+                                                                                </TextBlock>
+                                                                                <Button Grid.Column="4" Theme="{StaticResource ClipEditButtonTheme}" Classes="desktop-template-button"
                                                                                         AutomationProperties.Name="{DynamicResource String.ClipDetails.Edit}"
                                                                                         Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).EditClipDetailsCommand}"
                                                                                         CommandParameter="{Binding}" ToolTip.Tip="{DynamicResource String.ClipDetails.Edit}" />
-                                                                                <Button Grid.Column="3" Theme="{StaticResource ClipExportStatusTheme}" Classes="desktop-template-button"
-                                                                                        Classes.export-warning="{Binding HasExportWarning}" Classes.export-error="{Binding HasExportError}"
-                                                                                        Content="{Binding StatusText}" IsVisible="{Binding HasExportStatus}"
-                                                                                        IsEnabled="{Binding HasExportCheck}" VerticalAlignment="Center"
-                                                                                        Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).OpenExportResultCommand}"
-                                                                                        CommandParameter="{Binding}">
-                                                                                    <ToolTip.Tip>
-                                                                                        <TextBlock Text="{Binding ExportCheckTooltip}" MaxWidth="420" TextWrapping="Wrap" />
-                                                                                    </ToolTip.Tip>
-                                                                                </Button>
-                                                                                <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="3" Text="{Binding Notes}" MaxLines="1"
+                                                                                <TextBlock Grid.Row="1" Grid.Column="2" Grid.ColumnSpan="3" Text="{Binding Notes}" MaxLines="1"
                                                                                            IsVisible="{Binding HasNotes}" TextTrimming="CharacterEllipsis" MaxHeight="20"
                                                                                            Foreground="{DynamicResource AppSecondaryTextBrush}" Margin="0,2,0,3">
                                                                                     <ToolTip.Tip>
@@ -842,9 +847,9 @@
                                                                                     IsEnabled="{Binding HasEndThumbnail}"
                                                                                     Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).JumpToEndTimeCommand}"
                                                                                     CommandParameter="{Binding}" />
-                                                                            <!-- Size + Output Path -->
+                                                                            <!-- 大小、导出状态与输出路径。 -->
                                                                             <Grid Grid.Row="3" Grid.ColumnSpan="3"
-                                                                                  ColumnDefinitions="Auto,*" Margin="0,2,0,0">
+                                                                                  ColumnDefinitions="Auto,Auto,*" MinHeight="20" Margin="0,2,0,0">
                                                                                 <TextBlock Text="{Binding EstimatedSizeStr}"
                                                                                            IsVisible="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).ShowRawClipSizeEstimate}"
                                                                                            VerticalAlignment="Center"
@@ -853,7 +858,17 @@
                                                                                            IsVisible="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).IsProgramExportFiltered}"
                                                                                            VerticalAlignment="Center"
                                                                                            Margin="0,0,8,0" />
-                                                                                <Button Grid.Column="1"
+                                                                                <Button Grid.Column="1" Theme="{StaticResource ClipExportStatusTheme}" Classes="desktop-template-button"
+                                                                                        Classes.export-warning="{Binding HasExportWarning}" Classes.export-error="{Binding HasExportError}"
+                                                                                        Content="{Binding StatusText}" IsVisible="{Binding HasExportStatus}"
+                                                                                        IsEnabled="{Binding HasExportCheck}" VerticalAlignment="Center"
+                                                                                        Command="{Binding #CutterMainWindow.((vm:MainWindowViewModel)DataContext).OpenExportResultCommand}"
+                                                                                        CommandParameter="{Binding}">
+                                                                                    <ToolTip.Tip>
+                                                                                        <TextBlock Text="{Binding ExportCheckTooltip}" MaxWidth="420" TextWrapping="Wrap" />
+                                                                                    </ToolTip.Tip>
+                                                                                </Button>
+                                                                                <Button Grid.Column="2"
                                                                                         Content="{Binding OutputFilePathStr}"
                                                                                         Classes="hyperlink"
                                                                                         HorizontalContentAlignment="Stretch"

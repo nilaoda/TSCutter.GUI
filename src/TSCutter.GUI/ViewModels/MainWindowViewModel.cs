@@ -297,8 +297,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             var targetIndex = Clips.IndexOf(clip);
             if (anchorIndex >= 0 && targetIndex >= 0)
             {
-                foreach (var item in Clips)
-                    item.IsSelected = false;
+                if (!toggle)
+                    foreach (var item in Clips)
+                        item.IsSelected = false;
                 var start = Math.Min(anchorIndex, targetIndex);
                 var end = Math.Max(anchorIndex, targetIndex);
                 for (var index = start; index <= end; index++)

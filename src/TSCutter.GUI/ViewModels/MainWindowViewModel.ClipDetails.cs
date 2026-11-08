@@ -14,6 +14,7 @@ public partial class MainWindowViewModel
     private async Task EditClipDetailsAsync(PickedClip? clip)
     {
         if (!CanEditClipDetails(clip)) return;
+        SelectClip(clip!);
         var dialog = _dialogService.CreateViewModel<ClipDetailsViewModel>();
         dialog.ClipName = clip!.Name;
         dialog.Notes = clip.Notes;
