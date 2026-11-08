@@ -36,13 +36,20 @@ internal interface IKeyFrameStripService : IAsyncDisposable
 /// <summary>只扫描指针附近的真实关键帧（或帧精确模式下的每一帧），不创建全片索引，也不占用主预览解码器。</summary>
 internal sealed class KeyFrameStripService : IKeyFrameStripService
 {
+    private const int MaximumWindowAttempts = 4;
     private VideoInstance? decoder;
     private long? cursorPts;
     private bool everyFrame;
+    private double? observedInterval;
+    private double? leftWindowSpan;
+    private int leftWindowCount;
 
     public async Task OpenAsync(KeyFrameStripSource source, CancellationToken token)
     {
         everyFrame = source.EveryFrame;
+        cursorPts = null;
+        observedInterval = leftWindowSpan = null;
+        leftWindowCount = 0;
         decoder = new VideoInstance(source.Path, enableHardwareDecoding: false,
             source.Selection, () => source.ToneMapping, discInput: source.Disc);
         await decoder.InitVideoAsync(token);
@@ -58,12 +65,14 @@ internal sealed class KeyFrameStripService : IKeyFrameStripService
         if (everyFrame)
             return await ReadEveryFrameAsync(video, target, leftCount, rightCount, isCached, received, token);
         target = Math.Clamp(target, 0, Math.Max(0, video.GetVideoDurationInSeconds()));
-        var interval = Math.Clamp(video.EstimatedKeyFrameIntervalSeconds, 0.04, 30);
-        // TS seek 可能落到请求点之后的关键包，多预读一个间隔，减少因前帧不足而重复扫描。
-        var start = Math.Max(0, target - interval * (leftCount + 1.5));
+        var interval = Math.Clamp(observedInterval ?? video.EstimatedKeyFrameIntervalSeconds, 0.04, 30);
+        // 复用上一屏实际的左侧跨度；宽度改变时按槽位数估算，再预留 TS seek 的落点偏差。
+        var leftSpan = leftWindowSpan is { } span && leftWindowCount > 0
+            ? span * leftCount / leftWindowCount : interval * leftCount;
+        var start = Math.Max(0, target - Math.Max(leftSpan, interval * leftCount) - interval * 1.5);
         // 估算间隔仅用于选择扫描起点；显示和跳转始终使用解码得到的实际时间。
         // GOP 突然变密时限制预读量，再从目标处向后定位，避免扫描整段视频。
-        for (var attempt = 0; attempt < 3; attempt++)
+        for (var attempt = 0; attempt < MaximumWindowAttempts; attempt++)
         {
             cursorPts = null;
             await video.SeekBeforeTimeAsync(TimeSpan.FromSeconds(start), token);
@@ -101,7 +110,8 @@ internal sealed class KeyFrameStripService : IKeyFrameStripService
                     if (start == 0 || reachedTarget)
                         progress?.Invoke(CreateRange(frames, target, start == 0, firstPts, atEnd: false, frameCount: frameCount));
                     // 开头没有前帧时继续向后补图，避免只取到半条预览。
-                    if (reachedTarget && frames.Count >= frameCount && frames.Count(item => item.Timestamp.TotalSeconds > target) >= rightCount)
+                    if (reachedTarget && frames.Count(item => item.Timestamp.TotalSeconds > target) >= rightCount &&
+                        (frames.Count >= frameCount || start > 0 && before < leftCount + 1))
                         break;
                 }
                 finally
@@ -111,40 +121,59 @@ internal sealed class KeyFrameStripService : IKeyFrameStripService
             }
             if (frames.Count >= 2)
             {
-                var observedInterval = (frames[^1].Timestamp - frames[^2].Timestamp).TotalSeconds;
-                if (observedInterval > 0)
-                    interval = observedInterval;
+                // CRA 与 IDR 可能相隔仅一帧；用整段平均间隔，避免将这种短间隔误当成常规 GOP。
+                var gap = (frames[^1].Timestamp - frames[0].Timestamp).TotalSeconds / (frames.Count - 1);
+                if (gap > 0)
+                    interval = Math.Clamp(gap, 0.04, 30);
             }
-            if (attempt == 2)
+            if (attempt == MaximumWindowAttempts - 1)
             {
                 // 不可靠的索引可能让 seek 多次落到远处；预算耗尽时保留原图，
                 // 不把远离指针的扫描结果作为新的邻域发布。
                 if (!reachedTarget && !atEnd)
                     throw new InvalidOperationException("Unable to locate nearby keyframes within the scan budget.");
-                return CreateRange(frames, target, start == 0, firstPts, atEnd, frameCount);
+                return RememberWindow(CreateRange(frames, target, start == 0, firstPts, atEnd, frameCount), target, leftCount);
             }
             if (reachedTarget || atEnd)
             {
                 if (start == 0 || (frames.Count >= frameCount &&
                     frames.Count(frame => frame.Timestamp.TotalSeconds <= target) >= leftCount + 1))
-                    return CreateRange(frames, target, start == 0, firstPts, atEnd, frameCount);
+                    return RememberWindow(CreateRange(frames, target, start == 0, firstPts, atEnd, frameCount), target, leftCount);
                 // 可变 GOP 或接近结尾导致前帧不足时，扩大局部窗口补齐图片。
                 var missing = Math.Max(1, leftCount + 1 - frames.Count(frame => frame.Timestamp.TotalSeconds <= target));
                 if (atEnd)
                     missing = Math.Max(missing, frameCount - frames.Count);
-                // 密集 GOP 后接长间隔时，仅用最后一次短间隔会反复定位到同一末帧。
-                var distance = frames.Count > 0 ? Math.Max(0, target - frames[0].Timestamp.TotalSeconds) : interval;
-                start = Math.Max(0, start - Math.Max(interval, distance) * (missing + 1.5));
+                var rewind = interval * (missing + 1.5);
+                if (frames.Count > 0)
+                {
+                    // 从实际最早帧之前补缺口；seek 越过左边界时也计入落点偏差。
+                    var first = frames[0].Timestamp.TotalSeconds;
+                    rewind = Math.Max(rewind, (first - start) * (missing + 1.5));
+                    start = Math.Min(start, first);
+                }
+                start = Math.Max(0, start - rewind);
             }
             else
             {
                 // GOP 变密导致预读预算耗尽，按刚读到的真实间隔重新定位到目标附近。
-                var gap = frames.Count >= 2
-                    ? (frames[^1].Timestamp - frames[^2].Timestamp).TotalSeconds : 0;
-                start = attempt == 1 ? target : Math.Max(0, target - Math.Max(0.001, gap) * (leftCount + 1.5));
+                start = Math.Max(0, target - interval * (leftCount + 1.5));
             }
         }
         throw new InvalidOperationException();
+    }
+
+    private KeyFrameStripRange RememberWindow(KeyFrameStripRange range, double target, int leftCount)
+    {
+        if (range.Frames.Count >= 2)
+            observedInterval = Math.Clamp((range.Frames[^1].Timestamp - range.Frames[0].Timestamp).TotalSeconds /
+                (range.Frames.Count - 1), 0.04, 30);
+        var current = range.Frames.TakeWhile(frame => frame.Timestamp.TotalSeconds <= target).Count() - 1;
+        if (leftCount > 0 && current >= leftCount)
+        {
+            leftWindowSpan = (range.Frames[current].Timestamp - range.Frames[current - leftCount].Timestamp).TotalSeconds;
+            leftWindowCount = leftCount;
+        }
+        return range;
     }
 
     private static async Task<KeyFrameStripRange> ReadEveryFrameAsync(VideoInstance video, double target, int leftCount,
@@ -227,7 +256,7 @@ internal sealed class KeyFrameStripService : IKeyFrameStripService
                 // 重新定位仍使用缩略图扫描路径，避免恢复游标时切回完整分辨率和完整 GOP 解码。
                 for (var attempt = 0; attempt < 2; attempt++)
                 {
-                    var preroll = attempt == 0 ? 0 : Math.Max(0.04, video.EstimatedKeyFrameIntervalSeconds) * 2;
+                    var preroll = attempt == 0 ? 0 : Math.Max(0.04, observedInterval ?? video.EstimatedKeyFrameIntervalSeconds) * 2;
                     await video.SeekBeforeTimeAsync(
                         TimeSpan.FromSeconds(Math.Max(0, anchor.Timestamp.TotalSeconds - preroll)), token);
                     for (var count = 0; count < 48; count++)
@@ -309,7 +338,7 @@ internal sealed class KeyFrameStripService : IKeyFrameStripService
                         DisposeResult(previous);
                 }
                 if (preroll < 0.001)
-                    preroll = Math.Clamp(video.EstimatedKeyFrameIntervalSeconds * 2, 0.04, 60);
+                    preroll = Math.Clamp((observedInterval ?? video.EstimatedKeyFrameIntervalSeconds) * 2, 0.04, 60);
                 else
                     preroll *= 2;
             }

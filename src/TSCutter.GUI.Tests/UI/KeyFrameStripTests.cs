@@ -285,7 +285,7 @@ public sealed class KeyFrameStripTests
                 await service.OpenAsync(new(path, null, true), CancellationToken.None);
                 using var preview = new TSCutter.GUI.Models.Preview.VideoInstance(path, enableHardwareDecoding: true);
                 await preview.InitVideoAsync();
-                foreach (var target in new[] { 0, 1.5, expected[^1] / 2, expected[^1] + 1 })
+                foreach (var target in new[] { 0, 1.5, expected[Math.Min(4, expected.Length - 1)], expected[^1] / 2, expected[^1] + 1 }.Distinct())
                 {
                     var pictures = new List<KeyFrameStripFrame>();
                     try
@@ -306,6 +306,8 @@ public sealed class KeyFrameStripTests
                         Assert.All(times, time => Assert.Contains(expected, item => Math.Abs(item - time) < 0.001));
                         var current = times.LastOrDefault(time => time <= target);
                         Assert.Equal(expected.LastOrDefault(time => time <= target), current, 3);
+                        if (expected.Length >= 9 && target >= expected[4] && target < expected[^4])
+                            Assert.Equal(4, Array.IndexOf(times, current));
                         // 连续扫描结果必须对应真实相邻帧，不能跳过中间的关键帧。
                         var indices = times.Select(time => Array.FindIndex(expected, item => Math.Abs(item - time) < 0.001)).ToArray();
                         Assert.Equal(Enumerable.Range(indices[0], indices.Length), indices);
@@ -582,6 +584,35 @@ public sealed class KeyFrameStripTests
                 Assert.Single(fake.Targets); // 复用增量加载后确认的相邻帧区间，避免重新扫整组。
             }
             finally { fake.Gate.TrySetResult(); vm.SetSource(null); await vm.IdleTask; }
+            return true;
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task PartialLeftEdgeReloadsOneWindowAndReusesCachedPictures()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            var fake = new FakeService { StartAtTarget = true };
+            var vm = new KeyFrameStripViewModel(() => fake);
+            vm.SetSource(new("one.ts", null, true));
+            try
+            {
+                vm.RequestAt(10, immediate: true);
+                await vm.IdleTask;
+                Assert.Equal(4, vm.Items.Count(item => item.IsPlaceholder));
+                var current = vm.Items.Single(item => item.IsCurrent);
+                fake.StartAtTarget = false;
+                vm.RequestAt(10, immediate: true, currentPts: 10);
+                await vm.IdleTask;
+                Assert.Equal(new double[] { 10, 10 }, fake.Targets);
+                Assert.Empty(fake.NeighborRequests);
+                Assert.Equal(Enumerable.Range(6, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                Assert.Same(current.Bitmap, vm.Items.Single(item => item.IsCurrent).Bitmap);
+                Assert.Equal(1, fake.MaximumConcurrency);
+            }
+            finally { vm.SetSource(null); await vm.IdleTask; }
             return true;
         }, CancellationToken.None);
     }
@@ -937,6 +968,7 @@ public sealed class KeyFrameStripTests
         public TaskCompletionSource FirstFrameReady { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
         public bool Disposed { get; private set; }
         public bool FailNextNeighbor { get; set; }
+        public bool StartAtTarget { get; set; }
         public int MaximumConcurrency { get; private set; }
         private int concurrency;
         public Task OpenAsync(KeyFrameStripSource source, CancellationToken token) => Task.CompletedTask;
@@ -950,7 +982,7 @@ public sealed class KeyFrameStripTests
                 // 故意忽略取消，以验证迟到的解码结果也无法覆盖新目标或新文件。
                 if (Gate is not null)
                     await Gate.Task;
-                var start = Math.Max(0, (int)target - (frameCount - 1) / 2);
+                var start = Math.Max(0, (int)target - (StartAtTarget ? 0 : (frameCount - 1) / 2));
                 var frames = Enumerable.Range(start, frameCount).Select(time =>
                     new KeyFrameStripFrame(time, TimeSpan.FromSeconds(time), isCached(time) ? null :
                         new WriteableBitmap(new PixelSize(32, 18), new Vector(96, 96),
