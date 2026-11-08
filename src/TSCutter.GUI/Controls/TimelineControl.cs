@@ -81,6 +81,10 @@ public sealed class TimelineControl : Control
     public static readonly StyledProperty<IBrush?> ClipBrushProperty =
         AvaloniaProperty.Register<TimelineControl, IBrush?>(nameof(ClipBrush));
 
+    /// <summary>删除模式下要删除的范围所用的颜色。</summary>
+    public static readonly StyledProperty<IBrush?> RemovedBrushProperty =
+        AvaloniaProperty.Register<TimelineControl, IBrush?>(nameof(RemovedBrush));
+
     public static readonly StyledProperty<IBrush?> AccentBrushProperty =
         AvaloniaProperty.Register<TimelineControl, IBrush?>(nameof(AccentBrush));
 
@@ -140,7 +144,7 @@ public sealed class TimelineControl : Control
             ViewportStartProperty, ViewportEndProperty, ZoomLevelProperty, RangesProperty,
             BackgroundBrushProperty, TrackBrushProperty, EmptyTrackBrushProperty, BorderDarkBrushProperty,
             BorderLightBrushProperty, TextBrushProperty, MutedTextBrushProperty,
-            ClipBrushProperty, AccentBrushProperty, ViewportBrushProperty);
+            ClipBrushProperty, RemovedBrushProperty, AccentBrushProperty, ViewportBrushProperty);
     }
 
     public TimelineControl()
@@ -172,6 +176,7 @@ public sealed class TimelineControl : Control
     public IBrush? TextBrush { get => GetValue(TextBrushProperty); set => SetValue(TextBrushProperty, value); }
     public IBrush? MutedTextBrush { get => GetValue(MutedTextBrushProperty); set => SetValue(MutedTextBrushProperty, value); }
     public IBrush? ClipBrush { get => GetValue(ClipBrushProperty); set => SetValue(ClipBrushProperty, value); }
+    public IBrush? RemovedBrush { get => GetValue(RemovedBrushProperty); set => SetValue(RemovedBrushProperty, value); }
     public IBrush? AccentBrush { get => GetValue(AccentBrushProperty); set => SetValue(AccentBrushProperty, value); }
     public IBrush? ViewportBrush { get => GetValue(ViewportBrushProperty); set => SetValue(ViewportBrushProperty, value); }
     public string FitTip { get => GetValue(FitTipProperty); set => SetValue(FitTipProperty, value); }
@@ -279,10 +284,14 @@ public sealed class TimelineControl : Control
             var left = TimeToMainX(start, bounds);
             var right = TimeToMainX(end, bounds);
             using var opacity = context.PushOpacity(range.IsActive ? 0.95 : 0.52);
-            var fill = string.IsNullOrEmpty(range.Color) ? brush : ClipLabels.Brush(range.Color);
+            var fill = RangeBrush(range, brush);
             context.FillRectangle(fill, new Rect(left, bounds.Bottom - 7, Math.Max(1, right - left), 5));
         }
     }
+
+    // 删除范围统一用删除颜色，不随片段标注颜色变化，避免与保留片段混淆。
+    private IBrush RangeBrush(ClipTimelineRange range, IBrush clip) =>
+        range.Removed ? RemovedBrush ?? Brushes.Red : string.IsNullOrEmpty(range.Color) ? clip : ClipLabels.Brush(range.Color);
 
     private void DrawPlayhead(DrawingContext context, Rect bounds, IBrush brush)
     {
@@ -325,7 +334,7 @@ public sealed class TimelineControl : Control
                 var left = FullTimeToOverviewX(start, bounds);
                 var right = FullTimeToOverviewX(end, bounds);
                 using var opacity = context.PushOpacity(range.IsActive ? 0.8 : 0.42);
-                var fill = string.IsNullOrEmpty(range.Color) ? clip : ClipLabels.Brush(range.Color);
+                var fill = RangeBrush(range, clip);
                 context.FillRectangle(fill,
                     new Rect(left, bounds.Bottom - 4, Math.Max(1, right - left), 2));
             }

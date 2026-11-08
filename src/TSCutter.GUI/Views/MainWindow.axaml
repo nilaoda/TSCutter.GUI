@@ -515,6 +515,15 @@
                         </commonControls:ToolBarButton>
                         <TextBlock x:Name="ZoomFactorText" VerticalAlignment="Center"
                                    Text="{Binding ZoomFactorStr}" />
+                        <!-- 删除模式开关：开启后片段表示要从视频中删除的范围，导出时其余部分合并为一个文件。 -->
+                        <commonControls:ToolBarButton x:Name="RemoveModeButton"
+                                                      ToolTip.Tip="{Binding RemoveModeToolTip}"
+                                                      LargeIcon="/Assets/cut_remove.png" Classes="themed-icon"
+                                                      themes:ThemeIcons.Source="{DynamicResource Icon.cut-remove}"
+                                                      Text="{DynamicResource String.ToolBar.RemoveMode}"
+                                                      IsToggleButton="True"
+                                                      IsChecked="{Binding IsRemoveMode, Mode=TwoWay}"
+                                                      Margin="0,0,6,0" HorizontalAlignment="Right" />
                         <!-- 剪辑方式是整个文件的工作模式（选点、导航条、单帧步进与导出）：工具栏右侧一个“帧精确”开关，
                              关闭即默认的关键帧剪辑。选中状态由窗口按实际模式设置；不支持时禁用，悬停说明原因。 -->
                         <!-- 已开启智能剪辑但当前视频不支持：开关禁用，旁边的警告图标说明原因。 -->
@@ -722,6 +731,7 @@
                                                                 <Border Margin="0,0,0,4"
                                                                         Padding="6"
                                                                         Classes.selected="{Binding IsSelected}"
+                                                                        Classes.removal="{Binding IsRemoval}"
                                                                         PointerPressed="ClipCard_OnPointerPressed">
                                                                     <Border.Styles>
                                                                         <Style Selector="Border">
@@ -729,6 +739,14 @@
                                                                         </Style>
                                                                         <Style Selector="Border.selected">
                                                                             <Setter Property="Background" Value="{DynamicResource ClipSelectionBackgroundBrush}" />
+                                                                        </Style>
+                                                                        <!-- 删除模式：片段是要删除的范围，用删除颜色标出，与时间轴、导航条一致。 -->
+                                                                        <Style Selector="Border.removal">
+                                                                            <Setter Property="BorderBrush" Value="{DynamicResource AppStatusErrorForegroundBrush}" />
+                                                                            <Setter Property="BorderThickness" Value="3,0,0,0" />
+                                                                        </Style>
+                                                                        <Style Selector="Border.removal.selected">
+                                                                            <Setter Property="Background" Value="{DynamicResource AppStatusErrorBackgroundBrush}" />
                                                                         </Style>
                                                                     </Border.Styles>
                                                                     <Grid>
@@ -977,6 +995,7 @@
                         <!-- 时间刻度、剪辑范围、播放头、总览与缩放共用同一套坐标换算。 -->
                         <StackPanel Grid.Row="1">
                             <controls:KeyFrameStripControl Name="KeyFrameStripView" Items="{Binding KeyFrameStrip.Items}"
+                                                          RemovedBrush="{DynamicResource AppStatusErrorForegroundBrush}"
                                                           Ranges="{Binding KeyFrameStripRanges}"
                                                           ClipBrush="{DynamicResource AppStatusSuccessForegroundBrush}"
                                                           TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
@@ -1001,6 +1020,7 @@
                                                       ViewportEnd="{Binding TimelineViewport.ViewEnd}"
                                                       ZoomLevel="{Binding TimelineViewport.ZoomLevel}"
                                                       Ranges="{Binding SelectedClipRanges}"
+                                                      RemovedBrush="{DynamicResource AppStatusErrorForegroundBrush}"
                                                       ScrubStarted="Timeline_OnScrubStarted"
                                                       ScrubPositionChanged="Timeline_OnScrubPositionChanged"
                                                       ScrubPreviewRequested="Timeline_OnScrubPreviewRequested"

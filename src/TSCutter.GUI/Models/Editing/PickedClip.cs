@@ -18,7 +18,8 @@ public enum ClipExportStatus
     Cancelled
 }
 
-public sealed record MergedClipOutput(string GroupId, int ClipCount);
+/// <summary>多个片段共享的一个导出文件；Removed 表示删除模式导出（文件是删除这些范围后的视频）。</summary>
+public sealed record MergedClipOutput(string GroupId, int ClipCount, bool Removed = false);
 
 public partial class PickedClip : ObservableObject, IDisposable
 {
@@ -31,6 +32,10 @@ public partial class PickedClip : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(LabelBrush), nameof(HasColor))]
     private string _color = "";
+    /// <summary>删除模式：片段是要从视频中删除的范围，卡片用删除颜色显示。由主窗口按当前模式同步。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EstimatedSizeStr), nameof(ExportSizeStr))]
+    private bool _isRemoval;
 
     public bool RequiresRemux { get; init; }
 
@@ -60,8 +65,21 @@ public partial class PickedClip : ObservableObject, IDisposable
         ClipID = clipId;
     }
     
+    /// <summary>
+    /// 起点、终点关键帧压缩包的签名文本（见 PacketEndSignature）。DVD 跳转后的时间戳并不稳定，
+    /// 导出按签名找到标记时看到的那一帧；其他来源或旧工程为 null，按时间定位。
+    /// </summary>
+    public string? StartSignature { get; set; }
+    public string? EndSignature { get; set; }
     public long StartPts {get; set;}
     public long EndPts {get; set;}
+    /// <summary>
+    /// 终点画面所在包的字节位置。<see cref="EndPosition"/> 是保留片段的结束字节（含终点画面）；
+    /// 删除模式下终点是恢复播放的画面，TS 关键帧剪辑从这个位置开始保留。未记录时为 -1。
+    /// </summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EstimatedSizeStr))]
+    private long _endFramePosition = -1;
     
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StartBoundaryTimeStr))]
@@ -132,7 +150,24 @@ public partial class PickedClip : ObservableObject, IDisposable
     public string? OutputFileSizeStr => OutputFileInfo is { Exists: true } file ? CommonUtil.FormatFileSize(file.Length) : null;
     public string? OutputFilePathStr => OutputFileInfo?.FullName;
     public string EndBoundaryTimeStr => $"{(EndTime < 0 ? "Inf." : CommonUtil.FormatSeconds(EndTime))} ]";
-    public string ExportSizeStr => MergedOutput is not null && OutputFileInfo is { Exists: true }
+    /// <summary>删除范围 [起点, 终点画面) 在源文件中的字节数；删除到文件结尾或旧工程未记录终点画面位置时按片段范围计算。</summary>
+    private long RemovedBytes => Math.Max(0, (EndPosition > 0 ? EndFramePosition >= 0 ? EndFramePosition : EndPosition
+        : InFileInfo.Length) - StartPosition);
+
+    // 删除模式的片段显示删除的源字节数（TS 按字节剪辑时与输出减少的大小一致；智能剪辑重新编码首尾画面，带“~”）。
+    // 需要重新封装或只导出所选节目时，删除的字节数与输出大小无关，显示不适用；导出后的总大小由主界面汇总显示。
+    private string RemovalSizeStr => LocalizationManager.Instance.String_RemoveMode_SizePrefix
+        + (RequiresRemux || UsesFrameAccurateExport && !CanEstimateFrameAccurateSize
+            ? LocalizationManager.Instance.String_RemoveMode_SizeNotApplicable
+            : UsesFrameAccurateExport
+                ? string.Format(LocalizationManager.Instance.String_SizeApproximate, CommonUtil.FormatFileSize(RemovedBytes))
+                : CommonUtil.FormatFileSize(RemovedBytes));
+
+    private string RemovalExportSizeStr => LocalizationManager.Instance.String_RemoveMode_SizePrefix
+                                           + LocalizationManager.Instance.String_RemoveMode_SizeNotApplicable;
+
+    public string ExportSizeStr => IsRemoval ? RemovalExportSizeStr
+        : MergedOutput is not null && OutputFileInfo is { Exists: true }
         ? LocalizationManager.Instance.String_Clips_Merged
         : LocalizationManager.Instance.String_SizePrefix
           + (OutputFileSizeStr ?? LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport);
@@ -146,7 +181,8 @@ public partial class PickedClip : ObservableObject, IDisposable
 
     // TS 合并后仍显示各片段的字节范围大小；共享输出的总大小由主界面汇总显示。
     // 帧精确导出前显示带“~”的预估值，导出后显示实际大小或“已合并导出”。
-    public string? EstimatedSizeStr => RequiresRemux ? ExportSizeStr
+    public string? EstimatedSizeStr => IsRemoval ? RemovalSizeStr
+        : RequiresRemux ? ExportSizeStr
         : UsesFrameAccurateExport
             ? CanEstimateFrameAccurateSize && MergedOutput is null && OutputFileSizeStr is null
                 ? LocalizationManager.Instance.String_SizePrefix + string.Format(

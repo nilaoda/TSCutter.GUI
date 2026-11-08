@@ -60,14 +60,20 @@ public partial class MainWindowViewModel
         foreach (var clip in ranges)
         {
             double? end = clip.EndPosition < 0 ? null : clip.EndTime;
+            var endSignature = clip.EndPosition < 0 ? null : clip.EndSignature;
             if (merged.Count > 0 && (merged[^1].EndSeconds is null || clip.StartTime <= merged[^1].EndSeconds))
             {
                 var previous = merged[^1];
-                merged[^1] = previous with { EndSeconds = previous.EndSeconds is null || end is null
-                    ? null : Math.Max(previous.EndSeconds.Value, end.Value) };
+                // 合并重叠片段时终点取较晚者，签名随之取对应片段的终点。
+                var later = previous.EndSeconds is null || end is null ? null : (double?)Math.Max(previous.EndSeconds.Value, end.Value);
+                merged[^1] = previous with
+                {
+                    EndSeconds = later,
+                    EndSignature = later is null ? null : later == end ? endSignature : previous.EndSignature
+                };
             }
             else merged.Add(new RemuxExportSegment(clip.InFileInfo.FullName, clip.StartTime, end,
-                CurrentRemuxSettings!.Snapshot()));
+                CurrentRemuxSettings!.Snapshot(), StartSignature: clip.StartSignature, EndSignature: endSignature));
         }
         return merged;
     }

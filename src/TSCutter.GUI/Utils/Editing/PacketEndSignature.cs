@@ -27,6 +27,38 @@ internal readonly record struct PacketEndSignature(
         BinaryPrimitives.WriteUInt64LittleEndian(destination[24..], D);
     }
 
+    /// <summary>文本形式：包长度与 32 字节前缀、32 字节摘要的十六进制，用于在片段、工程与导出任务之间传递。</summary>
+    public string ToText()
+    {
+        Span<byte> bytes = stackalloc byte[64];
+        WriteTo(bytes);
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes[32..], HashA);
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes[40..], HashB);
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes[48..], HashC);
+        BinaryPrimitives.WriteUInt64LittleEndian(bytes[56..], HashD);
+        return $"{Length}:{Convert.ToHexString(bytes)}";
+    }
+
+    /// <summary>无效签名返回 null，便于直接保存到可空的文本字段。</summary>
+    public string? ToTextOrNull() => IsValid ? ToText() : null;
+
+    public static bool TryParse(string? text, out PacketEndSignature signature)
+    {
+        signature = default;
+        var separator = text?.IndexOf(':') ?? -1;
+        if (separator <= 0 || text!.Length - separator - 1 != 128 ||
+            !int.TryParse(text.AsSpan(0, separator), System.Globalization.NumberStyles.None,
+                System.Globalization.CultureInfo.InvariantCulture, out var length) || length < 32)
+            return false;
+        Span<byte> bytes = stackalloc byte[64];
+        if (Convert.FromHexString(text.AsSpan(separator + 1), bytes, out _, out var written) != System.Buffers.OperationStatus.Done ||
+            written != 64)
+            return false;
+        signature = new(Read(bytes), Read(bytes[8..]), Read(bytes[16..]), Read(bytes[24..]),
+            Read(bytes[32..]), Read(bytes[40..]), Read(bytes[48..]), Read(bytes[56..]), length);
+        return true;
+    }
+
     public bool MatchesHash(ReadOnlySpan<byte> hash) => Read(hash) == HashA
         && Read(hash[8..]) == HashB && Read(hash[16..]) == HashC && Read(hash[24..]) == HashD;
     private static ulong Read(ReadOnlySpan<byte> bytes) => BinaryPrimitives.ReadUInt64LittleEndian(bytes);

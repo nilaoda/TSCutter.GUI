@@ -27,6 +27,9 @@ public sealed class KeyFrameStripControl : Control
         AvaloniaProperty.Register<KeyFrameStripControl, IReadOnlyList<KeyFrameRetentionRange>?>(nameof(Ranges));
     public static readonly StyledProperty<IBrush?> ClipBrushProperty =
         AvaloniaProperty.Register<KeyFrameStripControl, IBrush?>(nameof(ClipBrush));
+    /// <summary>删除模式下要删除的画面所用的颜色。</summary>
+    public static readonly StyledProperty<IBrush?> RemovedBrushProperty =
+        AvaloniaProperty.Register<KeyFrameStripControl, IBrush?>(nameof(RemovedBrush));
 
     public IReadOnlyList<KeyFrameStripItem>? Items { get => GetValue(ItemsProperty); set => SetValue(ItemsProperty, value); }
     public IBrush? TextBrush { get => GetValue(TextBrushProperty); set => SetValue(TextBrushProperty, value); }
@@ -34,6 +37,7 @@ public sealed class KeyFrameStripControl : Control
     public IBrush? BorderBrush { get => GetValue(BorderBrushProperty); set => SetValue(BorderBrushProperty, value); }
     public IReadOnlyList<KeyFrameRetentionRange>? Ranges { get => GetValue(RangesProperty); set => SetValue(RangesProperty, value); }
     public IBrush? ClipBrush { get => GetValue(ClipBrushProperty); set => SetValue(ClipBrushProperty, value); }
+    public IBrush? RemovedBrush { get => GetValue(RemovedBrushProperty); set => SetValue(RemovedBrushProperty, value); }
     public event EventHandler<KeyFrameStripItem>? SeekRequested;
     /// <summary>滚轮滚动的格数：正数前进（向下滚），负数后退（向上滚）。</summary>
     public event EventHandler<int>? WheelStepRequested;
@@ -43,7 +47,7 @@ public sealed class KeyFrameStripControl : Control
     private static readonly IBrush TypeBadgeBrush = new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)).ToImmutable();
 
     static KeyFrameStripControl() => AffectsRender<KeyFrameStripControl>(ItemsProperty,
-        TextBrushProperty, AccentBrushProperty, BorderBrushProperty, RangesProperty, ClipBrushProperty);
+        TextBrushProperty, AccentBrushProperty, BorderBrushProperty, RangesProperty, ClipBrushProperty, RemovedBrushProperty);
 
     public KeyFrameStripControl()
     {
@@ -131,14 +135,15 @@ public sealed class KeyFrameStripControl : Control
         {
             if (range.End < range.Start)
                 continue;
-            var brush = string.IsNullOrEmpty(range.Color) ? ClipBrush ?? Brushes.Green : ClipLabels.Brush(range.Color);
+            var brush = RangeBrush(range);
             foreach (var (item, bounds) in tiles)
             {
                 if (MatchesBoundary(item, range.StartPts, range.Start))
                     markers.Add((new Rect(bounds.Left + 4, bounds.Bottom - 18, 4, 15), true, brush));
                 if (!MatchesBoundary(item, range.EndPts, range.End))
                     continue;
-                var x = bounds.Right - 8;
+                // 删除范围的终点是恢复播放的画面，本身保留：收口画在它左侧与前一帧之间 4px 的缝隙里。
+                var x = range.Removed ? bounds.Left - 4 : bounds.Right - 8;
                 markers.Add((new Rect(x, bounds.Bottom - 18, 4, 15), false, brush));
             }
         }
@@ -165,8 +170,12 @@ public sealed class KeyFrameStripControl : Control
         if (matching is not { } clip)
             return BorderBrush ?? Brushes.Gray;
         retained = true;
-        return string.IsNullOrEmpty(clip.Color) ? ClipBrush ?? Brushes.Green : ClipLabels.Brush(clip.Color);
+        return RangeBrush(clip);
     }
+
+    // 删除范围统一用删除颜色，不随片段标注颜色变化，避免与保留片段混淆。
+    private IBrush RangeBrush(KeyFrameRetentionRange range) => range.Removed ? RemovedBrush ?? Brushes.Red
+        : string.IsNullOrEmpty(range.Color) ? ClipBrush ?? Brushes.Green : ClipLabels.Brush(range.Color);
 
     protected override void OnPointerPressed(PointerPressedEventArgs e)
     {

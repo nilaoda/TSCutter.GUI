@@ -14,6 +14,7 @@ using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Services.TransportStream.Analysis;
+using TSCutter.GUI.Utils.Editing;
 using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.Media;
 
@@ -268,10 +269,17 @@ internal sealed unsafe class RemuxExportService
             }
             if (requestedStart >= sourceEnd || segment.EndSeconds is not null && requestedEnd > sourceEnd + 0.1)
                 throw new RemuxExportException(RemuxExportError.InvalidBoundary);
-            var startBoundary = FindBoundary(input, reference->index, requestedStart, false, token);
+            // 从时间轴原点开始的片段（如只标记终点、或删除模式中开头的保留段）：光盘标题的首帧可能略晚于原点，
+            // 原点之前没有关键帧时从第一个关键帧开始。
+            // DVD 跳转后以目标时间重建时间戳，预览标记的时间与导出读取时的时间可能相差一个 VOBU；
+            // 片段带有关键帧压缩包签名时按签名找到标记时看到的那一帧，找不到再按时间定位。
+            var dvd = segment.Settings.Disc?.Kind == DiscKind.Dvd;
+            var startBoundary = (dvd ? FindBoundaryBySignature(input, reference->index, requestedStart, segment.StartSignature, token) : null)
+                ?? FindBoundary(input, reference->index, requestedStart, false, token, firstIfNone: segment.StartSeconds <= 0);
             var endBoundary = segment.EndSeconds is null || requestedEnd >= sourceEnd - 0.002
                 ? (Time: requestedEnd, Dts: long.MaxValue)
-                : FindBoundary(input, reference->index, requestedEnd, true, token);
+                : (dvd ? FindBoundaryBySignature(input, reference->index, requestedEnd, segment.EndSignature, token) : null)
+                  ?? FindBoundary(input, reference->index, requestedEnd, true, token);
             if (endBoundary.Time <= startBoundary.Time)
                 throw new RemuxExportException(RemuxExportError.InvalidBoundary);
             var endTime = endBoundary.Time;
@@ -291,7 +299,7 @@ internal sealed unsafe class RemuxExportService
                     if (Math.Abs(start.Time - startBoundary.Time) > 0.002 || Math.Abs(finish.Time - endBoundary.Time) > 0.002)
                         throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{stream->index}");
                     InspectGopBoundary(input, stream->index, start.Time, token, segment.Settings.Disc is not null);
-                    if (finish.Dts != long.MaxValue)
+                    if (finish.Dts != long.MaxValue && !segment.EndExclusive)
                     {
                         // 标记终点的关键帧也要写入；音频、字幕和章节延伸到该帧显示结束。
                         var frameEnd = InspectGopBoundary(input, stream->index, finish.Time, token, segment.Settings.Disc is not null);
@@ -325,8 +333,43 @@ internal sealed unsafe class RemuxExportService
         : input->duration / (double)FF.AV_TIME_BASE +
           (input->start_time == FF.AV_NOPTS_VALUE ? 0 : input->start_time / (double)FF.AV_TIME_BASE);
 
+    // DVD 预览与导出的时间戳之差不超过一个 VOBU（规范上限约 1 秒），签名在其两倍范围内查找。
+    private const double SignatureSearchSeconds = 2.0;
+
+    /// <summary>
+    /// 在 time 前后 <see cref="SignatureSearchSeconds"/> 内查找压缩内容与签名相同的关键帧，多个相同时取时间最接近者。
+    /// 没有签名、签名无效、找不到或关键帧缺少时间戳时返回 null，由调用方按时间定位。
+    /// </summary>
+    private static (double Time, long Dts)? FindBoundaryBySignature(FormatContext input, int index, double time,
+        string? signatureText, CancellationToken token)
+    {
+        if (!PacketEndSignature.TryParse(signatureText, out var signature))
+            return null;
+        AVStream* stream = input.Streams[index];
+        input.SeekFrame(Ticks(Math.Max(0, time - SignatureSearchSeconds), stream->time_base), index);
+        (double Time, long Dts)? best = null;
+        foreach (var packet in input.ReadPackets())
+        {
+            token.ThrowIfCancellationRequested();
+            if (packet.StreamIndex != index || (packet.Flags & 1) == 0) continue;
+            AVPacket* raw = packet;
+            if (raw->pts == FF.AV_NOPTS_VALUE) continue;
+            var value = Seconds(raw->pts, stream->time_base);
+            if (value > time + SignatureSearchSeconds) break;
+            if (value < time - SignatureSearchSeconds || raw->dts == FF.AV_NOPTS_VALUE || packet.EndSignature != signature)
+                continue;
+            if (best is not { } current || Math.Abs(value - time) < Math.Abs(current.Time - time))
+                best = (value, raw->dts);
+        }
+        return best;
+    }
+
+    /// <summary>
+    /// 定位 time 处或其前（next 为 true 时其后）的关键帧。firstIfNone：向前查找但 time 之前没有关键帧时，
+    /// 返回之后的第一个关键帧，用于从时间轴原点开始的片段。
+    /// </summary>
     private static (double Time, long Dts) FindBoundary(FormatContext input, int index, double time, bool next,
-        CancellationToken token)
+        CancellationToken token, bool firstIfNone = false)
     {
         AVStream* stream = input.Streams[index];
         input.SeekFrame(Ticks(time, stream->time_base), index);
@@ -342,8 +385,8 @@ internal sealed unsafe class RemuxExportService
             {
                 var recovered = (Time: pending, Dts: raw->dts - pendingDuration);
                 if (Math.Abs(recovered.Time - time) <= 0.002) return recovered;
-                if (recovered.Time > time) return next ? recovered : previous ??
-                    throw new RemuxExportException(RemuxExportError.InvalidBoundary);
+                if (recovered.Time > time) return next ? recovered : previous ?? (firstIfNone ? recovered :
+                    throw new RemuxExportException(RemuxExportError.InvalidBoundary));
                 previous = recovered;
                 pendingTime = null;
             }
@@ -365,7 +408,8 @@ internal sealed unsafe class RemuxExportService
             }
             var value = (Time: Seconds(raw->pts, stream->time_base), Dts: raw->dts);
             if (Math.Abs(value.Time - time) <= 0.002) return value;
-            if (value.Time > time) return next ? value : previous ?? throw new RemuxExportException(RemuxExportError.InvalidBoundary);
+            if (value.Time > time) return next ? value : previous ?? (firstIfNone ? value :
+                throw new RemuxExportException(RemuxExportError.InvalidBoundary));
             previous = value;
         }
         return !next && previous is { } last ? last : throw new RemuxExportException(RemuxExportError.InvalidBoundary);
@@ -774,6 +818,15 @@ internal sealed unsafe class RemuxExportService
                     // 两次读取的 DTS 可相差若干毫秒，起止帧必须按实际 PTS 识别。
                     sourceStartDts[index] = raw->dts;
                     videoStarted[index] = true;
+                }
+                // 终点不含该帧：读到终点关键帧即结束该视频轨道，此前解码的画面都已写入。
+                if (isEndFrame && item.Segment.EndExclusive)
+                {
+                    finished[index] = true;
+                    remainingStreams--;
+                    if (item.Segment.Settings.Disc is null)
+                        stream->discard = AVDiscard.AVDISCARD_ALL;
+                    continue;
                 }
                 if (raw->pts > item.EndPts[index])
                     throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{stream->index}");

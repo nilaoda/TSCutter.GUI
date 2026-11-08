@@ -305,4 +305,29 @@
             </DrawingGroup>
         </DrawingImage.Drawing>
     </DrawingImage>
+    <DrawingImage x:Key="Icon.cut-remove">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F1 M3.5 8.5h8v15h-8Z M3.5 12h8 M3.5 20h8 M7.5 12v8 M20.5 8.5h8v15h-8Z M20.5 12h8 M20.5 20h8 M24.5 12v8">
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="2" LineCap="Round" LineJoin="Round">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#FFFFFF" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 M13.5 12.5l5 7 M18.5 12.5l-5 7">
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="2" LineCap="Round" LineJoin="Round">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#D13438" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
 </ResourceDictionary>

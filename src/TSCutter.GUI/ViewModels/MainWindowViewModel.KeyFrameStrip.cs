@@ -13,13 +13,14 @@ public partial class MainWindowViewModel
 
     public bool IsKeyFrameStripVisible => ShowKeyFrameStrip && IsVideoInitialized;
 
+    // 删除模式的片段是要删除的范围：导航条用删除颜色标出被删除的画面，终点（恢复播放的画面）不在其中。
     public IReadOnlyList<KeyFrameRetentionRange> KeyFrameStripRanges => Clips
         .Select(clip => new KeyFrameRetentionRange(
             clip.StartTime,
             clip.EndPosition < 0 ? double.PositiveInfinity : clip.EndTime,
             clip.StartPts is 0 or long.MinValue ? null : clip.StartPts,
             clip.EndPosition < 0 || clip.EndPts is 0 or long.MinValue ? null : clip.EndPts,
-            IsActive: ReferenceEquals(clip, SelectedClip), clip.Color))
+            IsActive: ReferenceEquals(clip, SelectedClip), clip.Color, Removed: IsRemoveMode))
         .ToArray();
 
     public bool ShowKeyFrameStrip

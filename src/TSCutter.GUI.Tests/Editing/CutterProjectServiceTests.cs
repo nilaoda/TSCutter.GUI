@@ -3,6 +3,7 @@ using Xunit;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Editing;
 
 namespace TSCutter.GUI.Tests.Editing;
 
@@ -91,6 +92,42 @@ public sealed class CutterProjectServiceTests
         using (var stream = new FileStream(source.Path, FileMode.Open, FileAccess.Write))
             stream.SetLength(source.Length - 1);
         Assert.Throws<ProjectSourceChangedException>(() => CutterProjectService.Deserialize(json));
+    }
+
+    /// <summary>
+    /// 关键帧压缩包签名（DVD 导出按画面定位切点）以文本保存在片段与队列中：往返后不变，格式错误的签名被拒绝。
+    /// </summary>
+    [Fact]
+    public void KeyFrameSignaturesSurviveProjectRoundTripAndInvalidTextIsRejected()
+    {
+        var start = PacketEndSignature.Create(Enumerable.Range(0, 100).Select(i => (byte)i).ToArray());
+        var end = PacketEndSignature.Create(Enumerable.Range(0, 80).Select(i => (byte)(255 - i)).ToArray());
+        Assert.True(PacketEndSignature.TryParse(start.ToText(), out var parsed));
+        Assert.Equal(start, parsed);
+        Assert.Null(default(PacketEndSignature).ToTextOrNull());
+        foreach (var invalid in new[] { "", "100", "31:" + new string('0', 128), "100:" + new string('0', 127), "100:" + new string('Z', 128) })
+            Assert.False(PacketEndSignature.TryParse(invalid, out _));
+
+        using var files = new ProjectTestFiles();
+        var project = CreateProject(files.CreateSource());
+        project.Clips[1].StartSignature = start.ToText();
+        project.Clips[1].EndSignature = end.ToText();
+        project.Queue[0].StartSignature = start.ToText();
+        project.Queue[0].EndSignature = end.ToText();
+        var restored = CutterProjectService.Deserialize(CutterProjectService.Serialize(project));
+        Assert.Null(restored.Clips[0].StartSignature);
+        Assert.Equal(start.ToText(), restored.Clips[1].StartSignature);
+        Assert.Equal(end.ToText(), restored.Clips[1].EndSignature);
+        Assert.Equal(start.ToText(), restored.Queue[0].StartSignature);
+        Assert.Equal(end.ToText(), restored.Queue[0].EndSignature);
+
+        project.Clips[1].EndSignature = "not a signature";
+        Assert.Throws<InvalidDataException>(() => CutterProjectService.Deserialize(
+            JsonSerializer.Serialize(project, AppJsonContext.Default.CutterProject)));
+        project.Clips[1].EndSignature = end.ToText();
+        project.Queue[0].StartSignature = "1:2";
+        Assert.Throws<InvalidDataException>(() => CutterProjectService.Deserialize(
+            JsonSerializer.Serialize(project, AppJsonContext.Default.CutterProject)));
     }
 
     [Fact]

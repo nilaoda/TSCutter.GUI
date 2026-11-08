@@ -10,6 +10,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Editing;
 using TSCutter.GUI.Utils.Files;
 
 namespace TSCutter.GUI.Services.Editing;
@@ -126,7 +127,7 @@ internal static class CutterProjectService
         if (project.PreviewSelection is { } selection &&
             (project.Source is null || selection.StreamIndex < 0))
             throw new InvalidDataException("The saved preview track is invalid.");
-        if (project.Version is not (1 or 2 or 3 or 4 or 5))
+        if (project.Version is not (1 or 2 or 3 or 4 or 5 or 6))
             throw new InvalidDataException($"Unsupported project version: {project.Version}.");
         if (project.RemuxSettings is { IsValid: false } ||
             project.Queue?.Any(item => item.FrameAccurate is { IsValid: false }) == true)
@@ -156,7 +157,10 @@ internal static class CutterProjectService
             if (clip is null || !ClipLabels.IsValid(clip.Name, clip.Notes, clip.Color) || !ValidRange(clip.StartTime, clip.EndTime,
                     clip.StartPosition, clip.EndPosition, project.Source!.Length, project.RemuxSettings is not null))
                 throw new InvalidDataException("A saved clip has invalid labels or boundaries.");
-            if (clip.MergedOutput is { } merged && (merged.ClipCount is < 2 or > MaximumItems ||
+            if (!IsValidSignature(clip.StartSignature) || !IsValidSignature(clip.EndSignature))
+                throw new InvalidDataException("A saved clip has invalid labels or boundaries.");
+            // 合并导出至少两个片段；删除模式导出可以只删除一个范围。
+            if (clip.MergedOutput is { } merged && (merged.ClipCount < (merged.Removed ? 1 : 2) || merged.ClipCount > MaximumItems ||
                 !Guid.TryParseExact(merged.GroupId, "N", out _) || clip.OutputFilePath is null))
                 throw new InvalidDataException("Invalid merged export result.");
             if (clip.StartThumbnailJpeg?.Length > 512 * 1024 ||
@@ -172,7 +176,8 @@ internal static class CutterProjectService
             if (item is null || item.Source is null || !ClipLabels.IsValid(item.Name, item.Notes, item.Color) ||
                 item.ClipIndex < 1 || item.GeneratedFileName is null || item.GeneratedFileName.Length > 255 ||
                 item.ProgramId is < 1 or > 65535 || item.RemuxSettings is { IsValid: false } ||
-                item.RemuxSettings is not null && item.ProgramId is not null)
+                item.RemuxSettings is not null && item.ProgramId is not null ||
+                !IsValidSignature(item.StartSignature) || !IsValidSignature(item.EndSignature))
                 throw new InvalidDataException("A queued export is invalid.");
             ValidateSourceOnce(item.Source, validatedSources);
             if (!(item.EndPosition == -1 && item.EndTime == -1
@@ -270,6 +275,8 @@ internal static class CutterProjectService
         long start, long end, long length, bool timeBased = false) =>
         IsFiniteNonnegative(startTime) && double.IsFinite(endTime) && endTime >= startTime &&
         start >= 0 && start <= length && (end == -1 || end >= 0 && (timeBased || end > start) && end <= length);
+
+    private static bool IsValidSignature(string? text) => text is null || PacketEndSignature.TryParse(text, out _);
 
     private static bool IsFiniteNonnegative(double value) => double.IsFinite(value) && value >= 0;
 

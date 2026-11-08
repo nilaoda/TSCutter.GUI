@@ -22,7 +22,8 @@ namespace TSCutter.GUI.ViewModels.Editing;
 
 public record BatchTask(string SourcePath, string DestinationPath, long StartPosition, long EndPosition, int? ProgramId = null,
     RemuxExportSettings? RemuxSettings = null, double StartSeconds = 0, double? EndSeconds = null,
-    FrameAccurateExportSettings? FrameAccurate = null, long StartPts = 0, long? EndPts = null);
+    FrameAccurateExportSettings? FrameAccurate = null, long StartPts = 0, long? EndPts = null,
+    string? StartSignature = null, string? EndSignature = null);
 
 public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
@@ -478,7 +479,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 [new FrameAccurateExportSegment(task.SourcePath, task.StartPts, task.EndPts, frameAccurate)]), generation, checkSession);
         if (task.RemuxSettings is { } settings)
             return ExportRemuxAsync(new RemuxExportRequest(task.DestinationPath,
-                [new RemuxExportSegment(task.SourcePath, task.StartSeconds, task.EndSeconds, settings)]), generation, checkSession);
+                [new RemuxExportSegment(task.SourcePath, task.StartSeconds, task.EndSeconds, settings,
+                    StartSignature: task.StartSignature, EndSignature: task.EndSignature)]), generation, checkSession);
         if (AddsProgramTablesTo(task.DestinationPath))
             return ExportTsAsync(new TsClipMergeRequest
             {
