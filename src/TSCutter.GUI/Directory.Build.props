@@ -35,9 +35,11 @@
         <DirectPInvoke Include="libHarfBuzzSharp" />
         <NativeLibrary Include="lib\libHarfBuzzSharp.lib"/>
         <DirectPInvoke Include="libSkiaSharp" />
-        <NativeLibrary Include="lib\libSkiaSharp.lib"/>
+        <NativeLibrary Include="lib\skia.lib" />
+        <NativeLibrary Include="lib\SkiaSharp.lib" />
         <DirectPInvoke Include="av_libglesv2" />
-        <NativeLibrary Include="lib\av_libglesv2.lib"/>
+        <NativeLibrary Include="lib\libANGLE_static.lib" />
+        <NativeLibrary Include="lib\libGLESv2_static.lib" />
     </ItemGroup>
 
     <ItemGroup>

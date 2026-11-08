@@ -86,24 +86,28 @@ jobs:
           choco install zip --no-progress --yes
 
       - name: Download ANGLE.Static
+        shell: bash
         run: |
           cd src/TSCutter.GUI/lib
-          curl -L https://github.com/2ndlab/ANGLE.Static/releases/download/v1.1.0/av_libglesv2-10.0.22621.0.7z -o angle.7z
-          7z x angle.7z
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 \
+            "https://github.com/2ndlab/ANGLE.Static/releases/download/251105/angle-x64-windows-static-chromium-7151-10.0.26100.0-1.79e529b.7z" -o angle.7z
+          7z x -y angle.7z
 
       - name: Download SkiaSharp.Static (HarfBuzz)
+        shell: bash
         run: |
           cd src/TSCutter.GUI/lib
-          curl -L https://github.com/2ndlab/SkiaSharp.Static/releases/download/v1.0.0/libHarfBuzzSharp.zip -o harfbuzz.zip
-          unzip -o harfbuzz.zip -d .
-          7z x libHarfBuzzSharp.7z
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 \
+            "https://github.com/2ndlab/SkiaSharp.Static/releases/download/251104/libHarfBuzzSharp-3.119.0-10.0.26100.0-1.1c7d845.7z" -o harfbuzz.7z
+          7z x -y harfbuzz.7z
 
       - name: Download SkiaSharp.Static (SkiaSharp)
+        shell: bash
         run: |
           cd src/TSCutter.GUI/lib
-          curl -L https://github.com/2ndlab/SkiaSharp.Static/releases/download/v1.0.0/libSkiaSharp.zip -o skiasharp.zip
-          unzip -o skiasharp.zip -d .
-          7z x libSkiaSharp.7z
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 \
+            "https://github.com/2ndlab/SkiaSharp.Static/releases/download/251104/libSkiaSharp-2.88.9-10.0.26100.0-1.1c7d845.7z" -o skiasharp.7z
+          7z x -y skiasharp.7z
 
       - name: Publish [win-x64]
         run: | 
@@ -115,7 +119,7 @@ jobs:
         shell: pwsh
         run: |
           $zipPath = Join-Path $env:RUNNER_TEMP "ffmpeg-runtime-win-x64.zip"
-          Invoke-WebRequest -Uri "${{ env.FFMPEG_RUNTIME_WIN_X64_URL }}" -OutFile $zipPath
+          Invoke-WebRequest -Uri "${{ env.FFMPEG_RUNTIME_WIN_X64_URL }}" -OutFile $zipPath -MaximumRetryCount 5 -RetryIntervalSec 3
           Expand-Archive -Path $zipPath -DestinationPath "src/TSCutter.GUI/artifact" -Force
 
       - name: Download third-party notices [win-x64]
@@ -157,7 +161,7 @@ jobs:
 
       - name: Download FFmpeg Runtime [linux-x64]
         run: |
-          curl -L "${{ env.FFMPEG_RUNTIME_LINUX_X64_URL }}" -o "$RUNNER_TEMP/ffmpeg-runtime-linux-x64.zip"
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 "${{ env.FFMPEG_RUNTIME_LINUX_X64_URL }}" -o "$RUNNER_TEMP/ffmpeg-runtime-linux-x64.zip"
           unzip -o "$RUNNER_TEMP/ffmpeg-runtime-linux-x64.zip" -d artifact
 
       - name: Download third-party notices [linux-x64]
@@ -211,7 +215,7 @@ jobs:
           mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
           cp -R artifact/. "$MACOS_DIR/"
-          curl -L "${{ env.FFMPEG_RUNTIME_OSX_ARM64_URL }}" -o "$RUNNER_TEMP/ffmpeg-runtime-osx-arm64.zip"
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 "${{ env.FFMPEG_RUNTIME_OSX_ARM64_URL }}" -o "$RUNNER_TEMP/ffmpeg-runtime-osx-arm64.zip"
           unzip -o "$RUNNER_TEMP/ffmpeg-runtime-osx-arm64.zip" -d "$MACOS_DIR"
           find "$MACOS_DIR" -maxdepth 1 -name '*.dSYM' -prune -exec rm -rf {} +
 
