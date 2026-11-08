@@ -28,6 +28,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
     private readonly Dictionary<long, long> previousFrames = new();
     private readonly Dictionary<long, long> nextFrames = new();
     private long? firstPts, lastPts;
+    private long? windowAnchorPts;
     private KeyFrameStripSource? source;
     private KeyFrameStripSource? serviceSource;
     private IKeyFrameStripService? service;
@@ -58,6 +59,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         source = value;
         sourceGeneration++;
         targetTime = null;
+        windowAnchorPts = null;
         Items = [];
         if (IsSuspended && source is not null)
             PublishEmpty();
@@ -77,6 +79,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         if (VisibleCount == count)
             return;
         VisibleCount = count;
+        windowAnchorPts = null;
         if (IsSuspended)
         {
             PublishEmpty();
@@ -130,18 +133,6 @@ public sealed class KeyFrameStripViewModel : ObservableObject
             return false;
         Cancel();
         var shifted = Items.Select(item => item with { IsCurrent = false }).ToList();
-        if (direction > 0 && index >= (VisibleCount - 1) / 2)
-        {
-            shifted.RemoveAt(0);
-            shifted.Add(new(long.MinValue, default, null, false));
-            target--;
-        }
-        else if (direction < 0 && index <= (VisibleCount - 1) / 2)
-        {
-            shifted.RemoveAt(shifted.Count - 1);
-            shifted.Insert(0, new(long.MinValue, default, null, false));
-            target++;
-        }
         shifted[target] = shifted[target] with { IsCurrent = true };
         Items = shifted;
         return true;
@@ -152,6 +143,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         if (IsSuspended || source is null || !double.IsFinite(time))
             return;
         time = Math.Max(0, time);
+        var direction = targetTime is { } previousTime ? time.CompareTo(previousTime) : 0;
         targetTime = time;
         var pts = FindCachedTarget(time, currentPts);
         var loadNow = immediate || currentPts is not null;
@@ -166,12 +158,13 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         else if (loadNow)
             PublishCached(pts.Value);
         pending = requested = new Request(time, loadNow ? 0 : Stopwatch.GetTimestamp(), requestGeneration,
-            currentPts ?? pts, VisibleCount);
+            currentPts ?? pts, VisibleCount, direction);
         StartWorker();
     }
 
     private void PublishEmpty()
     {
+        windowAnchorPts = null;
         var empty = Enumerable.Range(0, VisibleCount)
             .Select(_ => new KeyFrameStripItem(long.MinValue, default, null, false)).ToArray();
         if (!Items.SequenceEqual(empty))
@@ -234,7 +227,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
                     if (knownPts is { } cachedPts)
                     {
                         PublishCached(cachedPts);
-                        if (Items.All(item => !item.IsPlaceholder))
+                        if (Items.All(item => !item.IsPlaceholder) && !NeedsPrefetch(request, cachedPts))
                             continue;
                     }
                     if (knownPts is null)
@@ -247,7 +240,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
                     }
                     // 缓存只覆盖目标及右侧时，从整屏左边界一次向右读取，避免逐张向前 seek。
                     if (request.Started == 0 && !requestedSource.EveryFrame && knownPts is { } partial &&
-                        BuildWindow(partial).TakeWhile(item => item.IsPlaceholder).Count() > 1)
+                        BuildWindow(partial).Items.TakeWhile(item => item.IsPlaceholder).Count() > 1)
                     {
                         await ReadWindowAsync(request, generation, cancellation.Token);
                     }
@@ -268,6 +261,9 @@ public sealed class KeyFrameStripViewModel : ObservableObject
                     {
                         await ReadWindowAsync(request, generation, cancellation.Token);
                     }
+                    if (IsCurrent(request, generation, cancellation.Token) &&
+                        Items.FirstOrDefault(item => item.IsCurrent && !item.IsPlaceholder) is { } selected)
+                        await PrefetchEdgeAsync(request, selected.Pts, generation, cancellation.Token);
                 }
                 catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
                 catch (Exception exception)
@@ -326,7 +322,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         for (var count = 0; count < request.Count + 1; count++)
         {
             token.ThrowIfCancellationRequested();
-            var window = BuildWindow(current);
+            var window = BuildWindow(current).Items;
             if (window.All(item => !item.IsPlaceholder))
                 return;
             var direction = window[0].IsPlaceholder ? -1 : 1;
@@ -341,32 +337,86 @@ public sealed class KeyFrameStripViewModel : ObservableObject
             var requestCount = direction < 0
                 ? Math.Max(missing, Math.Min(VisibleCount, CacheLimit - VisibleCount))
                 : missing;
-            var frames = await service!.ReadNeighborsAsync(cache[anchor.Pts], direction, requestCount, cache.ContainsKey, token);
-            if (generation != sourceGeneration)
-            {
-                foreach (var frame in frames)
-                    frame.Bitmap?.Dispose();
-                return;
-            }
-            if (frames.Count == 0)
-            {
-                if (direction < 0)
-                    firstPts = anchor.Pts;
-                else
-                    lastPts = anchor.Pts;
-            }
-            var linked = anchor.Pts;
-            foreach (var frame in frames)
-            {
-                Receive(frame, generation);
-                Link(direction < 0 ? frame.Pts : linked, direction < 0 ? linked : frame.Pts);
-                linked = frame.Pts;
-            }
+            await ReadNeighborsAsync(anchor.Pts, direction, requestCount, generation, token);
             if (IsCurrent(request, generation, token))
                 PublishCached(current);
             else
                 return;
         }
+    }
+
+    private int PrefetchCount => Math.Min((VisibleCount + 1) / 2, CacheLimit - VisibleCount);
+
+    private bool NeedsPrefetch(Request request, long current)
+    {
+        if (request.Direction == 0 || Items.Any(item => item.IsPlaceholder))
+            return false;
+        var index = Items.ToList().FindIndex(item => item.Pts == current);
+        var margin = Math.Min(2, (VisibleCount - 1) / 2);
+        if (index < 0 || (request.Direction < 0 ? index > margin : index < Items.Count - 1 - margin))
+            return false;
+        var cursor = request.Direction < 0 ? Items[0].Pts : Items[^1].Pts;
+        var links = request.Direction < 0 ? previousFrames : nextFrames;
+        for (var count = 0; count < PrefetchCount; count++)
+        {
+            if (request.Direction < 0 ? firstPts == cursor : lastPts == cursor)
+                return false;
+            if (!links.TryGetValue(cursor, out var next) || !cache.ContainsKey(next))
+                return true;
+            cursor = next;
+        }
+        return false;
+    }
+
+    private async Task PrefetchEdgeAsync(Request request, long current, long generation, CancellationToken token)
+    {
+        if (!NeedsPrefetch(request, current))
+            return;
+        var direction = request.Direction;
+        var cursor = direction < 0 ? Items[0].Pts : Items[^1].Pts;
+        var links = direction < 0 ? previousFrames : nextFrames;
+        for (var count = 0; count < PrefetchCount && IsCurrent(request, generation, token);)
+        {
+            if (direction < 0 ? firstPts == cursor : lastPts == cursor)
+                break;
+            if (links.TryGetValue(cursor, out var next) && cache.ContainsKey(next))
+            {
+                // 预取锚点可能在可视范围之外，保持它的缓存活跃，避免补图时淘汰连接点。
+                cacheOrder.Remove(next);
+                cacheOrder.AddLast(next);
+                cursor = next;
+                count++;
+                continue;
+            }
+            if (await ReadNeighborsAsync(cursor, direction, PrefetchCount - count, generation, token) == 0)
+                break;
+        }
+    }
+
+    private async Task<int> ReadNeighborsAsync(long anchor, int direction, int count, long generation, CancellationToken token)
+    {
+        var frames = await service!.ReadNeighborsAsync(cache[anchor], direction, count, cache.ContainsKey, token);
+        if (generation != sourceGeneration)
+        {
+            foreach (var frame in frames)
+                frame.Bitmap?.Dispose();
+            return 0;
+        }
+        if (frames.Count == 0)
+        {
+            if (direction < 0)
+                firstPts = anchor;
+            else
+                lastPts = anchor;
+        }
+        var linked = anchor;
+        foreach (var frame in frames)
+        {
+            Receive(frame, generation);
+            Link(direction < 0 ? frame.Pts : linked, direction < 0 ? linked : frame.Pts);
+            linked = frame.Pts;
+        }
+        return frames.Count;
     }
 
     private bool IsCurrent(Request request, long generation, CancellationToken token) =>
@@ -411,7 +461,20 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         previousFrames[next] = previous;
     }
 
-    private IReadOnlyList<KeyFrameStripItem> BuildWindow(long current)
+    private (IReadOnlyList<KeyFrameStripItem> Items, long Anchor) BuildWindow(long current)
+    {
+        var anchor = windowAnchorPts ?? current;
+        var window = cache.ContainsKey(anchor) ? BuildCenteredWindow(anchor) : [];
+        // 当前帧仍在原窗口内时只移动高亮；越界或远距离跳转才重新居中，形成半屏左右的平移。
+        if (!window.Any(item => !item.IsPlaceholder && item.Pts == current))
+        {
+            anchor = current;
+            window = BuildCenteredWindow(current);
+        }
+        return (window.Select(item => item with { IsCurrent = !item.IsPlaceholder && item.Pts == current }).ToArray(), anchor);
+    }
+
+    private IReadOnlyList<KeyFrameStripItem> BuildCenteredWindow(long current)
     {
         var before = new List<long>();
         var after = new List<long>();
@@ -449,7 +512,8 @@ public sealed class KeyFrameStripViewModel : ObservableObject
 
     private void PublishCached(long current)
     {
-        var updated = BuildWindow(current);
+        var (updated, anchor) = BuildWindow(current);
+        windowAnchorPts = anchor;
         if (!Items.SequenceEqual(updated))
             Items = updated;
         foreach (var item in Items.Where(item => !item.IsPlaceholder))
@@ -481,5 +545,5 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         }
     }
 
-    private sealed record Request(double Time, long Started, long Generation, long? Pts, int Count);
+    private sealed record Request(double Time, long Started, long Generation, long? Pts, int Count, int Direction);
 }

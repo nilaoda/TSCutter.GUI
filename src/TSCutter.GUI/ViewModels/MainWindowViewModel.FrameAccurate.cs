@@ -218,57 +218,7 @@ public partial class MainWindowViewModel
         await DecodeExactFrameAsync(video => video.DecodeAdjacentFrameAsync(anchor, direction));
     }
 
-    /// <summary>导航条上滚动滚轮时每一格移动的时长（智能剪辑模式）。</summary>
-    internal const double WheelStepSeconds = 1;
-
-    private int pendingWheelSteps;
-    private bool wheelNavigationRunning;
-
-    /// <summary>
-    /// 在导航条上滚动滚轮：正数前进、负数后退。智能剪辑模式每格移动 1 秒并精确定位到画面，
-    /// 关键帧剪辑模式每格移到下一个或上一个关键帧。定位期间继续滚动的格数累计起来，当前定位完成后一次处理。
-    /// </summary>
-    public async Task ScrollKeyFrameStripAsync(int steps)
-    {
-        // 自己的滚轮定位进行中时累计格数；其他解码、加载进行中时忽略。
-        if (!wheelNavigationRunning && !CanTogglePreviewOptions)
-            return;
-        pendingWheelSteps += steps;
-        if (wheelNavigationRunning)
-            return;
-        wheelNavigationRunning = true;
-        try
-        {
-            while (pendingWheelSteps != 0)
-            {
-                var count = pendingWheelSteps;
-                pendingWheelSteps = 0;
-                if (!IsVideoInitialized || IsDecoding || CurrentPts == long.MinValue)
-                    break;
-                if (UsesFrameAccurateCut)
-                    await SeekBySecondsAsync(count * WheelStepSeconds);
-                else
-                    await DrawNextFrameAsync(count);
-            }
-        }
-        finally
-        {
-            pendingWheelSteps = 0;
-            wheelNavigationRunning = false;
-        }
-    }
-
-    /// <summary>智能剪辑模式按时间前后移动：精确定位到不早于目标时间的第一帧，超出片尾时停在最后一帧。</summary>
-    private async Task SeekBySecondsAsync(double seconds)
-    {
-        if (!CanStepFrame || IsDecoding || CurrentPts == long.MinValue)
-            return;
-        var video = _videoInstance!;
-        var target = video.SecondsToPts(video.PtsToTimeSpan(CurrentPts).TotalSeconds + seconds);
-        await DecodeExactFrameAsync(instance => instance.DecodeFrameFromPtsAsync(target));
-    }
-
-    /// <summary>精确解码一帧并显示（逐帧、按时间移动共用）；解码失败时提示，结束后导航条按实际画面更新。</summary>
+    /// <summary>精确解码相邻帧并显示；解码失败时提示，结束后导航条按实际画面更新。</summary>
     private async Task DecodeExactFrameAsync(Func<VideoInstance, Task<DecodeResult?>> decode)
     {
         var video = _videoInstance!;

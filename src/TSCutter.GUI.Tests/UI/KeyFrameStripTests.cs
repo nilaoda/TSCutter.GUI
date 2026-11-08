@@ -458,12 +458,12 @@ public sealed class KeyFrameStripTests
                 await vm.SeekToKeyFrameAndDrawFrameAsync(strip.Items[5].Pts);
                 await vm.KeyFrameStrip.IdleTask;
                 var beforeStep = strip.Items.ToArray();
-                var expectedNext = beforeStep[5];
+                var expectedNext = beforeStep[Array.FindIndex(beforeStep, item => item.IsCurrent) + 1];
                 var navigation = vm.NextGopClickCommand.ExecuteAsync(null);
-                // 主预览尚未完成时，预览条已左移，右侧留出待填充的位置。
+                // 主预览尚未完成时先移动高亮，窗口内的图片保持原位。
                 Assert.Equal(expectedNext.Pts, strip.Items.Single(item => item.IsCurrent).Pts);
-                Assert.Same(beforeStep[1].Bitmap, strip.Items[0].Bitmap);
-                Assert.True(strip.Items[^1].IsPlaceholder);
+                Assert.Same(beforeStep[0].Bitmap, strip.Items[0].Bitmap);
+                Assert.DoesNotContain(strip.Items, item => item.IsPlaceholder);
                 await navigation;
                 await vm.KeyFrameStrip.IdleTask;
                 var navigatedPts = (long)typeof(MainWindowViewModel).GetField("_displayedFramePts",
@@ -547,7 +547,7 @@ public sealed class KeyFrameStripTests
     }
 
     [Fact]
-    public async Task StepMovesCachedPicturesImmediatelyAndOnlyFillsTheMissingEdge()
+    public async Task StepsKeepTheWindowStableAndReusePrefetchedPicturesAcrossTheEdge()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
         await session.Dispatch<bool>(async () =>
@@ -562,26 +562,28 @@ public sealed class KeyFrameStripTests
             try
             {
                 Assert.True(vm.PreviewStep(1));
+                await vm.IdleTask;
                 Assert.Equal(11, vm.Items.Single(item => item.IsCurrent).Timestamp.TotalSeconds);
-                Assert.True(vm.Items[^1].IsPlaceholder);
-                for (var index = 0; index < 8; index++)
-                    Assert.Same(original[index + 1].Bitmap, vm.Items[index].Bitmap);
-                await Task.Delay(250);
+                Assert.Equal(original.Select(item => item.Pts), vm.Items.Select(item => item.Pts));
+                Assert.Empty(fake.NeighborRequests);
+                Assert.True(vm.PreviewStep(1));
+                Assert.Equal(12, vm.Items.Single(item => item.IsCurrent).Timestamp.TotalSeconds);
+                for (var index = 0; index < original.Length; index++)
+                    Assert.Same(original[index].Bitmap, vm.Items[index].Bitmap);
                 Assert.Single(fake.NeighborRequests);
-                Assert.Single(fake.Targets);
                 fake.Gate.SetResult();
                 await vm.IdleTask;
-                Assert.DoesNotContain(vm.Items, item => item.IsPlaceholder);
-                Assert.Equal(15, vm.Items[^1].Pts);
-                Assert.True(vm.PreviewStep(-1));
+                Assert.Equal(5, fake.NeighborRequests.Count);
+                Assert.Equal(original.Select(item => item.Pts), vm.Items.Select(item => item.Pts));
+                vm.RequestAt(15, immediate: true, currentPts: 15);
                 await vm.IdleTask;
-                Assert.Equal(10, vm.Items.Single(item => item.IsCurrent).Timestamp.TotalSeconds);
-                Assert.Single(fake.NeighborRequests); // 向回走完全复用缓存，不再次取帧。
+                Assert.Equal(Enumerable.Range(11, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                Assert.Equal(15, vm.Items.Single(item => item.IsCurrent).Pts);
+                Assert.Equal(5, fake.NeighborRequests.Count);
+                vm.RequestAt(10, immediate: true, currentPts: 10);
+                await vm.IdleTask;
+                Assert.Equal(original.Select(item => item.Pts), vm.Items.Select(item => item.Pts));
                 Assert.Single(fake.Targets);
-                vm.RequestAt(14.5, immediate: true);
-                Assert.Equal(14, vm.Items.Single(item => item.IsCurrent).Pts);
-                await vm.IdleTask;
-                Assert.Single(fake.Targets); // 复用增量加载后确认的相邻帧区间，避免重新扫整组。
             }
             finally { fake.Gate.TrySetResult(); vm.SetSource(null); await vm.IdleTask; }
             return true;
@@ -630,13 +632,14 @@ public sealed class KeyFrameStripTests
             {
                 vm.RequestAt(10, immediate: true);
                 await vm.IdleTask;
+                vm.SetVisibleCount(10);
                 fake.FailNextNeighbor = true;
-                vm.RequestAt(11, immediate: true, currentPts: 11);
+                vm.RequestAt(10, immediate: true, currentPts: 10);
                 await vm.IdleTask;
-                Assert.Equal(new double[] { 10, 11 }, fake.Targets);
+                Assert.Equal(new double[] { 10, 10 }, fake.Targets);
                 Assert.Single(fake.NeighborRequests);
-                Assert.Equal(Enumerable.Range(7, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
-                Assert.Equal(11, vm.Items.Single(item => item.IsCurrent).Pts);
+                Assert.Equal(Enumerable.Range(6, 10).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                Assert.Equal(10, vm.Items.Single(item => item.IsCurrent).Pts);
                 Assert.Equal(1, fake.MaximumConcurrency);
             }
             finally { vm.SetSource(null); await vm.IdleTask; }
@@ -645,7 +648,7 @@ public sealed class KeyFrameStripTests
     }
 
     [Fact]
-    public async Task RepeatedStepsAndCanceledEdgeReadsKeepTheLatestWindow()
+    public async Task RepeatedStepsAndCanceledPrefetchKeepTheLatestWindow()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
         await session.Dispatch<bool>(async () =>
@@ -659,27 +662,26 @@ public sealed class KeyFrameStripTests
             try
             {
                 Assert.True(vm.PreviewStep(1));
-                await Task.Delay(250);
                 Assert.True(vm.PreviewStep(1));
                 Assert.Equal(12, vm.Items.Single(item => item.IsCurrent).Timestamp.TotalSeconds);
-                Assert.Equal(2, vm.Items.Count(item => item.IsPlaceholder));
+                Assert.DoesNotContain(vm.Items, item => item.IsPlaceholder);
                 fake.Gate.SetResult();
                 await vm.IdleTask;
-                Assert.Equal(12, vm.Items.Single(item => item.IsCurrent).Timestamp.TotalSeconds);
-                Assert.Equal(Enumerable.Range(8, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                Assert.Equal(Enumerable.Range(6, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
                 Assert.Single(fake.Targets);
-                Assert.Equal(2, fake.NeighborRequests.Count);
+                Assert.Equal(5, fake.NeighborRequests.Count);
                 Assert.Equal(1, fake.MaximumConcurrency);
                 fake.Gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
-                for (var index = 0; index < 5; index++)
+                for (var index = 0; index < 7; index++)
                     Assert.True(vm.PreviewStep(1));
-                Assert.True(vm.Items.Single(item => item.IsCurrent).IsPlaceholder);
-                Assert.Equal(9, vm.Items.Count);
-                vm.RequestAt(17, immediate: true, currentPts: 17);
+                Assert.Equal(19, vm.Items.Single(item => item.IsCurrent).Pts);
+                Assert.False(vm.PreviewStep(1)); // 未知帧越界时等待主预览确认，不伪造下一帧。
+                vm.RequestAt(20, immediate: true, currentPts: 20);
                 fake.Gate.SetResult();
                 await vm.IdleTask;
-                Assert.Equal(17, vm.Items.Single(item => item.IsCurrent).Pts);
+                Assert.Equal(20, vm.Items.Single(item => item.IsCurrent).Pts);
                 Assert.DoesNotContain(vm.Items, item => item.IsPlaceholder);
+                Assert.Equal(1, fake.MaximumConcurrency);
             }
             finally { fake.Gate.TrySetResult(); vm.SetSource(null); await vm.IdleTask; }
             return true;
@@ -877,10 +879,10 @@ public sealed class KeyFrameStripTests
     }
 
     /// <summary>
-    /// 帧精确模式向前单步：一次批量请求补齐左侧并多取一屏放入缓存，之后连续向前单步直接复用，不再逐张解码 GOP。
+    /// 帧精确模式靠近边缘时批量预取半屏，越界平移后直接复用；窗口内的逐帧移动不改变图片位置。
     /// </summary>
     [Fact]
-    public async Task BackwardStepsFillTheEdgeWithOneBatchAndReuseThePrefetchedFrames()
+    public async Task StepsPrefetchBothEdgesInBatchesWithoutMovingTheVisiblePictures()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
         await session.Dispatch<bool>(async () =>
@@ -895,29 +897,32 @@ public sealed class KeyFrameStripTests
                 Assert.Equal(Enumerable.Range(26, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
                 Assert.True(vm.PreviewStep(-1));
                 await vm.IdleTask;
-                // 左侧只缺一张，仍按一屏批量读取：25 到 17。
-                Assert.Equal([(30L - 4, -1, 9)], fake.BatchRequests);
-                Assert.Equal(Enumerable.Range(25, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
-                for (var current = 28; current >= 21; current--)
+                Assert.Empty(fake.BatchRequests);
+                Assert.True(vm.PreviewStep(-1));
+                await vm.IdleTask;
+                Assert.Equal([(26L, -1, 5)], fake.BatchRequests);
+                Assert.Equal(Enumerable.Range(26, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                for (var current = 27; current >= 24; current--)
                 {
                     Assert.True(vm.PreviewStep(-1));
                     await vm.IdleTask;
                     Assert.Equal(current, vm.Items.Single(item => item.IsCurrent).Pts);
                     Assert.DoesNotContain(vm.Items, item => item.IsPlaceholder);
                 }
+                Assert.Equal(Enumerable.Range(21, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
                 Assert.Single(fake.BatchRequests);
                 Assert.Empty(fake.SingleRequests);
-                // 预取用完后再次批量读取。
                 Assert.True(vm.PreviewStep(-1));
                 await vm.IdleTask;
-                Assert.Equal(2, fake.BatchRequests.Count);
-                Assert.Equal(Enumerable.Range(16, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
-                // 向后只取缺少的画面。
+                Assert.Equal((21L, -1, 5), fake.BatchRequests[^1]);
                 vm.RequestAt(60, true);
                 await vm.IdleTask;
                 Assert.True(vm.PreviewStep(1));
                 await vm.IdleTask;
-                Assert.Equal((60L + 4, 1, 1), fake.BatchRequests[^1]);
+                Assert.True(vm.PreviewStep(1));
+                await vm.IdleTask;
+                Assert.Equal((64L, 1, 5), fake.BatchRequests[^1]);
+                Assert.Equal(Enumerable.Range(56, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
             }
             finally { vm.SetSource(null); await vm.IdleTask; }
             return true;

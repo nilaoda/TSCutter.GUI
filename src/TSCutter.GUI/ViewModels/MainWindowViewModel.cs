@@ -2380,7 +2380,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         await RunDecodeOperationAsync(() => SeekFileCoreAsync(pts));
     }
     
-    public async Task DrawNextFrameAsync(int count = 1)
+    public async Task DrawNextFrameAsync(int count = 1, bool clampAtEnd = false)
     {
         if (!IsVideoInitialized || IsDecoding) return;
         // 帧精确模式的导航条按帧排列，按 GOP 跳转时不能预先移动一格。
@@ -2388,7 +2388,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             KeyFrameStrip.PreviewStep(count);
         try
         {
-            await RunDecodeOperationAsync(() => DrawNextFrameCoreAsync(count));
+            await RunDecodeOperationAsync(() => DrawNextFrameCoreAsync(count, clampAtEnd: clampAtEnd));
         }
         finally
         {
@@ -2397,13 +2397,14 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         }
     }
 
-    private async Task DrawNextFrameCoreAsync(int count = 1, bool propagateFailure = false)
+    private async Task DrawNextFrameCoreAsync(int count = 1, bool propagateFailure = false, bool clampAtEnd = false)
     {
         try
         {
             DecodeCost = 0;
             var stopwatch = Stopwatch.StartNew();
             var instance = _videoInstance!;
+            var anchorPts = _displayedFramePts;
             DecodeResult decodeResult;
             if (lastFrameFromPlayback)
             {
@@ -2423,6 +2424,13 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             }
             else
                 decodeResult = await instance.DecodeNextFrameAsync(count);
+            // 超出片尾后解码器可能回退到更早的关键帧；滚轮应停在最后关键帧，避免回跳。
+            if (clampAtEnd && count > 0 && decodeResult.FramePts <= anchorPts && ReferenceEquals(instance, _videoInstance))
+            {
+                DisposePreviewResult(decodeResult);
+                decodeResult = await instance.DecodeKeyFrameAtOrBeforePtsAsync(instance.SecondsToPts(DurationMax))
+                    ?? throw new InvalidOperationException(LocalizationManager.Instance.String_Navigate_FrameStepFailed);
+            }
             if (!ReferenceEquals(instance, _videoInstance))
             {
                 DisposePreviewResult(decodeResult);

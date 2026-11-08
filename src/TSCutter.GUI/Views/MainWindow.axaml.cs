@@ -379,7 +379,7 @@ public partial class MainWindow : ClassicWindow
         e.Handled = KeyFrameStripView.ApplyWheel(e.Delta.Y, e.Timestamp);
     }
 
-    // 导航条上滚动滚轮：智能剪辑按 1 秒前后移动，关键帧剪辑移到上一个或下一个关键帧（与方向键的条件相同）。
+    // 导航条上滚动滚轮：两种剪辑模式均按关键帧移动（与方向键的条件相同）。
     private async void KeyFrameStrip_OnWheelStepRequested(object? sender, int steps)
     {
         // 是否接受由视图模型判断：滚轮定位进行中时继续累计格数。
