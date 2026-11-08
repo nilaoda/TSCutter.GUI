@@ -30,6 +30,8 @@ internal sealed unsafe class FrameAccurateExportService
     // 每段重编码的显示时长上限。超过时拒绝导出，不静默扩大为整段重编码。
     internal const double MaxReencodeSeconds = 60;
     private const double ScanMarginSeconds = 3;
+    // 只处理短时解码偏移；更大的异常不能当作普通重排序延迟修正。
+    private const double MaximumDtsCorrectionSeconds = 1;
 
     private readonly List<FrameAccurateSegmentReport> reports = [];
     internal IReadOnlyList<FrameAccurateSegmentReport> Reports => reports;
@@ -37,6 +39,54 @@ internal sealed unsafe class FrameAccurateExportService
     public Task ExportAsync(FrameAccurateExportRequest request, IProgress<FrameAccurateExportProgress>? progress = null,
         CancellationToken cancellationToken = default, ExportTsCheckSession? checkSession = null) =>
         Task.Run(() => Export(request, progress, cancellationToken, checkSession), cancellationToken);
+
+    /// <summary>只读取切点窗口的视频包时间戳，不验证衔接点、不创建编码器或输出文件。</summary>
+    internal Task<bool> NeedsTimestampNormalizationAsync(FrameAccurateExportRequest request, CancellationToken token)
+    {
+        if (request.Segments.FirstOrDefault() is not { Settings.Container: "ts" or "m2ts" } first)
+            return Task.FromResult(false);
+        return Task.Run(() =>
+        {
+            try
+            {
+                token.ThrowIfCancellationRequested();
+                using var input = InterruptibleInputFormatContext.Open(first.SourcePath, () => token.IsCancellationRequested);
+                input.LoadStreamInfo();
+                AVFormatContext* raw = input;
+                var index = first.Settings.VideoIndex;
+                if (input.InputFormat?.Name != "mpegts" || index < 0 || index >= raw->nb_streams ||
+                    raw->streams[index]->codecpar->codec_type != AVMediaType.AVMEDIA_TYPE_VIDEO)
+                    throw new FrameAccurateExportException(FrameAccurateExportError.InvalidRequest);
+                var video = raw->streams[index];
+                var context = new SpliceContext(input, video, 0, video->codecpar->codec_id == AVCodecID.AV_CODEC_ID_HEVC);
+                List<VideoPacket>? scanned = null;
+                var reachedEof = false;
+                var targets = request.Segments.SelectMany(segment => segment.EndPts is { } end
+                    ? new[] { segment.StartPts, end } : new[] { segment.StartPts }).Distinct().Order();
+                foreach (var target in targets)
+                {
+                    token.ThrowIfCancellationRequested();
+                    // 同一窗口内的切点共享已经读过的时间戳，不重复定位和扫描。
+                    if (scanned is not null && scanned.Any(packet => packet.Pts == target) &&
+                        (reachedEof || Confirmed(context, scanned, target)))
+                        continue;
+                    var (packets, _, _, eof) = ScanAround(context, target, target, token);
+                    if (context.MaxDtsAfterPts > context.Ticks(MaximumDtsCorrectionSeconds))
+                        throw new FrameAccurateExportException(FrameAccurateExportError.NonMonotonicTimestamp, "video DTS offset");
+                    if (context.MaxDtsAfterPts > context.Ticks(0.001))
+                        return true;
+                    scanned = packets;
+                    reachedEof = eof;
+                }
+                token.ThrowIfCancellationRequested();
+                return false;
+            }
+            catch (FFmpegException) when (token.IsCancellationRequested)
+            {
+                throw new OperationCanceledException(token);
+            }
+        }, token);
+    }
 
     /// <summary>导出前和界面启用模式时调用；只读取已探测的流参数，不扫描文件。</summary>
     internal static FrameAccurateSupport CheckSupport(FormatContext input, int videoIndex, IEnumerable<int> streamIndices,
@@ -183,6 +233,28 @@ internal sealed unsafe class FrameAccurateExportService
                     ? PreviousFramePts(context, exclusive, token) : segment.EndPts;
                 plans.Add(Plan(context, segment.StartPts, end, token));
             }
+            if (isTsInput && context.MaxDtsAfterPts > context.Ticks(0.001))
+            {
+                if (context.MaxDtsAfterPts > context.Ticks(MaximumDtsCorrectionSeconds))
+                    throw new FrameAccurateExportException(FrameAccurateExportError.NonMonotonicTimestamp, "video DTS offset");
+                if (!request.NormalizeTimestamps)
+                    throw new FrameAccurateExportException(FrameAccurateExportError.TimestampNormalizationRequired);
+                // 先取得所有切点窗口的偏移，再统一重新规划；写出期间不动态改变时间基准。
+                do
+                {
+                    context.DtsCorrection = context.MaxDtsAfterPts;
+                    plans.Clear();
+                    foreach (var segment in request.Segments)
+                    {
+                        token.ThrowIfCancellationRequested();
+                        var end = segment.EndExclusive && segment.EndPts is { } exclusive
+                            ? PreviousFramePts(context, exclusive, token) : segment.EndPts;
+                        plans.Add(Plan(context, segment.StartPts, end, token));
+                    }
+                    if (context.MaxDtsAfterPts > context.Ticks(MaximumDtsCorrectionSeconds))
+                        throw new FrameAccurateExportException(FrameAccurateExportError.NonMonotonicTimestamp, "video DTS offset");
+                } while (context.MaxDtsAfterPts > context.DtsCorrection);
+            }
             if (context.Nal &&
                 !context.OriginalParameterSets.Any(set => VideoBitstream.IsSps(VideoBitstream.NalType(set, hevc), hevc)))
                 throw new FrameAccurateExportException(FrameAccurateExportError.IncompatibleStream, "parameter sets");
@@ -217,7 +289,8 @@ internal sealed unsafe class FrameAccurateExportService
             output->avoid_negative_ts = isTsOutput ? 1 : 0;
             var map = CreateStreams(output, input, settings, context);
             var packetLayout = isTsOutput ? TsPacketLayout.Detect(sourcePath, token) : default;
-            var native = isTsOutput && FrameAccurateTsOutput.CanUse(packetLayout, settings.Container);
+            // 修正 DTS 时由复用器重建 PCR 与 PES（包括补写缺失的 DTS），不再复用原传输包。
+            var native = isTsOutput && context.DtsCorrection == 0 && FrameAccurateTsOutput.CanUse(packetLayout, settings.Container);
             if (isTsOutput && !native && FrameAccurateVideoEncoder.DolbyVisionConfiguration(video->codecpar) != null)
                 throw new FrameAccurateExportException(FrameAccurateExportError.Unsupported, settings.Container,
                     FrameAccurateSupport.DolbyVisionContainer);
@@ -550,6 +623,8 @@ internal sealed unsafe class FrameAccurateExportService
         /// 全部重编码会话使用同一上限，保证编码器参数集一致。
         /// </summary>
         public long SourceBitrate { get; set; }
+        public long MaxDtsAfterPts { get; set; }
+        public long DtsCorrection { get; set; }
 
         /// <summary>扫描时识别场画面用的参数集（随带内参数集更新）与解析暂存。</summary>
         public H264Splice.ParameterSets H264Sets { get; } = new();
@@ -1210,6 +1285,14 @@ internal sealed unsafe class FrameAccurateExportService
                     }
                 }
                 FillMissingDts(packets, FrameDuration(context));
+                if (input.InputFormat?.Name == "mpegts")
+                    for (var i = 0; i < packets.Count; i++)
+                    {
+                        var packet = packets[i];
+                        context.MaxDtsAfterPts = Math.Max(context.MaxDtsAfterPts, packet.Dts - packet.Pts);
+                        if (context.DtsCorrection > 0)
+                            packets[i] = packet with { Dts = packet.Dts - context.DtsCorrection };
+                    }
                 RecordBitrate(context, packets);
                 var targetIndex = packets.FindIndex(packet => packet.Pts == target);
                 if (targetIndex >= 0 && firstIdr >= 0 && firstIdr <= targetIndex &&
@@ -1237,17 +1320,17 @@ internal sealed unsafe class FrameAccurateExportService
             for (var i = 0; i < raw->nb_streams; i++)
                 raw->streams[i]->discard = discards[i];
         }
+    }
 
-        // 目标之后已有闭合 IDR，并且读到了它之后的下一个 IDR（用于确认闭合）。验证不合格的普通 I 帧仍分隔 GOP，但不作为终点。
-        static bool Confirmed(SpliceContext context, List<VideoPacket> packets, long target)
-        {
-            if (!packets[^1].RandomAccess)
-                return false;
-            for (var i = packets.Count - 2; i >= 0; i--)
-                if (packets[i].RandomAccess && !Rejected(context, packets[i]))
-                    return SpliceAt(packets, i, false)?.CopyDisplayStart > target;
+    // 目标之后已有闭合 IDR，并且读到了它之后的下一个 IDR（用于确认闭合）。验证不合格的普通 I 帧仍分隔 GOP，但不作为终点。
+    private static bool Confirmed(SpliceContext context, List<VideoPacket> packets, long target)
+    {
+        if (!packets[^1].RandomAccess)
             return false;
-        }
+        for (var i = packets.Count - 2; i >= 0; i--)
+            if (packets[i].RandomAccess && !Rejected(context, packets[i]))
+                return SpliceAt(packets, i, false)?.CopyDisplayStart > target;
+        return false;
     }
 
     // ---------------- 输出 ----------------
@@ -1458,6 +1541,8 @@ internal sealed unsafe class FrameAccurateExportService
                 if (packet->dts >= splice || packet->dts > packet->pts)
                     throw new FrameAccurateExportException(FrameAccurateExportError.NonMonotonicTimestamp, "splice");
             }
+            if (context.DtsCorrection > 0 && packet->dts > packet->pts)
+                throw new FrameAccurateExportException(FrameAccurateExportError.NonMonotonicTimestamp, "video DTS correction");
             CheckDts(packet, index, strict: true);
             if (Ts is not null)
             {
@@ -1816,6 +1901,8 @@ internal sealed unsafe class FrameAccurateExportService
                         break;
                     // 复制时源包会直接交给封装器写出（时间戳被改写、包被清空），进度位置须在处理前取得。
                     var readPts = packet->pts;
+                    if (context.DtsCorrection > 0 && packet->dts != FF.AV_NOPTS_VALUE)
+                        packet->dts -= context.DtsCorrection;
                     HandleVideo(packet);
                     report(Math.Max(0, (readPts - plan.StartPts) * (double)videoTimeBase.num / videoTimeBase.den),
                         PublicPhase(phase), encodedFrames, copiedPackets);

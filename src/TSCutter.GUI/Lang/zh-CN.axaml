@@ -191,7 +191,7 @@
     <x:String x:Key="String.MediaInfo.Loading">加载中...</x:String>
     <x:String x:Key="String.MediaInfo.Copied">已复制!</x:String>
     <x:String x:Key="String.MediaInfo.Failed">无法加载媒体信息:</x:String>
-    <x:String x:Key="String.Output.Title">输出...</x:String>
+    <x:String x:Key="String.Output.Title">输出</x:String>
     <x:String x:Key="String.Output.Remaining">剩余时间：</x:String>
     <x:String x:Key="String.Output.QueueProgress">队列进度：</x:String>
     <x:String x:Key="String.Output.CancelRemaining">取消剩余</x:String>
@@ -1537,6 +1537,9 @@
     <x:String x:Key="String.Navigate.NextFrame">下一帧（.）</x:String>
     <x:String x:Key="String.Navigate.FrameStepFailed">无法解码相邻的画面。</x:String>
     <x:String x:Key="String.FrameAccurate.Error.Unsupported">此视频无法智能剪辑：{0}</x:String>
+    <x:String x:Key="String.FrameAccurate.Timestamps.Title">规范化视频时间戳</x:String>
+    <x:String x:Key="String.FrameAccurate.Timestamps.Warning">检测到源视频的解码时间戳异常。&#10;&#10;继续智能剪辑将修正时间戳并重新封装 TS，原始传输包结构和传输错误不会原样保留。视频主体仍直接复制，只有切点附近重新编码。</x:String>
+    <x:String x:Key="String.FrameAccurate.Timestamps.Continue">规范化并继续</x:String>
     <x:String x:Key="String.FrameAccurate.Error.Invalid">导出任务无效。请检查输出文件扩展名和所选片段。</x:String>
     <x:String x:Key="String.FrameAccurate.Error.FrameNotFound">在文件中找不到所选的画面。请重新标记片段边界。</x:String>
     <x:String x:Key="String.FrameAccurate.Error.NoRandomAccessPoint">切点附近没有可独立解码的关键帧，无法安全地重新编码并衔接边界（例如开放 GOP 视频）。请在同一 GOP 内选择范围，或使用关键帧剪辑。</x:String>

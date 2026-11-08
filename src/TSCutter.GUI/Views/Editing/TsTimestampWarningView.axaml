@@ -1,0 +1,29 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TSCutter.GUI.ViewModels.Editing"
+        x:Class="TSCutter.GUI.Views.Editing.TsTimestampWarningView"
+        x:DataType="vm:TsTimestampWarningViewModel"
+        Width="580" SizeToContent="Height" CanResize="False"
+        CanMinimize="False" CanMaximize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" Title="{DynamicResource String.FrameAccurate.Timestamps.Title}">
+    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto" RowSpacing="16">
+        <TextBlock Text="{DynamicResource String.FrameAccurate.Timestamps.Warning}" TextWrapping="Wrap" />
+        <ScrollViewer Grid.Row="1" MaxHeight="160" HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl ItemsSource="{Binding FileNames}">
+                <ItemsControl.ItemsPanel>
+                    <ItemsPanelTemplate><VirtualizingStackPanel /></ItemsPanelTemplate>
+                </ItemsControl.ItemsPanel>
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                        <TextBlock Text="{Binding}" TextWrapping="Wrap" Opacity="0.7" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Name="CancelButton" Content="{DynamicResource String.Cancel}" IsCancel="True" MinWidth="100" Click="CancelClick" />
+            <Button Name="NormalizeButton" Content="{DynamicResource String.FrameAccurate.Timestamps.Continue}" IsDefault="True"
+                    MinWidth="160" Click="ContinueClick" />
+        </StackPanel>
+    </Grid>
+</Window>

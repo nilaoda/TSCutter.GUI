@@ -383,6 +383,10 @@
                                Text="{Binding StatusInfoText}">
                     </TextBlock>
                 </commonControls:StatusBarItem>
+                <commonControls:StatusBarItem IsVisible="{Binding IsCheckingExportTimestamps}">
+                    <Button Classes="desktop-template-button" Theme="{StaticResource PreviewStatusTextTheme}"
+                            Content="{DynamicResource String.Cancel}" Command="{Binding CancelExportTimestampCheckCommand}" />
+                </commonControls:StatusBarItem>
                 <commonControls:StatusBarItem>
                     <Button x:Name="HardwareDecodingToggle" Classes="desktop-template-button"
                             Theme="{StaticResource PreviewStatusTextTheme}"

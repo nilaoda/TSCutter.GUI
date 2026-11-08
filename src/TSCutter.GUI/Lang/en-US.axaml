@@ -191,7 +191,7 @@
     <x:String x:Key="String.MediaInfo.Loading">Loading...</x:String>
     <x:String x:Key="String.MediaInfo.Copied">Copied!</x:String>
     <x:String x:Key="String.MediaInfo.Failed">Failed to load media info:</x:String>
-    <x:String x:Key="String.Output.Title">Output...</x:String>
+    <x:String x:Key="String.Output.Title">Output</x:String>
     <x:String x:Key="String.Output.Remaining">Remaining:</x:String>
     <x:String x:Key="String.Output.QueueProgress">Queue:</x:String>
     <x:String x:Key="String.Output.CancelRemaining">Cancel Remaining</x:String>
@@ -1537,6 +1537,9 @@
     <x:String x:Key="String.Navigate.NextFrame">Next frame (.)</x:String>
     <x:String x:Key="String.Navigate.FrameStepFailed">Unable to decode the adjacent frame.</x:String>
     <x:String x:Key="String.FrameAccurate.Error.Unsupported">Smart cut is not available for this video: {0}</x:String>
+    <x:String x:Key="String.FrameAccurate.Timestamps.Title">Normalize video timestamps</x:String>
+    <x:String x:Key="String.FrameAccurate.Timestamps.Warning">The source video has invalid decoding timestamps.&#10;&#10;Continuing smart cut will correct the timestamps and remux the TS. Original transport packets and transport errors will not be preserved as-is. Most video is still copied; only the cut boundaries are re-encoded.</x:String>
+    <x:String x:Key="String.FrameAccurate.Timestamps.Continue">Normalize and continue</x:String>
     <x:String x:Key="String.FrameAccurate.Error.Invalid">The export request is invalid. Check the output file extension and the selected clips.</x:String>
     <x:String x:Key="String.FrameAccurate.Error.FrameNotFound">A selected frame could not be found in the file. Re-mark the clip boundary.</x:String>
     <x:String x:Key="String.FrameAccurate.Error.NoRandomAccessPoint">No independently decodable keyframe was found where the cut needs one, so the boundary cannot be re-encoded and joined safely (for example, open-GOP video). Choose a range inside one GOP, or use keyframe cut.</x:String>

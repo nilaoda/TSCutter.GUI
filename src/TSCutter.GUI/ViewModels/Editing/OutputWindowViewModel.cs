@@ -212,7 +212,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private async Task OutputAsync()
     {
         _checkOnExport = ResolveCheckOnExport();
-        if (!await CheckProgramTablesAsync())
+        if (!await CheckProgramTablesAsync() || !await CheckTimestampNormalizationAsync())
             return;
         if (IsBatchMode)
         {
@@ -386,6 +386,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             RemainingSeconds = value.RemainingSeconds;
             ApplyFrameAccurateProgress(value);
         });
+        var source = request.Segments[0].SourcePath;
+        request = request with { NormalizeTimestamps = timestampNormalizationApprovedSources.Contains(source) };
         return new FrameAccurateExportService().ExportAsync(request, progress, _cts.Token, checkSession);
     }
 

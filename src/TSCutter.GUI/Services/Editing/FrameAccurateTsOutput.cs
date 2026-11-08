@@ -113,6 +113,8 @@ internal sealed class FrameAccurateTsOutput : IDisposable
     private readonly byte[] writeBuffer = new byte[1 << 20];
     private int writeLength;
     private long scan = -1;
+    private long firstDemuxedPosition = -1;
+    private bool hasDemuxedVideo;
     private long timestampOffset;
     private long segmentStartPts;
     private long? segmentEndPts;
@@ -177,6 +179,8 @@ internal sealed class FrameAccurateTsOutput : IDisposable
         timestampOffset = offset;
         segmentEnded = false;
         scan = -1;
+        firstDemuxedPosition = -1;
+        hasDemuxedVideo = false;
         records.Clear();
         maxDemuxed.Clear();
         keptAhead.Clear();
@@ -204,8 +208,18 @@ internal sealed class FrameAccurateTsOutput : IDisposable
     {
         if (position < 0)
             return;
-        if (scan < 0)
-            scan = layout.AlignPosition(position);
+        if (!hasDemuxedVideo)
+        {
+            var aligned = layout.AlignPosition(position);
+            firstDemuxedPosition = firstDemuxedPosition < 0 ? aligned : Math.Min(firstDemuxedPosition, aligned);
+            // 解复用器可能先交来音频，而视频 PES 实际位于它之前。
+            // 等首个视频包到达，再从已知最早位置扫描，避免越过尚未交来的视频。
+            if (pid == videoPid)
+            {
+                hasDemuxedVideo = true;
+                scan = firstDemuxedPosition;
+            }
+        }
         if (!records.TryGetValue(position, out var record))
             records[position] = record = new PesRecord(position, pid);
         record.Demuxed++;

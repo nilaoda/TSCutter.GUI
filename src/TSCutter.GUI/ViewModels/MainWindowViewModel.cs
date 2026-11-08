@@ -1191,6 +1191,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         if (!await PrepareProgramTableExportAsync(output,
                 snapshot.Clips.Select(GetProgramTableClipLabel).ToArray(),
                 () => IsMergeExportCurrent(snapshot))) return;
+        if (!await PrepareTimestampNormalizationAsync(output, () => IsMergeExportCurrent(snapshot)))
+            return;
 
         var outputPath = await ChooseMergedOutputPathAsync(snapshot);
         if (outputPath is null) return;
@@ -1456,7 +1458,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         ? LocalizationManager.Instance.String_Status_HardwareDecoding
         : LocalizationManager.Instance.String_Status_SoftwareDecoding;
 
-    public string StatusInfoText => IsToolsOnly
+    public string StatusInfoText => IsCheckingExportTimestamps
+        ? LocalizationManager.Instance.String_TsExport_Checking
+        : IsToolsOnly
         ? LocalizationManager.Instance.String_Status_ToolsOnly
         : IsVideoInitialized
         ? $"{VideoInfoText}{(IsPreviewOnly ? $" | {LocalizationManager.Instance.String_PreviewOnly}" : string.Empty)} | {DecodeCost,3}ms"
@@ -2722,6 +2726,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     public void Close()
     {
+        timestampCheckCancellation?.Cancel();
         StopPlaybackSession();
         ResetKeyFrameStrip();
         _previewSelectionCancellation?.Cancel();
@@ -2894,6 +2899,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         dialogViewModel.OutputPath = defaultName;
         if (!await ConfirmGradualRefreshExportAsync()) return;
         if (!await PrepareProgramTableExportAsync(dialogViewModel, [GetProgramTableClipLabel(clip)], ClipUnchanged)) return;
+        if (!await PrepareTimestampNormalizationAsync(dialogViewModel, ClipUnchanged))
+            return;
 
         var settings = new SaveFileDialogSettings
         {
@@ -2965,6 +2972,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 (clip.EndPosition < 0 ? (double?)null : clip.EndTime) == tasks[index].EndSeconds).All(matches => matches);
         if (!await ConfirmGradualRefreshExportAsync()) return;
         if (!await PrepareProgramTableExportAsync(dialogViewModel, selectionUnchanged: SourcesUnchanged)) return;
+        if (!await PrepareTimestampNormalizationAsync(dialogViewModel, SourcesUnchanged))
+            return;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
 
         var completedSet = dialogViewModel.CompletedTaskIndices.ToHashSet();
@@ -3214,6 +3223,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         dialogViewModel.SetBatchTasks(tasks);
         if (!await PrepareProgramTableExportAsync(dialogViewModel,
                 selectionUnchanged: () => ExportQueue.SequenceEqual(submitted))) return;
+        if (!await PrepareTimestampNormalizationAsync(dialogViewModel, () => ExportQueue.SequenceEqual(submitted)))
+            return;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
 
         await ApplyQueueExportResultsAsync(submitted, dialogViewModel);
