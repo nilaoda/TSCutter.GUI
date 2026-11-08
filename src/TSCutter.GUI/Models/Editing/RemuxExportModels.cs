@@ -36,8 +36,11 @@ public sealed class RemuxExportSettings
 }
 
 // EndSeconds 为包含式终点关键帧；null 表示保留到文件末尾。
+/// <param name="EndExclusive">止于终点关键帧之前：该关键帧不写入，音频、字幕在它的显示时间截止（删除模式的保留段）。</param>
+/// <param name="StartSignature">起点关键帧压缩包的签名文本；DVD 按签名定位，找不到或为 null 时按时间定位。</param>
+/// <param name="EndSignature">终点关键帧压缩包的签名文本，用法同上。</param>
 internal sealed record RemuxExportSegment(string SourcePath, double StartSeconds, double? EndSeconds,
-    RemuxExportSettings Settings);
+    RemuxExportSettings Settings, bool EndExclusive = false, string? StartSignature = null, string? EndSignature = null);
 
 internal sealed record RemuxExportRequest(string OutputPath, IReadOnlyList<RemuxExportSegment> Segments);
 internal readonly record struct RemuxExportProgress(double Percent, double BytesPerSecond, double RemainingSeconds);

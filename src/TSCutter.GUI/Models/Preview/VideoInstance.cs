@@ -66,6 +66,11 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     internal IReadOnlyList<PreviewAudioTrackOption> PreviewAudioTracks { get; private set; } = [];
     internal int AudioTrackCount => inFc.Streams.Count(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO);
     internal double TimelineOriginSeconds => firstFrameTimestamp * timeBase.num / (double)timeBase.den;
+    /// <summary>
+    /// 首个关键帧在时间轴上的时间。普通文件以首个关键帧为原点，恒为 0；光盘标题以标题起点为原点，
+    /// 首帧可能略晚于 0。
+    /// </summary>
+    internal double FirstKeyFrameSeconds { get; private set; }
     internal Avalonia.PixelSize CodedVideoSize => new(inVideoStream.Codecpar!.Width, inVideoStream.Codecpar.Height);
     public int ProgramCount { get; private set; }
     internal long TsSyncOffset { get; private set; } = -1;
@@ -206,8 +211,9 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         if (isMpegTs)
             PacketLayout.RequireSupported();
         TsSyncOffset = CanBinaryClip ? PacketLayout.PacketOffset : -1;
-        // 仅可剪辑的 TS 预览需要压缩包摘要；其他格式不分配缓存、不计算摘要。
-        if (CanBinaryClip)
+        // 可按字节剪辑的 TS 用压缩包摘要定位终点；DVD 跳转后会以目标时间重建时间戳，导出按摘要找到用户看到的关键帧。
+        // 其他格式不分配缓存、不计算摘要。
+        if (CanBinaryClip || Disc?.Kind == DiscKind.Dvd)
             keyPacketBoundaries = new (long, long, PacketEndSignature)[16];
         ProgramCount = inFc.Programs.Count;
         PreviewPrograms = PreviewStreamUtil.CreateOptions(inFc);
@@ -263,6 +269,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
 
         var (firstPts, gap) = ReadKeyFramePacketPts(cancellationToken);
         firstFrameTimestamp = discTimeline is null ? firstPts : 0;
+        FirstKeyFrameSeconds = discTimeline is null ? 0 : Math.Max(0, firstPts * timeBase.num / (double)timeBase.den);
         var isFlv = inFc.InputFormat?.Name is "flv" or "live_flv";
         if (isFlv && inVideoStream.Duration <= 0)
         {

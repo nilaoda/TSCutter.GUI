@@ -12,6 +12,7 @@ public sealed class CutterProject
     public bool ExportCurrentProgramOnly { get; set; }
     public RemuxExportSettings? RemuxSettings { get; set; }
     public ClipCutMode CutMode { get; set; }
+    public ClipListMode ClipMode { get; set; }
     public List<ProjectClip> Clips { get; set; } = [];
     public List<ProjectQueueItem> Queue { get; set; } = [];
     public int SelectedClipIndex { get; set; } = -1;
@@ -39,6 +40,11 @@ public sealed class ProjectClip
     public long EndPts { get; set; }
     public long StartPosition { get; set; }
     public long EndPosition { get; set; }
+    /// <summary>终点画面所在包的字节位置（删除模式下 TS 关键帧剪辑从这里恢复）；旧工程为 -1。</summary>
+    public long EndFramePosition { get; set; } = -1;
+    /// <summary>起点、终点关键帧压缩包的签名（DVD 导出按画面定位切点）；没有时为 null。</summary>
+    public string? StartSignature { get; set; }
+    public string? EndSignature { get; set; }
     public bool IsSelected { get; set; }
     public bool FrameAccurate { get; set; }
     public byte[]? StartThumbnailJpeg { get; set; }
@@ -66,4 +72,6 @@ public sealed class ProjectQueueItem
     public double EndTime { get; set; }
     public long StartPosition { get; set; }
     public long EndPosition { get; set; }
+    public string? StartSignature { get; set; }
+    public string? EndSignature { get; set; }
 }

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+<defs>
+  <linearGradient id="blue" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#91D9FF"/><stop offset="100%" stop-color="#2673CD"/></linearGradient>
+  <linearGradient id="red" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="#FF8C7A"/><stop offset="100%" stop-color="#C4262E"/></linearGradient>
+</defs>
+<path d="M3.5 8.5h8v15h-8Z M20.5 8.5h8v15h-8Z" fill="#2E4359" stroke="#174A8B" stroke-width="1" stroke-linejoin="round" stroke-linecap="round"/><path d="M5 9.5h2v1.5h-2Z M8.5 9.5h2v1.5h-2Z M5 21h2v1.5h-2Z M8.5 21h2v1.5h-2Z M22 9.5h2v1.5h-2Z M25.5 9.5h2v1.5h-2Z M22 21h2v1.5h-2Z M25.5 21h2v1.5h-2Z" fill="#DBE9F7"/><path d="M5 12.5h5v7h-5Z M22 12.5h5v7h-5Z" fill="url(#blue)"/>
+<path d="M13.5 12.5l5 7 M18.5 12.5l-5 7" fill="none" stroke="#7A1018" stroke-width="3.6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M13.5 12.5l5 7 M18.5 12.5l-5 7" fill="none" stroke="url(#red)" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

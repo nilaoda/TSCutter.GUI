@@ -29,8 +29,9 @@ public sealed class FrameAccurateExportSettings
 }
 
 /// <summary>起止均为视频流原始 PTS，包含所选帧；EndPts 为 null 表示保留到文件末尾。</summary>
+/// <param name="EndExclusive">终点画面本身不输出，片段止于它之前的画面（删除模式的保留段止于删除起点之前）。</param>
 internal sealed record FrameAccurateExportSegment(string SourcePath, long StartPts, long? EndPts,
-    FrameAccurateExportSettings Settings);
+    FrameAccurateExportSettings Settings, bool EndExclusive = false);
 
 internal sealed record FrameAccurateExportRequest(string OutputPath, IReadOnlyList<FrameAccurateExportSegment> Segments);
 

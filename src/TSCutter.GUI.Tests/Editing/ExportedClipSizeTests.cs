@@ -119,6 +119,63 @@ public sealed class ExportedClipSizeTests
         }, CancellationToken.None);
     }
 
+    /// <summary>
+    /// 删除模式：片段卡片显示删除大小（TS 为源字节数，需要重新封装的显示不适用），切换模式时立即刷新；
+    /// 导出后选中同一组删除范围时显示输出文件的实际大小，
+    /// 关键帧模式的合并大小不会误用删除模式的输出，工程保存后仍能区分。
+    /// </summary>
+    [Fact]
+    public async Task RemoveModeShowsTheActualOutputSizeAndNoClipSizes()
+    {
+        using var files = new TableProbeData.Files(new byte[4096]);
+        File.WriteAllBytes(files.Output, new byte[1500]);
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(() =>
+        {
+            using var resolver = new ModernDependencyResolver();
+            using var scope = resolver.WithResolver();
+            var locale = new LocalizationService();
+            locale.SwitchLanguage("zh-CN");
+            Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+            var main = new MainWindowViewModel(null!, new ConfigurationService(locale));
+            var group = new MergedClipOutput(Guid.NewGuid().ToString("N"), 1, Removed: true);
+            var clip = new PickedClip { InFileInfo = new FileInfo(files.Source), StartPosition = 100, EndPosition = 900,
+                EndFramePosition = 700, EndTime = 1, IsSelected = true, MergedOutput = group, OutputFileInfo = new FileInfo(files.Output) };
+            var mp4 = new PickedClip { InFileInfo = new FileInfo(files.Source), RequiresRemux = true, EndTime = 1 };
+            main.Clips.Add(clip);
+            main.Clips.Add(mp4);
+            main.SelectedClip = clip;
+            var refreshed = new List<string?>();
+            clip.PropertyChanged += (_, e) => refreshed.Add(e.PropertyName);
+            try
+            {
+                main.ClipMode = ClipListMode.Remove;
+                Assert.Contains(nameof(PickedClip.EstimatedSizeStr), refreshed);
+                Assert.Contains(nameof(PickedClip.ExportSizeStr), refreshed);
+                // 删除 [起点, 终点画面) 的源字节：700 - 100。
+                Assert.Equal("删除大小：" + CommonUtil.FormatFileSize(600), clip.EstimatedSizeStr);
+                Assert.Equal("删除大小：不适用", clip.ExportSizeStr);
+                Assert.Equal("删除大小：不适用", mp4.EstimatedSizeStr);
+                Assert.Equal(LocalizationManager.Instance.String_SizePrefix + CommonUtil.FormatFileSize(1500),
+                    main.SelectedClipEstimatedSizeStr);
+
+                main.ClipMode = ClipListMode.Keep;
+                Assert.StartsWith(LocalizationManager.Instance.String_SizePrefix, clip.EstimatedSizeStr);
+                Assert.StartsWith(LocalizationManager.Instance.String_SizePrefix, mp4.EstimatedSizeStr);
+                Assert.NotEqual(LocalizationManager.Instance.String_SizePrefix + CommonUtil.FormatFileSize(1500),
+                    main.SelectedClipEstimatedSizeStr);
+
+                var project = (CutterProject)typeof(MainWindowViewModel)
+                    .GetMethod("CaptureProject", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(main, [false])!;
+                project.Source = new ProjectSource { Path = files.Source };
+                CutterProjectService.PopulateSources(project);
+                Assert.True(CutterProjectService.Deserialize(CutterProjectService.Serialize(project)).Clips[0].MergedOutput!.Removed);
+            }
+            finally { main.Close(); }
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]

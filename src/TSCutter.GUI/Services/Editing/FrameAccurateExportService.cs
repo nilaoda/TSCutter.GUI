@@ -179,7 +179,9 @@ internal sealed unsafe class FrameAccurateExportService
             foreach (var segment in request.Segments)
             {
                 token.ThrowIfCancellationRequested();
-                plans.Add(Plan(context, segment.StartPts, segment.EndPts, token));
+                var end = segment.EndExclusive && segment.EndPts is { } exclusive
+                    ? PreviousFramePts(context, exclusive, token) : segment.EndPts;
+                plans.Add(Plan(context, segment.StartPts, end, token));
             }
             if (context.Nal &&
                 !context.OriginalParameterSets.Any(set => VideoBitstream.IsSps(VideoBitstream.NalType(set, hevc), hevc)))
@@ -1122,6 +1124,18 @@ internal sealed unsafe class FrameAccurateExportService
             if (packets[i].Pts >= display)
                 return null;
         return new Splice(display, packets[index].Open, packets[index].Pts);
+    }
+
+    /// <summary>
+    /// 显示顺序中紧邻 pts 之前的画面（场对取第一场），把“终点不含该帧”换算为包含的终点；pts 之前没有画面时报错。
+    /// </summary>
+    private long PreviousFramePts(SpliceContext context, long pts, CancellationToken token)
+    {
+        var (packets, _, _, _) = ScanAround(context, pts, pts, token);
+        var previous = packets.Where(packet => !packet.SecondField && packet.Pts < pts)
+            .Select(packet => packet.Pts).DefaultIfEmpty(long.MinValue).Max();
+        return previous != long.MinValue ? previous
+            : throw new FrameAccurateExportException(FrameAccurateExportError.FrameNotFound, pts.ToString());
     }
 
     /// <summary>

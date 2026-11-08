@@ -28,6 +28,40 @@ namespace TSCutter.GUI.Tests.UI;
 [Collection("Avalonia UI")]
 public sealed class KeyFrameStripTests
 {
+    /// <summary>
+    /// 删除模式：删除范围 [起点, 终点) 中的画面用删除颜色标出（不随片段标注颜色变化），终点是恢复播放的画面，不标出；
+    /// 起点在起点帧左侧画“[”，终点的收口画在恢复帧左侧与前一帧之间的缝隙里，而不是恢复帧右侧。
+    /// </summary>
+    [Fact]
+    public async Task RemovedRangesExcludeTheResumeFrame()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var strip = new KeyFrameStripControl { BorderBrush = Brushes.Gray, ClipBrush = Brushes.Green, RemovedBrush = Brushes.Red };
+            var before = new KeyFrameStripItem(90_000, TimeSpan.FromSeconds(1), null, false);
+            var first = new KeyFrameStripItem(180_000, TimeSpan.FromSeconds(2), null, false);
+            var middle = new KeyFrameStripItem(270_000, TimeSpan.FromSeconds(3), null, false);
+            var resume = new KeyFrameStripItem(360_000, TimeSpan.FromSeconds(4), null, false);
+            strip.Items = [before, first, middle, resume];
+            strip.Measure(new Size(448, 80));
+            strip.Arrange(new Rect(0, 0, 448, 80));
+            var tiles = strip.GetTiles();
+            strip.Ranges = [new KeyFrameRetentionRange(2, 4, 180_000, 360_000, false, "blue", Removed: true)];
+            Assert.Same(Brushes.Gray, strip.GetRetentionBrush(before));
+            Assert.Same(Brushes.Red, strip.GetRetentionBrush(first));
+            Assert.Same(Brushes.Red, strip.GetRetentionBrush(middle));
+            Assert.Same(Brushes.Gray, strip.GetRetentionBrush(resume));
+            var markers = strip.GetBoundaryMarkers(tiles);
+            Assert.All(markers, marker => Assert.Same(Brushes.Red, marker.Brush));
+            Assert.Equal(tiles[1].Bounds.Left + 4, Assert.Single(markers, marker => marker.IsStart).Bounds.Left);
+            var end = Assert.Single(markers, marker => !marker.IsStart).Bounds;
+            // 收口完整落在前一帧与恢复帧之间的缝隙里，不压住任何一帧。
+            Assert.Equal(tiles[2].Bounds.Right, end.Left);
+            Assert.Equal(tiles[3].Bounds.Left, end.Right);
+        }, CancellationToken.None);
+    }
+
     [Fact]
     public async Task RetentionIndicatorsRespectExactBoundariesOverlapsAndUnknownFrames()
     {

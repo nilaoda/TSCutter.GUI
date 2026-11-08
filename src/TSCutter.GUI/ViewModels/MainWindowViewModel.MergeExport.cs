@@ -86,14 +86,15 @@ public partial class MainWindowViewModel
         }
     }
 
-    private async Task<string?> ChooseMergedOutputPathAsync(MergeExportSnapshot snapshot)
+    private async Task<string?> ChooseMergedOutputPathAsync(MergeExportSnapshot snapshot, Func<bool>? isCurrent = null,
+        string suffix = "_merged")
     {
         var sourcePath = snapshot.TsRequest.SourcePath;
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_MergeClips_Title,
             SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(sourcePath)!),
-            SuggestedFileName = Path.GetFileNameWithoutExtension(sourcePath) + "_merged." + snapshot.Extension,
+            SuggestedFileName = Path.GetFileNameWithoutExtension(sourcePath) + suffix + "." + snapshot.Extension,
             Filters =
             [
                 new(snapshot.FileFilterName, [snapshot.Extension]),
@@ -102,7 +103,7 @@ public partial class MainWindowViewModel
             DefaultExtension = snapshot.Extension
         };
         var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
-        if (result?.Path is null || !IsMergeExportCurrent(snapshot)) return null;
+        if (result?.Path is null || !(isCurrent?.Invoke() ?? IsMergeExportCurrent(snapshot))) return null;
 
         var path = result.Path.LocalPath;
         if (!PathsEqual(sourcePath, path)) return path;

@@ -106,6 +106,14 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         preferHardwareDecodingForPreview = configService.CurrentConfig.PreferHardwareDecoding;
         _exportCurrentProgramOnly = configService.CurrentConfig.ExportCurrentProgramOnly;
         ExportQueue.CollectionChanged += (_, _) => NotifyQueueChanged();
+        // 新增、撤销恢复或从工程载入的片段都按当前模式显示。
+        Clips.CollectionChanged += (_, e) =>
+        {
+            foreach (var clip in e.NewItems?.OfType<PickedClip>() ?? [])
+                clip.IsRemoval = IsRemoveMode;
+        };
+        // 沿用上次的删除模式选择；打开工程时再按工程记录的模式恢复。
+        ClipMode = configService.CurrentConfig.ClipListMode;
         // 构造菜单项
         BuildThemeMenuItems();
         // 计算型本地化文本不会随资源字典自动刷新，语言切换后需主动通知界面重新取值。
@@ -139,6 +147,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         OnPropertyChanged(nameof(ClipOutputToolTip));
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
         OnPropertyChanged(nameof(SelectedClipsSummaryStr));
+        OnPropertyChanged(nameof(RemoveModeToolTip));
         OnPropertyChanged(nameof(FrameAccurateUnavailableText));
         OnPropertyChanged(nameof(FrameAccurateToolTip));
     }
@@ -166,13 +175,16 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     public int SelectedClipCount => Clips.Count(clip => clip.IsSelected);
 
     // 按选中数量复用现有输出命令，让按钮的文案、可用状态和执行行为保持一致。
-    public IAsyncRelayCommand ClipOutputCommand => SelectedClipCount > 1
-        ? MergeSelectedClipsCommand
+    // 删除模式下只有一种输出：删除选中的范围，其余部分合并为一个文件。
+    public IAsyncRelayCommand ClipOutputCommand => IsRemoveMode ? ExportRemovingSelectedRangesCommand
+        : SelectedClipCount > 1 ? MergeSelectedClipsCommand
         : SaveVideoClickCommand;
-    public string ClipOutputText => SelectedClipCount > 1
-        ? LocalizationManager.Instance.String_MergeClips_Button
+    public string ClipOutputText => IsRemoveMode ? LocalizationManager.Instance.String_RemoveMode_Export
+        : SelectedClipCount > 1 ? LocalizationManager.Instance.String_MergeClips_Button
         : LocalizationManager.Instance.String_SaveClip;
-    public string ClipOutputToolTip => SelectedClipCount > 1
+    public string ClipOutputToolTip => IsRemoveMode
+        ? string.Format(LocalizationManager.Instance.String_RemoveMode_ExportTip, SelectedClipCount)
+        : SelectedClipCount > 1
         ? string.Format(LocalizationManager.Instance.String_MergeClips_ButtonTip, SelectedClipCount)
         : LocalizationManager.Instance.String_SaveClipTip;
     public IReadOnlyList<ClipTimelineRange> SelectedClipRanges => Clips
@@ -180,10 +192,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         .Select(clip => new ClipTimelineRange(
             clip.StartTime,
             clip.EndTime < 0 ? DurationMax : clip.EndTime,
-            ReferenceEquals(clip, SelectedClip), clip.DisplayName, clip.Notes, clip.Color))
+            ReferenceEquals(clip, SelectedClip), clip.DisplayName, clip.Notes, clip.Color, Removed: IsRemoveMode))
         .ToArray();
 
-    public string SelectedClipEstimatedSizeStr => GetSelectedMergedOutputSize() is { } mergedSize ? mergedSize
+    public string SelectedClipEstimatedSizeStr => IsRemoveMode ? RemoveModeSizeStr
+        : GetSelectedMergedOutputSize(removed: false) is { } mergedSize ? mergedSize
         : SelectedClipCount > 1
         ? IsProgramExportFiltered || IsRemuxExport || UsesFrameAccurateCut && !CanEstimateFrameAccurateSize ? FilteredClipSizeStr
             // 帧精确导出会重新编码首尾画面，合计按源字节范围预估，与片段上的“~”一致。
@@ -195,10 +208,15 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             ? IsProgramExportFiltered || IsRemuxExport ? clip.ExportSizeStr : clip.EstimatedSizeStr ?? string.Empty
             : string.Empty;
 
-    private string? GetSelectedMergedOutputSize()
+    /// <summary>
+    /// 选中的片段恰好是同一次合并导出（或删除模式导出）的全部片段且文件仍在时，返回输出文件的实际大小。
+    /// 合并导出至少两个片段；删除模式导出可以只删除一个范围。
+    /// </summary>
+    private string? GetSelectedMergedOutputSize(bool removed)
     {
         var selected = Clips.Where(clip => clip.IsSelected).ToArray();
-        if (selected.Length < 2 || selected[0].MergedOutput is not { } group || group.ClipCount != selected.Length ||
+        if (selected.Length < (removed ? 1 : 2) || selected[0].MergedOutput is not { } group ||
+            group.Removed != removed || group.ClipCount != selected.Length ||
             selected[0].OutputFileInfo is not { Exists: true } file ||
             selected.Any(clip => clip.MergedOutput != group || clip.OutputFileInfo is not { Exists: true } output ||
                                  !PathsEqual(file.FullName, output.FullName))) return null;
@@ -209,6 +227,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         get
         {
+            if (IsRemoveMode)
+                return RemoveModeSummaryStr;
             var aggregate = GetSelectedClipAggregate();
             if (aggregate.Count == 0)
                 return string.Empty;
@@ -323,6 +343,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         OnPropertyChanged(nameof(SelectedClipsSummaryStr));
         SelectAllClipsCommand.NotifyCanExecuteChanged();
         MergeSelectedClipsCommand.NotifyCanExecuteChanged();
+        ExportRemovingSelectedRangesCommand.NotifyCanExecuteChanged();
     }
 
     [RelayCommand(CanExecute = nameof(CanSelectAllClips))]
@@ -486,6 +507,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         AddClipCore();
     }
 
+    // 只有 DVD 需要按画面定位切点（跳转后的时间戳不稳定），其他来源不保存关键帧签名。
+    private static string? BoundarySignature(VideoInstance? video, PacketEndSignature signature) =>
+        video?.Disc?.Kind == DiscKind.Dvd ? signature.ToTextOrNull() : null;
+
     private PickedClip AddClipCore()
     {
         var newClip = new PickedClip()
@@ -498,6 +523,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             StartTime = _displayedFrameTime,
             StartPosition = Math.Max(0, PositionInFile),
             StartPts = CurrentPts,
+            StartSignature = BoundarySignature(_videoInstance, _displayedFrameEndSignature),
             EndTime = DurationMax,
         };
         newClip.ReplaceStartThumbnail(CreateCurrentFrameThumbnail());
@@ -537,6 +563,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         SelectedClip!.StartTime = _displayedFrameTime;
         SelectedClip!.StartPts = CurrentPts;
+        SelectedClip!.StartSignature = BoundarySignature(_videoInstance, _displayedFrameEndSignature);
         SelectedClip!.RequiresFrameAccurate |= UsesFrameAccurateCut;
         SelectedClip!.StartPosition = Math.Max(0, PositionInFile);
         SelectedClip!.ReplaceStartThumbnail(CreateCurrentFrameThumbnail());
@@ -544,6 +571,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         {
             SelectedClip!.EndTime = DurationMax;
             SelectedClip!.EndPosition = -1;
+            SelectedClip!.EndSignature = null;
             SelectedClip!.ReplaceEndThumbnail(null);
         }
         NotifyClipSelectionChanged();
@@ -601,6 +629,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             clip.EndTime = time;
             clip.EndPts = pts;
             clip.EndPosition = endPosition;
+            clip.EndFramePosition = position;
+            clip.EndSignature = BoundarySignature(video, signature);
             clip.RequiresFrameAccurate |= frameAccurate;
             clip.ReplaceEndThumbnail(thumbnail);
             thumbnail = null;
@@ -609,6 +639,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 clip.StartTime = 0;
                 clip.StartPts = video.FirstFramePts;
                 clip.StartPosition = 0;
+                clip.StartSignature = null;
                 clip.ReplaceStartThumbnail(null);
             }
             NotifyClipSelectionChanged();
@@ -859,10 +890,13 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         var startChanged = clip.StartTime != state.StartTime
                            || clip.StartPts != state.StartPts
-                           || clip.StartPosition != state.StartPosition;
+                           || clip.StartPosition != state.StartPosition
+                           || clip.StartSignature != state.StartSignature;
         var endChanged = clip.EndTime != state.EndTime
                          || clip.EndPts != state.EndPts
-                         || clip.EndPosition != state.EndPosition;
+                         || clip.EndPosition != state.EndPosition
+                         || clip.EndFramePosition != state.EndFramePosition
+                         || clip.EndSignature != state.EndSignature;
 
         clip.Name = state.Name;
         clip.Notes = state.Notes;
@@ -873,6 +907,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         clip.EndTime = state.EndTime;
         clip.EndPts = state.EndPts;
         clip.EndPosition = state.EndPosition;
+        clip.EndFramePosition = state.EndFramePosition;
+        clip.StartSignature = state.StartSignature;
+        clip.EndSignature = state.EndSignature;
         clip.IsSelected = state.IsSelected;
         clip.MergedOutput = state.MergedOutput;
         clip.OutputFileInfo = state.OutputFilePath is null ? null : new FileInfo(state.OutputFilePath);
@@ -1135,7 +1172,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         _dialogService.Show(null, dialogViewModel);
     }
 
-    [RelayCommand(CanExecute = nameof(CanEditSelectedClip))]
+    // 删除模式的片段是要删除的范围，不能单独保存或加入队列。
+    private bool CanOutputSelectedClip => CanEditSelectedClip && !IsRemoveMode;
+
+    [RelayCommand(CanExecute = nameof(CanOutputSelectedClip))]
     private async Task SaveVideoClickAsync() => await SaveVideoAsync();
 
     [RelayCommand(CanExecute = nameof(CanMergeSelectedClips))]
@@ -1163,7 +1203,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             await CompleteMergedExportAsync(snapshot.Clips, outputPath, output);
     }
 
-    private bool CanMergeSelectedClips => CanEditVideo && SelectedClipCount >= 2 &&
+    private bool CanMergeSelectedClips => !IsRemoveMode && CanEditVideo && SelectedClipCount >= 2 &&
                                           Clips.Where(clip => clip.IsSelected).All(clip =>
                                               clip.EndTime > clip.StartTime &&
                                               (IsRemuxExport || UsesFrameAccurateCut || clip.StartPosition >= 0 &&
@@ -1664,9 +1704,12 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private CutterProject CaptureProject(bool includeThumbnails) => new()
     {
         // 含帧精确内容的工程使用新版本号，旧版程序不会把它们误当作关键帧片段。
-        Version = CutMode == ClipCutMode.FrameAccurate || Clips.Any(clip => clip.RequiresFrameAccurate) ||
-                  ExportQueue.Any(item => item.FrameAccurate is not null) ? 5 : 4,
+        // 删除模式的片段表示要删除的范围，旧版程序会误当作保留片段，使用版本 6；含删除模式导出记录时同样如此。
+        Version = ClipMode == ClipListMode.Remove || Clips.Any(clip => clip.MergedOutput?.Removed == true) ? 6
+            : CutMode == ClipCutMode.FrameAccurate || Clips.Any(clip => clip.RequiresFrameAccurate) ||
+              ExportQueue.Any(item => item.FrameAccurate is not null) ? 5 : 4,
         CutMode = CutMode,
+        ClipMode = ClipMode,
         Source = IsVideoInitialized ? new ProjectSource { Path = VideoPath } : null,
         PreviewSelection = IsVideoInitialized ? _activePreviewSelection : null,
         ExportCurrentProgramOnly = ExportCurrentProgramOnly,
@@ -1680,6 +1723,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             EndPts = clip.EndPts,
             StartPosition = clip.StartPosition,
             EndPosition = clip.EndPosition,
+            EndFramePosition = clip.EndFramePosition,
+            StartSignature = clip.StartSignature,
+            EndSignature = clip.EndSignature,
             IsSelected = clip.IsSelected,
             FrameAccurate = clip.RequiresFrameAccurate,
             OutputFilePath = clip.OutputFileInfo?.FullName,
@@ -1701,7 +1747,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             StartTime = item.StartTimeSeconds,
             EndTime = item.EndTimeSeconds,
             StartPosition = item.StartPosition,
-            EndPosition = item.EndPosition
+            EndPosition = item.EndPosition,
+            StartSignature = item.StartSignature,
+            EndSignature = item.EndSignature
         }).ToList(),
         SelectedClipIndex = SelectedClip is null ? -1 : Clips.IndexOf(SelectedClip),
         CurrentTime = includeThumbnails ? CurrentTime : 0,
@@ -1812,6 +1860,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         ExportCurrentProgramOnly = project.ExportCurrentProgramOnly;
         ApplyCutMode(project.CutMode);
+        ClipMode = project.ClipMode;
         var currentSourceLength = project.Source is null ? 0 : new FileInfo(project.Source.Path).Length;
         foreach (var saved in project.Clips)
         {
@@ -1831,6 +1880,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 EndPts = saved.EndPts,
                 StartPosition = saved.StartPosition,
                 EndPosition = saved.EndPosition,
+                EndFramePosition = saved.EndFramePosition,
+                StartSignature = saved.StartSignature,
+                EndSignature = saved.EndSignature,
                 IsSelected = saved.IsSelected,
                 MergedOutput = outputIsCurrent ? saved.MergedOutput : null,
                 OutputFileInfo = outputIsCurrent ? new FileInfo(saved.OutputFilePath!) : null,
@@ -1865,6 +1917,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 EndTimeSeconds = saved.EndPosition < 0 ? -1 : saved.EndTime,
                 StartPosition = saved.StartPosition,
                 EndPosition = saved.EndPosition,
+                StartSignature = saved.StartSignature,
+                EndSignature = saved.EndSignature,
                 // 只有当前打开的单节目 TS 能判断帧精确任务的大小可预估；其他来源仍导出后确定。
                 SizeIsApproximate = saved.FrameAccurate is not null && CanEstimateFrameAccurateSize &&
                     PathsEqual(saved.Source.Path, VideoPath),
@@ -2732,6 +2786,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         SaveProjectCommand.NotifyCanExecuteChanged();
         SaveProjectAsCommand.NotifyCanExecuteChanged();
         NotifyCutModeChanged();
+        // 打开、关闭视频或加载状态变化后，删除模式的导出可用性需要重新取值。
+        ExportRemovingSelectedRangesCommand.NotifyCanExecuteChanged();
     }
 
     private void DisposeClipThumbnails()
@@ -2741,7 +2797,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     }
 
     private bool HasSelectedClip => SelectedClip is not null;
-    private bool CanExportAll => CanEditVideo && Clips.Count > 0;
+    private bool CanExportAll => !IsRemoveMode && CanEditVideo && Clips.Count > 0;
     public bool IsVideoInitialized => _videoInstance is { Inited: true };
     
     private async Task SaveVideoAsync()
@@ -2824,7 +2880,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             var fileName = GenerateClipFileName(clip);
             var destPath = ClipOutputNaming.UniquePath(sourceDir, fileName, reservedPaths);
             var task = new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition, SelectedOutputProgramId,
-                CurrentRemuxSettings?.Snapshot(), clip.StartTime, clip.EndPosition < 0 ? null : clip.EndTime);
+                CurrentRemuxSettings?.Snapshot(), clip.StartTime, clip.EndPosition < 0 ? null : clip.EndTime,
+                StartSignature: clip.StartSignature, EndSignature: clip.EndPosition < 0 ? null : clip.EndSignature);
             if (UsesFrameAccurateCut)
             {
                 var (settings, startPts, endPts) = CreateFrameAccurateTask(clip);
@@ -2943,7 +3000,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     // ---- 导出队列 ----
 
-    [RelayCommand(CanExecute = nameof(CanEditSelectedClip))]
+    [RelayCommand(CanExecute = nameof(CanOutputSelectedClip))]
     private async Task AddToQueueAsync()
     {
         var clip = SelectedClip!;
@@ -3031,6 +3088,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             OutputFilePath = outputPath,
             StartPosition = clip.StartPosition,
             EndPosition = clip.EndPosition,
+            StartSignature = clip.StartSignature,
+            EndSignature = clip.EndPosition < 0 ? null : clip.EndSignature,
             SourceFileName = Path.GetFileName(clip.InFileInfo.FullName),
             StartTimeSeconds = clip.StartTime,
             EndTimeSeconds = clip.EndTime,
@@ -3082,7 +3141,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         var tasks = submitted.Select(item =>
             new BatchTask(item.SourceFilePath, item.OutputFilePath, item.StartPosition, item.EndPosition, item.ProgramId,
                 item.RemuxSettings?.Snapshot(), item.StartTimeSeconds, item.EndPosition < 0 ? null : item.EndTimeSeconds,
-                item.FrameAccurate?.Snapshot(), item.StartPts, item.EndPts)
+                item.FrameAccurate?.Snapshot(), item.StartPts, item.EndPts, item.StartSignature, item.EndSignature)
         ).ToList();
 
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();
@@ -3207,7 +3266,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         string Name,
         string Notes,
         string Color,
-        bool RequiresFrameAccurate)
+        bool RequiresFrameAccurate,
+        long EndFramePosition,
+        string? StartSignature,
+        string? EndSignature)
     {
         public static ClipStateSnapshot Create(PickedClip clip) => new(
             clip.ClipID,
@@ -3228,7 +3290,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             clip.Name,
             clip.Notes,
             clip.Color,
-            clip.RequiresFrameAccurate);
+            clip.RequiresFrameAccurate,
+            clip.EndFramePosition,
+            clip.StartSignature,
+            clip.EndSignature);
     }
 
     private readonly record struct HistoryThumbnailKey(

@@ -58,6 +58,8 @@ public class AppConfig : ObservableObject
     public bool ExportCurrentProgramOnly { get; set; }
     // 上次选择的剪辑模式；默认关键帧剪辑。
     public Models.Editing.ClipCutMode ClipCutMode { get; set; }
+    // 上次选择的片段模式（保留或删除）；默认保留。
+    public Models.Editing.ClipListMode ClipListMode { get; set; }
     // 导出过程中对最终输出字节同步执行 TS 检测；默认开启，可在设置中关闭。
     public bool TsCheckOnExport { get; set; } = true;
     public bool PreferHardwareDecoding
