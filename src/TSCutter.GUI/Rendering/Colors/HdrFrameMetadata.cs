@@ -15,6 +15,8 @@ internal sealed unsafe class HdrFrameMetadata
     internal int BitDepth { get; init; }
     internal float PeakNits { get; init; }
     internal HdrTransfer Transfer { get; init; }
+    internal bool IsDolbyVision { get; init; }
+    internal bool IsStandardPq => Transfer == HdrTransfer.Pq && !IsDolbyVision && Curves is null;
     internal ColorMatrix GamutTo709 { get; init; } = From2020To709;
 
     private static readonly ColorMatrix Identity = new(1, 0, 0, 0, 1, 0, 0, 0, 1);
@@ -32,7 +34,7 @@ internal sealed unsafe class HdrFrameMetadata
         Curves = metadata.Curves, Nonlinear = metadata.Nonlinear,
         Linear = From2020To709 * LmsTo2020 * metadata.Linear,
         Offset = metadata.Offset, BitDepth = metadata.BitDepth,
-        PeakNits = metadata.PeakNits, Transfer = HdrTransfer.Pq
+        PeakNits = metadata.PeakNits, Transfer = HdrTransfer.Pq, IsDolbyVision = true
     };
 
     internal static HdrFrameMetadata? Read(AVFrame* frame)
@@ -43,11 +45,11 @@ internal sealed unsafe class HdrFrameMetadata
         var descriptor = FF.av_pix_fmt_desc_get((AVPixelFormat)frame->format);
         if (descriptor == null) throw new NotSupportedException("Unsupported HDR pixel format.");
         return Create(frame->color_trc, frame->color_primaries, frame->colorspace, frame->color_range,
-            descriptor->comp[0].depth, ReadPeakNits(frame));
+            descriptor->comp[0].depth, ReadPeakNits(frame), HasDolbyVision(frame));
     }
 
     internal static HdrFrameMetadata Create(AVColorTransferCharacteristic transfer, AVColorPrimaries primaries,
-        AVColorSpace matrix, AVColorRange range, int depth, float peakNits = 1000)
+        AVColorSpace matrix, AVColorRange range, int depth, float peakNits = 1000, bool isDolbyVision = false)
     {
         if (depth is < 8 or > 16) throw new NotSupportedException("Unsupported HDR bit depth.");
         var hlg = transfer == AVColorTransferCharacteristic.AVCOL_TRC_ARIB_STD_B67;
@@ -83,10 +85,15 @@ internal sealed unsafe class HdrFrameMetadata
             Nonlinear = nonlinear, Linear = linear,
             Offset = [full ? 0 : 16 * codeScale, 128 * codeScale, 128 * codeScale],
             BitDepth = depth, Transfer = hlg ? HdrTransfer.Hlg : HdrTransfer.Pq, GamutTo709 = linear,
+            IsDolbyVision = isDolbyVision,
             // HLG 使用 BT.2100 的 1000 nit、gamma=1.2 参考显示，不依赖系统 HDR 状态。
             PeakNits = hlg ? 1000 : peakNits
         };
     }
+
+    internal static bool HasDolbyVision(AVFrame* frame)
+        => FF.av_frame_get_side_data(frame, AVFrameSideDataType.AV_FRAME_DATA_DOVI_METADATA) != null
+            || FF.av_frame_get_side_data(frame, AVFrameSideDataType.AV_FRAME_DATA_DOVI_RPU_BUFFER) != null;
 
     internal static float ReadPeakNits(AVFrame* frame)
     {

@@ -43,15 +43,15 @@ internal sealed unsafe class HdrMetadataReader
         var descriptor = FF.av_pix_fmt_desc_get((AVPixelFormat)frame->format);
         if (descriptor == null) throw new NotSupportedException("Unsupported HDR pixel format.");
         var key = new ColorKey(frame->color_trc, frame->color_primaries, frame->colorspace,
-            frame->color_range, descriptor->comp[0].depth, HdrFrameMetadata.ReadPeakNits(frame));
+            frame->color_range, descriptor->comp[0].depth, HdrFrameMetadata.ReadPeakNits(frame), HdrFrameMetadata.HasDolbyVision(frame));
         if (previousColor != key)
         {
-            genericMetadata = HdrFrameMetadata.Create(key.Transfer, key.Primaries, key.Matrix, key.Range, key.Depth, key.Peak);
+            genericMetadata = HdrFrameMetadata.Create(key.Transfer, key.Primaries, key.Matrix, key.Range, key.Depth, key.Peak, key.DolbyVision);
             previousColor = key;
         }
         return genericMetadata;
     }
 
     private readonly record struct ColorKey(AVColorTransferCharacteristic Transfer, AVColorPrimaries Primaries,
-        AVColorSpace Matrix, AVColorRange Range, int Depth, float Peak);
+        AVColorSpace Matrix, AVColorRange Range, int Depth, float Peak, bool DolbyVision);
 }

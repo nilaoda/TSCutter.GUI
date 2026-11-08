@@ -22,6 +22,7 @@ internal sealed unsafe class SkiaVideoFramePresenter : IDisposable
     private readonly HdrToneMapper tableBuilder = new(1);
     private LookupTable? toneImage, gamutImage;
     private float previousPeak;
+    private bool previousStandardPq;
     private ColorMatrix? previousGamut;
     private ColorMatrix fromLms;
     private int failed, validated, disposed;
@@ -187,13 +188,15 @@ internal sealed unsafe class SkiaVideoFramePresenter : IDisposable
 
     private void PrepareTables(HdrFrameMetadata metadata)
     {
-        if (toneImage is null || metadata.PeakNits != previousPeak)
+        var standardPq = metadata.IsStandardPq;
+        if (toneImage is null || standardPq != previousStandardPq || metadata.PeakNits != previousPeak)
         {
-            var next = CreateTable(tableBuilder.CreateGpuToneTable(metadata.PeakNits),
+            var next = CreateTable(tableBuilder.CreateGpuToneTable(metadata),
                 HdrToneMapper.GpuTableWidth, HdrToneMapper.GpuTableHeight);
             toneImage?.Dispose();
             toneImage = next;
             previousPeak = metadata.PeakNits;
+            previousStandardPq = standardPq;
         }
         if (gamutImage is null || previousGamut != metadata.GamutTo709)
         {

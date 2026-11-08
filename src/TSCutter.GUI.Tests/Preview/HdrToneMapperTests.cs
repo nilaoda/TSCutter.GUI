@@ -103,6 +103,7 @@ public sealed class HdrToneMapperTests
     [InlineData(true, false)]
     [InlineData(true, true)]
     [InlineData(false, false, 203)]
+    [InlineData(false, false, 9999.99f)]
     [InlineData(false, false, 10000)]
     [InlineData(false, true, 4000)]
     public void HdrYuvRampPreservesBlackWhiteAndSimdParity(bool hlg, bool fullRange, float peakNits = 1000)
@@ -191,18 +192,22 @@ public sealed class HdrToneMapperTests
     }
 
     [Fact]
-    public void PqMidtonesKeepBrightnessWhileBlackAndPeakRemainAnchored()
+    public void PqSplineCompressesMidtonesAndPreservesHighlightsAboveDeclaredPeak()
     {
         var metadata = HdrFrameMetadata.Create(AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084,
-            AVColorPrimaries.AVCOL_PRI_BT709, AVColorSpace.AVCOL_SPC_BT709, AVColorRange.AVCOL_RANGE_JPEG, 10);
-        var signal = new[] { 0f, 20, 50, 100, 1000 }.Select(HdrToneMapper.NitsToPq).ToArray();
+            AVColorPrimaries.AVCOL_PRI_BT709, AVColorSpace.AVCOL_SPC_BT709, AVColorRange.AVCOL_RANGE_JPEG, 10, 1000);
+        var signal = new[] { 0f, 20, 50, 99, 100, 101, 203, 600, 1000, 1500, 2000, 10000 }.Select(HdrToneMapper.NitsToPq).ToArray();
         var chroma = Enumerable.Repeat(512f / 1023, signal.Length).ToArray();
         var red = new float[signal.Length]; var green = new float[signal.Length]; var blue = new float[signal.Length];
         new HdrToneMapper().MapSignals(metadata, signal, chroma, chroma, red, green, blue, true);
         Assert.InRange(red[0], 0, 0.000001f);
-        // 50/100 nit 中间调接近原始亮度，高光压缩不应使整个画面明显变暗。
-        Assert.InRange(red[2] * 203, 45, 55);
-        Assert.InRange(red[3] * 203, 90, 105);
+        // 中间调随高光一起压缩，避免仅处理高光时肤色和大面积亮部仍然过曝。
+        Assert.InRange(red[2] * 203, 25, 40);
+        Assert.InRange(red[4] * 203, 45, 65);
+        Assert.InRange((red[5] - red[4]) / (red[4] - red[3]), 0.8f, 1.2f);
+        // 超过声明峰值仍保留层次，1000 nit 处为更亮的画面留出余量。
+        Assert.InRange(red[8], 0.85f, 0.95f);
+        Assert.True(red[10] - red[8] > 0.02f);
         Assert.InRange(red[^1], 0.99f, 1);
         for (var index = 1; index < red.Length; index++)
             Assert.True(red[index] > red[index - 1]);
@@ -226,9 +231,13 @@ public sealed class HdrToneMapperTests
     public void ReusedMapperHandlesSizeTransferAndPeakChanges()
     {
         var mapper = new HdrToneMapper();
-        foreach (var (width, hlg, peak) in new[] { (37, false, 1000), (8, true, 1000), (41, false, 4000), (37, false, 1000) })
+        foreach (var (width, hlg, peak, dolby) in new[]
+                 {
+                     (37, false, 1000, false), (8, true, 1000, false), (41, false, 10000, true),
+                     (37, false, 1000, false), (41, false, 4000, false)
+                 })
         {
-            var metadata = HdrFrameMetadata.Create(
+            var metadata = dolby ? IdentityMetadata(peak) : HdrFrameMetadata.Create(
                 hlg ? AVColorTransferCharacteristic.AVCOL_TRC_ARIB_STD_B67 : AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084,
                 AVColorPrimaries.AVCOL_PRI_BT2020, AVColorSpace.AVCOL_SPC_BT2020_NCL, AVColorRange.AVCOL_RANGE_MPEG, 10, peak);
             var y = Enumerable.Range(0, width).Select(i => (64 + 876f * i / (width - 1)) / 1023).ToArray();
@@ -243,6 +252,25 @@ public sealed class HdrToneMapperTests
         }
     }
 
+    [Fact]
+    public void GpuToneTableUpdatesWhenSwitchingBetweenPqHlgAndDolby()
+    {
+        var pq = HdrFrameMetadata.Create(AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084,
+            AVColorPrimaries.AVCOL_PRI_BT2020, AVColorSpace.AVCOL_SPC_BT2020_NCL, AVColorRange.AVCOL_RANGE_MPEG, 10);
+        var hlg = HdrFrameMetadata.Create(AVColorTransferCharacteristic.AVCOL_TRC_ARIB_STD_B67,
+            AVColorPrimaries.AVCOL_PRI_BT2020, AVColorSpace.AVCOL_SPC_BT2020_NCL, AVColorRange.AVCOL_RANGE_MPEG, 10);
+        var dolby = IdentityMetadata(10000);
+        var dolbyPq = HdrFrameMetadata.Create(AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084,
+            AVColorPrimaries.AVCOL_PRI_BT2020, AVColorSpace.AVCOL_SPC_BT2020_NCL,
+            AVColorRange.AVCOL_RANGE_MPEG, 10, 10000, isDolbyVision: true);
+        Assert.False(dolbyPq.IsStandardPq);
+        Assert.Equal(new HdrToneMapper().CreateGpuToneTable(dolby), new HdrToneMapper().CreateGpuToneTable(dolbyPq));
+        var mapper = new HdrToneMapper();
+        foreach (var metadata in new[] { pq, hlg, dolby, pq, dolbyPq, pq })
+            Assert.Equal(new HdrToneMapper().CreateGpuToneTable(metadata), mapper.CreateGpuToneTable(metadata));
+        Assert.NotEqual(mapper.CreateGpuToneTable(pq), mapper.CreateGpuToneTable(dolby));
+    }
+
     private static ReshapePiece Polynomial(float a, float b, float c)
     {
         var piece = new ReshapePiece(0, 2);
@@ -250,7 +278,7 @@ public sealed class HdrToneMapperTests
         return piece;
     }
 
-    private static HdrFrameMetadata IdentityMetadata() => HdrFrameMetadata.FromDolby(new DolbyVisionMetadata()
+    private static HdrFrameMetadata IdentityMetadata(float peak = 1000) => HdrFrameMetadata.FromDolby(new DolbyVisionMetadata()
     {
         Curves = Enumerable.Range(0, 3).Select(_ =>
         {
@@ -260,6 +288,6 @@ public sealed class HdrToneMapperTests
         }).ToArray(),
         Nonlinear = new ColorMatrix(1, 0, 0, 0, 1, 0, 0, 0, 1),
         Linear = new ColorMatrix(1, 0, 0, 0, 1, 0, 0, 0, 1),
-        Offset = [0, 0, 0], BitDepth = 10, PeakNits = 1000
+        Offset = [0, 0, 0], BitDepth = 10, PeakNits = peak
     });
 }
