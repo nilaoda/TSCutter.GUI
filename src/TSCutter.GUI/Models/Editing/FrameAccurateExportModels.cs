@@ -33,7 +33,8 @@ public sealed class FrameAccurateExportSettings
 internal sealed record FrameAccurateExportSegment(string SourcePath, long StartPts, long? EndPts,
     FrameAccurateExportSettings Settings, bool EndExclusive = false);
 
-internal sealed record FrameAccurateExportRequest(string OutputPath, IReadOnlyList<FrameAccurateExportSegment> Segments);
+internal sealed record FrameAccurateExportRequest(string OutputPath, IReadOnlyList<FrameAccurateExportSegment> Segments,
+    bool NormalizeTimestamps = false);
 
 public enum FrameAccurateSupport
 {
@@ -63,6 +64,7 @@ internal enum FrameAccurateExportError
     NoRandomAccessPoint,
     ReencodeTooLong,
     IncompatibleStream,
+    TimestampNormalizationRequired,
     NonMonotonicTimestamp,
     SourceChanged,
     EncodeFailed

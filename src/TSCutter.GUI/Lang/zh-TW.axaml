@@ -191,7 +191,7 @@
     <x:String x:Key="String.MediaInfo.Loading">載入中...</x:String>
     <x:String x:Key="String.MediaInfo.Copied">已複製!</x:String>
     <x:String x:Key="String.MediaInfo.Failed">無法載入媒體資訊:</x:String>
-    <x:String x:Key="String.Output.Title">輸出...</x:String>
+    <x:String x:Key="String.Output.Title">輸出</x:String>
     <x:String x:Key="String.Output.Remaining">剩餘時間：</x:String>
     <x:String x:Key="String.Output.QueueProgress">佇列進度：</x:String>
     <x:String x:Key="String.Output.CancelRemaining">取消剩餘</x:String>
@@ -1537,6 +1537,9 @@
     <x:String x:Key="String.Navigate.NextFrame">下一影格（.）</x:String>
     <x:String x:Key="String.Navigate.FrameStepFailed">無法解碼相鄰的畫面。</x:String>
     <x:String x:Key="String.FrameAccurate.Error.Unsupported">此視訊無法智慧剪輯：{0}</x:String>
+    <x:String x:Key="String.FrameAccurate.Timestamps.Title">正規化視訊時間戳記</x:String>
+    <x:String x:Key="String.FrameAccurate.Timestamps.Warning">偵測到來源視訊的解碼時間戳記異常。&#10;&#10;繼續智慧剪輯將修正時間戳記並重新封裝 TS，原始傳輸封包結構與傳輸錯誤不會原樣保留。視訊主體仍直接複製，只有切點附近重新編碼。</x:String>
+    <x:String x:Key="String.FrameAccurate.Timestamps.Continue">正規化並繼續</x:String>
     <x:String x:Key="String.FrameAccurate.Error.Invalid">匯出工作無效。請檢查輸出檔案副檔名和所選片段。</x:String>
     <x:String x:Key="String.FrameAccurate.Error.FrameNotFound">在檔案中找不到所選的畫面。請重新標記片段邊界。</x:String>
     <x:String x:Key="String.FrameAccurate.Error.NoRandomAccessPoint">切點附近沒有可獨立解碼的關鍵影格，無法安全地重新編碼並銜接邊界（例如開放式 GOP 視訊）。請在同一 GOP 內選擇範圍，或使用關鍵影格剪輯。</x:String>

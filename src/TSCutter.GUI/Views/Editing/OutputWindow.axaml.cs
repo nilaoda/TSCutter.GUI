@@ -28,6 +28,7 @@ public partial class OutputWindow : ClassicWindow
         if (viewModel is null) return;
         viewModel.RequestClose += Close;
         viewModel.ConfirmProgramTableWarningAsync = ConfirmProgramTableWarningAsync;
+        viewModel.ConfirmTimestampNormalizationAsync = ConfirmTimestampNormalizationAsync;
         viewModel.PropertyChanged += OnViewModelPropertyChanged;
     }
 
@@ -49,6 +50,7 @@ public partial class OutputWindow : ClassicWindow
         if (viewModel is null) return;
         viewModel.RequestClose -= Close;
         viewModel.ConfirmProgramTableWarningAsync = null;
+        viewModel.ConfirmTimestampNormalizationAsync = null;
         viewModel.PropertyChanged -= OnViewModelPropertyChanged;
         viewModel = null;
     }
@@ -61,6 +63,16 @@ public partial class OutputWindow : ClassicWindow
         using var registration = token.Register(() => Dispatcher.UIThread.Post(() => dialog.Close()));
         await dialog.ShowDialog(this);
         return warning.Choice;
+    }
+
+    private async Task<bool> ConfirmTimestampNormalizationAsync(IReadOnlyList<string> fileNames, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var warning = new TsTimestampWarningViewModel { FileNames = fileNames };
+        var dialog = new TsTimestampWarningView { DataContext = warning };
+        using var registration = token.Register(() => Dispatcher.UIThread.Post(() => dialog.Close()));
+        await dialog.ShowDialog(this);
+        return warning.DialogResult == true;
     }
 
     private void OnInitialized(object? sender, EventArgs e)

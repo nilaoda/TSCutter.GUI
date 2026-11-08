@@ -1,8 +1,11 @@
+using FFmpeg.AutoGen.Abstractions;
+using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Tests.FFmpeg;
+using TSCutter.GUI.Utils.TransportStream.Packets;
 using Xunit;
 
 namespace TSCutter.GUI.Tests.Editing;
@@ -105,6 +108,9 @@ public sealed class FrameAccurateTsOutputTests
         var output = Temporary(Path.GetExtension(name));
         try
         {
+            if (name is "h264.m2ts" or "wrap.ts" or "hevc-cra.ts")
+                Assert.False(await new FrameAccurateExportService().NeedsTimestampNormalizationAsync(new(output,
+                    [new(source, frames[start].Pts, frames[^23].Pts, FrameAccurateExportTests.Settings(source))]), default));
             await Export(source, output, frames[start].Pts, frames[^23].Pts);
             var result = await new TsStreamAnalyzer().AnalyzeAsync(output);
             Assert.Empty(Signature(result));
@@ -158,6 +164,132 @@ public sealed class FrameAccurateTsOutputTests
                 File.Delete(copy);
             File.Delete(output);
         }
+    }
+
+    [Theory]
+    [InlineData(188)]
+    [InlineData(192)]
+    public void AudioReturnedBeforeEarlierVideoKeepsTheFirstVideoPes(int stride)
+    {
+        const int video = 256, audio = 257;
+        var source = Temporary(".ts");
+        var output = Temporary(".ts");
+        var prefix = stride - 188;
+        var packets = Enumerable.Range(0, 5).Select(index =>
+        {
+            var packet = new byte[stride];
+            packet.AsSpan().Fill(0xFF);
+            if (prefix > 0)
+                System.Buffers.Binary.BinaryPrimitives.WriteUInt32BigEndian(packet, (uint)index);
+            var body = packet.AsSpan(prefix);
+            var pid = index % 2 == 0 ? video : audio;
+            body[0] = 0x47;
+            body[1] = (byte)(0x40 | (pid >> 8));
+            body[2] = (byte)pid;
+            body[3] = (byte)(0x10 | index / 2);
+            // 简单 PES 不带时间戳；本测试只核对包的位置、顺序和内容。
+            new byte[] { 0, 0, 1, (byte)(pid == video ? 0xE0 : 0xC0), 0, 0, 0x80, 0, 0 }
+                .CopyTo(body[4..]);
+            return packet;
+        }).ToArray();
+        try
+        {
+            File.WriteAllBytes(source, packets.SelectMany(packet => packet).ToArray());
+            using (var writer = new FrameAccurateTsOutput(source, output, new TsPacketLayout(stride, prefix),
+                       video, [video, audio], [], false, false, null))
+            {
+                writer.BeginSegment(0, null, 0);
+                foreach (var index in new[] { 1, 3, 0, 2, 4 })
+                {
+                    var pid = index % 2 == 0 ? video : audio;
+                    writer.Demuxed(pid, index * stride);
+                    if (index == 4)
+                        continue;
+                    if (pid == video)
+                        writer.Video(TsVideoPiece.Source, index * stride, [1], long.MinValue, long.MinValue, false);
+                    else
+                        writer.Other(index * stride, [1], long.MinValue, long.MinValue);
+                }
+                writer.EndSegment();
+                writer.Complete();
+            }
+            Assert.Equal(packets.Take(4).SelectMany(packet => packet), File.ReadAllBytes(output));
+        }
+        finally { File.Delete(source); File.Delete(output); }
+    }
+
+    [NativeMediaFact("frameaccurate")]
+    public async Task LateDtsNeedsConsentAndNormalizationKeepsTheChosenFrames()
+    {
+        var fixture = Fixture("h264.ts");
+        var source = Temporary(".ts");
+        var output = Temporary(".ts");
+        try
+        {
+            WriteLateDtsSource(fixture, source);
+            var frames = FrameAccurateExportTests.DecodeFrames(fixture);
+            var settings = FrameAccurateExportTests.Settings(source);
+            var request = new FrameAccurateExportRequest(output,
+                [new(source, frames[40], frames[100], settings), new(source, frames[150], frames[230], settings)]);
+            var probe = new FrameAccurateExportService();
+            var normal = new FrameAccurateExportRequest(output,
+            [
+                new(fixture, frames[40], frames[100], settings),
+                new(fixture, frames[45], frames[50], settings),
+                new(fixture, frames[150], frames[230], settings)
+            ]);
+            Assert.False(await probe.NeedsTimestampNormalizationAsync(normal, default));
+            Assert.True(await probe.NeedsTimestampNormalizationAsync(request, default));
+            Assert.False(File.Exists(output));
+            byte[] previous = [1, 2, 3];
+            await File.WriteAllBytesAsync(output, previous);
+            var error = await Assert.ThrowsAsync<FrameAccurateExportException>(() =>
+                new FrameAccurateExportService().ExportAsync(request));
+            Assert.Equal(FrameAccurateExportError.TimestampNormalizationRequired, error.Code);
+            Assert.Equal(previous, await File.ReadAllBytesAsync(output));
+
+            var check = new ExportTsCheckSession(output);
+            await new FrameAccurateExportService().ExportAsync(request with { NormalizeTimestamps = true }, checkSession: check);
+            check.Complete();
+            var decoded = FrameAccurateExportTests.Decode(output, out var decodeErrors);
+            Assert.Equal(0, decodeErrors);
+            Assert.Equal(Enumerable.Range(40, 61).Concat(Enumerable.Range(150, 81)), decoded.Select(frame => frame.Number));
+            Assert.Equal(TsExportCheckState.Completed, check.State);
+            Assert.Equal(0, check.Result!.TotalErrorCount);
+
+            File.Delete(source);
+            WriteLateDtsSource(fixture, source, 180_000);
+            var excessive = await Assert.ThrowsAsync<FrameAccurateExportException>(() =>
+                probe.NeedsTimestampNormalizationAsync(request, default));
+            Assert.Equal(FrameAccurateExportError.NonMonotonicTimestamp, excessive.Code);
+            excessive = await Assert.ThrowsAsync<FrameAccurateExportException>(() =>
+                new FrameAccurateExportService().ExportAsync(request with { NormalizeTimestamps = true }));
+            Assert.Equal(FrameAccurateExportError.NonMonotonicTimestamp, excessive.Code);
+        }
+        finally { File.Delete(source); File.Delete(output); }
+    }
+
+    internal static unsafe void WriteLateDtsSource(string from, string to, long dtsOffset = 45_000)
+    {
+        using var input = FormatContext.OpenInputUrl(from);
+        input.LoadStreamInfo();
+        var video = input.GetVideoStream();
+        var tables = new[] { 0, 0x11 }.Concat(input.Programs.Select(program => program.PmtPid));
+        using var writer = new FrameAccurateTsOutput(from, to, TsPacketLayout.Detect(from), video.Id,
+            [video.Id], tables, false, true, null);
+        writer.BeginSegment(0, null, 0);
+        foreach (var packet in input.ReadPackets())
+        {
+            if (packet.StreamIndex != video.Index)
+                continue;
+            AVPacket* raw = packet;
+            writer.Demuxed(video.Id, raw->pos);
+            // 写成显式 DTS，模拟整条视频解码时钟偏晚；压缩画面不变。
+            writer.Video(TsVideoPiece.Encoded, raw->pos, new ReadOnlySpan<byte>(raw->data, raw->size),
+                raw->pts, raw->dts + dtsOffset, (raw->flags & 1) != 0);
+        }
+        writer.EndSegment();
+        writer.Complete();
     }
 
     private static Task Export(string source, string output, long start, long end, FrameAccurateExportService? service = null) =>

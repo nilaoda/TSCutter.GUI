@@ -1,8 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Classic.CommonControls.Dialogs;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Files;
@@ -12,6 +16,15 @@ namespace TSCutter.GUI.ViewModels;
 
 public partial class MainWindowViewModel
 {
+    private CancellationTokenSource? timestampCheckCancellation;
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(StatusInfoText))]
+    public partial bool IsCheckingExportTimestamps { get; set; }
+
+    [RelayCommand]
+    private void CancelExportTimestampCheck() => timestampCheckCancellation?.Cancel();
+
     private async Task<T> RunExportPreparationAsync<T>(
         Func<IProgress<ExportPreparationProgress>, CancellationToken, Task<T>> operation,
         Func<bool>? isCurrent = null, string? caption = null, bool canCancel = true)
@@ -41,6 +54,49 @@ public partial class MainWindowViewModel
                 try { await work; } catch { }
             }
             progressViewModel.CancelOperation = null;
+        }
+    }
+
+    private async Task<bool> PrepareTimestampNormalizationAsync(OutputWindowViewModel output,
+        Func<bool>? selectionUnchanged = null)
+    {
+        bool IsCurrent() => selectionUnchanged?.Invoke() ?? true;
+        if (!IsCurrent() || timestampCheckCancellation is not null)
+            return false;
+        using var cancellation = new CancellationTokenSource();
+        timestampCheckCancellation = cancellation;
+        IsCheckingExportTimestamps = true;
+        try
+        {
+            // 保存前的时间戳检查只更新主窗口状态，不弹出与导出进度相似的窗口。
+            var sources = await output.FindTimestampNormalizationSourcesAsync(cancellation.Token);
+            cancellation.Token.ThrowIfCancellationRequested();
+            IsCheckingExportTimestamps = false;
+            if (!IsCurrent())
+                return false;
+            if (sources.Count > 0)
+            {
+                var warning = _dialogService.CreateViewModel<TsTimestampWarningViewModel>();
+                warning.FileNames = sources.Select(path => Path.GetFileName(path)).ToArray();
+                await _dialogService.ShowDialogAsync(this, warning);
+                cancellation.Token.ThrowIfCancellationRequested();
+                if (warning.DialogResult != true || !IsCurrent())
+                    return false;
+            }
+            output.SetTimestampNormalizationChoice(sources);
+            return true;
+        }
+        catch (OperationCanceledException) { return false; }
+        catch (Exception exception)
+        {
+            if (IsCurrent())
+                await ShowMessageAsync(FormatMergeError(exception), LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
+            return false;
+        }
+        finally
+        {
+            IsCheckingExportTimestamps = false;
+            timestampCheckCancellation = null;
         }
     }
 

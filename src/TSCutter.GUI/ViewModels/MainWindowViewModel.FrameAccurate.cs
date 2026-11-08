@@ -350,6 +350,7 @@ public partial class MainWindowViewModel
             FrameAccurateExportError.ReencodeTooLong => string.Format(strings.String_FrameAccurate_Error_TooLong,
                 FrameAccurateExportService.MaxReencodeSeconds),
             FrameAccurateExportError.IncompatibleStream => strings.String_FrameAccurate_Error_Incompatible,
+            FrameAccurateExportError.TimestampNormalizationRequired => strings.String_FrameAccurate_Timestamps_Warning,
             FrameAccurateExportError.NonMonotonicTimestamp => strings.String_RemuxExport_Error_Timestamp,
             FrameAccurateExportError.SourceChanged => strings.String_MergeClips_SourceChanged,
             FrameAccurateExportError.EncodeFailed => strings.String_FrameAccurate_Error_Encode,

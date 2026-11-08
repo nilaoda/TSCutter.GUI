@@ -187,6 +187,8 @@ public partial class MainWindowViewModel
         if (!await ConfirmGradualRefreshExportAsync()) return;
         if (!await PrepareProgramTableExportAsync(output, removed.Select(GetProgramTableClipLabel).ToArray(), IsCurrent))
             return;
+        if (!await PrepareTimestampNormalizationAsync(output, IsCurrent))
+            return;
         var outputPath = await ChooseMergedOutputPathAsync(snapshot, IsCurrent, "_cut");
         if (outputPath is null) return;
         ConfigureMergeExportTask(output, snapshot, outputPath);

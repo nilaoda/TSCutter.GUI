@@ -2,6 +2,7 @@ using System.Reflection;
 using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.Avalonia;
 using HanumanInstitute.MvvmDialogs.FileSystem;
+using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Models.Editing;
 using Avalonia.Controls;
 using Avalonia.Headless;
@@ -10,6 +11,7 @@ using Classic.Avalonia.Theme;
 using Splat;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Tests.FFmpeg;
 using TSCutter.GUI.Tests.UI;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.ViewModels;
@@ -249,6 +251,7 @@ public sealed class TsExportWarningTests
             new App().Initialize();
             var warning = App.DialogService.CreateViewModel<TsExportWarningViewModel>();
             Assert.NotNull(warning);
+            Assert.NotNull(App.DialogService.CreateViewModel<TsTimestampWarningViewModel>());
             Assert.NotNull(App.DialogService.CreateViewModel<OutputWindowViewModel>());
             Assert.NotNull(App.DialogService.CreateViewModel<ExportPreparationWindowViewModel>());
             return Task.CompletedTask;
@@ -355,6 +358,120 @@ public sealed class TsExportWarningTests
         });
     }
 
+    [NativeMediaTheory("frameaccurate")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task BatchTimestampWarningIsConfirmedOncePerSource(bool proceed)
+    {
+        var directory = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "ts-clock-warning-" + Guid.NewGuid().ToString("N")));
+        var source = Path.Combine(directory.FullName, "source.ts");
+        var first = Path.Combine(directory.FullName, "first.ts");
+        var second = Path.Combine(directory.FullName, "second.ts");
+        var invalidSource = Path.Combine(directory.FullName, "invalid.ts");
+        var invalidOutput = Path.Combine(directory.FullName, "invalid-output.ts");
+        try
+        {
+            var fixture = Path.Combine(NativeTestEnvironment.FixtureDirectory("frameaccurate"), "h264.ts");
+            FrameAccurateTsOutputTests.WriteLateDtsSource(fixture, source);
+            File.WriteAllBytes(invalidSource, [0, 1, 2]);
+            var frames = FrameAccurateExportTests.DecodeFrames(fixture);
+            var settings = FrameAccurateExportTests.Settings(source);
+            await RunAsync(async () =>
+            {
+                var output = new OutputWindowViewModel();
+                output.SetBatchTasks(
+                [
+                    new BatchTask(invalidSource, invalidOutput, 0, -1, FrameAccurate: settings, StartPts: frames[40], EndPts: frames[100]),
+                    new BatchTask(source, first, 0, -1, FrameAccurate: settings, StartPts: frames[40], EndPts: frames[100]),
+                    new BatchTask(source, second, 0, -1, FrameAccurate: settings, StartPts: frames[150], EndPts: frames[230])
+                ]);
+                var prompts = 0;
+                output.ConfirmTimestampNormalizationAsync = (name, token) =>
+                {
+                    prompts++;
+                    Assert.Equal(["source.ts"], name);
+                    Assert.False(File.Exists(first));
+                    Assert.False(File.Exists(second));
+                    return Task.FromResult(proceed);
+                };
+                await output.OutputCommand.ExecuteAsync(null);
+                Assert.Equal(1, prompts);
+                if (proceed)
+                    Assert.IsType<FFmpegException>(output.Exception);
+                else
+                    Assert.Null(output.Exception);
+                Assert.Equal(proceed ? new[] { 0 } : [], output.FailedTaskIndices);
+                Assert.False(File.Exists(invalidOutput));
+                Assert.Equal(proceed ? 2 : 0, output.CompletedTaskIndices.Count);
+                Assert.Equal(proceed, File.Exists(first));
+                Assert.Equal(proceed, File.Exists(second));
+            });
+        }
+        finally { directory.Delete(recursive: true); }
+    }
+
+    [NativeMediaTheory("frameaccurate")]
+    [InlineData("timestamp-cancel")]
+    [InlineData("timestamp-save-cancel")]
+    [InlineData("timestamp-normalize")]
+    [InlineData("normal-save")]
+    [InlineData("normal-cancel")]
+    public async Task TimestampWarningPrecedesTheSaveDialog(string mode)
+    {
+        var directory = Directory.CreateDirectory(Path.Combine(Path.GetTempPath(), "ts-clock-preflight-" + Guid.NewGuid().ToString("N")));
+        var source = Path.Combine(directory.FullName, "recording.ts");
+        var outputPath = Path.Combine(directory.FullName, "clip.ts");
+        try
+        {
+            var fixture = Path.Combine(NativeTestEnvironment.FixtureDirectory("frameaccurate"), "h264.ts");
+            if (mode.StartsWith("normal", StringComparison.Ordinal))
+                File.Copy(fixture, source);
+            else
+                FrameAccurateTsOutputTests.WriteLateDtsSource(fixture, source);
+            var frames = FrameAccurateExportTests.DecodeFrames(fixture);
+            await RunAsync(async () =>
+            {
+                var manager = DispatchProxy.Create<IDialogManager, ProgramTableDialogManager>();
+                var stub = (ProgramTableDialogManager)(object)manager;
+                stub.OutputPath = outputPath;
+                stub.ExpectedClipLabel = "recording.ts";
+                stub.Mode = mode;
+                stub.RejectPreparationDialog = true;
+                var dialogs = new DialogService(manager, viewModelFactory: type => Activator.CreateInstance(type));
+                var config = new RemoveModeWorkflowTests.MemoryConfiguration();
+                config.CurrentConfig.ClipCutMode = ClipCutMode.FrameAccurate;
+                var main = new MainWindowViewModel(dialogs, config) { VideoPath = source };
+                const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+                try
+                {
+                    Assert.True(await (Task<bool>)typeof(MainWindowViewModel).GetMethod("LoadVideoAsync", flags)!.Invoke(main, [null])!);
+                    Assert.True(main.UsesFrameAccurateCut);
+                    var clip = new PickedClip
+                    {
+                        InFileInfo = new FileInfo(source), StartPosition = 0, EndPosition = 188,
+                        StartPts = frames[40], EndPts = frames[100], StartTime = 1, EndTime = 3,
+                        RequiresFrameAccurate = true
+                    };
+                    main.Clips.Add(clip);
+                    main.SelectedClip = clip;
+                    await (Task)typeof(MainWindowViewModel).GetMethod("SaveVideoAsync", flags)!.Invoke(main, null)!;
+                    Assert.Equal(mode switch
+                    {
+                        "timestamp-cancel" => new[] { "timestamp" },
+                        "timestamp-save-cancel" => new[] { "timestamp", "path" },
+                        "normal-save" => new[] { "path", "output" },
+                        "normal-cancel" => new[] { "path" },
+                        _ => new[] { "timestamp", "path", "output" }
+                    }, stub.Events);
+                    Assert.Equal(mode is "timestamp-normalize" or "normal-save", File.Exists(outputPath));
+                    Assert.False(main.IsCheckingExportTimestamps);
+                }
+                finally { main.Close(); }
+            });
+        }
+        finally { directory.Delete(recursive: true); }
+    }
+
     private static async Task RunAsync(Func<Task> action)
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
@@ -376,6 +493,7 @@ public class ProgramTableDialogManager : DispatchProxy
     public string ExpectedClipLabel { get; set; } = "";
     public string OutputPath { get; set; } = "";
     public string Mode { get; set; } = "";
+    public bool RejectPreparationDialog { get; set; }
     public List<string> Events { get; } = [];
 
     protected override object? Invoke(MethodInfo? method, object?[]? args)
@@ -384,10 +502,23 @@ public class ProgramTableDialogManager : DispatchProxy
         {
             Events.Add("path");
             Assert.False(File.Exists(OutputPath));
-            return Task.FromResult<object?>(Mode == "save-cancel" ? null : new DesktopDialogStorageFile(OutputPath));
+            return Task.FromResult<object?>(Mode is "save-cancel" or "timestamp-save-cancel" or "normal-cancel" ? null : new DesktopDialogStorageFile(OutputPath));
         }
         if (method.Name == "ShowDialogAsync" && args![1] is ExportPreparationWindowViewModel preparation)
+        {
+            Assert.False(RejectPreparationDialog);
             return PreparationDialogManager.ObserveAsync(preparation);
+        }
+        if (method.Name == "ShowDialogAsync" && args![1] is TsTimestampWarningViewModel timestamp)
+        {
+            Events.Add("timestamp");
+            Assert.Single(Events);
+            Assert.Equal(ExpectedClipLabel, timestamp.FileNames.Single());
+            Assert.False(File.Exists(OutputPath));
+            if (Mode != "timestamp-cancel")
+                timestamp.Confirm();
+            return Task.FromResult(timestamp.DialogResult);
+        }
         if (method.Name == "ShowDialogAsync" && args![1] is TsExportWarningViewModel warning)
         {
             Events.Add("warning");
@@ -406,6 +537,7 @@ public class ProgramTableDialogManager : DispatchProxy
         {
             Events.Add("output");
             output.ConfirmProgramTableWarningAsync = (_, _) => throw new InvalidOperationException("Repeated warning");
+            output.ConfirmTimestampNormalizationAsync = (_, _) => throw new InvalidOperationException("Repeated timestamp warning");
             return RunOutputAsync(output);
         }
         throw new NotSupportedException(method.ToString());
