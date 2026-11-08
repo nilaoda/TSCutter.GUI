@@ -1542,10 +1542,13 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private async Task OpenProjectPathAsync(string projectPath)
     {
         if (_isLoadingVideo) return;
-        CutterProject project;
+        CutterProject? project;
+        var sourceLocations = new Dictionary<string, string>(MediaFileUtil.PathComparer);
         try
         {
-            project = await CutterProjectService.LoadAsync(projectPath);
+            project = await LoadProjectWithSourceLocationsAsync(projectPath, sourceLocations);
+            if (project is null)
+                return;
         }
         catch (Exception exception)
         {
@@ -1610,6 +1613,69 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         await RestoreProjectAsync(project);
         SetProjectPath(projectPath);
         MarkProjectCheckpoint();
+        if (sourceLocations.Count > 0)
+        {
+            _savedProjectState = null;
+            OnPropertyChanged(nameof(HasUnsavedProjectChanges));
+        }
+    }
+
+    private async Task<CutterProject?> LoadProjectWithSourceLocationsAsync(string projectPath,
+        Dictionary<string, string> sourceLocations)
+    {
+        var attempt = await TryLoadAsync();
+        while (attempt.SourcePath is { } sourcePath)
+        {
+            var nearby = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(projectPath))!,
+                CutterProjectService.GetSourceFileName(sourcePath));
+            string location;
+            if (!attempt.ContentsChanged && !sourceLocations.ContainsKey(sourcePath) &&
+                File.Exists(nearby) && !PathsEqual(nearby, sourcePath))
+            {
+                location = nearby;
+            }
+            else
+            {
+                var prompt = string.Format(attempt.ContentsChanged
+                    ? LocalizationManager.Instance.String_Project_SourceLocateMismatch
+                    : LocalizationManager.Instance.String_Project_SourceLocateConfirm, sourcePath);
+                if (!await ShowConfirmAsync(prompt, LocalizationManager.Instance.String_Project_SourceLocate))
+                    return null;
+                var selected = await _dialogService.ShowOpenFilesDialogAsync(this, new OpenFileDialogSettings
+                {
+                    Title = LocalizationManager.Instance.String_Project_SourceLocate,
+                    SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(Path.GetFullPath(projectPath))!),
+                    Filters =
+                    [
+                        new(LocalizationManager.Instance.String_VideoFiles, PreviewFileExtensions),
+                        new(LocalizationManager.Instance.String_AllFiles, "*")
+                    ]
+                });
+                if (selected.Count == 0)
+                    return null;
+                location = selected[0].LocalPath;
+            }
+            sourceLocations[sourcePath] = location;
+            attempt = await TryLoadAsync();
+        }
+        return attempt.Project;
+
+        async Task<(CutterProject? Project, string? SourcePath, bool ContentsChanged)> TryLoadAsync()
+        {
+            try
+            {
+                return (await CutterProjectService.LoadAsync(projectPath, sourceLocations: sourceLocations), null, false);
+            }
+            catch (FileNotFoundException missing) when (missing.FileName is not null &&
+                                                       !PathsEqual(missing.FileName, projectPath))
+            {
+                return (null, missing.FileName, false);
+            }
+            catch (ProjectSourceChangedException changed)
+            {
+                return (null, changed.SourcePath, true);
+            }
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanSaveProject))]

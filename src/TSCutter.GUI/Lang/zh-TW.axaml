@@ -64,6 +64,9 @@
     <x:String x:Key="String.Project.FileEnd">檔案結尾</x:String>
     <x:String x:Key="String.Project.SourceMissing">找不到來源檔案：{0}</x:String>
     <x:String x:Key="String.Project.SourceChanged">來源檔案已儲存的部分發生變更或檔案縮短：{0}</x:String>
+    <x:String x:Key="String.Project.SourceLocate">重新定位來源檔案</x:String>
+    <x:String x:Key="String.Project.SourceLocateConfirm">找不到來源檔案：{0}&#10;&#10;是否選擇移動後的來源檔案？</x:String>
+    <x:String x:Key="String.Project.SourceLocateMismatch">來源檔案與專案中記錄的內容不符：{0}&#10;&#10;是否重新選擇原始來源檔案？</x:String>
     <x:String x:Key="String.Project.Invalid">專案檔案或其中的剪輯範圍無效。</x:String>
     <x:String x:Key="String.Menu.SaveClip">儲存片段(_S)...</x:String>
     <x:String x:Key="String.Menu.ExportQueue">匯出佇列</x:String>

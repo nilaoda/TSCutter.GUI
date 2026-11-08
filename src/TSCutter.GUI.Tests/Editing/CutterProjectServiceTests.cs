@@ -274,6 +274,106 @@ public sealed class CutterProjectServiceTests
         Assert.Throws<InvalidDataException>(() => CutterProjectService.Validate(project));
     }
 
+    [Fact]
+    public async Task MovedSourceUpdatesPreviewAndQueueAndCanBeSavedAtItsNewLocation()
+    {
+        using var files = new ProjectTestFiles();
+        var source = files.CreateSource();
+        var oldPath = source.Path;
+        var project = CreateProject(source);
+        var json = CutterProjectService.Serialize(project);
+        var projectPath = Path.Combine(files.DirectoryPath, "session.tscut");
+        await File.WriteAllTextAsync(projectPath, json);
+        var moved = Path.Combine(files.DirectoryPath, "renamed.ts");
+        File.Move(oldPath, moved);
+        await using (var append = new FileStream(moved, FileMode.Append, FileAccess.Write))
+            await append.WriteAsync(new byte[188]);
+
+        var restored = await CutterProjectService.LoadAsync(projectPath,
+            sourceLocations: new Dictionary<string, string> { [oldPath] = moved });
+
+        Assert.Equal(moved, restored.Source!.Path);
+        Assert.Equal(moved, restored.Queue[0].Source.Path);
+        Assert.Equal(source.PrefixFingerprint, restored.Source.PrefixFingerprint);
+        Assert.Equal(source.Length, restored.Source.Length);
+        Assert.Equal((10d, 20d, 100L, 200L), (restored.Clips[1].StartTime, restored.Clips[1].EndTime,
+            restored.Clips[1].StartPosition, restored.Clips[1].EndPosition));
+        Assert.Equal(project.Queue[0].OutputFilePath, restored.Queue[0].OutputFilePath);
+        Assert.Equal(json, await File.ReadAllTextAsync(projectPath));
+        await CutterProjectService.SaveAsync(projectPath, restored);
+        Assert.Equal(moved, (await CutterProjectService.LoadAsync(projectPath)).Source!.Path);
+    }
+
+    [Fact]
+    public async Task ReplacementMustMatchSavedContentsAndMissingFilesReportTheOriginalPath()
+    {
+        using var files = new ProjectTestFiles();
+        var source = files.CreateSource();
+        var projectPath = Path.Combine(files.DirectoryPath, "session.tscut");
+        await File.WriteAllTextAsync(projectPath, CutterProjectService.Serialize(CreateProject(source)));
+        var replacement = Path.Combine(files.DirectoryPath, "replacement.ts");
+        File.Move(source.Path, replacement);
+        var locations = new Dictionary<string, string> { [source.Path] = replacement };
+        var original = File.ReadAllBytes(replacement)[100];
+        using (var stream = new FileStream(replacement, FileMode.Open, FileAccess.Write))
+        {
+            stream.Position = 100;
+            stream.WriteByte((byte)(original ^ 255));
+        }
+        var changed = await Assert.ThrowsAsync<ProjectSourceChangedException>(() =>
+            CutterProjectService.LoadAsync(projectPath, sourceLocations: locations));
+        Assert.Equal(source.Path, changed.SourcePath);
+        using (var stream = new FileStream(replacement, FileMode.Open, FileAccess.Write))
+            stream.SetLength(source.Length - 1);
+        await Assert.ThrowsAsync<ProjectSourceChangedException>(() =>
+            CutterProjectService.LoadAsync(projectPath, sourceLocations: locations));
+        File.Delete(replacement);
+        var missing = await Assert.ThrowsAsync<FileNotFoundException>(() =>
+            CutterProjectService.LoadAsync(projectPath, sourceLocations: locations));
+        Assert.Equal(source.Path, missing.FileName);
+    }
+
+    [Fact]
+    public async Task CrossPlatformProjectRelinksSourcesAndMakesForeignQueueTargetsLocal()
+    {
+        using var files = new ProjectTestFiles();
+        var source = files.CreateSource();
+        var currentPath = source.Path;
+        // 刻意使用另一种系统的路径，模拟跨平台打开工程。
+        var foreignDirectory = OperatingSystem.IsWindows() ? "/missing-recordings/" : @"Z:\missing-recordings\";
+        source.Path = foreignDirectory + "recording.ts";
+        var project = CreateProject(source);
+        project.Queue[0].OutputFilePath = foreignDirectory + "queued.ts";
+        project.Clips[1].OutputFilePath = foreignDirectory + "exported.ts";
+        project.Clips[1].WasExported = true;
+        var projectPath = Path.Combine(files.DirectoryPath, "session.tscut");
+        await File.WriteAllTextAsync(projectPath, CutterProjectService.Serialize(project));
+        var missing = await Assert.ThrowsAsync<FileNotFoundException>(() => CutterProjectService.LoadAsync(projectPath));
+        Assert.Equal(source.Path, missing.FileName);
+
+        var restored = await CutterProjectService.LoadAsync(projectPath,
+            sourceLocations: new Dictionary<string, string> { [source.Path] = currentPath });
+
+        Assert.Equal(currentPath, restored.Source!.Path);
+        Assert.Equal(currentPath, restored.Queue[0].Source.Path);
+        Assert.Equal(Path.Combine(files.DirectoryPath, "queued.ts"), restored.Queue[0].OutputFilePath);
+        Assert.Null(restored.Clips[1].OutputFilePath);
+        Assert.False(restored.Clips[1].WasExported);
+    }
+
+    [Fact]
+    public async Task RelocationStillRejectsAnOutputThatWouldOverwriteTheSource()
+    {
+        using var files = new ProjectTestFiles();
+        var source = files.CreateSource();
+        var project = CreateProject(source);
+        var projectPath = Path.Combine(files.DirectoryPath, "session.tscut");
+        await File.WriteAllTextAsync(projectPath, CutterProjectService.Serialize(project));
+        File.Move(source.Path, project.Queue[0].OutputFilePath);
+        await Assert.ThrowsAsync<InvalidDataException>(() => CutterProjectService.LoadAsync(projectPath,
+            sourceLocations: new Dictionary<string, string> { [source.Path] = project.Queue[0].OutputFilePath }));
+    }
+
     private static CutterProject CreateProject(ProjectSource source) => new()
     {
         Source = source,

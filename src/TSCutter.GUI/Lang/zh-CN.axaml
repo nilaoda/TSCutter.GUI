@@ -64,6 +64,9 @@
     <x:String x:Key="String.Project.FileEnd">文件末尾</x:String>
     <x:String x:Key="String.Project.SourceMissing">找不到源文件：{0}</x:String>
     <x:String x:Key="String.Project.SourceChanged">源文件已保存部分发生变化或文件缩短：{0}</x:String>
+    <x:String x:Key="String.Project.SourceLocate">重新定位源文件</x:String>
+    <x:String x:Key="String.Project.SourceLocateConfirm">找不到源文件：{0}&#10;&#10;是否选择移动后的源文件？</x:String>
+    <x:String x:Key="String.Project.SourceLocateMismatch">源文件与工程中记录的内容不匹配：{0}&#10;&#10;是否重新选择原始源文件？</x:String>
     <x:String x:Key="String.Project.Invalid">工程文件或其中的剪辑范围无效。</x:String>
     <x:String x:Key="String.Menu.SaveClip">保存片段(_S)...</x:String>
     <x:String x:Key="String.Menu.ExportQueue">导出队列</x:String>

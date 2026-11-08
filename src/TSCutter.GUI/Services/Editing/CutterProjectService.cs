@@ -83,12 +83,21 @@ internal static class CutterProjectService
         return project;
     }
 
-    public static async Task<CutterProject> LoadAsync(string path, CancellationToken cancellationToken = default)
+    public static async Task<CutterProject> LoadAsync(string path, CancellationToken cancellationToken = default,
+        IReadOnlyDictionary<string, string>? sourceLocations = null)
     {
         if (new FileInfo(path).Length > MaximumProjectBytes)
             throw new InvalidDataException("The project file is too large.");
         var json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-        return await Task.Run(() => Deserialize(json), cancellationToken).ConfigureAwait(false);
+        return await Task.Run(() =>
+        {
+            var project = JsonSerializer.Deserialize(json, AppJsonContext.Default.CutterProject)
+                ?? throw new InvalidDataException("The project file is empty.");
+            Validate(project, checkSourceFiles: false);
+            ResolveSourceLocations(project, sourceLocations);
+            Validate(project);
+            return project;
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public static async Task SaveAsync(string path, CutterProject project,
@@ -122,7 +131,9 @@ internal static class CutterProjectService
         }
     }
 
-    public static void Validate(CutterProject project)
+    public static void Validate(CutterProject project) => Validate(project, checkSourceFiles: true);
+
+    private static void Validate(CutterProject project, bool checkSourceFiles)
     {
         if (project.PreviewSelection is { } selection &&
             (project.Source is null || selection.StreamIndex < 0))
@@ -149,7 +160,7 @@ internal static class CutterProjectService
         var validatedSources = new HashSet<(string Path, long Length, string Fingerprint, string Anchors)>();
         if (project.Source is not null)
         {
-            ValidateSourceOnce(project.Source, validatedSources);
+            ValidateSourceOnce(project.Source, validatedSources, checkSourceFiles);
         }
 
         foreach (var clip in project.Clips)
@@ -166,7 +177,7 @@ internal static class CutterProjectService
             if (clip.StartThumbnailJpeg?.Length > 512 * 1024 ||
                 clip.EndThumbnailJpeg?.Length > 512 * 1024)
                 throw new InvalidDataException("A saved clip thumbnail is too large.");
-            if (clip.OutputFilePath is not null && !Path.IsPathFullyQualified(clip.OutputFilePath))
+            if (clip.OutputFilePath is not null && !IsValidProjectPath(clip.OutputFilePath, checkSourceFiles))
                 throw new InvalidDataException("A saved output path is invalid.");
         }
 
@@ -179,13 +190,13 @@ internal static class CutterProjectService
                 item.RemuxSettings is not null && item.ProgramId is not null ||
                 !IsValidSignature(item.StartSignature) || !IsValidSignature(item.EndSignature))
                 throw new InvalidDataException("A queued export is invalid.");
-            ValidateSourceOnce(item.Source, validatedSources);
+            ValidateSourceOnce(item.Source, validatedSources, checkSourceFiles);
             if (!(item.EndPosition == -1 && item.EndTime == -1
                     ? IsFiniteNonnegative(item.StartTime) && item.StartPosition >= 0 &&
                       item.StartPosition <= item.Source.Length
                     : ValidRange(item.StartTime, item.EndTime,
                         item.StartPosition, item.EndPosition, item.Source.Length, item.RemuxSettings is not null)) ||
-                !Path.IsPathFullyQualified(item.OutputFilePath) ||
+                !IsValidProjectPath(item.OutputFilePath, checkSourceFiles) ||
                 PathsEqual(item.OutputFilePath, item.Source.Path) ||
                 project.Source is not null && PathsEqual(item.OutputFilePath, project.Source.Path) ||
                 !paths.Add(MediaFileUtil.CanonicalPath(item.OutputFilePath)))
@@ -196,19 +207,89 @@ internal static class CutterProjectService
                 throw new InvalidDataException("An export target conflicts with a source file.");
     }
 
-    private static void ValidateSourceOnce(ProjectSource source,
-        HashSet<(string Path, long Length, string Fingerprint, string Anchors)> validatedSources)
+    private static void ResolveSourceLocations(CutterProject project,
+        IReadOnlyDictionary<string, string>? sourceLocations)
     {
-        ValidateSourceShape(source);
+        var sources = project.Queue.Select(item => item.Source);
+        if (project.Source is not null)
+            sources = sources.Prepend(project.Source);
+        foreach (var source in sources.Distinct())
+        {
+            var originalPath = source.Path;
+            var replacement = sourceLocations?.FirstOrDefault(item => SavedPathsEqual(item.Key, originalPath)).Value;
+            if (replacement is null)
+            {
+                if (!Path.IsPathFullyQualified(originalPath) || !File.Exists(originalPath))
+                    throw new FileNotFoundException("A project source file is missing.", originalPath);
+                continue;
+            }
+            if (!Path.IsPathFullyQualified(replacement))
+                throw new InvalidDataException("The replacement source path is invalid.");
+
+            // 只替换位置，仍以工程保存的长度和采样指纹验证；不能用新文件重新生成指纹。
+            var candidate = new ProjectSource
+            {
+                Path = replacement, Length = source.Length,
+                AnchorOffsets = source.AnchorOffsets, PrefixFingerprint = source.PrefixFingerprint
+            };
+            try
+            {
+                ValidateSourceContents(candidate);
+            }
+            catch (FileNotFoundException)
+            {
+                throw new FileNotFoundException("A project source file is missing.", originalPath);
+            }
+            catch (ProjectSourceChangedException)
+            {
+                throw new ProjectSourceChangedException(originalPath);
+            }
+            source.Path = Path.GetFullPath(replacement);
+        }
+
+        // 其他系统的导出记录不能当作本机已导出结果，队列则保留文件名，改到重定位后的源目录。
+        foreach (var clip in project.Clips)
+            if (clip.OutputFilePath is not null && !Path.IsPathFullyQualified(clip.OutputFilePath))
+            {
+                clip.OutputFilePath = null;
+                clip.MergedOutput = null;
+                clip.WasExported = false;
+            }
+        foreach (var item in project.Queue)
+            if (!Path.IsPathFullyQualified(item.OutputFilePath))
+                item.OutputFilePath = Path.Combine(Path.GetDirectoryName(item.Source.Path)!,
+                    GetSourceFileName(item.OutputFilePath));
+    }
+
+    internal static string GetSourceFileName(string path) =>
+        Path.GetFileName(IsWindowsPath(path) ? path.Replace('\\', '/') : path);
+
+    private static bool SavedPathsEqual(string left, string right) =>
+        IsWindowsPath(left) && IsWindowsPath(right)
+            ? string.Equals(left.Replace('\\', '/'), right.Replace('\\', '/'), StringComparison.OrdinalIgnoreCase)
+            : MediaFileUtil.PathComparer.Equals(left, right);
+
+    private static bool IsWindowsPath(string path) =>
+        path.Length >= 3 && char.IsAsciiLetter(path[0]) && path[1] == ':' && path[2] is '\\' or '/' ||
+        path.StartsWith(@"\\", StringComparison.Ordinal);
+
+    private static bool IsValidProjectPath(string path, bool checkSourceFiles) =>
+        Path.IsPathFullyQualified(path) || !checkSourceFiles &&
+        (path.StartsWith("/", StringComparison.Ordinal) || IsWindowsPath(path));
+
+    private static void ValidateSourceOnce(ProjectSource source,
+        HashSet<(string Path, long Length, string Fingerprint, string Anchors)> validatedSources, bool checkSourceFiles)
+    {
+        ValidateSourceShape(source, checkSourceFiles);
         var key = (source.Path, source.Length, source.PrefixFingerprint,
             string.Join(',', source.AnchorOffsets));
-        if (validatedSources.Add(key))
+        if (validatedSources.Add(key) && checkSourceFiles)
             ValidateSourceContents(source);
     }
 
-    private static void ValidateSourceShape(ProjectSource source)
+    private static void ValidateSourceShape(ProjectSource source, bool checkSourceFiles)
     {
-        if (string.IsNullOrWhiteSpace(source.Path) || !Path.IsPathFullyQualified(source.Path) ||
+        if (string.IsNullOrWhiteSpace(source.Path) || !IsValidProjectPath(source.Path, checkSourceFiles) ||
             source.Length < 0 || source.AnchorOffsets is null ||
             source.AnchorOffsets.Count > 2048 ||
             source.AnchorOffsets.Any(offset => offset < 0 || offset > source.Length) ||
