@@ -245,7 +245,13 @@ public sealed class KeyFrameStripViewModel : ObservableObject
                         await service.OpenAsync(requestedSource, cancellation.Token);
                         serviceSource = requestedSource;
                     }
-                    if (knownPts is { } current)
+                    // 缓存只覆盖目标及右侧时，从整屏左边界一次向右读取，避免逐张向前 seek。
+                    if (request.Started == 0 && !requestedSource.EveryFrame && knownPts is { } partial &&
+                        BuildWindow(partial).TakeWhile(item => item.IsPlaceholder).Count() > 1)
+                    {
+                        await ReadWindowAsync(request, generation, cancellation.Token);
+                    }
+                    else if (knownPts is { } current)
                     {
                         try
                         {
