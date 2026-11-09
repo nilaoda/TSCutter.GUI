@@ -166,6 +166,110 @@ public sealed class FrameAccurateTsOutputTests
         }
     }
 
+    [NativeMediaTheory("subtitles")]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task KeepsDvbSubtitleTimestampRegressions(bool merge)
+    {
+        var source = Temporary(".ts");
+        var output = Temporary(".ts");
+        try
+        {
+            File.Copy(Path.Combine(NativeTestEnvironment.FixtureDirectory("subtitles"), "bitmap.ts"), source);
+            var subtitles = ReadDvbSubtitles(source);
+            Assert.True(subtitles.Count >= 5);
+            // 清屏之后的新显示集比清屏早 10ms，模拟广播字幕的时间重叠。
+            var bytes = File.ReadAllBytes(source);
+            Assert.Equal(1, TsTimestampFieldCodec.RewritePesTimestamps(
+                bytes.AsSpan((int)subtitles[4].Position, 188), subtitles[3].Pts - 900 - subtitles[4].Pts));
+            File.WriteAllBytes(source, bytes);
+            subtitles = ReadDvbSubtitles(source);
+            Assert.True(subtitles[4].Dts < subtitles[3].Dts);
+            var frames = FrameAccurateExportTests.Decode(source, out _).OrderBy(frame => frame.Pts).ToList();
+            var start = frames[3].Pts;
+            var end = frames[^3].Pts;
+            var duration = end - start + frames[1].Pts - frames[0].Pts;
+            var segment = new FrameAccurateExportSegment(source, start, end, FrameAccurateExportTests.Settings(source));
+            await new FrameAccurateExportService().ExportAsync(new(output, merge ? [segment, segment] : [segment]));
+            var expected = subtitles.Where(packet => packet.Pts >= start && packet.Pts <= end).ToList();
+            var actual = ReadDvbSubtitles(output);
+            Assert.Equal(expected.Count * (merge ? 2 : 1), actual.Count);
+            for (var i = 0; i < actual.Count; i++)
+            {
+                var original = expected[i % expected.Count];
+                var offset = i / expected.Count * duration;
+                Assert.Equal(original.Pts + offset, actual[i].Pts);
+                Assert.Equal(original.Dts + offset, actual[i].Dts);
+                Assert.Equal(original.Data, actual[i].Data);
+            }
+        }
+        finally { File.Delete(source); File.Delete(output); }
+    }
+
+    [NativeMediaTheory("frameaccurate")]
+    [InlineData(0)]
+    [InlineData(1)]
+    public async Task StillRejectsVideoAndAudioDtsRegressions(int streamIndex)
+    {
+        var source = Temporary(".ts");
+        var output = Temporary(".ts");
+        try
+        {
+            var fixture = Fixture("h264.ts");
+            var frames = FrameAccurateExportTests.DecodeFrames(fixture);
+            var bytes = File.ReadAllBytes(fixture);
+            using (var input = FormatContext.OpenInputUrl(fixture))
+            {
+                input.LoadStreamInfo();
+                long previousDts = long.MinValue;
+                var injected = false;
+                foreach (var packet in input.ReadPackets())
+                {
+                    if (packet.StreamIndex != streamIndex)
+                        continue;
+                    long currentDts;
+                    unsafe
+                    {
+                        AVPacket* raw = packet;
+                        currentDts = raw->dts;
+                    }
+                    if (packet.Pts >= frames[150] && packet.Position >= 0)
+                    {
+                        var body = bytes.AsSpan((int)packet.Position, 188);
+                        Assert.True(TsTimestampFieldCodec.TryLocatePesTimestamps(body, out var pts, out var dts));
+                        // 视频只回退 DTS；音频未显式携带 DTS 时，它与 PTS 相同。
+                        Assert.Equal(1, TsTimestampFieldCodec.RewritePesTimestamps(body, previousDts - 900 - currentDts,
+                            dts >= 0 ? dts : pts, -1));
+                        injected = true;
+                        break;
+                    }
+                    previousDts = currentDts;
+                }
+                Assert.True(injected);
+            }
+            File.WriteAllBytes(source, bytes);
+            var error = await Assert.ThrowsAsync<FrameAccurateExportException>(() => Export(source, output, frames[17], frames[^23]));
+            Assert.Equal(FrameAccurateExportError.NonMonotonicTimestamp, error.Code);
+            Assert.False(File.Exists(output));
+        }
+        finally { File.Delete(source); File.Delete(output); }
+    }
+
+    private static unsafe List<(long Pts, long Dts, long Position, byte[] Data)> ReadDvbSubtitles(string path)
+    {
+        using var input = FormatContext.OpenInputUrl(path);
+        input.LoadStreamInfo();
+        var index = input.Streams.Single(stream => stream.Codecpar?.CodecId == AVCodecID.AV_CODEC_ID_DVB_SUBTITLE).Index;
+        var result = new List<(long, long, long, byte[])>();
+        foreach (var packet in input.ReadPackets())
+        {
+            AVPacket* raw = packet;
+            if (raw->stream_index == index)
+                result.Add((raw->pts, raw->dts, raw->pos, new ReadOnlySpan<byte>(raw->data, raw->size).ToArray()));
+        }
+        return result;
+    }
+
     [Theory]
     [InlineData(188)]
     [InlineData(192)]
