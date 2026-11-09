@@ -1559,7 +1559,10 @@ internal sealed unsafe class FrameAccurateExportService
         /// <summary>写出其他轨道（音频、字幕）的包；sourcePosition 为源 PES 的位置，按传输包写出时用。</summary>
         public void Write(AVPacket* packet, int index, bool strict, long sourcePosition)
         {
-            CheckDts(packet, index, strict);
+            // DVB 字幕的显示集可能有重叠时间；按源传输包写出时保留原顺序与时间戳。
+            // 其他轨道及经复用器写出的路径仍检查 DTS，避免放过音视频时钟异常。
+            if (Ts is null || output->streams[index]->codecpar->codec_id != AVCodecID.AV_CODEC_ID_DVB_SUBTITLE)
+                CheckDts(packet, index, strict);
             if (Ts is not null)
             {
                 Ts.Other(sourcePosition, new ReadOnlySpan<byte>(packet->data, packet->size), packet->pts, packet->dts);
