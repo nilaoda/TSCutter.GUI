@@ -166,6 +166,53 @@ public sealed class FrameAccurateTsOutputTests
         }
     }
 
+    [NativeMediaTheory("frameaccurate")]
+    [InlineData(17)]
+    [InlineData(210)]
+    public async Task HandlesEpgDiscoveredAfterOpening(int start)
+    {
+        var source = Temporary(".ts");
+        var output = Temporary(".ts");
+        try
+        {
+            var fixture = Fixture("h264.ts");
+            var frames = FrameAccurateExportTests.DecodeFrames(fixture);
+            long position;
+            using (var input = FormatContext.OpenInputUrl(fixture))
+            {
+                input.LoadStreamInfo();
+                position = input.ReadPackets().Where(packet => packet.StreamIndex == 0 && packet.Pts >= frames[180] &&
+                    packet.Position >= 0).Select(packet => packet.Position).First();
+            }
+            // EIT 在第 6 秒才出现，打开文件时尚未发现 EPG 轨道。
+            byte[] section = [0x4E, 0xB0, 15, 0, 1, 0xC1, 0, 0, 0, 1, 0, 1, 0, 0x4E, 0, 0, 0, 0];
+            TsPsiSectionBuilder.WriteCrc(section);
+            var eit = TsProgramTablePacketizer.Create([(0x12, section)], new TsPacketLayout(188, 0), 0, new int[8192]);
+            var bytes = File.ReadAllBytes(fixture);
+            File.WriteAllBytes(source, [.. bytes.AsSpan(0, (int)position), .. eit, .. bytes.AsSpan((int)position)]);
+            using (var input = FormatContext.OpenInputUrl(source))
+            {
+                input.LoadStreamInfo();
+                Assert.Equal(2, input.Streams.Count);
+                Assert.Contains(input.ReadPackets(), packet => packet.StreamIndex >= input.Streams.Count);
+            }
+            // 早切点在实际写出时遇到新轨道，晚切点在导出前检查时遇到。
+            var request = new FrameAccurateExportRequest(output,
+                [new(source, frames[start], frames[^23], FrameAccurateExportTests.Settings(source))]);
+            var service = new FrameAccurateExportService();
+            Assert.False(await service.NeedsTimestampNormalizationAsync(request, default));
+            Assert.False(File.Exists(output));
+            await service.ExportAsync(request);
+            var decoded = FrameAccurateExportTests.Decode(output, out var errors);
+            Assert.Equal(0, errors);
+            Assert.Equal(Enumerable.Range(start, frames.Count - 23 - start + 1), decoded.Select(frame => frame.Number));
+            if (start < 180)
+                Assert.Equal(eit, File.ReadAllBytes(output).Chunk(188).Single(packet =>
+                    ((packet[1] & 0x1F) << 8 | packet[2]) == 0x12));
+        }
+        finally { File.Delete(source); File.Delete(output); }
+    }
+
     [NativeMediaTheory("subtitles")]
     [InlineData(false)]
     [InlineData(true)]

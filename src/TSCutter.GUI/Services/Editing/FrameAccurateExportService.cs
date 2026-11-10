@@ -541,7 +541,7 @@ internal sealed unsafe class FrameAccurateExportService
         finally
         {
             FF.avcodec_flush_buffers(decoder);
-            for (var i = 0; i < raw->nb_streams; i++)
+            for (var i = 0; i < discards.Length; i++)
                 raw->streams[i]->discard = discards[i];
         }
     }
@@ -957,7 +957,7 @@ internal sealed unsafe class FrameAccurateExportService
         {
             DisposePackets(packets);
             FF.avcodec_flush_buffers(decoder);
-            for (var i = 0; i < raw->nb_streams; i++)
+            for (var i = 0; i < discards.Length; i++)
                 raw->streams[i]->discard = discards[i];
         }
 
@@ -1317,7 +1317,8 @@ internal sealed unsafe class FrameAccurateExportService
         }
         finally
         {
-            for (var i = 0; i < raw->nb_streams; i++)
+            // 读取中可能新增 EPG 等轨道；只恢复本轮实际修改过的轨道。
+            for (var i = 0; i < discards.Length; i++)
                 raw->streams[i]->discard = discards[i];
         }
     }
@@ -1842,7 +1843,8 @@ internal sealed unsafe class FrameAccurateExportService
         for (var i = 0; i < rawInput->nb_streams; i++)
         {
             discards[i] = rawInput->streams[i]->discard;
-            rawInput->streams[i]->discard = writer.Map.Output[i] >= 0 ? AVDiscard.AVDISCARD_DEFAULT : AVDiscard.AVDISCARD_ALL;
+            rawInput->streams[i]->discard = i < writer.Map.Output.Length && writer.Map.Output[i] >= 0
+                ? AVDiscard.AVDISCARD_DEFAULT : AVDiscard.AVDISCARD_ALL;
         }
         // TS 的音频可能先于视频写入文件，定位时向前预留余量，早于起点的包会被丢弃。
         input.SeekFrame(plan.DecodeStartPts - (isTs ? context.Ticks(1) : 0), video->index);
@@ -1938,7 +1940,7 @@ internal sealed unsafe class FrameAccurateExportService
             encoder?.Dispose();
             while (encodedQueue.TryDequeue(out var pending))
                 pending.Packet.Dispose();
-            for (var i = 0; i < rawInput->nb_streams; i++)
+            for (var i = 0; i < discards.Length; i++)
                 rawInput->streams[i]->discard = discards[i];
         }
         writer.SegmentLength = (plan.EndExclusive == long.MaxValue ? Math.Max(lastVideoEnd, plan.StartPts) : plan.EndExclusive)
