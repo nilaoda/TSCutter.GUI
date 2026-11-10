@@ -32,5 +32,11 @@ sealed class Program
             })
             .UseMessageBoxSounds()
             .WithInterFont()
+            .With(CreateFontManagerOptions())
             .LogToTrace();
+
+    internal static Avalonia.Media.FontManagerOptions CreateFontManagerOptions() => new()
+    {
+        FontFallbacks = OperatingSystem.IsMacOS() ? new Themes.MacOSFontFallbacks() : null
+    };
 }

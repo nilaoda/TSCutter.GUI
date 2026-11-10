@@ -1,3 +1,4 @@
+using System.Globalization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.Primitives;
@@ -5,6 +6,7 @@ using Avalonia.Data;
 using Avalonia.Headless;
 using Avalonia.Input;
 using Avalonia.Media;
+using Avalonia.Media.TextFormatting;
 using Avalonia.Markup.Xaml.Styling;
 using Avalonia.Threading;
 using Avalonia.VisualTree;
@@ -21,6 +23,40 @@ public sealed class AvaloniaUiCollection;
 [Collection("Avalonia UI")]
 public sealed class ThemeSwitchTests
 {
+    [Fact]
+    public async Task ChineseTextKeepsItsFontAfterAnUnavailableGlyph()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var originalCulture = CultureInfo.CurrentUICulture;
+            try
+            {
+                using var latinBefore = new TextLayout("Export", Typeface.Default, 14, Brushes.Black);
+                // 私用区字符可使 macOS 缓存 LastResort；切换语言后的中文仍应使用正常字体。
+                using var missing = new TextLayout("\uE2B5", Typeface.Default, 14, Brushes.Black);
+                foreach (var language in new[] { "zh-CN", "zh-TW", "en-US", "zh-CN" })
+                {
+                    CultureInfo.CurrentUICulture = CultureInfo.GetCultureInfo(language);
+                    using var text = new TextLayout("保存工程，是否保存当前修改？", Typeface.Default, 14, Brushes.Black);
+                    var fonts = Families(text);
+                    Assert.NotEmpty(fonts);
+                    Assert.DoesNotContain(fonts, name => name.Contains("LastResort", StringComparison.OrdinalIgnoreCase));
+                    if (OperatingSystem.IsMacOS() && language != "en-US")
+                        Assert.All(fonts, name => Assert.Equal(language == "zh-CN" ? "PingFang SC" : "PingFang TC", name));
+                    using var latin = new TextLayout("Export", Typeface.Default, 14, Brushes.Black);
+                    Assert.Equal(Families(latinBefore), Families(latin));
+                }
+                if (!OperatingSystem.IsMacOS())
+                    Assert.Null(TSCutter.GUI.Program.CreateFontManagerOptions().FontFallbacks);
+            }
+            finally { CultureInfo.CurrentUICulture = originalCulture; }
+        }, CancellationToken.None);
+
+        static List<string> Families(TextLayout text) => text.TextLines.SelectMany(line => line.TextRuns)
+            .OfType<ShapedTextRun>().Select(run => run.GlyphRun.GlyphTypeface.FamilyName).ToList();
+    }
+
     [Theory]
     [InlineData(false)]
     [InlineData(true)]
@@ -873,6 +909,7 @@ public sealed class ThemeSwitchTests
 public static class ThemeTestAppBuilder
 {
     public static AppBuilder BuildAvaloniaApp() => AppBuilder.Configure<ThemeTestApplication>()
+        .With(TSCutter.GUI.Program.CreateFontManagerOptions())
         .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false }).UseSkia();
 }
 
