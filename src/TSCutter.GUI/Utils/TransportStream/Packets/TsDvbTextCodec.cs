@@ -68,7 +68,9 @@ internal static class TsDvbTextCodec
             if (item >= 0x80)
                 highByteCount++;
         }
-        if (offset == 0 && highByteCount >= 2)
+        // ARIB 的转义与换集控制不能按未声明编码的 GBK 猜测，否则可能生成错误的私用区字符。
+        var hasAribControls = textBytes.IndexOfAny((byte)0x1B, (byte)0x0E, (byte)0x0F) >= 0;
+        if (offset == 0 && highByteCount >= 2 && !hasAribControls)
         {
             var gbText = Gb18030Encoding.GetString(textBytes).Trim();
             // 国内 DVB 前端常把未带字符集标识的 GB2312/GBK 直接放入 SDT。
