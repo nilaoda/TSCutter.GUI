@@ -10,6 +10,7 @@ using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Models.TransportStream.Processing;
+using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.ViewModels.Editing;
 
@@ -114,15 +115,7 @@ public partial class MainWindowViewModel
 
     private async Task CompleteMergedExportAsync(PickedClip[] clips, string outputPath, OutputWindowViewModel output)
     {
-        if (output.Exception is not null)
-        {
-            await ShowMessageAsync(FormatMergeError(output.Exception),
-                LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
-            return;
-        }
-        if (output.DialogResult != true) return;
-
-        if (File.Exists(outputPath))
+        if (output.Exception is null && output.DialogResult == true && File.Exists(outputPath))
         {
             // 所有片段指向同一合并结果，用于显示总大小和恢复项目状态。
             var group = new MergedClipOutput(Guid.NewGuid().ToString("N"), clips.Length);
@@ -136,7 +129,7 @@ public partial class MainWindowViewModel
             }
             OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
         }
-        await ShowMessageAsync(string.Format(LocalizationManager.Instance.String_MergeClips_Completed, outputPath),
-            LocalizationManager.Instance.String_MergeClips_Title, MessageBoxIcon.Information);
+        await ShowExportResultAsync(output, outputPath, string.Format(LocalizationManager.Instance.String_ExportResult_Merged,
+            clips.Length, CommonUtil.FormatSeconds(ClipsDuration(clips))));
     }
 }

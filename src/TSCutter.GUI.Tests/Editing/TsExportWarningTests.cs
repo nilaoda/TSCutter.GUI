@@ -466,10 +466,22 @@ public sealed class TsExportWarningTests
                     Assert.Equal(mode is "timestamp-normalize" or "normal-save", File.Exists(outputPath));
                     Assert.False(main.IsCheckingExportTimestamps);
                 }
-                finally { main.Close(); }
+                finally { await CloseAndReleaseAsync(main); }
             });
         }
         finally { directory.Delete(recursive: true); }
+    }
+
+    /// <summary>
+    /// 关闭主窗口并等待源文件释放：主预览在在途操作结束后关闭，导航条的解码实例由其后台循环在界面线程上释放。
+    /// Windows 不能删除仍被打开的文件，测试会话结束前不等待，临时目录就删不掉。
+    /// </summary>
+    private static async Task CloseAndReleaseAsync(MainWindowViewModel main)
+    {
+        main.Close();
+        await main.KeyFrameStrip.IdleTask;
+        await (Task)typeof(MainWindowViewModel).GetField("previewDisposalTask", BindingFlags.Instance | BindingFlags.NonPublic)!
+            .GetValue(main)!;
     }
 
     private static async Task RunAsync(Func<Task> action)
@@ -495,10 +507,17 @@ public class ProgramTableDialogManager : DispatchProxy
     public string Mode { get; set; } = "";
     public bool RejectPreparationDialog { get; set; }
     public List<string> Events { get; } = [];
+    /// <summary>导出结束后显示的结果窗口；不计入事件顺序。</summary>
+    public List<ExportResultWindowViewModel> Results { get; } = [];
 
     protected override object? Invoke(MethodInfo? method, object?[]? args)
     {
-        if (method!.Name == "ShowFrameworkDialogAsync")
+        if (method!.Name == "ShowDialogAsync" && args![1] is ExportResultWindowViewModel result)
+        {
+            Results.Add(result);
+            return Task.FromResult<bool?>(true);
+        }
+        if (method.Name == "ShowFrameworkDialogAsync")
         {
             Events.Add("path");
             Assert.False(File.Exists(OutputPath));

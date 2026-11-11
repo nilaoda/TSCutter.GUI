@@ -2929,20 +2929,17 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         dialogViewModel.OutputPath = result.Path.LocalPath;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
         await ForgetMissingClipOutputsAsync([dialogViewModel.OutputPath]);
-        if (!ClipUnchanged()) return;
-        if (dialogViewModel.Exception is not null)
-        {
-            await ShowMessageAsync(FormatMergeError(dialogViewModel.Exception), LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
-            Console.WriteLine(dialogViewModel.Exception);
-            return;
-        }
-        if (dialogViewModel.DialogResult == true && File.Exists(dialogViewModel.OutputPath))
+        // 片段在导出期间未被修改时才记录导出结果；结果窗口照常显示本次导出的文件。
+        if (ClipUnchanged() && dialogViewModel.Exception is null && dialogViewModel.DialogResult == true &&
+            File.Exists(dialogViewModel.OutputPath))
         {
             clip.MergedOutput = null;
             clip.OutputFileInfo = new FileInfo(dialogViewModel.OutputPath);
             clip.ExportStatus = ClipExportStatus.Done;
             clip.ExportCheck = BuildClipExportCheck(dialogViewModel.OutputPath, dialogViewModel.Outcomes);
         }
+        await ShowExportResultAsync(dialogViewModel, dialogViewModel.OutputPath,
+            FormatExportDuration((dialogViewModel.EndSeconds ?? DurationMax) - dialogViewModel.StartSeconds));
     }
 
     [RelayCommand(CanExecute = nameof(CanExportAll))]

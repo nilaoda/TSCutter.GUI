@@ -150,6 +150,25 @@ public sealed class KeyFrameStripTests
         }, CancellationToken.None);
     }
 
+    /// <summary>打开导航条解码实例的过程中关闭视频：已创建的服务必须释放，否则源文件一直被占用。</summary>
+    [Fact]
+    public async Task CancelledOpenDisposesTheService()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            var fake = new SlowOpenService();
+            var vm = new KeyFrameStripViewModel(() => fake);
+            vm.SetSource(new("one.mp4", null, true));
+            vm.RequestAt(5, immediate: true);
+            await fake.Opening.Task;
+            vm.SetSource(null);
+            await vm.IdleTask;
+            Assert.True(fake.Disposed);
+            return true;
+        }, CancellationToken.None);
+    }
+
     [Fact]
     public async Task ObsoleteResultsNeverPublishAndCacheRemainsBounded()
     {
@@ -962,6 +981,28 @@ public sealed class KeyFrameStripTests
             return Task.FromResult(frames);
         }
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+    }
+
+    /// <summary>打开时一直等到被取消，用于模拟关闭视频时解码实例仍在打开。</summary>
+    private sealed class SlowOpenService : IKeyFrameStripService
+    {
+        public TaskCompletionSource Opening { get; } = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        public bool Disposed { get; private set; }
+        public async Task OpenAsync(KeyFrameStripSource source, CancellationToken token)
+        {
+            Opening.TrySetResult();
+            await Task.Delay(Timeout.Infinite, token);
+        }
+        public Task<KeyFrameStripRange> ReadAsync(double target, Func<long, bool> isCached,
+            Action<KeyFrameStripFrame> received, CancellationToken token, Action<KeyFrameStripRange>? progress = null,
+            int frameCount = 9) => throw new InvalidOperationException("The strip must not read before opening.");
+        public Task<KeyFrameStripFrame?> ReadNeighborAsync(KeyFrameStripFrame anchor, int direction,
+            Func<long, bool> isCached, CancellationToken token) => Task.FromResult<KeyFrameStripFrame?>(null);
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
     }
 
     private sealed class FakeService : IKeyFrameStripService

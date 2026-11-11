@@ -234,8 +234,18 @@ public sealed class KeyFrameStripViewModel : ObservableObject
                         PublishEmpty();
                     if (service is null)
                     {
-                        service = createService();
-                        await service.OpenAsync(requestedSource, cancellation.Token);
+                        var opening = createService();
+                        try
+                        {
+                            await opening.OpenAsync(requestedSource, cancellation.Token);
+                        }
+                        catch
+                        {
+                            // 打开中途取消或失败：释放已打开的解码实例，否则源文件要等垃圾回收才关闭（Windows 上无法删除或改名）。
+                            await opening.DisposeAsync();
+                            throw;
+                        }
+                        service = opening;
                         serviceSource = requestedSource;
                     }
                     // 缓存只覆盖目标及右侧时，从整屏左边界一次向右读取，避免逐张向前 seek。

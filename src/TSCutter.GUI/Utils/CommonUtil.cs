@@ -135,6 +135,21 @@ public static partial class CommonUtil
         ? FormatBitrate(bitsPerSecond)
         : "-";
 
+    /// <summary>用系统默认程序打开文件；路径作为单独参数传递，含空格或引号的文件名无需转义。</summary>
+    public static void OpenFile(string filePath)
+    {
+        ProcessStartInfo startInfo;
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            startInfo = new ProcessStartInfo(filePath) { UseShellExecute = true };
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+            startInfo = new ProcessStartInfo("open") { ArgumentList = { filePath } };
+        else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+            startInfo = new ProcessStartInfo("xdg-open") { ArgumentList = { filePath } };
+        else
+            throw new PlatformNotSupportedException("Not supported");
+        using var process = Process.Start(startInfo);
+    }
+
     public static void OpenFileLocation(string filePath)
     {
         if (!File.Exists(filePath))

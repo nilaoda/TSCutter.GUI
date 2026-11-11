@@ -54,6 +54,13 @@ public sealed class ExportCompletionTests
                 vm.SelectedClip = first;
                 await vm.MergeSelectedClipsCommand.ExecuteAsync(null);
                 Assert.Equal(2, stub.LastSegmentCount);
+                // 合并导出完成后显示结果窗口：类型、片段数与输出大小。
+                var mergedResult = Assert.Single(stub.Results);
+                Assert.True(mergedResult.IsSuccess);
+                Assert.Equal(new[] { LocalizationManager.Instance.String_Export_Kind_Mp4Remux }, mergedResult.Tags);
+                Assert.Equal(string.Format(LocalizationManager.Instance.String_ExportResult_Merged, 2,
+                    CommonUtil.FormatSeconds(4)), mergedResult.ContentText);
+                Assert.Equal(CommonUtil.FormatFileSize(new FileInfo(merged).Length), mergedResult.SizeText);
                 Assert.All(vm.Clips, clip =>
                 {
                     Assert.Equal(ClipExportStatus.Done, clip.ExportStatus);
@@ -73,6 +80,9 @@ public sealed class ExportCompletionTests
                 stub.OutputPath = single;
                 await (Task)typeof(MainWindowViewModel).GetMethod("SaveVideoAsync", flags)!.Invoke(vm, null)!;
                 Assert.Null(first.MergedOutput);
+                Assert.Equal(2, stub.Results.Count);
+                Assert.Equal(string.Format(LocalizationManager.Instance.String_ExportResult_Duration, CommonUtil.FormatSeconds(2)),
+                    stub.Results[1].ContentText);
                 Assert.Equal(LocalizationManager.Instance.String_SizePrefix + CommonUtil.FormatFileSize(new FileInfo(single).Length),
                     vm.SelectedClipEstimatedSizeStr);
                 typeof(MainWindowViewModel).GetMethod("RecordHistory", flags)!.Invoke(vm, null);
@@ -90,12 +100,21 @@ public class ExportDialogManager : DispatchProxy
 {
     public string OutputPath { get; set; } = "";
     public int LastSegmentCount { get; private set; }
+    /// <summary>导出结束后显示的结果窗口，按显示顺序记录。</summary>
+    public List<ExportResultWindowViewModel> Results { get; } = [];
     protected override object? Invoke(MethodInfo? method, object?[]? args) => method!.Name switch
     {
         "ShowFrameworkDialogAsync" => Task.FromResult<object?>(new DesktopDialogStorageFile(OutputPath)),
+        "ShowDialogAsync" when args![1] is ExportResultWindowViewModel result => RecordResult(result),
         "ShowDialogAsync" => RunOutputAsync((OutputWindowViewModel)args![1]!),
         _ => throw new NotSupportedException(method.ToString())
     };
+
+    private Task<bool?> RecordResult(ExportResultWindowViewModel result)
+    {
+        Results.Add(result);
+        return Task.FromResult<bool?>(true);
+    }
 
     private async Task<bool?> RunOutputAsync(OutputWindowViewModel output)
     {

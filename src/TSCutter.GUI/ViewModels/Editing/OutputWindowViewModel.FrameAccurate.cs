@@ -113,6 +113,9 @@ public partial class OutputWindowViewModel
 
     public bool ShowsFrameAccuratePlan => FrameAccuratePlan is { Count: > 0 };
 
+    /// <summary>最近一次帧精确导出进度，导出结束后用于在结果窗口汇总重新编码的帧数和比例。</summary>
+    internal FrameAccurateExportProgress? LastFrameAccurateProgress { get; private set; }
+
     /// <summary>计划摘要：重新编码与直接复制各占的输出时长，以及无需重新编码的比例。</summary>
     public string FrameAccuratePlanText
     {
@@ -157,6 +160,7 @@ public partial class OutputWindowViewModel
 
     internal void ApplyFrameAccurateProgress(FrameAccurateExportProgress value)
     {
+        LastFrameAccurateProgress = value;
         if (!ReferenceEquals(FrameAccuratePlan, value.Plan))
             FrameAccuratePlan = value.Plan;
         FrameAccurateTotal = value.TotalSeconds;

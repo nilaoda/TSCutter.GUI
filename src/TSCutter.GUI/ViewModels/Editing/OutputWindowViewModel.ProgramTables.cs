@@ -18,7 +18,6 @@ public partial class OutputWindowViewModel
     private bool programTablesPrepared;
     private bool supplementOutput;
     private readonly HashSet<string> supplementOutputs = [];
-    private bool HasProgramTableSupplement => supplementOutput || supplementOutputs.Count > 0;
 
     internal bool AddsProgramTablesTo(string path) => IsBatchMode ? supplementOutputs.Contains(path) : supplementOutput;
 

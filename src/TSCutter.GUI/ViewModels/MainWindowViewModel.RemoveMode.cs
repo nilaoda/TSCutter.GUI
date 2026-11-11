@@ -194,10 +194,7 @@ public partial class MainWindowViewModel
         ConfigureMergeExportTask(output, snapshot, outputPath);
         await _dialogService.ShowDialogAsync(this, output);
         await ForgetMissingClipOutputsAsync([outputPath]);
-        if (output.Exception is not null)
-            await ShowMessageAsync(FormatMergeError(output.Exception),
-                LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
-        else if (output.DialogResult == true)
+        if (output.Exception is null && output.DialogResult == true)
         {
             // 删除的范围共享这次的输出文件：主界面汇总显示实际大小，修改范围后记录随之失效。
             if (File.Exists(outputPath))
@@ -213,9 +210,10 @@ public partial class MainWindowViewModel
                 }
                 OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
             }
-            await ShowMessageAsync(string.Format(LocalizationManager.Instance.String_RemoveMode_Completed, outputPath),
-                LocalizationManager.Instance.String_RemoveMode_Title, MessageBoxIcon.Information);
         }
+        var keptSeconds = kept.Sum(range => (range.End?.Time ?? DurationMax) - range.Start.Time);
+        await ShowExportResultAsync(output, outputPath, string.Format(LocalizationManager.Instance.String_ExportResult_Removed,
+            removed.Length, CommonUtil.FormatSeconds(Math.Max(0, keptSeconds))), LocalizationManager.Instance.String_ExportResult_RemoveTag);
     }
 
     private MergeExportSnapshot CaptureRemoveExportSnapshot(PickedClip[] removed, List<KeptRange> kept, bool frameAccurate)

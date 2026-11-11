@@ -15,6 +15,8 @@ For multi-program TS, “Export current program only” keeps all tracks in the 
 
 In keyframe mode, an ordinary single-clip TS/M2TS export copies the original bytes when all programs are retained and program tables are not patched. Merged and remuxed exports adjust some structures or timestamps and are not byte-for-byte copies.
 
+After saving a clip, merging clips or exporting in remove mode, a result window shows the output location, size, elapsed time and average speed, the clip content, the Smart cut re-encoding share and the TS check result, with buttons to open the file, show it in its folder or copy a summary. Failed exports show the error in the same window; cancelled exports show nothing and remove the unfinished file. After choosing “Don't show again” or turning the option off in Settings, successful exports no longer open the window, while failures still do. The export queue and other batch exports do not use this window; see Export records for their results.
+
 ## Remove mode
 
 1. Turn on **Remove** in the toolbar, to the left of **Smart cut**. The setting is remembered across launches.
