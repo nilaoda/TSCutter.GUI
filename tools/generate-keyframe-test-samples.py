@@ -4,6 +4,7 @@ import argparse
 import json
 from pathlib import Path
 import subprocess
+import tempfile
 
 
 def main():
@@ -47,6 +48,30 @@ def main():
            "-pix_fmt", "yuv420p10le", "-color_primaries", "bt2020", "-color_trc", "arib-std-b67",
            "-colorspace", "bt2020nc", root / "hevc.mp4")
     ffmpeg("-i", root / "hevc.mp4", "-c", "copy", "-output_ts_offset", 41852, root / "hevc-hlg.ts")
+
+    # 每 2 秒一个 IDR，段内场景切换处为 CRA；时间分层的分级 B 帧使重排序深度达到 4。
+    # 只送关键包解码时，解码器若不在关键帧之间重置，会积压多帧才输出，CRA 还会引用没有送入的参考帧。
+    # 各段单独编码使每段以 IDR 开始，再按时间戳拼接；画面在几种测试图之间切换，制造段内的场景切换。
+    with tempfile.TemporaryDirectory() as temporary:
+        segments = []
+        for index in range(8):
+            segment = Path(temporary) / f"segment{index}.mp4"
+            ffmpeg("-f", "lavfi", "-i", "testsrc2=size=640x360:rate=50:duration=1.3",
+                   "-f", "lavfi", "-i", "color=c=0x2060c0:size=640x360:rate=50:duration=0.9",
+                   "-f", "lavfi", "-i", "smptehdbars=size=640x360:rate=50:duration=1.1",
+                   "-f", "lavfi", "-i", "rgbtestsrc=size=640x360:rate=50:duration=0.7",
+                   "-filter_complex", "[0][1][2][3]concat=n=4:v=1:a=0,format=yuv420p,"
+                   "loop=loop=-1:size=200:start=0,setpts=N/50/TB,"
+                   f"trim=start_frame={index * 100}:end_frame={index * 100 + 100},setpts=PTS-STARTPTS[v]",
+                   "-map", "[v]", "-an", "-c:v", "libx265", "-preset", "medium", "-crf", 32,
+                   "-x265-params", "keyint=1000:min-keyint=1:scenecut=40:open-gop=1:temporal-layers=5:bframes=15:"
+                   "b-adapt=0:rc-lookahead=20:repeat-headers=1:pools=1:frame-threads=1:log-level=error",
+                   segment)
+            segments.append(segment)
+        listing = Path(temporary) / "segments.txt"
+        listing.write_text("".join(f"file '{segment.as_posix()}'\n" for segment in segments), encoding="utf-8")
+        ffmpeg("-f", "concat", "-safe", 0, "-i", listing, "-c", "copy", "-bsf:v", "hevc_mp4toannexb",
+               root / "hevc-mixed-irap.ts")
 
     for path in sorted(root.iterdir()):
         if path.suffix not in (".mp4", ".ts"):

@@ -463,9 +463,11 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
     {
         var codecId = videoStream.Codecpar?.CodecId
             ?? throw new InvalidOperationException("视频流缺少编码参数。");
+        // 与导航一致：只把必须配合硬件加速的解码器放到最后。
         var candidates = Codec.FindDecoders(codecId)
             .Where(decoder => HardwareDeviceTags.All(tag => !decoder.Name.Contains(tag, StringComparison.OrdinalIgnoreCase)))
             .Reverse()
+            .OrderBy(decoder => decoder.RequiresHardwareAcceleration)
             .ToList();
         if (candidates.Count == 0)
             throw new VideoDecoderUnavailableException(codecId.ToString());

@@ -129,13 +129,13 @@ public partial class VideoInstance
         var scanMode = isSearchScan;
         isSearchScan = true;
         exactFrameFilter = static _ => true;
-        videoDecoder.SkipFrame = AVDiscard.AVDISCARD_DEFAULT;
+        SetKeyFramesOnly(false);
         try { return action(); }
         finally
         {
             exactFrameFilter = null;
             isSearchScan = scanMode;
-            videoDecoder.SkipFrame = useFullPacketDecoding ? AVDiscard.AVDISCARD_DEFAULT : AVDiscard.AVDISCARD_NONKEY;
+            SetKeyFramesOnly(true);
         }
     }
 

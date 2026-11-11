@@ -132,7 +132,7 @@ python tools/prepare-test-media.py --group remux subtitles
 
 | 组 | 主要内容 |
 | --- | --- |
-| `keyframes` | 固定和变长 GOP、密集 GOP、B 帧、分数帧率、非零 PTS 的 TS、H.264/HEVC、HLG、短片和单帧 |
+| `keyframes` | 固定和变长 GOP、密集 GOP、B 帧、分数帧率、非零 PTS 的 TS、H.264/HEVC、HLG、IDR 与场景切换 CRA 混用且重排序深度为 4 的 HEVC TS、短片和单帧 |
 | `remux` | MP4/MKV 导出、多音轨、字幕、章节、附件、封面、HDR 和 open GOP |
 | `subtitles` | mov_text、ASS 动画、PGS 和 DVB 字幕 |
 | `frameaccurate` | 帧精确剪辑：带帧序号的 H.264（TS/M2TS/MP4/MKV）、HEVC（HLG/HDR10）、开放 GOP MPEG-2、PTS 回绕、开放 GOP 和隔行素材 |

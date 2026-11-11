@@ -20,6 +20,11 @@ public sealed class KeyFrameStripViewModel : ObservableObject
 {
     private const int CacheLimit = 64;
     internal const int MaximumVisibleCount = 48;
+
+    /// <summary>
+    /// 非立即的请求（拖动、逐个跳转）停下多久才开始解码：停住后很快开始加载，连续操作时又不会反复启动和取消解码。
+    /// </summary>
+    private static readonly TimeSpan SettleDelay = TimeSpan.FromMilliseconds(100);
     public int VisibleCount { get; private set; } = 9;
     private double? targetTime;
     private readonly Func<IKeyFrameStripService> createService;
@@ -218,7 +223,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
                 {
                     if (request.Started != 0)
                     {
-                        var delay = TimeSpan.FromMilliseconds(200) - Stopwatch.GetElapsedTime(request.Started);
+                        var delay = SettleDelay - Stopwatch.GetElapsedTime(request.Started);
                         if (delay > TimeSpan.Zero)
                             await Task.Delay(delay, cancellation.Token);
                     }

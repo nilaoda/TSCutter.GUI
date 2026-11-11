@@ -22,6 +22,9 @@ using TSCutter.GUI.Utils.TransportStream.Packets;
 
 namespace TSCutter.GUI.Models.Preview;
 
+/// <summary>扫描关键帧时对一个关键包的处理：解码、跳过（已由其他解码实例解出）或停止扫描。</summary>
+internal enum KeyPacketDecision { Decode, Skip, Stop }
+
 public partial class VideoInstance(string filePath, bool enableHardwareDecoding = false,
     PreviewStreamSelection? streamSelection = null, Func<bool>? enableSdrToneMapping = null,
     bool retainPreviewFrame = false, bool probeHardwareDecoding = false,
@@ -100,6 +103,33 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     private bool hardwareDecoderOpened;
     private bool useFullPacketDecoding;
     private readonly bool preferHardwareDecoding = enableHardwareDecoding && AppConfig.IsHardwareDecodingSupported;
+
+    /// <summary>
+    /// 缩略图解码：只解关键帧的解码器跳过环路滤波，小尺寸缩略图看不出差别，4K HEVC 约快一成。
+    /// 每个关键帧独立解码，误差不会传给其他画面；完整解码（逐帧、精确定位）仍按规范解码。
+    /// </summary>
+    internal bool ThumbnailDecoding { get; init; }
+
+    /// <summary>
+    /// 在“只解关键帧”和“完整解码每一帧”之间切换当前解码器。完整解码必须按规范做环路滤波，否则误差沿参考帧累积；
+    /// 完整解码器替换期间（<see cref="UsesFullDecoder"/>）只切换跳帧，缩略图选项只用于关键帧解码器。
+    /// </summary>
+    private void SetKeyFramesOnly(bool keyFramesOnly)
+    {
+        var keyOnly = keyFramesOnly && !useFullPacketDecoding;
+        videoDecoder.SkipFrame = keyOnly ? AVDiscard.AVDISCARD_NONKEY : AVDiscard.AVDISCARD_DEFAULT;
+        if (ThumbnailDecoding && !UsesFullDecoder)
+            videoDecoder.SkipLoopFilter = keyOnly ? AVDiscard.AVDISCARD_ALL : AVDiscard.AVDISCARD_DEFAULT;
+    }
+
+    private void ApplyKeyFrameDecodingOptions(CodecContext decoder, bool fullPacketDecoding)
+    {
+        if (!fullPacketDecoding)
+            decoder.SkipFrame = AVDiscard.AVDISCARD_NONKEY;
+        if (!fullPacketDecoding && ThumbnailDecoding)
+            decoder.SkipLoopFilter = AVDiscard.AVDISCARD_ALL;
+    }
+
     private readonly Lazy<IGpuFramePresenter> gpuFramePresenter = new(GpuFramePresenterFactory.CreateDefault);
     private readonly HostFramePresenter hostFramePresenter = new();
     private Frame? reusableSoftwareFrame;
@@ -337,8 +367,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                     candidate = new CodecContext(decoder);
                     candidate.FillParameters(inVideoStream.Codecpar!);
                     candidate.PacketTimeBase = inVideoStream.TimeBase;
-                    if (!fullPacketDecoding)
-                        candidate.SkipFrame = AVDiscard.AVDISCARD_NONKEY;
+                    ApplyKeyFrameDecodingOptions(candidate, fullPacketDecoding);
                     candidate.AttachHardwareDevice(deviceType);
                     candidate.Open();
                     var opened = candidate;
@@ -368,9 +397,13 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         lock (decoderSync) IsHardwareDecodingAvailable = false;
     }
 
+    /// <summary>软解候选顺序：保持原有的倒序优先级，只把必须配合硬件加速的解码器放到最后。</summary>
+    private IEnumerable<Codec> SoftwareDecoderCandidates => softwareDecoders.AsEnumerable().Reverse()
+        .OrderBy(codec => codec.RequiresHardwareAcceleration);
+
     private bool TryOpenSoftwareDecoder(bool fullPacketDecoding = false)
     {
-        foreach (var decoder in softwareDecoders.AsEnumerable().Reverse())
+        foreach (var decoder in SoftwareDecoderCandidates)
         {
             CodecContext? candidate = null;
             try
@@ -378,8 +411,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 candidate = new CodecContext(decoder);
                 candidate.FillParameters(inVideoStream.Codecpar!);
                 candidate.PacketTimeBase = inVideoStream.TimeBase;
-                if (!fullPacketDecoding)
-                    candidate.SkipFrame = AVDiscard.AVDISCARD_NONKEY;
+                ApplyKeyFrameDecodingOptions(candidate, fullPacketDecoding);
                 // 逐行刷新每次定位都要连续解码十余秒画面，默认单线程过慢；自动线程数与播放一致。
                 if (fullPacketDecoding && UsesGradualRefresh)
                     candidate.ThreadCount = 0;
@@ -646,11 +678,20 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     }
 
     /// <summary>
+    /// 并行扫描关键帧的条件：只解关键包的软解码。光盘标题的时间线需要映射，逐行刷新素材必须连续解码，
+    /// 硬件解码本身已足够快且每个实例都占用显存，均只用一个解码实例。
+    /// </summary>
+    internal bool SupportsParallelKeyFrameScan =>
+        Disc is null && !useFullPacketDecoding && !hardwareDecoderOpened && !UsesGradualRefresh;
+
+    /// <summary>
     /// 按文件中的包顺序扫描关键帧，供画面搜索使用。
     /// 扫描结束时返回空结果，不像交互式跳帧那样回退并重试。
+    /// <paramref name="keyPacketFilter"/> 在解码前按关键包的 PTS 决定解码、跳过（已由其他解码实例解出）或停止；
+    /// 只在只解关键包时生效，返回“停止”时与扫描结束一样返回空结果。
     /// </summary>
     internal Task<DecodeResult?> DecodeNextSearchFrameAsync(
-        int maxWidth, int maxHeight, CancellationToken cancellationToken)
+        int maxWidth, int maxHeight, CancellationToken cancellationToken, Func<long, KeyPacketDecision>? keyPacketFilter = null)
     {
         return Task.Run(() => RunReadOperation(() =>
         {
@@ -659,7 +700,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             {
                 try
                 {
-                    return DecodeNextSearchFrame(maxWidth, maxHeight, cancellationToken);
+                    return DecodeNextSearchFrame(maxWidth, maxHeight, cancellationToken, keyPacketFilter);
                 }
                 catch (FullDecodeRequiredException exception)
                 {
@@ -680,8 +721,46 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         }, cancellationToken), cancellationToken);
     }
 
+    /// <summary>
+    /// 扫描在中途停止后，取出解码器中仍缓存的关键帧（H.264、MPEG-2 等有重排序延迟），再重置解码器，
+    /// 之后可以重新定位继续使用。
+    /// </summary>
+    internal Task<IReadOnlyList<DecodeResult>> DrainSearchFramesAsync(int maxWidth, int maxHeight,
+        CancellationToken cancellationToken) =>
+        Task.Run(() => RunReadOperation(() =>
+        {
+            isSearchScan = true;
+            var results = new List<DecodeResult>();
+            try
+            {
+                var result = DecodePacket(null, cancellationToken, maxWidth, maxHeight, preserveRemainingOutput: true);
+                while (result is not null)
+                {
+                    results.Add(result);
+                    result = DecodePacket(null, cancellationToken, maxWidth, maxHeight, receiveOnly: true);
+                }
+                return (IReadOnlyList<DecodeResult>)results;
+            }
+            catch
+            {
+                foreach (var item in results)
+                {
+                    item.BitmapLease?.Dispose();
+                    if (item.BitmapLease is null)
+                        item.Bitmap?.Dispose();
+                    item.GpuFrame?.Dispose();
+                }
+                throw;
+            }
+            finally
+            {
+                videoDecoder.FlushBuffers();
+                isSearchScan = false;
+            }
+        }, cancellationToken), cancellationToken);
+
     private DecodeResult? DecodeNextSearchFrame(
-        int maxWidth, int maxHeight, CancellationToken cancellationToken)
+        int maxWidth, int maxHeight, CancellationToken cancellationToken, Func<long, KeyPacketDecision>? keyPacketFilter = null)
     {
         // 上次可能在一个包或 EOF 中取到关键帧后提前返回；先接收剩余输出。
         var pending = DecodePacket(null, cancellationToken, maxWidth, maxHeight, receiveOnly: true);
@@ -699,6 +778,12 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             var isKeyPacket = (packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0;
             if (!useFullPacketDecoding && !isKeyPacket)
                 continue;
+            if (!useFullPacketDecoding && keyPacketFilter?.Invoke(packet.Pts) is { } decision && decision != KeyPacketDecision.Decode)
+            {
+                if (decision == KeyPacketDecision.Stop)
+                    return null;
+                continue;
+            }
 
             var result = DecodeKeyFramePacket(packet, cancellationToken, maxWidth, maxHeight, preserveRemainingOutput: true);
             if (result is not null)
@@ -724,8 +809,12 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         var result = DecodePacket(packet, cancellationToken, maxWidth, maxHeight, preserveRemainingOutput: preserveRemainingOutput);
         // HEVC 和 AVS2 仅喂关键包时会积压延迟输出；HEVC 还可能因跳过 POC 回绕而误判重复画面。
         // 每个关键包独立排空并重置解码状态，避免误回退为整个 GOP 的完整解码。
-        if (!useFullPacketDecoding && !hardwareDecoderOpened
-            && inVideoStream.Codecpar!.CodecId is AVCodecID.AV_CODEC_ID_HEVC or AVCodecID.AV_CODEC_ID_AVS2)
+        // 硬解同样需要：重排序深度较大时，不重置的解码器要积压多帧才输出；IDR 与场景切换处的 CRA 混用时，
+        // CRA 还会引用没有送入的参考帧而不出画面。连续几个关键包没有画面即判定硬解失败，整段改为完整解码，
+        // 之后每次跳转都很慢。AVS2 没有硬件解码器，仍只在软解时处理。
+        if (!useFullPacketDecoding
+            && (inVideoStream.Codecpar!.CodecId is AVCodecID.AV_CODEC_ID_HEVC
+                || inVideoStream.Codecpar.CodecId is AVCodecID.AV_CODEC_ID_AVS2 && !hardwareDecoderOpened))
         {
             try
             {
