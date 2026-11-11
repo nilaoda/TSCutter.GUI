@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Editing;
 using TSCutter.GUI.ViewModels;
 
@@ -25,6 +26,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
 
     private readonly IConfigurationService _configService;
     private readonly ILocalizationService _locService;
+    // 通过生成的属性读取文字，资源键改名或删除时编译即会报错。
+    private readonly LocalizationManager _strings;
 
     public bool? DialogResult { get; }
     public event Action? RequestClose;
@@ -48,6 +51,35 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     private bool _showExportResult;
     private bool _updatingThemePreset;
 
+    // 鼠标滚轮设置；修改后快捷键列表中的鼠标操作说明随之更新。
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WheelStepUnitIndex), nameof(ShortcutGroups), nameof(HasNoShortcutMatch))]
+    private WheelStepUnit _wheelStepUnit;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WheelStepIndex), nameof(ShortcutGroups), nameof(HasNoShortcutMatch))]
+    private int _wheelStep = InputPreferences.MinWheelStep;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShiftWheelStepIndex), nameof(ShortcutGroups), nameof(HasNoShortcutMatch))]
+    private int _shiftWheelStep = InputPreferences.DefaultShiftWheelStep;
+    // 步长下拉框的文字只写数量（“n 个单位”），不随移动单位变化；切换语言后重新生成。
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(WheelStepIndex))]
+    private IReadOnlyList<string> _wheelStepTexts = [];
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShiftWheelStepIndex))]
+    private IReadOnlyList<string> _shiftWheelStepTexts = [];
+    [ObservableProperty]
+    private bool _reverseWheel;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PreviewWheelActionIndex), nameof(ShortcutGroups), nameof(HasNoShortcutMatch))]
+    private PreviewWheelAction _previewWheelAction;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TimelineWheelActionIndex), nameof(ShortcutGroups), nameof(HasNoShortcutMatch))]
+    private TimelineWheelAction _timelineWheelAction;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ShortcutGroups), nameof(HasNoShortcutMatch))]
+    private string _shortcutSearchText = "";
+
     [ObservableProperty]
     private int _selectedTabIndex;
     [ObservableProperty]
@@ -62,6 +94,59 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     private ThemeVariantMode _selectedThemeVariantMode;
 
     public bool IsLanguageEnable => !AutoDetectLanguage;
+    /// <summary>步长下拉框提供的档位；配置文件中不在档位里的取值会额外列出，打开设置不会改掉它。</summary>
+    public static IReadOnlyList<int> WheelStepPresets { get; } = [1, 2, 3, 5, 10];
+    public static IReadOnlyList<int> ShiftWheelStepPresets { get; } = [5, 10, 20, 30, 60];
+
+    /// <summary>步长下拉框各项对应的数量，与 <see cref="WheelStepTexts"/> 一一对应。</summary>
+    public IReadOnlyList<int> WheelStepValues { get; private set; } = WheelStepPresets;
+    public IReadOnlyList<int> ShiftWheelStepValues { get; private set; } = ShiftWheelStepPresets;
+
+    // 下拉框按序号选择；条目重建时控件可能短暂写回 -1，忽略。
+    public int WheelStepIndex
+    {
+        get => IndexOf(WheelStepValues, WheelStep);
+        set
+        {
+            if (value >= 0 && value < WheelStepValues.Count)
+                WheelStep = WheelStepValues[value];
+        }
+    }
+
+    public int ShiftWheelStepIndex
+    {
+        get => IndexOf(ShiftWheelStepValues, ShiftWheelStep);
+        set
+        {
+            if (value >= 0 && value < ShiftWheelStepValues.Count)
+                ShiftWheelStep = ShiftWheelStepValues[value];
+        }
+    }
+
+    // 下拉框按枚举顺序排列选项。
+    public int WheelStepUnitIndex
+    {
+        get => (int)WheelStepUnit;
+        set => WheelStepUnit = Enum.IsDefined((WheelStepUnit)value) ? (WheelStepUnit)value : WheelStepUnit.KeyFrame;
+    }
+
+    public int PreviewWheelActionIndex
+    {
+        get => (int)PreviewWheelAction;
+        set => PreviewWheelAction = Enum.IsDefined((PreviewWheelAction)value) ? (PreviewWheelAction)value : PreviewWheelAction.Zoom;
+    }
+
+    public int TimelineWheelActionIndex
+    {
+        get => (int)TimelineWheelAction;
+        set => TimelineWheelAction = Enum.IsDefined((TimelineWheelAction)value) ? (TimelineWheelAction)value : TimelineWheelAction.None;
+    }
+
+    /// <summary>按搜索关键字过滤后的快捷键列表；鼠标操作说明按窗口中尚未保存的滚轮设置生成。</summary>
+    public IReadOnlyList<ShortcutGroup> ShortcutGroups =>
+        ShortcutCatalog.Filter(ShortcutCatalog.Build(_strings, CurrentInputPreferences()), ShortcutSearchText);
+
+    public bool HasNoShortcutMatch => ShortcutGroups.Count == 0;
     public bool IsHardwareDecodingAvailable => AppConfig.IsHardwareDecodingSupported;
     public IReadOnlyList<ThemePickerItem> ThemePresetOptions { get; } = ThemePickerItem.CreatePresets(ThemeModel.AllThemes);
     public IReadOnlyList<ThemePickerItem> ThemeOptions { get; } = ThemePickerItem.Create(ThemeModel.AllThemes);
@@ -72,6 +157,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     {
         _configService = configurationService;
         _locService = localizationService;
+        _strings = new LocalizationManager(localizationService);
         ClipOutputTemplate = Utils.Editing.ClipOutputNaming.IsValidTemplate(_configService.CurrentConfig.ClipOutputTemplate)
             ? _configService.CurrentConfig.ClipOutputTemplate : Utils.Editing.ClipOutputNaming.DefaultTemplate;
         AutoDetectLanguage = _configService.CurrentConfig.AutoDetectLanguage;
@@ -82,6 +168,10 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         EnableSdrToneMapping = _configService.CurrentConfig.EnableSdrToneMapping;
         TsCheckOnExport = _configService.CurrentConfig.TsCheckOnExport;
         ShowExportResult = _configService.CurrentConfig.ShowExportResult;
+        LoadInputPreferences(_configService.CurrentConfig.Input);
+        WheelStepValues = WithCurrent(WheelStepPresets, WheelStep);
+        ShiftWheelStepValues = WithCurrent(ShiftWheelStepPresets, ShiftWheelStep);
+        RefreshWheelStepTexts();
         SelectedTheme = _configService.CurrentConfig.ThemeModel;
         SelectedDarkTheme = _configService.CurrentConfig.DarkThemeModel;
         SelectedThemeVariantMode = _configService.CurrentConfig.ThemeVariantMode;
@@ -131,6 +221,45 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         }
     }
 
+    private void LoadInputPreferences(InputPreferences input)
+    {
+        input = input.Normalize();
+        WheelStepUnit = input.WheelStepUnit;
+        WheelStep = input.WheelStep;
+        ShiftWheelStep = input.ShiftWheelStep;
+        ReverseWheel = input.ReverseWheel;
+        PreviewWheelAction = input.PreviewWheelAction;
+        TimelineWheelAction = input.TimelineWheelAction;
+    }
+
+    private InputPreferences CurrentInputPreferences() => new InputPreferences
+    {
+        WheelStepUnit = WheelStepUnit,
+        WheelStep = WheelStep,
+        ShiftWheelStep = ShiftWheelStep,
+        ReverseWheel = ReverseWheel,
+        PreviewWheelAction = PreviewWheelAction,
+        TimelineWheelAction = TimelineWheelAction
+    }.Normalize();
+
+    private static IReadOnlyList<int> WithCurrent(IReadOnlyList<int> presets, int current) =>
+        presets.Append(current).Distinct().Order().ToArray();
+
+    private static int IndexOf(IReadOnlyList<int> values, int value)
+    {
+        for (var index = 0; index < values.Count; index++)
+            if (values[index] == value)
+                return index;
+        return -1;
+    }
+
+    /// <summary>按当前语言生成步长下拉框的文字。</summary>
+    private void RefreshWheelStepTexts()
+    {
+        WheelStepTexts = WheelStepValues.Select(value => ShortcutCatalog.UnitCountText(_strings, value)).ToArray();
+        ShiftWheelStepTexts = ShiftWheelStepValues.Select(value => ShortcutCatalog.UnitCountText(_strings, value)).ToArray();
+    }
+
     [RelayCommand(CanExecute = nameof(IsOutputTemplateValid))]
     private void Apply()
     {
@@ -169,6 +298,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.CurrentConfig.EnableSdrToneMapping = EnableSdrToneMapping;
         _configService.CurrentConfig.TsCheckOnExport = TsCheckOnExport;
         _configService.CurrentConfig.ShowExportResult = ShowExportResult;
+        _configService.CurrentConfig.Input = CurrentInputPreferences();
         _configService.CurrentConfig.ThemeVariantMode = SelectedThemeVariantMode;
         // 两套配色都需保存，即使其中一套当前未启用。
         _configService.CurrentConfig.ThemeName = SelectedTheme.Name;
@@ -191,6 +321,10 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         }
         // 应用语言
         _configService.ApplyLanguage(AutoDetectLanguage ? "" : SelectedLanguage.Code);
+        // 列表与步长档位的文字取自当前语言，切换语言后重新生成。
+        RefreshWheelStepTexts();
+        OnPropertyChanged(nameof(ShortcutGroups));
+        OnPropertyChanged(nameof(HasNoShortcutMatch));
 
         // 保存
         _configService.Save();

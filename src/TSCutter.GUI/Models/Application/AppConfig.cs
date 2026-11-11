@@ -15,6 +15,7 @@ public class AppConfig : ObservableObject
     private bool _showKeyFrameStrip = true;
     private bool _enableSdrToneMapping = true;
     private bool _preferHardwareDecoding = IsHardwareDecodingSupported;
+    private InputPreferences _input = new();
 
     // 系统当前是否处于深色模式
     [JsonIgnore]
@@ -73,6 +74,12 @@ public class AppConfig : ObservableObject
     }
     public string? FFmpegRootPath { get; set; }
     public ThumbnailSheetPreferences ThumbnailSheetPreferences { get; set; } = new();
+    // 鼠标滚轮行为；整体替换以便界面通过属性通知同步，读入时把取值改回允许的范围。
+    public InputPreferences Input
+    {
+        get => _input;
+        set => SetProperty(ref _input, (value ?? new InputPreferences()).Normalize());
+    }
 
     [JsonIgnore]
     public static bool IsHardwareDecodingSupported =>

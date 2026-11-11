@@ -13,6 +13,7 @@ using Classic.Avalonia.Theme;
 using CommunityToolkit.Mvvm.Messaging;
 using TSCutter.GUI.Controls;
 using TSCutter.GUI.Themes;
+using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.ViewModels;
@@ -370,16 +371,29 @@ public partial class MainWindow : ClassicWindow
             await SeekPreviewAsync(frame.Timestamp.TotalSeconds, () => ViewModel.SeekToKeyFrameAndDrawFrameAsync(frame.Pts));
     }
 
-    // 解码期间的透明遮罩拦截全部输入；滚轮落在导航条上时仍交给导航条，定位过程中继续滚动的格数得以累计。
+    // 解码期间的透明遮罩拦截全部输入；滚轮落在导航条上，或落在设为滚轮定位的预览画面、时间轴上时，
+    // 仍按滚轮定位处理，定位过程中继续滚动的格数得以累计。
     private void DecodingOverlay_OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
-        if (!KeyFrameStripView.IsEffectivelyVisible ||
-            !new Avalonia.Rect(KeyFrameStripView.Bounds.Size).Contains(e.GetPosition(KeyFrameStripView)))
-            return;
-        e.Handled = KeyFrameStripView.ApplyWheel(e.Delta.Y, e.Timestamp);
+        var input = ViewModel.ViewerPreferences.Input;
+        var zoomModifier = e.KeyModifiers.HasFlag(KeyModifiers.Control) || e.KeyModifiers.HasFlag(KeyModifiers.Meta);
+        var navigate = ContainsPointer(KeyFrameStripView, e)
+            || !zoomModifier && input.PreviewWheelAction == PreviewWheelAction.Navigate && ContainsPointer(ImageViewer, e)
+            // 时间轴上按住 Shift 滚动用于平移，解码期间不转为定位。
+            || !zoomModifier && !e.KeyModifiers.HasFlag(KeyModifiers.Shift)
+                && input.TimelineWheelAction == TimelineWheelAction.Navigate && ContainsPointer(MainTimeline, e);
+        if (navigate)
+            e.Handled = KeyFrameStripView.ApplyWheel(e.Delta, e.KeyModifiers, e.Timestamp);
     }
 
-    // 导航条上滚动滚轮：两种剪辑模式均按关键帧移动（与方向键的条件相同）。
+    private static bool ContainsPointer(Control control, PointerEventArgs e) =>
+        control.IsEffectivelyVisible && new Avalonia.Rect(control.Bounds.Size).Contains(e.GetPosition(control));
+
+    // 预览画面与时间轴设为滚轮定位时，与导航条共用步长、方向和事件间隔。
+    private void WheelNavigation_OnRequested(object? sender, PointerWheelEventArgs e) =>
+        e.Handled = KeyFrameStripView.ApplyWheel(e.Delta, e.KeyModifiers, e.Timestamp);
+
+    // 滚轮定位：默认两种剪辑模式均按关键帧移动（与方向键的条件相同），可设为智能剪辑模式下按帧移动。
     private async void KeyFrameStrip_OnWheelStepRequested(object? sender, int steps)
     {
         // 是否接受由视图模型判断：滚轮定位进行中时继续累计格数。

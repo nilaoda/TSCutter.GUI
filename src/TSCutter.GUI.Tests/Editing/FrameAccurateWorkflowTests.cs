@@ -412,7 +412,21 @@ public sealed class FrameAccurateWorkflowTests
                     Assert.Equal(time == 0 ? items[0] : items[^1], Assert.Single(items, item => item.IsCurrent));
                 }
                 var first = await video.DecodeAtTimeAsync(TimeSpan.Zero);
-                try { Assert.Null(await video.DecodeAdjacentFrameAsync(first.FramePts, -1)); }
+                try
+                {
+                    Assert.Null(await video.DecodeAdjacentFrameAsync(first.FramePts, -1));
+                    // 片头第一个关键帧间隔内也能逐帧后退：从第二帧后退回到首帧。
+                    var second = await video.DecodeAdjacentFrameAsync(first.FramePts, 1);
+                    Assert.NotNull(second);
+                    var back = await video.DecodeAdjacentFrameAsync(second.FramePts, -1);
+                    Assert.Equal(first.FramePts, back?.FramePts);
+                    foreach (var frame in new[] { second, back! })
+                    {
+                        frame.BitmapLease?.Dispose();
+                        if (frame.BitmapLease is null)
+                            frame.Bitmap?.Dispose();
+                    }
+                }
                 finally
                 {
                     first.BitmapLease?.Dispose();

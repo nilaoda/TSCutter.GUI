@@ -8,6 +8,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Media;
+using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Utils;
 
@@ -100,6 +101,10 @@ public sealed class TimelineControl : Control
     public static readonly StyledProperty<string> ScrollTipProperty =
         AvaloniaProperty.Register<TimelineControl, string>(nameof(ScrollTip), string.Empty);
 
+    /// <summary>不按修饰键滚动滚轮时的动作；Ctrl（macOS 为 ⌘）加滚轮始终缩放。</summary>
+    public static readonly StyledProperty<TimelineWheelAction> PlainWheelActionProperty =
+        AvaloniaProperty.Register<TimelineControl, TimelineWheelAction>(nameof(PlainWheelAction));
+
     private enum HitPart
     {
         None,
@@ -191,6 +196,14 @@ public sealed class TimelineControl : Control
     public event EventHandler<double>? PanRequested;
     public event EventHandler<TimelineZoomRequestEventArgs>? ZoomRequested;
     public event EventHandler? FitRequested;
+    /// <summary>滚轮动作设为定位时，滚轮事件交给窗口按滚轮定位的步长处理。</summary>
+    public event EventHandler<PointerWheelEventArgs>? WheelNavigationRequested;
+
+    public TimelineWheelAction PlainWheelAction
+    {
+        get => GetValue(PlainWheelActionProperty);
+        set => SetValue(PlainWheelActionProperty, value);
+    }
 
     public void CompletePendingSeek()
     {
@@ -521,12 +534,17 @@ public sealed class TimelineControl : Control
             ZoomRequested?.Invoke(this, new TimelineZoomRequestEventArgs(level, anchor));
             e.Handled = true;
         }
-        else if (modifiers.HasFlag(KeyModifiers.Shift) && IsZoomed)
+        else if ((modifiers.HasFlag(KeyModifiers.Shift) || PlainWheelAction == TimelineWheelAction.Pan) && IsZoomed)
         {
             var delta = Math.Abs(e.Delta.X) > Math.Abs(e.Delta.Y) ? e.Delta.X : e.Delta.Y;
             PanRequested?.Invoke(this,
                 ClampViewportStart(ViewportStart - delta * VisibleDuration * 0.1));
             e.Handled = true;
+        }
+        else if (PlainWheelAction == TimelineWheelAction.Navigate)
+        {
+            // 未放大时按住 Shift 滚动没有平移可做，按 Shift 的加速步长定位。
+            WheelNavigationRequested?.Invoke(this, e);
         }
     }
 

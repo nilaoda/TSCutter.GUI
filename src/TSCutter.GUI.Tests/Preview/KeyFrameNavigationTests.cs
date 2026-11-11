@@ -90,6 +90,19 @@ public sealed class KeyFrameNavigationTests
                         Assert.Equal(referencePts[0], atBeginning.FramePts);
                         Dispose(atBeginning);
                     }
+                    // 关键帧间隔均匀时，一次跳多个关键帧正好移动指定的个数，不多走也不少走一个。
+                    if (name == "fixed.mp4")
+                    {
+                        Dispose(await video.DecodeKeyFrameAtPtsAsync(referencePts[4]));
+                        var index = 4;
+                        foreach (var steps in new[] { 2, -3, 3, 5, -5, -2 })
+                        {
+                            var jumped = await video.DecodeNextFrameAsync(steps);
+                            index += steps;
+                            Assert.Equal(referencePts[index], jumped.FramePts);
+                            Dispose(jumped);
+                        }
+                    }
                 }
             }
             return true;

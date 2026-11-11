@@ -9,16 +9,17 @@
         xmlns:models="clr-namespace:TSCutter.GUI.Models.Application"
         xmlns:app="using:TSCutter.GUI"
         mc:Ignorable="d"
-        d:DesignWidth="380" d:DesignHeight="420"
-        Width="380" Height="420"
+        d:DesignWidth="400" d:DesignHeight="480"
+        Width="400" Height="480"
+        MinWidth="380" MinHeight="420"
         x:Class="TSCutter.GUI.Views.Application.SettingsWindow"
         WindowStartupLocation="CenterOwner"
-        CanResize="False"
+        CanResize="True"
         x:DataType="viewModels:SettingsWindowViewModel"
         Title="{DynamicResource String.Settings.Title}">
     <Window.Styles>
-        <!-- 主题选项数量有限，使用普通面板，避免模板切换后虚拟化缓存继续引用旧容器。 -->
-        <Style Selector="ComboBox.theme-picker">
+        <!-- 本窗口的下拉框选项数量都有限，使用普通面板，避免切换主题后虚拟化缓存继续引用旧容器。 -->
+        <Style Selector="ComboBox">
             <Setter Property="ItemsPanel">
                 <ItemsPanelTemplate><StackPanel /></ItemsPanelTemplate>
             </Setter>
@@ -161,6 +162,52 @@
                         <CheckBox IsChecked="{Binding EnableSdrToneMapping}"
                                   Content="{DynamicResource String.Settings.EnableSdrToneMapping}"
                                   ToolTip.Tip="{DynamicResource String.Settings.EnableSdrToneMappingTip}" />
+                        <!-- 鼠标滚轮：步长用下拉档位，避免数字微调框占用过多空间；档位只写数量，单位由“移动单位”决定。 -->
+                        <TextBlock Text="{DynamicResource String.Settings.Shortcuts.Wheel}" FontWeight="Bold" Margin="0,6,0,0" />
+                        <Grid ColumnDefinitions="100, *" RowDefinitions="Auto, Auto, Auto, Auto, Auto" RowSpacing="6">
+                            <TextBlock Grid.Row="0" VerticalAlignment="Center"
+                                       Text="{DynamicResource String.Settings.Shortcuts.WheelUnit}" />
+                            <!-- 选项顺序与 WheelStepUnit 枚举一致。 -->
+                            <ComboBox Grid.Row="0" Grid.Column="1" HorizontalAlignment="Stretch"
+                                      SelectedIndex="{Binding WheelStepUnitIndex, Mode=TwoWay}">
+                                <ToolTip.Tip>
+                                    <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                               Text="{DynamicResource String.Settings.Shortcuts.WheelUnitTip}" />
+                                </ToolTip.Tip>
+                                <ComboBoxItem Content="{DynamicResource String.Settings.Shortcuts.WheelUnit.KeyFrame}" />
+                                <ComboBoxItem Content="{DynamicResource String.Settings.Shortcuts.WheelUnit.Frame}" />
+                                <ComboBoxItem Content="{DynamicResource String.Settings.Shortcuts.WheelUnit.Second}" />
+                            </ComboBox>
+                            <TextBlock Grid.Row="1" VerticalAlignment="Center"
+                                       Text="{DynamicResource String.Settings.Shortcuts.StripStep}" />
+                            <ComboBox Grid.Row="1" Grid.Column="1" HorizontalAlignment="Stretch"
+                                      ItemsSource="{Binding WheelStepTexts}"
+                                      SelectedIndex="{Binding WheelStepIndex, Mode=TwoWay}" />
+                            <TextBlock Grid.Row="2" VerticalAlignment="Center"
+                                       Text="{DynamicResource String.Settings.Shortcuts.ShiftWheel}" />
+                            <ComboBox Grid.Row="2" Grid.Column="1" HorizontalAlignment="Stretch"
+                                      ItemsSource="{Binding ShiftWheelStepTexts}"
+                                      SelectedIndex="{Binding ShiftWheelStepIndex, Mode=TwoWay}" />
+                            <TextBlock Grid.Row="3" VerticalAlignment="Center"
+                                       Text="{DynamicResource String.Settings.Shortcuts.PreviewWheel}" />
+                            <!-- 选项顺序与 PreviewWheelAction 枚举一致。 -->
+                            <ComboBox Grid.Row="3" Grid.Column="1" HorizontalAlignment="Stretch"
+                                      SelectedIndex="{Binding PreviewWheelActionIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="{DynamicResource String.Settings.Shortcuts.WheelAction.Zoom}" />
+                                <ComboBoxItem Content="{DynamicResource String.Settings.Shortcuts.WheelAction.Navigate}" />
+                            </ComboBox>
+                            <TextBlock Grid.Row="4" VerticalAlignment="Center"
+                                       Text="{DynamicResource String.Settings.Shortcuts.TimelineWheel}" />
+                            <!-- 选项顺序与 TimelineWheelAction 枚举一致。 -->
+                            <ComboBox Grid.Row="4" Grid.Column="1" HorizontalAlignment="Stretch"
+                                      SelectedIndex="{Binding TimelineWheelActionIndex, Mode=TwoWay}">
+                                <ComboBoxItem Content="{DynamicResource String.Settings.Shortcuts.WheelAction.None}" />
+                                <ComboBoxItem Content="{DynamicResource String.Settings.Shortcuts.WheelAction.Navigate}" />
+                                <ComboBoxItem Content="{DynamicResource String.Settings.Shortcuts.WheelAction.Pan}" />
+                            </ComboBox>
+                        </Grid>
+                        <CheckBox IsChecked="{Binding ReverseWheel}"
+                                  Content="{DynamicResource String.Settings.Shortcuts.ReverseWheel}" />
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
@@ -186,6 +233,58 @@
                                   Margin="0,6,0,0" />
                     </StackPanel>
                 </ScrollViewer>
+            </TabItem>
+            <TabItem Header="{DynamicResource String.Settings.Shortcuts}">
+                <!-- 只读快捷键列表占满整页；只显示当前平台的按键，鼠标操作说明随「预览」页的滚轮设置变化。 -->
+                <DockPanel Margin="10,12">
+                    <TextBox DockPanel.Dock="Top" Margin="0,0,0,6" Text="{Binding ShortcutSearchText}"
+                             Watermark="{DynamicResource String.Settings.Shortcuts.Search}" />
+                    <TextBlock DockPanel.Dock="Bottom" Margin="0,6,0,0" TextWrapping="Wrap"
+                               Foreground="{DynamicResource AppSecondaryTextBrush}"
+                               Text="{DynamicResource String.Settings.Shortcuts.ReadOnlyHint}" />
+                    <Border BorderThickness="1"
+                            BorderBrush="{DynamicResource {x:Static common:SystemColors.ControlDarkBrushKey}}"
+                            Background="{DynamicResource {x:Static common:SystemColors.WindowBrushKey}}">
+                        <DockPanel>
+                            <Grid DockPanel.Dock="Top" ColumnDefinitions="*, 110"
+                                  Background="{DynamicResource {x:Static common:SystemColors.ControlBrushKey}}">
+                                <TextBlock Grid.Column="0" Margin="8,3" Text="{DynamicResource String.Settings.Shortcuts.ColumnAction}" />
+                                <TextBlock Grid.Column="1" Margin="8,3" Text="{DynamicResource String.Settings.Shortcuts.ColumnKeys}" />
+                            </Grid>
+                            <Panel>
+                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding ShortcutGroups}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="models:ShortcutGroup">
+                                                <StackPanel>
+                                                    <Border BorderThickness="0,1,0,0"
+                                                            BorderBrush="{DynamicResource {x:Static common:SystemColors.ControlDarkBrushKey}}"
+                                                            Background="{DynamicResource {x:Static common:SystemColors.ControlBrushKey}}">
+                                                        <TextBlock Margin="8,3" FontWeight="Bold" Text="{Binding Title}" />
+                                                    </Border>
+                                                    <ItemsControl ItemsSource="{Binding Entries}">
+                                                        <ItemsControl.ItemTemplate>
+                                                            <DataTemplate x:DataType="models:ShortcutEntry">
+                                                                <Grid ColumnDefinitions="*, 110">
+                                                                    <TextBlock Grid.Column="0" Margin="8,3" TextWrapping="Wrap" Text="{Binding Action}" />
+                                                                    <TextBlock Grid.Column="1" Margin="8,3" TextWrapping="Wrap" Text="{Binding Keys}" />
+                                                                </Grid>
+                                                            </DataTemplate>
+                                                        </ItemsControl.ItemTemplate>
+                                                    </ItemsControl>
+                                                </StackPanel>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                                <TextBlock Margin="8" HorizontalAlignment="Center" VerticalAlignment="Top"
+                                           Foreground="{DynamicResource AppSecondaryTextBrush}"
+                                           IsVisible="{Binding HasNoShortcutMatch}"
+                                           Text="{DynamicResource String.Settings.Shortcuts.NoMatch}" />
+                            </Panel>
+                        </DockPanel>
+                    </Border>
+                </DockPanel>
             </TabItem>
         </TabControl>
     </DockPanel>

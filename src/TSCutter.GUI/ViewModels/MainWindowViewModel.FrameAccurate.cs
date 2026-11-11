@@ -218,6 +218,19 @@ public partial class MainWindowViewModel
         await DecodeExactFrameAsync(video => video.DecodeAdjacentFrameAsync(anchor, direction));
     }
 
+    /// <summary>逐帧连续移动多帧；画面没有变化（到达片头片尾或解码失败）时停止并返回 false。</summary>
+    private async Task<bool> StepFramesAsync(int count)
+    {
+        for (var index = 0; index < Math.Abs(count); index++)
+        {
+            var before = CurrentPts;
+            await StepFrameAsync(Math.Sign(count));
+            if (CurrentPts == before)
+                return false;
+        }
+        return true;
+    }
+
     /// <summary>精确解码相邻帧并显示；解码失败时提示，结束后导航条按实际画面更新。</summary>
     private async Task DecodeExactFrameAsync(Func<VideoInstance, Task<DecodeResult?>> decode)
     {

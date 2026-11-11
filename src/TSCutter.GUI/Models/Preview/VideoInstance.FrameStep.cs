@@ -174,7 +174,8 @@ public partial class VideoInstance
         var distance = Math.Max(1, keyFrameGap);
         for (var attempt = 0; attempt < 8 && previous is null; attempt++, distance *= 2)
         {
-            var start = anchorPts - distance;
+            // 起点早于首帧时钳到首帧：否则解码出的画面都晚于起点，永远对不上起点，片头一个关键帧间隔内找不到上一帧。
+            var start = Math.Max(firstFrameTimestamp, anchorPts - distance);
             DecodeMatchingFrame(start, pts =>
             {
                 // 时间轴从首个关键帧开始，不退到片头关键帧之前显示的前导画面。

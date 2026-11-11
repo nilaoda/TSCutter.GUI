@@ -1,4 +1,6 @@
+using Avalonia;
 using Avalonia.Headless;
+using Avalonia.Input;
 using TSCutter.GUI.Controls;
 using Xunit;
 
@@ -29,7 +31,7 @@ public sealed class KeyFrameStripWheelTests
             ulong time = 1000;
             foreach (var delta in deltas)
             {
-                Assert.True(strip.ApplyWheel(delta, time));
+                Assert.True(strip.ApplyWheel(new Vector(0, delta), KeyModifiers.None, time));
                 time += 120;
             }
             Assert.Equal(expected, steps.Sum());
@@ -48,11 +50,33 @@ public sealed class KeyFrameStripWheelTests
             strip.WheelStepRequested += (_, step) => steps.Add(step);
             // 触控板滑动：每 4 毫秒一个很小的增量，持续 100 毫秒；每 16 毫秒内最多移动一格。
             for (ulong time = 0; time < 100; time += 4)
-                Assert.True(strip.ApplyWheel(-0.02, 5000 + time));
+                Assert.True(strip.ApplyWheel(new Vector(0, -0.02), KeyModifiers.None, 5000 + time));
             Assert.InRange(steps.Count, 6, 7);
             Assert.All(steps, step => Assert.Equal(1, step));
             // 增量为 0 的事件不处理。
-            Assert.False(strip.ApplyWheel(0, 9000));
+            Assert.False(strip.ApplyWheel(default, KeyModifiers.None, 9000));
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public void StepSizeShiftAccelerationAndDirectionFollowTheSettings()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        session.Dispatch(() =>
+        {
+            var strip = new KeyFrameStripControl { WheelStep = 3, ShiftWheelStep = 12 };
+            var steps = new List<int>();
+            strip.WheelStepRequested += (_, step) => steps.Add(step);
+            strip.ApplyWheel(new Vector(0, -1), KeyModifiers.None, 1000);
+            strip.ApplyWheel(new Vector(0, 1), KeyModifiers.None, 2000);
+            strip.ApplyWheel(new Vector(0, -1), KeyModifiers.Shift, 3000);
+            // macOS 按住 Shift 滚动时增量落在 X 上，仍按纵向滚动处理。
+            strip.ApplyWheel(new Vector(-0.4, 0), KeyModifiers.Shift, 4000);
+            // 不按 Shift 的横向滚动（触控板左右滑动、滚轮左右拨动）不处理。
+            Assert.False(strip.ApplyWheel(new Vector(-1, 0), KeyModifiers.None, 5000));
+            strip.ReverseWheel = true;
+            strip.ApplyWheel(new Vector(0, -1), KeyModifiers.None, 6000);
+            Assert.Equal(new[] { 3, -3, 12, 12, -3 }, steps);
         }, CancellationToken.None);
     }
 }
