@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
@@ -22,6 +23,18 @@ public partial class MediainfoWindowViewModel : ViewModelBase, IModalDialogViewM
     public VideoInstance? DiscVideo { get; set; }
     public DiscTitleInfo? DiscTitle { get; set; }
     public bool? DialogResult { get; }
+
+    /// <summary>章节/EPG 标签页列出的章节或节目。</summary>
+    public IReadOnlyList<SegmentListItem> SegmentItems { get; set; } = [];
+    public bool HasSegmentItems => SegmentItems.Count > 0;
+
+    /// <summary>列表为 EPG 节目（标签页标题为“EPG”）；否则为章节。</summary>
+    public bool ListsEpgPrograms { get; set; }
+    public string SegmentTabHeader => ListsEpgPrograms
+        ? LocalizationManager.Instance.String_Epg_Tab : LocalizationManager.Instance.String_Chapter_Tab;
+
+    /// <summary>在列表中点选的章节或录制中节目，对话框关闭后由主窗口跳到它的开始。</summary>
+    public TimelineSegmentItem? JumpTarget { get; set; }
 
     [ObservableProperty]
     private string _infoText = LocalizationManager.Instance.String_MediaInfo_Loading;

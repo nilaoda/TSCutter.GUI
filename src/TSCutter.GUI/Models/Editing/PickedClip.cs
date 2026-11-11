@@ -39,6 +39,10 @@ public partial class PickedClip : ObservableObject, IDisposable
 
     public bool RequiresRemux { get; init; }
 
+    /// <summary>起止按 EPG 时间自动标记，需要核对；重新标记起点或终点后清除。</summary>
+    [ObservableProperty]
+    private bool _needsBoundaryReview;
+
     /// <summary>边界在帧精确模式下标记，可能不是关键帧，只能按帧精确方式导出。</summary>
     public bool RequiresFrameAccurate { get; set; }
 

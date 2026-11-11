@@ -38,10 +38,19 @@ internal static class TsDvbTimeTableParser
                 return false;
         }
 
-        var mjd = (section[3] << 8) | section[4];
-        if (!TryReadBcd(section[5], out var hour) ||
-            !TryReadBcd(section[6], out var minute) ||
-            !TryReadBcd(section[7], out var second) ||
+        return TryParseMjdUtc(section.Slice(3, 5), out utcTime);
+    }
+
+    /// <summary>解析 DVB 的 40 位 UTC 时间（16 位 MJD + 6 位 BCD 时分秒），TDT/TOT 与 EIT 共用。</summary>
+    public static bool TryParseMjdUtc(ReadOnlySpan<byte> value, out DateTimeOffset utcTime)
+    {
+        utcTime = default;
+        if (value.Length < 5)
+            return false;
+        var mjd = (value[0] << 8) | value[1];
+        if (!TryReadBcd(value[2], out var hour) ||
+            !TryReadBcd(value[3], out var minute) ||
+            !TryReadBcd(value[4], out var second) ||
             hour > 23 || minute > 59 || second > 59)
         {
             return false;
@@ -63,7 +72,7 @@ internal static class TsDvbTimeTableParser
         }
     }
 
-    private static bool TryReadBcd(byte value, out int result)
+    internal static bool TryReadBcd(byte value, out int result)
     {
         var high = value >> 4;
         var low = value & 0x0F;
@@ -76,7 +85,7 @@ internal static class TsDvbTimeTableParser
         return true;
     }
 
-    private static bool HasValidMpegCrc(ReadOnlySpan<byte> section)
+    internal static bool HasValidMpegCrc(ReadOnlySpan<byte> section)
     {
         uint crc = uint.MaxValue;
         foreach (var value in section)

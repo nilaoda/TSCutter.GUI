@@ -1431,6 +1431,65 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         return TimeSpan.FromSeconds((pts - firstFrameTimestamp) / t);
     }
     
+    /// <summary>
+    /// 章节（按时间轴秒数）：蓝光取播放列表的章节，起点为标题相对时间，与时间轴一致；其他来源（MP4、MKV、DVD 等）
+    /// 取容器章节表并减去时间轴起点画面的时间。每章到下一章开始为止，最后一章到时间轴结尾
+    /// （容器记录的章节终点常与视频时长差几毫秒）。少于两章时返回空。
+    /// </summary>
+    internal unsafe IReadOnlyList<MediaChapter> GetChapters(DiscTitleInfo? title)
+    {
+        lock (decoderSync)
+        {
+            if (closed || !Inited || AudioMode)
+                return [];
+            var duration = timelineDurationSeconds;
+            var raw = new List<(double Start, string? Title)>();
+            if (Disc?.Kind == DiscKind.BluRay)
+            {
+                foreach (var chapter in title?.Chapters ?? [])
+                    raw.Add((chapter.Start.TotalSeconds, chapter.Name));
+            }
+            else
+            {
+                var origin = firstFrameTimestamp * timeBase.num / (double)timeBase.den;
+                AVFormatContext* fc = inFc;
+                for (var i = 0; i < fc->nb_chapters; i++)
+                {
+                    var chapter = fc->chapters[i];
+                    if (chapter == null || chapter->start == FF.AV_NOPTS_VALUE ||
+                        chapter->time_base.num <= 0 || chapter->time_base.den <= 0)
+                        continue;
+                    new NativeMetadata(chapter->metadata).TryGetValue("title", out var name);
+                    raw.Add((chapter->start * chapter->time_base.ToDouble() - origin, name));
+                }
+            }
+            // 按毫秒取整，避免时间基换算的浮点误差出现在显示中。
+            var ordered = raw.Where(item => double.IsFinite(item.Start) && item.Start < duration)
+                .Select(item => item with { Start = Math.Round(Math.Max(0, item.Start), 3) })
+                .OrderBy(item => item.Start).ToList();
+            var chapters = new List<MediaChapter>();
+            for (var i = 0; i < ordered.Count; i++)
+            {
+                var (start, name) = ordered[i];
+                var end = i + 1 < ordered.Count ? ordered[i + 1].Start : duration;
+                // 起点相同的章节（例如被裁到 0 的片头章节）只保留后一个。
+                if (end <= start)
+                    continue;
+                chapters.Add(new MediaChapter(chapters.Count + 1, string.IsNullOrWhiteSpace(name) ? null : name.Trim(),
+                    start, end));
+            }
+            return chapters.Count >= 2 ? chapters : [];
+        }
+    }
+
+    /// <summary>可读取 EPG 的录制：文件形式的 TS（光盘标题与其他封装没有 EIT）。</summary>
+    internal bool CanReadEpg => Disc is null && !AudioMode && inFc.InputFormat?.Name == "mpegts";
+
+    /// <summary>EPG 读取所需的视频 PID 与其所属节目的 service_id（PMT 的节目号）。</summary>
+    internal (int VideoPid, int? ServiceId) GetEpgStreamInfo() =>
+        (inVideoStream.Id, inFc.Programs.Where(program => program.ContainsStream(inVideoStream.Index))
+            .Select(program => (int?)program.Id).FirstOrDefault());
+
     internal (int VideoPid, int[] AudioPids) GetMergeStreamPids(bool selectedProgramOnly = false) =>
         (inVideoStream.Id, inFc.Streams
             .Where(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO &&
