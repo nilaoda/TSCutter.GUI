@@ -5,6 +5,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
 using TSCutter.GUI.Models.Application;
+using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Editing;
@@ -41,6 +42,9 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     private bool _showImageNavigator;
     [ObservableProperty]
     private bool _showKeyFrameStrip;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(KeyFrameStripThumbnailSizeIndex))]
+    private KeyFrameStripThumbnailSize _keyFrameStripThumbnailSize = KeyFrameStripThumbnailSize.Medium;
     [ObservableProperty]
     private bool _preferHardwareDecoding;
     [ObservableProperty]
@@ -130,6 +134,13 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         set => WheelStepUnit = Enum.IsDefined((WheelStepUnit)value) ? (WheelStepUnit)value : WheelStepUnit.KeyFrame;
     }
 
+    public int KeyFrameStripThumbnailSizeIndex
+    {
+        get => (int)KeyFrameStripThumbnailSize;
+        set => KeyFrameStripThumbnailSize = Enum.IsDefined((KeyFrameStripThumbnailSize)value)
+            ? (KeyFrameStripThumbnailSize)value : KeyFrameStripThumbnailSize.Medium;
+    }
+
     public int PreviewWheelActionIndex
     {
         get => (int)PreviewWheelAction;
@@ -164,6 +175,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         AutoCheckForUpdates = _configService.CurrentConfig.AutoCheckForUpdates;
         ShowImageNavigator = _configService.CurrentConfig.ShowImageNavigator;
         ShowKeyFrameStrip = _configService.CurrentConfig.ShowKeyFrameStrip;
+        KeyFrameStripThumbnailSize = _configService.CurrentConfig.KeyFrameStripThumbnailSize;
         PreferHardwareDecoding = _configService.CurrentConfig.PreferHardwareDecoding;
         EnableSdrToneMapping = _configService.CurrentConfig.EnableSdrToneMapping;
         TsCheckOnExport = _configService.CurrentConfig.TsCheckOnExport;
@@ -293,6 +305,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.CurrentConfig.AutoDetectLanguage = AutoDetectLanguage;
         _configService.CurrentConfig.AutoCheckForUpdates = AutoCheckForUpdates;
         _configService.CurrentConfig.ShowImageNavigator = ShowImageNavigator;
+        // 先改大小再改显示：同时打开预览条并改大小时只按新尺寸解码一次。
+        _configService.CurrentConfig.KeyFrameStripThumbnailSize = KeyFrameStripThumbnailSize;
         _configService.CurrentConfig.ShowKeyFrameStrip = ShowKeyFrameStrip;
         _configService.CurrentConfig.PreferHardwareDecoding = PreferHardwareDecoding;
         _configService.CurrentConfig.EnableSdrToneMapping = EnableSdrToneMapping;

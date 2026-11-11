@@ -1034,6 +1034,7 @@
                                                           WheelStep="{Binding ViewerPreferences.Input.WheelStep}"
                                                           ShiftWheelStep="{Binding ViewerPreferences.Input.ShiftWheelStep}"
                                                           ReverseWheel="{Binding ViewerPreferences.Input.ReverseWheel}"
+                                                          ThumbnailSize="{Binding KeyFrameStripThumbnailSize}"
                                                           SizeChanged="KeyFrameStrip_OnSizeChanged"
                                                           SeekRequested="KeyFrameStrip_OnSeekRequested"
                                                           WheelStepRequested="KeyFrameStrip_OnWheelStepRequested" />

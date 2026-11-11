@@ -4,6 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Editing;
+using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Services.Preview;
 using TSCutter.GUI.ViewModels.Preview;
 
@@ -38,6 +39,17 @@ public partial class MainWindowViewModel
         }
     }
 
+    public KeyFrameStripThumbnailSize KeyFrameStripThumbnailSize => _configService.CurrentConfig.KeyFrameStripThumbnailSize;
+
+    private void OnKeyFrameStripThumbnailSizeChanged()
+    {
+        // 先释放旧尺寸的缓存图片与解码器，再通知导航条按新尺寸更新布局与可见数量（此时没有来源，不会用旧图片发布或启动解码），
+        // 最后以新尺寸作为来源重新解码。
+        KeyFrameStrip.SetSource(null);
+        OnPropertyChanged(nameof(KeyFrameStripThumbnailSize));
+        RequestKeyFrameStrip(CurrentTime, immediate: true, currentPts: _displayedFramePts);
+    }
+
     private void OnKeyFrameStripPreferenceChanged()
     {
         // 设置窗口和视图菜单共用同一配置通知；保存仍由各自的提交操作负责。
@@ -65,9 +77,9 @@ public partial class MainWindowViewModel
     {
         if (!ShowKeyFrameStrip || !IsVideoInitialized || DurationMax <= 0)
             return;
-        // 帧精确模式下导航条显示每一帧；来源变化会清空缓存并重新解码。
+        // 帧精确模式下导航条显示每一帧；来源（含缩略图大小）变化会清空缓存并重新解码。
         KeyFrameStrip.SetSource(new KeyFrameStripSource(VideoPath, _activePreviewSelection,
-            EnableSdrToneMapping, _videoInstance?.Disc, UsesFrameAccurateCut));
+            EnableSdrToneMapping, _videoInstance?.Disc, UsesFrameAccurateCut, KeyFrameStripThumbnailSize));
         KeyFrameStrip.RequestAt(time, immediate, currentPts);
     }
 

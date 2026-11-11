@@ -242,6 +242,11 @@
     <x:String x:Key="String.Settings.ShowImageNavigatorTip">Show a navigation thumbnail when the image extends beyond the view. Click or drag to move the visible area.</x:String>
     <x:String x:Key="String.Settings.ShowKeyFrameStrip">Show keyframe strip</x:String>
     <x:String x:Key="String.Settings.ShowKeyFrameStripTip">Show nearby keyframe thumbnails above the timeline. Click a thumbnail to seek to that frame.</x:String>
+    <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize">Thumbnail size</x:String>
+    <x:String x:Key="String.Settings.KeyFrameStripThumbnailSizeTip">Size of each thumbnail in the keyframe strip. Larger thumbnails show fewer frames across the same width.</x:String>
+    <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize.Small">Small</x:String>
+    <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize.Medium">Medium</x:String>
+    <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize.Large">Large</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecoding">Prefer hardware decoding</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecodingTip">Available on Windows and macOS when a compatible device is present. Unsupported codecs automatically use software decoding.</x:String>
     <x:String x:Key="String.Settings.EnableSdrToneMapping">Default to HDR to SDR preview mapping</x:String>
