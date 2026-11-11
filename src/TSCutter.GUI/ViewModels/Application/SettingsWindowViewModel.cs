@@ -43,6 +43,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     [ObservableProperty]
     private bool _showKeyFrameStrip;
     [ObservableProperty]
+    private bool _showAudioWaveform;
+    [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(KeyFrameStripThumbnailSizeIndex))]
     private KeyFrameStripThumbnailSize _keyFrameStripThumbnailSize = KeyFrameStripThumbnailSize.Medium;
     [ObservableProperty]
@@ -175,6 +177,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         AutoCheckForUpdates = _configService.CurrentConfig.AutoCheckForUpdates;
         ShowImageNavigator = _configService.CurrentConfig.ShowImageNavigator;
         ShowKeyFrameStrip = _configService.CurrentConfig.ShowKeyFrameStrip;
+        ShowAudioWaveform = _configService.CurrentConfig.ShowAudioWaveform;
         KeyFrameStripThumbnailSize = _configService.CurrentConfig.KeyFrameStripThumbnailSize;
         PreferHardwareDecoding = _configService.CurrentConfig.PreferHardwareDecoding;
         EnableSdrToneMapping = _configService.CurrentConfig.EnableSdrToneMapping;
@@ -305,6 +308,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.CurrentConfig.AutoDetectLanguage = AutoDetectLanguage;
         _configService.CurrentConfig.AutoCheckForUpdates = AutoCheckForUpdates;
         _configService.CurrentConfig.ShowImageNavigator = ShowImageNavigator;
+        _configService.CurrentConfig.ShowAudioWaveform = ShowAudioWaveform;
         // 先改大小再改显示：同时打开预览条并改大小时只按新尺寸解码一次。
         _configService.CurrentConfig.KeyFrameStripThumbnailSize = KeyFrameStripThumbnailSize;
         _configService.CurrentConfig.ShowKeyFrameStrip = ShowKeyFrameStrip;

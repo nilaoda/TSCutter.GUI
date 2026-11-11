@@ -48,6 +48,19 @@ public class AppConfigTests
         Assert.False(restored.ShowKeyFrameStrip);
     }
 
+    [Fact]
+    public void AudioWaveformDefaultsToEnabledAndKeepsDisabledPreference()
+    {
+        var config = JsonSerializer.Deserialize("{}", AppJsonContext.Default.AppConfig)!;
+        Assert.True(config.ShowAudioWaveform);
+        string? changedProperty = null;
+        config.PropertyChanged += (_, args) => changedProperty = args.PropertyName;
+        config.ShowAudioWaveform = false;
+        Assert.Equal(nameof(AppConfig.ShowAudioWaveform), changedProperty);
+        var json = JsonSerializer.Serialize(config, AppJsonContext.Default.AppConfig);
+        Assert.False(JsonSerializer.Deserialize(json, AppJsonContext.Default.AppConfig)!.ShowAudioWaveform);
+    }
+
     [Theory]
     [InlineData("{}", KeyFrameStripThumbnailSize.Medium)]
     [InlineData("""{"KeyFrameStripThumbnailSize":"Large"}""", KeyFrameStripThumbnailSize.Large)]

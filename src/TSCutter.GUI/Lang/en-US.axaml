@@ -3,6 +3,7 @@
     <x:String x:Key="String.Preview.KeyFrameSeekFailed">Unable to locate the selected keyframe.</x:String>
     <x:String x:Key="String.Menu.ImageNavigator">Image navigator</x:String>
     <x:String x:Key="String.Menu.KeyFrameStrip">Keyframe strip</x:String>
+    <x:String x:Key="String.Menu.AudioWaveform">Audio waveform</x:String>
     <x:String x:Key="String.Window.Minimize">Minimize</x:String>
     <x:String x:Key="String.Window.Maximize">Maximize</x:String>
     <x:String x:Key="String.Window.Restore">Restore</x:String>
@@ -242,6 +243,8 @@
     <x:String x:Key="String.Settings.ShowImageNavigatorTip">Show a navigation thumbnail when the image extends beyond the view. Click or drag to move the visible area.</x:String>
     <x:String x:Key="String.Settings.ShowKeyFrameStrip">Show keyframe strip</x:String>
     <x:String x:Key="String.Settings.ShowKeyFrameStripTip">Show nearby keyframe thumbnails above the timeline. Click a thumbnail to seek to that frame.</x:String>
+    <x:String x:Key="String.Settings.ShowAudioWaveform">Show audio waveform</x:String>
+    <x:String x:Key="String.Settings.ShowAudioWaveformTip">Show the selected audio track’s waveform below the navigation strip. Turn off to stop reading waveform data.</x:String>
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize">Thumbnail size</x:String>
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSizeTip">Size of each thumbnail in the keyframe strip. Larger thumbnails show fewer frames across the same width.</x:String>
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize.Small">Small</x:String>

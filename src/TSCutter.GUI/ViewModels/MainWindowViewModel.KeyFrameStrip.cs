@@ -21,8 +21,8 @@ public partial class MainWindowViewModel
     // 波形使用与播放相同的音轨；导航条隐藏、没有可解码的音轨时不显示波形条。
     private void UpdateStripWaveformSource()
     {
-        KeyFrameStripWaveform.SetSource(ShowKeyFrameStrip && IsVideoInitialized && _videoInstance is { Inited: true } video
-            && SelectedPreviewAudioTrack is { CanDecode: true } track
+        KeyFrameStripWaveform.SetSource(ShowKeyFrameStrip && ShowAudioWaveform && IsVideoInitialized
+            && _videoInstance is { Inited: true } video && SelectedPreviewAudioTrack is { CanDecode: true } track
             ? new AudioWaveformSource(VideoPath, video.Disc, video.TsSyncOffset, _activePreviewSelection,
                 track.Selection, video.TimelineOriginSeconds)
             : null);
@@ -71,6 +71,24 @@ public partial class MainWindowViewModel
             _configService.CurrentConfig.ShowKeyFrameStrip = value;
             _configService.Save();
         }
+    }
+
+    public bool ShowAudioWaveform
+    {
+        get => _configService.CurrentConfig.ShowAudioWaveform;
+        set
+        {
+            if (value == ShowAudioWaveform)
+                return;
+            _configService.CurrentConfig.ShowAudioWaveform = value;
+            _configService.Save();
+        }
+    }
+
+    private void OnAudioWaveformPreferenceChanged()
+    {
+        OnPropertyChanged(nameof(ShowAudioWaveform));
+        UpdateStripWaveformSource();
     }
 
     public KeyFrameStripThumbnailSize KeyFrameStripThumbnailSize => _configService.CurrentConfig.KeyFrameStripThumbnailSize;
