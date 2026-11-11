@@ -261,6 +261,8 @@ public sealed class DiscIntegrationTests
             Assert.Contains("Sampling rate", info);
             Assert.Contains("00:01:30.000", info);
             Assert.Contains("00:02:50.000", info);
+            // 章节取自播放列表，标题相对时间即时间轴秒数。
+            Assert.Equal([0.0, 90.0, 170.0], video.GetChapters(main).Select(chapter => chapter.StartSeconds));
             var sheetInfo = ThumbnailSheetInfoBuilder.Build(scan.Inputs[1].SourcePath, disc: scan.Inputs[1]);
             Assert.Equal(scan.Inputs[1].Duration, sheetInfo.Duration);
             Assert.Equal(320, sheetInfo.VideoWidth);
@@ -584,6 +586,10 @@ public sealed class DiscIntegrationTests
             Assert.DoesNotContain("Stream size", info);
             Assert.Contains("00:00:08.000", info);
             Assert.Contains("00:00:16.000", info);
+            // 章节来自 dvdvideo 的章节表，最后一章到标题结尾。
+            var chapters = video.GetChapters(scan.Titles[1]);
+            Assert.Equal([0.0, 8.0, 16.0], chapters.Select(chapter => chapter.StartSeconds));
+            Assert.Equal(duration, chapters[^1].EndSeconds, 2);
             var folder = scan.Inputs[1] with { SourcePath = Path.Combine(NativeTestEnvironment.FixtureDirectory("iso"), "dvd") };
             var sheetInfo = ThumbnailSheetInfoBuilder.Build(folder.SourcePath, disc: folder);
             Assert.Equal(folder.Duration, sheetInfo.Duration);

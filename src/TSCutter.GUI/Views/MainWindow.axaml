@@ -387,6 +387,9 @@
                     <Button Classes="desktop-template-button" Theme="{StaticResource PreviewStatusTextTheme}"
                             Content="{DynamicResource String.Cancel}" Command="{Binding CancelExportTimestampCheckCommand}" />
                 </commonControls:StatusBarItem>
+                <commonControls:StatusBarItem IsVisible="{Binding HasTimelineSegments}">
+                    <TextBlock VerticalAlignment="Center" Text="{Binding TimelineSegmentSummaryText}" />
+                </commonControls:StatusBarItem>
                 <commonControls:StatusBarItem>
                     <Button x:Name="HardwareDecodingToggle" Classes="desktop-template-button"
                             Theme="{StaticResource PreviewStatusTextTheme}"
@@ -763,7 +766,7 @@
                                                                               RowDefinitions="Auto,64,Auto,Auto"
                                                                               ColumnDefinitions="*,8,*">
                                                                             <Grid Grid.Row="0" Grid.ColumnSpan="3"
-                                                                                  RowDefinitions="Auto,Auto" ColumnDefinitions="Auto,Auto,*,Auto,Auto" Margin="0,0,0,4">
+                                                                                  RowDefinitions="Auto,Auto,Auto" ColumnDefinitions="Auto,Auto,*,Auto,Auto" Margin="0,0,0,4">
                                                                                 <CheckBox IsChecked="{Binding IsSelected, Mode=OneWay}"
                                                                                           Click="ClipSelection_OnClick"
                                                                                           MinWidth="0" MinHeight="20" Padding="0" Margin="0,0,6,0"
@@ -797,6 +800,10 @@
                                                                                         <TextBlock Text="{Binding Notes}" MaxWidth="320" TextWrapping="Wrap" MaxLines="8" TextTrimming="CharacterEllipsis" />
                                                                                     </ToolTip.Tip>
                                                                                 </TextBlock>
+                                                                                <!-- 按 EPG 时间添加的片段在核对起止前提示。 -->
+                                                                                <TextBlock Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="3" Text="{DynamicResource String.Epg.ReviewBoundaries}"
+                                                                                           IsVisible="{Binding NeedsBoundaryReview}" MaxLines="1" TextTrimming="CharacterEllipsis"
+                                                                                           Foreground="{DynamicResource AppStatusWarningForegroundBrush}" Margin="0,0,0,3" />
                                                                             </Grid>
                                                                             <Button Grid.Row="1" Grid.Column="0" Padding="2"
                                                                                     MinWidth="0"
@@ -1030,6 +1037,37 @@
                                                           SizeChanged="KeyFrameStrip_OnSizeChanged"
                                                           SeekRequested="KeyFrameStrip_OnSeekRequested"
                                                           WheelStepRequested="KeyFrameStrip_OnWheelStepRequested" />
+                            <!-- 节目带：章节或 EPG 节目，与时间轴主轨道共用横向坐标，有分段时才显示。 -->
+                            <controls:TimelineSegmentBandControl Name="TimelineSegmentBand" Height="18" Margin="0,2,0,0"
+                                                                 IsVisible="{Binding HasTimelineSegments}"
+                                                                 IsEnabled="{Binding IsVideoInitialized}"
+                                                                 Segments="{Binding TimelineSegments}"
+                                                                 Minimum="0"
+                                                                 Maximum="{Binding DurationMax}"
+                                                                 ViewportStart="{Binding TimelineViewport.ViewStart}"
+                                                                 ViewportEnd="{Binding TimelineViewport.ViewEnd}"
+                                                                 CurrentTime="{Binding CurrentTime}"
+                                                                 CurrentBrush="{DynamicResource AppRepairMapSelectionBrush}"
+                                                                 SegmentBrush="{DynamicResource AppTimelineTrackBrush}"
+                                                                 TextBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowTextColorKey}}"
+                                                                 MutedTextBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
+                                                                 SeparatorBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
+                                                                 SeekRequested="TimelineSegmentBand_OnSeekRequested">
+                                <controls:TimelineSegmentBandControl.ContextMenu>
+                                    <ContextMenu>
+                                        <MenuItem Header="{Binding SegmentJumpToStartText}"
+                                                  Command="{Binding JumpToSegmentStartCommand}"
+                                                  CommandParameter="{Binding #TimelineSegmentBand.ContextSegment}" />
+                                        <MenuItem Header="{Binding SegmentJumpToEndText}"
+                                                  Command="{Binding JumpToSegmentEndCommand}"
+                                                  CommandParameter="{Binding #TimelineSegmentBand.ContextSegment}" />
+                                        <Separator />
+                                        <MenuItem Header="{Binding SegmentAddClipText}"
+                                                  Command="{Binding AddClipFromSegmentCommand}"
+                                                  CommandParameter="{Binding #TimelineSegmentBand.ContextSegment}" />
+                                    </ContextMenu>
+                                </controls:TimelineSegmentBandControl.ContextMenu>
+                            </controls:TimelineSegmentBandControl>
                             <controls:TimelineControl
                                                       Name="MainTimeline"
                                                       IsEnabled="{Binding IsVideoInitialized}"

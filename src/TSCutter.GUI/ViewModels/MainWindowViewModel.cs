@@ -133,6 +133,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             clip.RefreshLocalizedText();
         foreach (var item in ExportQueue)
             item.RefreshLocalizedText();
+        RefreshTimelineSegmentTexts();
 
         OnPropertyChanged(nameof(ZoomFactorStr));
         OnPropertyChanged(nameof(DecodeModeText));
@@ -567,6 +568,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         SelectedClip!.StartSignature = BoundarySignature(_videoInstance, _displayedFrameEndSignature);
         SelectedClip!.RequiresFrameAccurate |= UsesFrameAccurateCut;
         SelectedClip!.StartPosition = Math.Max(0, PositionInFile);
+        SelectedClip!.NeedsBoundaryReview = false;
         SelectedClip!.ReplaceStartThumbnail(CreateCurrentFrameThumbnail());
         if (SelectedClip!.EndTime <= _displayedFrameTime)
         {
@@ -632,6 +634,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             clip.EndPosition = endPosition;
             clip.EndFramePosition = position;
             clip.EndSignature = BoundarySignature(video, signature);
+            clip.NeedsBoundaryReview = false;
             clip.RequiresFrameAccurate |= frameAccurate;
             clip.ReplaceEndThumbnail(thumbnail);
             thumbnail = null;
@@ -911,6 +914,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         clip.EndFramePosition = state.EndFramePosition;
         clip.StartSignature = state.StartSignature;
         clip.EndSignature = state.EndSignature;
+        clip.NeedsBoundaryReview = state.NeedsBoundaryReview;
         clip.IsSelected = state.IsSelected;
         clip.MergedOutput = state.MergedOutput;
         clip.OutputFileInfo = state.OutputFilePath is null ? null : new FileInfo(state.OutputFilePath);
@@ -1267,7 +1271,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         dialogViewModel.FilePath = VideoPath;
         dialogViewModel.DiscVideo = _discInput is not null ? _videoInstance : null;
         dialogViewModel.DiscTitle = _discTitleInfo;
+        dialogViewModel.SegmentItems = CreateSegmentListItems();
+        dialogViewModel.ListsEpgPrograms = HasTimelineSegments && !ShowsChapters;
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        if (dialogViewModel.JumpTarget is { } target)
+            await JumpToSegmentStartAsync(target);
     }
 
     private string DiscKindLabel(DiscKind kind) => kind == DiscKind.BluRay
@@ -1438,9 +1446,12 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     partial void OnCurrentTimeChanged(double value)
     {
         TimelineViewport.SetPlayhead(value);
-        // 播放期间挂起缩略图条，暂停或导航后再按当前画面刷新。
+        // 播放期间挂起缩略图条和 EPG 探测，暂停或导航后再按当前画面刷新。
         if (!keyFrameStripScrubbing && !_isLoadingVideo && !IsPlaybackActive)
+        {
             RequestKeyFrameStrip(value, currentPts: _displayedFramePts);
+            RequestEpgProbeAtCurrentPosition();
+        }
     }
 
     [ObservableProperty]
@@ -1799,6 +1810,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             EndSignature = clip.EndSignature,
             IsSelected = clip.IsSelected,
             FrameAccurate = clip.RequiresFrameAccurate,
+            NeedsBoundaryReview = clip.NeedsBoundaryReview,
             OutputFilePath = clip.OutputFileInfo?.FullName,
             MergedOutput = clip.MergedOutput,
             WasExported = clip.ExportStatus == ClipExportStatus.Done &&
@@ -1954,6 +1966,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 EndFramePosition = saved.EndFramePosition,
                 StartSignature = saved.StartSignature,
                 EndSignature = saved.EndSignature,
+                NeedsBoundaryReview = saved.NeedsBoundaryReview,
                 IsSelected = saved.IsSelected,
                 MergedOutput = outputIsCurrent ? saved.MergedOutput : null,
                 OutputFileInfo = outputIsCurrent ? new FileInfo(saved.OutputFilePath!) : null,
@@ -2470,6 +2483,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         scrubResumePlayback = false;
         lastFrameFromPlayback = false;
         ResetKeyFrameStrip();
+        ResetTimelineSegments();
         SetDisplayedVideoDynamicRange(VideoDynamicRange.Standard);
         SetPreviewTrackChoices([], null);
         SetSubtitleTrackChoices([]);
@@ -2554,6 +2568,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
                 // decode
                 await DrawNextFrameCoreAsync(1, propagateFailure: true);
+                StartTimelineSegmentLoad(_videoInstance);
                 RequestKeyFrameStrip(CurrentTime, immediate: true, currentPts: _displayedFramePts);
                 // 发送消息通知 View 执行 FitCommand
                 WeakReferenceMessenger.Default.Send(new FitMessage());
@@ -2738,6 +2753,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         timestampCheckCancellation?.Cancel();
         StopPlaybackSession();
         ResetKeyFrameStrip();
+        ResetTimelineSegments();
         _previewSelectionCancellation?.Cancel();
         SetPreviewTrackChoices([], null);
         SetSubtitleTrackChoices([]);
@@ -3352,7 +3368,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         bool RequiresFrameAccurate,
         long EndFramePosition,
         string? StartSignature,
-        string? EndSignature)
+        string? EndSignature,
+        bool NeedsBoundaryReview)
     {
         public static ClipStateSnapshot Create(PickedClip clip) => new(
             clip.ClipID,
@@ -3376,7 +3393,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             clip.RequiresFrameAccurate,
             clip.EndFramePosition,
             clip.StartSignature,
-            clip.EndSignature);
+            clip.EndSignature,
+            clip.NeedsBoundaryReview);
     }
 
     private readonly record struct HistoryThumbnailKey(

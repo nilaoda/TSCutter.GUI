@@ -1634,4 +1634,27 @@
     <x:String x:Key="String.Shortcuts.TimelinePan">Timeline: pan (when zoomed in)</x:String>
     <x:String x:Key="String.Shortcuts.TimelineNavigate">Timeline: wheel seeking</x:String>
     <x:String x:Key="String.Shortcuts.PacketViewerJump">TS packet viewer: go to the entered packet or offset</x:String>
+    <x:String x:Key="String.Epg.Summary">EPG: {0} programs</x:String>
+    <x:String x:Key="String.Epg.Schedule">Scheduled {0} ({1})</x:String>
+    <x:String x:Key="String.Epg.InRecording">In this recording {0} – {1}</x:String>
+    <x:String x:Key="String.Epg.TimingHint">EPG switches at scheduled times; the actual broadcast can differ by several minutes.</x:String>
+    <x:String x:Key="String.Epg.DurationHours">{0} h</x:String>
+    <x:String x:Key="String.Epg.DurationMinutes">{0} min</x:String>
+    <x:String x:Key="String.Epg.DurationHoursMinutes">{0} h {1} min</x:String>
+    <x:String x:Key="String.Epg.JumpToStart">Go to program start</x:String>
+    <x:String x:Key="String.Epg.JumpToEnd">Go to program end</x:String>
+    <x:String x:Key="String.Epg.AddClip">Add clip for program</x:String>
+    <x:String x:Key="String.Epg.ReviewBoundaries">EPG times, check the start and end</x:String>
+    <x:String x:Key="String.Epg.NotInRecording">Not in this recording</x:String>
+    <x:String x:Key="String.Epg.Tab">EPG</x:String>
+    <x:String x:Key="String.MediaInfo.InfoTab">Info</x:String>
+    <x:String x:Key="String.Chapter.Summary">Chapters: {0}</x:String>
+    <x:String x:Key="String.Chapter.Default">Chapter {0}</x:String>
+    <x:String x:Key="String.Chapter.Range">{0} – {1}, length {2}</x:String>
+    <x:String x:Key="String.Chapter.Length">Length {0}</x:String>
+    <x:String x:Key="String.Chapter.JumpToStart">Go to chapter start</x:String>
+    <x:String x:Key="String.Chapter.JumpToEnd">Go to chapter end</x:String>
+    <x:String x:Key="String.Chapter.AddClip">Add clip for chapter</x:String>
+    <x:String x:Key="String.Chapter.Tab">Chapters</x:String>
+    <x:String x:Key="String.Chapter.Empty">This file has no chapters or EPG.</x:String>
 </ResourceDictionary>

@@ -371,6 +371,15 @@ public partial class MainWindow : ClassicWindow
             await SeekPreviewAsync(frame.Timestamp.TotalSeconds, () => ViewModel.SeekToKeyFrameAndDrawFrameAsync(frame.Pts));
     }
 
+    // 单击节目带上的一段：与点击时间轴相同地跳到它的开始。
+    private async void TimelineSegmentBand_OnSeekRequested(object? sender, TimelineSegmentItem item)
+    {
+        if (!MainTimeline.IsEffectivelyEnabled || ViewModel.IsDecoding || !ViewModel.CanTogglePreviewOptions)
+            return;
+        var time = item.JumpStartSeconds;
+        await SeekPreviewAsync(time, () => ViewModel.SeekToTimeAndDrawFrameAsync(TimeSpan.FromSeconds(time)));
+    }
+
     // 解码期间的透明遮罩拦截全部输入；滚轮落在导航条上，或落在设为滚轮定位的预览画面、时间轴上时，
     // 仍按滚轮定位处理，定位过程中继续滚动的格数得以累计。
     private void DecodingOverlay_OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
