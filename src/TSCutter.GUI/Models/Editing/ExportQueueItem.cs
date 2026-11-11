@@ -31,6 +31,10 @@ public partial class ExportQueueItem : ObservableObject
     public string? EndSignature { get; init; }
     public long? EndPts { get; init; }
     public int? ProgramId { get; init; }
+    /// <summary>关键帧模式 TS 任务的音频延迟（毫秒）；封装与帧精确任务的延迟在各自设置中。</summary>
+    public int AudioDelayMs { get; init; }
+    /// <summary>音频延迟作用的节目号（所编辑的节目）；null 表示全部音轨。</summary>
+    public int? AudioDelayProgramId { get; init; }
 
     public string SourceFilePath { get; init; } = "";
 

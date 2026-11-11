@@ -1300,6 +1300,7 @@
     <x:String x:Key="String.PreviewTrack.Program">Program</x:String>
     <x:String x:Key="String.PreviewTrack.Video">Video</x:String>
     <x:String x:Key="String.PreviewTrack.Audio">Audio: </x:String>
+    <x:String x:Key="String.PreviewTrack.AudioLabel">Audio</x:String>
     <x:String x:Key="String.PreviewTrack.ProgramFallback">Program {0}</x:String>
     <x:String x:Key="String.PreviewTrack.AllStreams">Unassigned streams</x:String>
     <x:String x:Key="String.PreviewTrack.NoAudio">None</x:String>
@@ -1662,4 +1663,8 @@
     <x:String x:Key="String.Chapter.AddClip">Add clip for chapter</x:String>
     <x:String x:Key="String.Chapter.Tab">Chapters</x:String>
     <x:String x:Key="String.Chapter.Empty">This file has no chapters or EPG.</x:String>
+    <x:String x:Key="String.AudioDelay.Tip">Audio delay in milliseconds, used when checked.&#10;Positive makes the sound later, negative earlier.&#10;Shifts every audio track of the current program,&#10;not only the selected one.&#10;Audio of other programs in the TS is unchanged.&#10;Exports only rewrite audio timestamps;&#10;TS clips are still copied packet by packet.&#10;Preview playback and the waveform shift too.&#10;Large offsets may make some hardware players&#10;drop the first moments of sound.</x:String>
+    <x:String x:Key="String.AudioDelay.Label">Delay</x:String>
+    <x:String x:Key="String.AudioDelay.Reset">Reset to 0</x:String>
+    <x:String x:Key="String.AudioDelay.Unit">ms</x:String>
 </ResourceDictionary>

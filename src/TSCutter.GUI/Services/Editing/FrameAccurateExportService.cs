@@ -1766,6 +1766,8 @@ internal sealed unsafe class FrameAccurateExportService
         public int GetHashCode(byte[] obj) => obj.Length;
     }
 
+    private static readonly AVRational Ms = new() { num = 1, den = 1000 };
+
     private static long Rescale(long value, AVRational from, AVRational to)
     {
         // 精确有理数换算，四舍五入；避免分数帧率累计误差。
@@ -1831,6 +1833,7 @@ internal sealed unsafe class FrameAccurateExportService
         var video = context.Video;
         var videoTimeBase = video->time_base;
         var isTs = input.InputFormat?.Name == "mpegts";
+        long audioDelay = settings.AudioDelayMs;
         // 下一片段从上一片段的显示终点继续。按传输包写出时第一个片段保持源时间戳（与关键帧剪辑一致）。
         var offset = writer.Ts is not null && writer.LastVideoDts == FF.AV_NOPTS_VALUE
             ? plan.StartPts : writer.Offset + writer.SegmentLength;
@@ -2124,6 +2127,15 @@ internal sealed unsafe class FrameAccurateExportService
             var outputTimeBase = writer.Output->streams[outputIndex]->time_base;
             packet->pts = writer.MapTime(packet->pts, timeBase, outputIndex);
             packet->dts = writer.MapTime(packet->dts, timeBase, outputIndex);
+            if (stream->codecpar->codec_type == AVMediaType.AVMEDIA_TYPE_AUDIO && audioDelay != 0)
+            {
+                // 音频延迟：各片段的音轨统一平移；提前到输出开头之前的声音不输出。
+                var shift = Rescale(audioDelay, Ms, outputTimeBase);
+                if (packet->dts + shift < 0)
+                    return;
+                packet->pts += shift;
+                packet->dts += shift;
+            }
             packet->duration = Rescale(packet->duration, timeBase, outputTimeBase);
             packet->stream_index = outputIndex;
             var sourcePosition = packet->pos;

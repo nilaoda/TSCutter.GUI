@@ -131,7 +131,7 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
         return candidate is not null;
     }
 
-    private static CodecContext? TryOpenDecoder(MediaStream stream)
+    internal static CodecContext? TryOpenDecoder(MediaStream stream)
     {
         if (stream.Codecpar is not { } parameters)
             return null;

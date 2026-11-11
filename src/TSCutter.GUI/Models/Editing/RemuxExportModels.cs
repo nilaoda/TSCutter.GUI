@@ -15,6 +15,8 @@ public sealed class RemuxExportSettings
     public double TimelineOriginSeconds { get; set; }
     public List<int> StreamIndices { get; set; } = [];
     public bool FastSubtitleSeek { get; set; } = true;
+    /// <summary>音频相对视频的延迟（毫秒，正数推后），见 <see cref="AudioDelay"/>。</summary>
+    public int AudioDelayMs { get; set; }
     // 光盘标题随导出任务快照保留；光盘来源仍不写入工程文件。
     [JsonIgnore]
     public DiscInput? Disc { get; set; }
@@ -23,7 +25,7 @@ public sealed class RemuxExportSettings
     {
         Container = Container, ReferenceVideoIndex = ReferenceVideoIndex,
         TimelineOriginSeconds = TimelineOriginSeconds, StreamIndices = [.. StreamIndices],
-        FastSubtitleSeek = FastSubtitleSeek, Disc = Disc
+        FastSubtitleSeek = FastSubtitleSeek, AudioDelayMs = AudioDelayMs, Disc = Disc
     };
 
     [JsonIgnore]

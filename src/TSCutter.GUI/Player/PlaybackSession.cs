@@ -379,8 +379,10 @@ public sealed class PlaybackSession : IAsyncDisposable
         {
             try
             {
+                // 原点减去延迟：音频按 PTS 换算的播放时刻整体推后（或提前）延迟秒数。
                 audioPipeline = await AudioPlaybackPipeline.TryCreateAsync(stream, options.StartSeconds,
-                    engine.AudioEndSeconds, options.TimelineOriginSeconds, audioOutputFactory).ConfigureAwait(false);
+                    engine.AudioEndSeconds, options.TimelineOriginSeconds - options.AudioDelaySeconds,
+                    audioOutputFactory).ConfigureAwait(false);
                 if (audioPipeline is null)
                     SetAudioStatus(PlaybackAudioStatus.DeviceUnavailable);
             }

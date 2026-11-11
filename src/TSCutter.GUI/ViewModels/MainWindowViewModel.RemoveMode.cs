@@ -229,6 +229,7 @@ public partial class MainWindowViewModel
             ProgramId = programId,
             VideoPid = streamPids.VideoPid,
             AudioPids = streamPids.AudioPids,
+            AudioOffset90k = AudioDelay.To90k(EffectiveAudioDelayMs), AudioDelayProgramId = AudioDelayProgramId,
             // 保留段止于删除起点所在包之前：该关键帧及之后的数据属于删除范围。
             Ranges = kept.Select(range => new TsClipMergeRange(range.Start.Position, range.End?.Position ?? -1,
                 range.Start.Time, range.End?.Time ?? DurationMax)).ToArray()
@@ -237,7 +238,7 @@ public partial class MainWindowViewModel
         IReadOnlyList<RemuxExportSegment>? remuxSegments = null;
         if (frameAccurate)
         {
-            var settings = video.CreateFrameAccurateSettings(CurrentRemuxSettings);
+            var settings = CreateFrameAccurateExportSettings(video);
             frameAccurateSegments = kept.Select(range => new FrameAccurateExportSegment(sourcePath, range.Start.Pts,
                 range.End?.Pts, settings.Snapshot(), EndExclusive: range.End is not null)).ToArray();
         }

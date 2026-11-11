@@ -921,8 +921,12 @@ internal sealed unsafe class RemuxExportService
             }
             actualEnd = Math.Max(actualEnd, Seconds(raw->pts, stream->time_base) + presentationDuration);
             var timeBase = output->streams[index]->time_base;
-            raw->pts = Ticks(Seconds(raw->pts, stream->time_base) - item.Start + offset, timeBase);
-            raw->dts = Ticks(Seconds(raw->dts, stream->time_base) - item.Start + offset, timeBase);
+            // 音频延迟：各片段的音轨统一平移，接缝前后的相对关系不变；提前到输出开头之前的声音不输出。
+            var delay = type == AVMediaType.AVMEDIA_TYPE_AUDIO ? item.Segment.Settings.AudioDelayMs / 1000.0 : 0;
+            if (delay < 0 && Seconds(raw->dts, stream->time_base) - item.Start + offset + delay < 0)
+                continue;
+            raw->pts = Ticks(Seconds(raw->pts, stream->time_base) - item.Start + offset + delay, timeBase);
+            raw->dts = Ticks(Seconds(raw->dts, stream->time_base) - item.Start + offset + delay, timeBase);
             raw->duration = Ticks(Seconds(raw->duration, stream->time_base), timeBase);
             if (type == AVMediaType.AVMEDIA_TYPE_VIDEO && previousDts[index] != FF.AV_NOPTS_VALUE)
             {

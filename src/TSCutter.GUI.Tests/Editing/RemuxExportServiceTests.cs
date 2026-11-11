@@ -950,6 +950,40 @@ public sealed class RemuxExportServiceTests
         public void Report(T value) => report(value);
     }
 
+    [RemuxExportFact]
+    public async Task AudioDelayShiftsOnlyTheAudioTrack()
+    {
+        // 同一片段分别不加与加 200 ms 音频延迟导出：音频相对视频推后 200 ms。
+        var source = Fixture("multi.mp4");
+        async Task<double> AudioOffset(int delayMs)
+        {
+            using var target = new TemporaryOutput("mp4");
+            var settings = Settings("mp4", 0, 1);
+            settings.AudioDelayMs = delayMs;
+            await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path, [new(source, 2, 4, settings)]));
+            var first = FirstPacketSeconds(target.Path);
+            return first[1] - first[0];
+        }
+        Assert.Equal(await AudioOffset(0) + 0.2, await AudioOffset(200), 3);
+    }
+
+    // 一次读取得到各流第一个带时间戳的包的秒数。
+    private static Dictionary<int, double> FirstPacketSeconds(string path)
+    {
+        using var input = Open(path);
+        var first = new Dictionary<int, double>();
+        foreach (var packet in input.ReadPackets())
+        {
+            if (packet.Pts == NativeMethods.AV_NOPTS_VALUE || first.ContainsKey(packet.StreamIndex))
+                continue;
+            var timeBase = input.Streams[packet.StreamIndex].TimeBase;
+            first[packet.StreamIndex] = packet.Pts * (double)timeBase.num / timeBase.den;
+            if (first.Count == input.Streams.Count)
+                break;
+        }
+        return first;
+    }
+
     private static FormatContext Open(string path)
     {
         var input = FormatContext.OpenInputUrl(path);

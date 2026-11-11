@@ -64,6 +64,7 @@ public partial class MainWindowViewModel
             OnPropertyChanged(nameof(ShowPreviewTrackSelector));
         }
         finally { updatingPreviewAudio = false; }
+        UpdateStripWaveformSource();
     }
 
     partial void OnSelectedPreviewAudioTrackChanged(PreviewAudioTrackOption? oldValue, PreviewAudioTrackOption? newValue)
@@ -81,6 +82,7 @@ public partial class MainWindowViewModel
             finally { updatingPreviewAudio = false; }
             return;
         }
+        UpdateStripWaveformSource();
         var resume = IsPlaybackActive;
         var end = playbackSession?.EndSeconds;
         StopPlaybackSession();
@@ -367,6 +369,7 @@ public partial class MainWindowViewModel
                     FilePath = VideoPath, Disc = instance.Disc,
                     StartSeconds = startSeconds, EndSeconds = endSeconds,
                     TimelineOriginSeconds = instance.TimelineOriginSeconds,
+                    AudioDelaySeconds = EffectiveAudioDelayMs / 1000.0,
                     EstimatedKeyFrameIntervalSeconds = instance.EstimatedKeyFrameIntervalSeconds,
                     MinimumPrerollSeconds = instance.RecoveryPrerollSeconds,
                     StreamSelection = instance.StreamSelection, AudioSelection = SelectedPreviewAudioTrack?.Selection,

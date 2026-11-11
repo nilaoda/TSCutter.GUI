@@ -571,14 +571,15 @@
                                 <Grid x:Name="PreviewImageHost" RowDefinitions="Auto,*">
                                     <Grid Grid.Row="0" Margin="6,4" IsVisible="{Binding ShowPreviewTrackSelector}">
                                         <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="{Binding HasPreviewPrograms, Converter={x:Static views:MainWindow.OptionalTrackColumnWidthConverter}}" MaxWidth="220" />
+                                            <ColumnDefinition Width="{Binding ShowPreviewProgramSelector, Converter={x:Static views:MainWindow.OptionalTrackColumnWidthConverter}}" MaxWidth="220" />
                                             <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="2*" />
-                                            <ColumnDefinition Width="{Binding HasPreviewSubtitles, Converter={x:Static views:MainWindow.OptionalTrackColumnWidthConverter}}" />
-                                            <ColumnDefinition Width="*" MaxWidth="200" />
+                                            <ColumnDefinition Width="{Binding ShowPreviewVideoSelector, Converter={x:Static views:MainWindow.OptionalWideTrackColumnWidthConverter}}" />
+                                            <ColumnDefinition Width="{Binding HasPreviewSubtitles, Converter={x:Static views:MainWindow.OptionalTrackColumnWidthConverter}}" MaxWidth="300" />
+                                            <ColumnDefinition Width="*" MinWidth="360" MaxWidth="420" />
+                                            <ColumnDefinition Width="{Binding ShowPreviewVideoSelector, Converter={x:Static views:MainWindow.TrackSpacerColumnWidthConverter}}" />
                                         </Grid.ColumnDefinitions>
                                         <Grid Grid.Column="0" ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,12,0"
-                                              IsVisible="{Binding HasPreviewPrograms}">
+                                              IsVisible="{Binding ShowPreviewProgramSelector}">
                                             <TextBlock Grid.Column="0" VerticalAlignment="Center"
                                                        Text="{DynamicResource String.PreviewTrack.Program}" />
                                             <ComboBox Grid.Column="1" MinHeight="28" HorizontalAlignment="Stretch"
@@ -599,7 +600,8 @@
                                                   IsChecked="{Binding ExportCurrentProgramOnly, Mode=TwoWay}"
                                                   Content="{DynamicResource String.PreviewTrack.ExportCurrentProgramOnly}"
                                                   ToolTip.Tip="{DynamicResource String.PreviewTrack.ExportTip}" />
-                                        <Grid Grid.Column="2" ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,12,0">
+                                        <Grid Grid.Column="2" ColumnDefinitions="Auto,*" ColumnSpacing="6" Margin="0,0,12,0"
+                                              IsVisible="{Binding ShowPreviewVideoSelector}">
                                             <TextBlock VerticalAlignment="Center"
                                                        Text="{DynamicResource String.PreviewTrack.Video}" />
                                             <ComboBox Grid.Column="1" MinHeight="28" HorizontalAlignment="Stretch"
@@ -636,13 +638,15 @@
                                                          IsIndeterminate="True" IsVisible="{Binding IsSubtitleLoading}"
                                                          ToolTip.Tip="{DynamicResource String.SubtitlePreview.Loading}" />
                                         </Grid>
-                                        <Grid Grid.Column="4">
-                                            <TextBlock VerticalAlignment="Center" IsVisible="{Binding !HasPreviewAudioTracks}"
+                                        <Grid Grid.Column="4" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="6">
+                                            <TextBlock VerticalAlignment="Center" IsVisible="{Binding HasPreviewAudioTracks}"
+                                                       Text="{DynamicResource String.PreviewTrack.AudioLabel}" />
+                                            <TextBlock Grid.ColumnSpan="2" VerticalAlignment="Center" IsVisible="{Binding !HasPreviewAudioTracks}"
                                                        TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding SelectedPreviewProgram.AudioDescription}">
                                                 <Run Text="{DynamicResource String.PreviewTrack.Audio}" />
                                                 <Run Text="{Binding SelectedPreviewProgram.AudioDescription}" />
                                             </TextBlock>
-                                            <ComboBox Name="PreviewAudioPicker" IsVisible="{Binding HasPreviewAudioTracks}"
+                                            <ComboBox Grid.Column="1" Name="PreviewAudioPicker" IsVisible="{Binding HasPreviewAudioTracks}"
                                                       MinHeight="28" ItemsSource="{Binding PreviewAudioTracks, Converter={x:Static views:MainWindow.AudioTrackItemsConverter}}"
                                                       IsEnabled="{Binding CanSelectPreviewAudio}"
                                                       SelectedValue="{Binding SelectedPreviewAudioTrack, Mode=TwoWay}"
@@ -650,6 +654,38 @@
                                                       PlaceholderText="{DynamicResource String.Playback.AudioTrackUnsupported}"
                                                       ToolTip.Tip="{Binding SelectedPreviewAudioTrack.DisplayText}">
                                             </ComboBox>
+                                            <!-- 音频延迟：勾选后生效，正数让声音推后；导出时只改写音轨时间戳。 -->
+                                            <CheckBox Grid.Column="2" VerticalAlignment="Center" MinWidth="0"
+                                                      IsVisible="{Binding HasPreviewAudioTracks}"
+                                                      IsEnabled="{Binding IsVideoInitialized}"
+                                                      IsChecked="{Binding AudioDelayEnabled, Mode=TwoWay}"
+                                                      Content="{DynamicResource String.AudioDelay.Label}">
+                                                <ToolTip.Tip>
+                                                    <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                                               Text="{DynamicResource String.AudioDelay.Tip}" />
+                                                </ToolTip.Tip>
+                                            </CheckBox>
+                                            <NumericUpDown Grid.Column="3" Width="80" MinHeight="28" VerticalAlignment="Center"
+                                                           IsVisible="{Binding HasPreviewAudioTracks}"
+                                                           IsEnabled="{Binding AudioDelayEnabled}"
+                                                           Value="{Binding AudioDelayMs, Mode=TwoWay}"
+                                                           Minimum="{Binding AudioDelayMinimum}" Maximum="{Binding AudioDelayMaximum}"
+                                                           Increment="10" FormatString="+0;-0;0"
+                                                           ParsingNumberStyle="Integer">
+                                                <ToolTip.Tip>
+                                                    <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                                               Text="{DynamicResource String.AudioDelay.Tip}" />
+                                                </ToolTip.Tip>
+                                                <NumericUpDown.ContextMenu>
+                                                    <ContextMenu>
+                                                        <MenuItem Header="{DynamicResource String.AudioDelay.Reset}"
+                                                                  Command="{Binding ResetAudioDelayCommand}" />
+                                                    </ContextMenu>
+                                                </NumericUpDown.ContextMenu>
+                                            </NumericUpDown>
+                                            <TextBlock Grid.Column="4" VerticalAlignment="Center"
+                                                       IsVisible="{Binding HasPreviewAudioTracks}"
+                                                       Text="{DynamicResource String.AudioDelay.Unit}" />
                                         </Grid>
                                     </Grid>
                                     <controls:ImageViewer Grid.Row="1" Name="ImageViewer"
@@ -1035,6 +1071,10 @@
                                                           ShiftWheelStep="{Binding ViewerPreferences.Input.ShiftWheelStep}"
                                                           ReverseWheel="{Binding ViewerPreferences.Input.ReverseWheel}"
                                                           ThumbnailSize="{Binding KeyFrameStripThumbnailSize}"
+                                                          Waveform="{Binding KeyFrameStripWaveform}"
+                                                          ShowWaveform="{Binding KeyFrameStripWaveform.IsAvailable}"
+                                                          WaveformVersion="{Binding KeyFrameStripWaveform.Version}"
+                                                          WaveformBrush="{DynamicResource {x:Static commonControls:SystemColors.GrayTextColorKey}}"
                                                           SizeChanged="KeyFrameStrip_OnSizeChanged"
                                                           SeekRequested="KeyFrameStrip_OnSeekRequested"
                                                           WheelStepRequested="KeyFrameStrip_OnWheelStepRequested" />

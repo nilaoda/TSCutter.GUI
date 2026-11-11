@@ -45,7 +45,22 @@ public sealed class KeyFrameStripControl : Control
         AvaloniaProperty.Register<KeyFrameStripControl, KeyFrameStripThumbnailSize>(nameof(ThumbnailSize),
             KeyFrameStripThumbnailSize.Medium);
 
+    /// <summary>缩略图下方的音频波形；为 null 或 <see cref="ShowWaveform"/> 为 false 时不显示波形条。</summary>
+    public static readonly StyledProperty<StripWaveformViewModel?> WaveformProperty =
+        AvaloniaProperty.Register<KeyFrameStripControl, StripWaveformViewModel?>(nameof(Waveform));
+    public static readonly StyledProperty<bool> ShowWaveformProperty =
+        AvaloniaProperty.Register<KeyFrameStripControl, bool>(nameof(ShowWaveform));
+    /// <summary>波形数据的版本，读到新数据时变化以触发重绘。</summary>
+    public static readonly StyledProperty<int> WaveformVersionProperty =
+        AvaloniaProperty.Register<KeyFrameStripControl, int>(nameof(WaveformVersion));
+    public static readonly StyledProperty<IBrush?> WaveformBrushProperty =
+        AvaloniaProperty.Register<KeyFrameStripControl, IBrush?>(nameof(WaveformBrush));
+
     public IReadOnlyList<KeyFrameStripItem>? Items { get => GetValue(ItemsProperty); set => SetValue(ItemsProperty, value); }
+    public StripWaveformViewModel? Waveform { get => GetValue(WaveformProperty); set => SetValue(WaveformProperty, value); }
+    public bool ShowWaveform { get => GetValue(ShowWaveformProperty); set => SetValue(ShowWaveformProperty, value); }
+    public int WaveformVersion { get => GetValue(WaveformVersionProperty); set => SetValue(WaveformVersionProperty, value); }
+    public IBrush? WaveformBrush { get => GetValue(WaveformBrushProperty); set => SetValue(WaveformBrushProperty, value); }
     public IBrush? TextBrush { get => GetValue(TextBrushProperty); set => SetValue(TextBrushProperty, value); }
     public IBrush? AccentBrush { get => GetValue(AccentBrushProperty); set => SetValue(AccentBrushProperty, value); }
     public IBrush? BorderBrush { get => GetValue(BorderBrushProperty); set => SetValue(BorderBrushProperty, value); }
@@ -65,8 +80,21 @@ public sealed class KeyFrameStripControl : Control
     private ulong? lastWheelStep;
     private static readonly IBrush TypeBadgeBrush = new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)).ToImmutable();
 
+    // 波形条：缩略图区域不变，加在下方；上留 2px 间距、条高 18px，与节目带一致。
+    private const double WaveformGap = 2;
+    private const double WaveformLaneHeight = 18;
+    internal const double WaveformHeight = WaveformGap + WaveformLaneHeight;
+    // 满高参考值的下限（约 -26 dB）：整段很安静时按这个参考画，不放大。
+    private const float MinimumWaveformReference = 0.05f;
+    // 波形显示的分贝范围：满高以下这么多分贝内的声音按比例画出高低。
+    private const double WaveformRangeDb = 40;
+    // 曲线每隔这么多像素取一个点，再按左右各 WaveformSmoothing 个点平均：只表现响度起伏，不画逐帧细节。
+    private const int WaveformPointSpacing = 3;
+    private const int WaveformSmoothing = 2;
+
     static KeyFrameStripControl() => AffectsRender<KeyFrameStripControl>(ItemsProperty,
-        TextBrushProperty, AccentBrushProperty, BorderBrushProperty, RangesProperty, ClipBrushProperty, RemovedBrushProperty);
+        TextBrushProperty, AccentBrushProperty, BorderBrushProperty, RangesProperty, ClipBrushProperty, RemovedBrushProperty,
+        WaveformVersionProperty, WaveformBrushProperty);
 
     public KeyFrameStripControl()
     {
@@ -75,17 +103,20 @@ public sealed class KeyFrameStripControl : Control
         Cursor = new Cursor(StandardCursorType.Hand);
     }
 
+    private bool HasWaveform => ShowWaveform && Waveform is not null;
+
     internal int VisibleCapacity => Math.Clamp((int)((Bounds.Width - 8) / Layout.Pitch),
         1, KeyFrameStripViewModel.MaximumVisibleCount);
 
     protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
     {
         base.OnPropertyChanged(change);
-        if (change.Property != ThumbnailSizeProperty)
+        if (change.Property == ThumbnailSizeProperty)
+            // 可见数量立即按新尺寸计算（宽度不变）；各档高度不同，改变高度即触发重新布局与绘制。
+            Layout = KeyFrameStripLayout.For(ThumbnailSize);
+        else if (change.Property != ShowWaveformProperty && change.Property != WaveformProperty)
             return;
-        // 可见数量立即按新尺寸计算（宽度不变）；各档高度不同，改变高度即触发重新布局与绘制。
-        Layout = KeyFrameStripLayout.For(ThumbnailSize);
-        Height = Layout.Height;
+        Height = Layout.Height + (HasWaveform ? WaveformHeight : 0);
     }
 
     internal IReadOnlyList<(KeyFrameStripItem Item, Rect Bounds)> GetTiles()
@@ -137,7 +168,7 @@ public sealed class KeyFrameStripControl : Control
                 using var opacity = context.PushOpacity(0.16);
                 context.FillRectangle(retentionBrush,
                     new Rect(bounds.X - 2, imageArea.Bottom + 2, bounds.Width + 4,
-                        Bounds.Height - imageArea.Bottom - 2));
+                        Layout.Height - imageArea.Bottom - 2));
             }
             using (context.PushOpacity(item.IsCurrent ? 1 : 0.28))
                 context.DrawRectangle(null, new Pen(item.IsCurrent ? AccentBrush ?? Brushes.DodgerBlue
@@ -155,6 +186,123 @@ public sealed class KeyFrameStripControl : Control
             context.DrawLine(pen, bounds.TopLeft, bounds.TopRight);
             context.DrawLine(pen, bounds.BottomLeft, bounds.BottomRight);
         }
+        if (HasWaveform)
+            RenderWaveform(context, tiles);
+    }
+
+    /// <summary>每张缩略图下方的时间段：从这一帧到下一帧（最后一张沿用前一段的长度）。占位格没有时间段。</summary>
+    private List<(Rect Lane, double Start, double End)> GetWaveformSpans(
+        IReadOnlyList<(KeyFrameStripItem Item, Rect Bounds)> tiles)
+    {
+        if (tiles.Count == 0 || Items is not { } frames)
+            return [];
+        var first = 0;
+        while (first < frames.Count && !ReferenceEquals(frames[first], tiles[0].Item))
+            first++;
+        var top = Layout.Height + WaveformGap;
+        var spans = new List<(Rect Lane, double Start, double End)>(tiles.Count);
+        for (var offset = 0; offset < tiles.Count; offset++)
+        {
+            var index = first + offset;
+            var (item, bounds) = tiles[offset];
+            if (item.IsPlaceholder || index >= frames.Count)
+                continue;
+            var start = item.Timestamp.TotalSeconds;
+            var end = index + 1 < frames.Count && !frames[index + 1].IsPlaceholder
+                ? frames[index + 1].Timestamp.TotalSeconds
+                : index > 0 && !frames[index - 1].IsPlaceholder
+                    ? start + (start - frames[index - 1].Timestamp.TotalSeconds) : start;
+            // 波形占满整格（含两侧各 2px 的格间缝隙），相邻两段首尾相接，整条连续显示。
+            if (end > start)
+                spans.Add((new Rect(bounds.X - 2, top, bounds.Width + 4, WaveformLaneHeight), start, end));
+        }
+        return spans;
+    }
+
+    private void RenderWaveform(DrawingContext context, IReadOnlyList<(KeyFrameStripItem Item, Rect Bounds)> tiles)
+    {
+        var waveform = Waveform!;
+        var spans = GetWaveformSpans(tiles);
+        if (spans.Count == 0)
+            return;
+        // 每隔几像素取一段时间内的峰值；还没读到的时段为 NaN，曲线在那里断开。
+        var points = new List<(double X, float Peak)>();
+        var loudest = MinimumWaveformReference;
+        foreach (var (lane, start, end) in spans)
+        {
+            var count = Math.Max(1, (int)Math.Round(lane.Width / WaveformPointSpacing));
+            var width = lane.Width / count;
+            var step = (end - start) / count;
+            for (var index = 0; index < count; index++)
+            {
+                var time = start + index * step;
+                var peak = waveform.TryGetPeak(time, time + step, out var value) ? value : float.NaN;
+                if (!float.IsNaN(peak))
+                    loudest = Math.Max(loudest, peak);
+                points.Add((lane.Left + (index + 0.5) * width, peak));
+            }
+        }
+        // 以可见范围内的最大峰值为满高、按分贝换算：广播音量普遍偏低，按绝对值画几乎是一条线；
+        // 按线性比例画时，响亮的字句旁边的小声段（轻声、环境声）又会显得像断了一样。
+        // 参考值有下限，整段都很安静时不会被放大到满高；比最响处低 WaveformRangeDb 以上的声音落在底线。
+        var levels = new double[points.Count];
+        for (var index = 0; index < points.Count; index++)
+        {
+            var peak = points[index].Peak;
+            levels[index] = float.IsNaN(peak) ? double.NaN
+                : peak <= 0 ? 0 : Math.Clamp(1 + 20 * Math.Log10(peak / loudest) / WaveformRangeDb, 0, 1);
+        }
+        var bottom = spans[0].Lane.Bottom - 0.5;
+        var height = WaveformLaneHeight - 1;
+        var area = new StreamGeometry();
+        var line = new StreamGeometry();
+        using (var areaPath = area.Open())
+        using (var linePath = line.Open())
+        {
+            var runStart = -1;
+            for (var index = 0; index <= levels.Length; index++)
+            {
+                if (index < levels.Length && !double.IsNaN(levels[index]))
+                {
+                    if (runStart < 0)
+                        runStart = index;
+                    continue;
+                }
+                if (runStart >= 0)
+                    AddWaveformRun(areaPath, linePath, points, levels, runStart, index, bottom, height);
+                runStart = -1;
+            }
+        }
+        var brush = WaveformBrush ?? TextBrush ?? Brushes.Gray;
+        using (context.PushOpacity(0.3))
+            context.DrawGeometry(brush, null, area);
+        context.DrawGeometry(null, new Pen(brush, 1), line);
+    }
+
+    // 连续读到的一段：按左右邻点平均后连成折线，下方填充到底线。
+    private static void AddWaveformRun(StreamGeometryContext areaPath, StreamGeometryContext linePath,
+        List<(double X, float Peak)> points, double[] levels, int start, int end, double bottom, double height)
+    {
+        if (end - start < 2)
+            return;
+        areaPath.BeginFigure(new Point(points[start].X, bottom), true);
+        for (var index = start; index < end; index++)
+        {
+            var from = Math.Max(start, index - WaveformSmoothing);
+            var to = Math.Min(end - 1, index + WaveformSmoothing);
+            var sum = 0.0;
+            for (var neighbor = from; neighbor <= to; neighbor++)
+                sum += levels[neighbor];
+            var point = new Point(points[index].X, bottom - sum / (to - from + 1) * height);
+            areaPath.LineTo(point);
+            if (index == start)
+                linePath.BeginFigure(point, false);
+            else
+                linePath.LineTo(point);
+        }
+        areaPath.LineTo(new Point(points[end - 1].X, bottom));
+        areaPath.EndFigure(true);
+        linePath.EndFigure(false);
     }
 
     internal IReadOnlyList<(Rect Bounds, bool IsStart, IBrush Brush)> GetBoundaryMarkers(

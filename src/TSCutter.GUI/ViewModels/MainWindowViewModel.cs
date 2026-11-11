@@ -118,6 +118,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         BuildThemeMenuItems();
         // 计算型本地化文本不会随资源字典自动刷新，语言切换后需主动通知界面重新取值。
         App.LocalizationService.LanguageChanged += OnLanguageChanged;
+        KeyFrameStrip.PropertyChanged += OnKeyFrameStripPropertyChanged;
     }
 
     private void OnLanguageChanged()
@@ -1798,6 +1799,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         PreviewSelection = IsVideoInitialized ? _activePreviewSelection : null,
         ExportCurrentProgramOnly = ExportCurrentProgramOnly,
         RemuxSettings = CurrentRemuxSettings?.Snapshot(),
+        AudioDelayMs = AudioDelayMs,
+        AudioDelayEnabled = AudioDelayEnabled,
         Clips = Clips.Select(clip => new ProjectClip
         {
             Name = clip.Name, Notes = clip.Notes, Color = clip.Color,
@@ -1824,6 +1827,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             GeneratedFileName = item.GeneratedFileName,
             Source = new ProjectSource { Path = item.SourceFilePath },
             ProgramId = item.ProgramId,
+            AudioDelayMs = item.AudioDelayMs,
+            AudioDelayProgramId = item.AudioDelayProgramId,
             RemuxSettings = item.RemuxSettings?.Snapshot(),
             FrameAccurate = item.FrameAccurate?.Snapshot(),
             StartPts = item.StartPts,
@@ -1983,7 +1988,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         _clipSelectionAnchor = SelectedClip;
         NotifyClipSelectionChanged();
 
-        _remuxExportSettings = project.RemuxSettings?.Snapshot();
+        _remuxExportSettings = WithAudioDelay(project.RemuxSettings?.Snapshot(),
+            project.AudioDelayEnabled ? AudioDelay.Clamp(project.AudioDelayMs) : 0);
+        RestoreAudioDelay(AudioDelay.Clamp(project.AudioDelayMs), project.AudioDelayEnabled);
         ExportQueue.Clear();
         foreach (var saved in project.Queue)
             ExportQueue.Add(new ExportQueueItem
@@ -1993,8 +2000,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 QueueItemId = Interlocked.Increment(ref _queueIdCounter),
                 SourceFilePath = saved.Source.Path,
                 ProgramId = saved.ProgramId,
-                RemuxSettings = saved.RemuxSettings?.Snapshot(),
-                FrameAccurate = saved.FrameAccurate?.Snapshot(),
+                AudioDelayMs = AudioDelay.Clamp(saved.AudioDelayMs),
+                AudioDelayProgramId = saved.AudioDelayProgramId,
+                RemuxSettings = WithAudioDelay(saved.RemuxSettings?.Snapshot(), AudioDelay.Clamp(saved.AudioDelayMs)),
+                FrameAccurate = WithAudioDelay(saved.FrameAccurate?.Snapshot(), AudioDelay.Clamp(saved.AudioDelayMs)),
                 StartPts = saved.StartPts,
                 EndPts = saved.EndPts,
                 SourceFileName = Path.GetFileName(saved.Source.Path),
@@ -2486,6 +2495,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         lastFrameFromPlayback = false;
         ResetKeyFrameStrip();
         ResetTimelineSegments();
+        ResetAudioDelayState();
         SetDisplayedVideoDynamicRange(VideoDynamicRange.Standard);
         SetPreviewTrackChoices([], null);
         SetSubtitleTrackChoices([]);
@@ -2756,6 +2766,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         StopPlaybackSession();
         ResetKeyFrameStrip();
         ResetTimelineSegments();
+        ResetAudioDelayState();
         _previewSelectionCancellation?.Cancel();
         SetPreviewTrackChoices([], null);
         SetSubtitleTrackChoices([]);
@@ -2911,6 +2922,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         dialogViewModel.EndPosition = clip.EndPosition;
         dialogViewModel.ProgramId = SelectedOutputProgramId;
         dialogViewModel.RemuxSettings = CurrentRemuxSettings?.Snapshot();
+        dialogViewModel.AudioDelayMs = EffectiveAudioDelayMs;
+        dialogViewModel.AudioDelayProgramId = AudioDelayProgramId;
         if (UsesFrameAccurateCut)
         {
             (dialogViewModel.FrameAccurate, dialogViewModel.StartPts, dialogViewModel.EndPts) = CreateFrameAccurateTask(clip);
@@ -2978,7 +2991,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             var destPath = ClipOutputNaming.UniquePath(sourceDir, fileName, reservedPaths);
             var task = new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition, SelectedOutputProgramId,
                 CurrentRemuxSettings?.Snapshot(), clip.StartTime, clip.EndPosition < 0 ? null : clip.EndTime,
-                StartSignature: clip.StartSignature, EndSignature: clip.EndPosition < 0 ? null : clip.EndSignature);
+                StartSignature: clip.StartSignature, EndSignature: clip.EndPosition < 0 ? null : clip.EndSignature,
+                AudioDelayMs: EffectiveAudioDelayMs, AudioDelayProgramId: AudioDelayProgramId);
             if (UsesFrameAccurateCut)
             {
                 var (settings, startPts, endPts) = CreateFrameAccurateTask(clip);
@@ -3183,6 +3197,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             QueueItemId = Interlocked.Increment(ref _queueIdCounter),
             SourceFilePath = clip.InFileInfo.FullName,
             ProgramId = frameAccurate is null ? programId : null,
+            AudioDelayMs = EffectiveAudioDelayMs,
+            AudioDelayProgramId = AudioDelayProgramId,
             RemuxSettings = frameAccurate is null ? CurrentRemuxSettings?.Snapshot() : null,
             OutputFilePath = outputPath,
             StartPosition = clip.StartPosition,
@@ -3240,7 +3256,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         var tasks = submitted.Select(item =>
             new BatchTask(item.SourceFilePath, item.OutputFilePath, item.StartPosition, item.EndPosition, item.ProgramId,
                 item.RemuxSettings?.Snapshot(), item.StartTimeSeconds, item.EndPosition < 0 ? null : item.EndTimeSeconds,
-                item.FrameAccurate?.Snapshot(), item.StartPts, item.EndPts, item.StartSignature, item.EndSignature)
+                item.FrameAccurate?.Snapshot(), item.StartPts, item.EndPts, item.StartSignature, item.EndSignature,
+                item.AudioDelayMs, item.AudioDelayProgramId)
         ).ToList();
 
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();

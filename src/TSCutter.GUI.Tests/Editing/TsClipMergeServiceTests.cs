@@ -47,6 +47,60 @@ public sealed class TsClipMergeServiceTests
     }
 
     [Fact]
+    public async Task AudioDelayRewritesOnlyTheEditedProgramsAudioPesTimestamps()
+    {
+        // 双节目：节目 1 为视频 + 音轨 0x101，节目 2 只有音轨 0x201。延迟 100 ms 只给节目 1 的音轨 PTS 加 9000，
+        // 节目表、视频 PTS、PCR、CC、节目 2 的音轨与其余字节不变。
+        const int audioPid = 0x0101;
+        const int otherAudioPid = 0x0201;
+        var audio = new TsStreamDefinition { StreamType = TsStreamTypes.Mpeg1Audio };
+        byte[][] tables =
+        [
+            TableProbeData.Section(0, TsPsiSectionBuilder.BuildPat(1, 0, [new(1, 0x1000), new(2, 0x1001)])),
+            TableProbeData.Section(0x1000, TsPsiSectionBuilder.BuildPmt(1, 0, MediaPid, [],
+                [new(MediaPid, new TsStreamDefinition { StreamType = TsStreamTypes.H264 }), new(audioPid, audio)])),
+            TableProbeData.Section(0x1001, TsPsiSectionBuilder.BuildPmt(2, 0, otherAudioPid, [],
+                [new(otherAudioPid, audio)]))
+        ];
+        var media = Enumerable.Range(0, 30).Select(index =>
+        {
+            var packet = CreatePacket(index / 3, index * 3_000L);
+            if (index % 3 != 0)
+            {
+                var pid = index % 3 == 1 ? audioPid : otherAudioPid;
+                packet[1] = (byte)(0x40 | (pid >> 8));
+                packet[2] = (byte)pid;
+                packet[5] = 0; // 音轨不带 PCR
+                packet[12 + 3] = 0xC0;
+            }
+            return packet;
+        }).ToArray();
+        byte[][] packets = [.. tables, .. media];
+        var sourcePath = Path.Combine(Path.GetTempPath(), $"ts-merge-delay-{Guid.NewGuid():N}.ts");
+        var outputPath = sourcePath + ".out.ts";
+        try
+        {
+            await File.WriteAllBytesAsync(sourcePath, packets.SelectMany(packet => packet).ToArray());
+            await new TsClipMergeService().MergeAsync(new TsClipMergeRequest
+            {
+                SourcePath = sourcePath, OutputPath = outputPath, VideoPid = MediaPid,
+                AudioPids = [audioPid, otherAudioPid], Ranges = [new(0, packets.Length * PacketSize, 0, 1)],
+                AudioOffset90k = 9_000, AudioDelayProgramId = 1
+            });
+            var output = await File.ReadAllBytesAsync(outputPath);
+            Assert.Equal(packets.Length * PacketSize, output.Length);
+            for (var index = 0; index < packets.Length; index++)
+            {
+                var expected = packets[index].ToArray();
+                if (index >= tables.Length && (index - tables.Length) % 3 == 1)
+                    WriteTimestamp(expected.AsSpan(12 + 9, 5), ReadPts(packets[index]) + 9_000);
+                Assert.Equal(expected, output.AsSpan(index * PacketSize, PacketSize).ToArray());
+            }
+        }
+        finally { File.Delete(sourcePath); File.Delete(outputPath); }
+    }
+
+    [Fact]
     public async Task MarkedRangesKeepTheirRealOffsetsAfterBytesInsertedBetweenThem()
     {
         var sourcePath = Path.Combine(Path.GetTempPath(), $"ts-merge-offsets-{Guid.NewGuid():N}.ts");

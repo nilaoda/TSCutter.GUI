@@ -15,6 +15,40 @@ public partial class MainWindowViewModel
     private bool keyFrameStripScrubbing;
     public KeyFrameStripViewModel KeyFrameStrip { get; } = new();
 
+    /// <summary>导航条下方的音频波形，跟随导航条的可见范围读取。</summary>
+    public StripWaveformViewModel KeyFrameStripWaveform { get; } = new();
+
+    // 波形使用与播放相同的音轨；导航条隐藏、没有可解码的音轨时不显示波形条。
+    private void UpdateStripWaveformSource()
+    {
+        KeyFrameStripWaveform.SetSource(ShowKeyFrameStrip && IsVideoInitialized && _videoInstance is { Inited: true } video
+            && SelectedPreviewAudioTrack is { CanDecode: true } track
+            ? new AudioWaveformSource(VideoPath, video.Disc, video.TsSyncOffset, _activePreviewSelection,
+                track.Selection, video.TimelineOriginSeconds)
+            : null);
+        RequestStripWaveform();
+    }
+
+    private void OnKeyFrameStripPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName == nameof(KeyFrameStripViewModel.Items))
+            RequestStripWaveform();
+    }
+
+    // 范围取导航条显示的画面：从第一张到最后一张之后一段，以当前位置为中心。
+    private void RequestStripWaveform()
+    {
+        if (!KeyFrameStripWaveform.IsAvailable)
+            return;
+        var items = KeyFrameStrip.Items.Where(item => !item.IsPlaceholder).ToArray();
+        if (items.Length == 0)
+            return;
+        var start = items[0].Timestamp.TotalSeconds;
+        var last = items[^1].Timestamp.TotalSeconds;
+        var end = items.Length > 1 ? last + (last - items[^2].Timestamp.TotalSeconds) : last + 1;
+        KeyFrameStripWaveform.Request(start, end, CurrentTime);
+    }
+
     public bool IsKeyFrameStripVisible => ShowKeyFrameStrip && IsVideoInitialized;
 
     // 删除模式的片段是要删除的范围：导航条用删除颜色标出被删除的画面，终点（恢复播放的画面）不在其中。
@@ -59,6 +93,7 @@ public partial class MainWindowViewModel
             RequestKeyFrameStrip(CurrentTime, immediate: true, currentPts: _displayedFramePts);
         else
             KeyFrameStrip.SetSource(null);
+        UpdateStripWaveformSource();
     }
 
     public void BeginKeyFrameStripScrub()
@@ -156,5 +191,6 @@ public partial class MainWindowViewModel
     {
         keyFrameStripScrubbing = false;
         KeyFrameStrip.SetSource(null);
+        KeyFrameStripWaveform.SetSource(null);
     }
 }

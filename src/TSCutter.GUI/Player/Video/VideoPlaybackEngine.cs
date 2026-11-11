@@ -158,12 +158,7 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
     {
         var context = formatContext!;
         if (options.AudioSelection is { } selection)
-        {
-            var candidates = context.Streams.Where(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO &&
-                stream.Id == selection.StreamId && (context.InputFormat?.Name == "mpegts" || stream.Index == selection.StreamIndex) &&
-                (selection.ProgramId is not { } id || context.Programs.Any(program => program.Id == id && program.ContainsStream(stream.Index)))).ToArray();
-            return candidates.Length == 1 ? candidates[0] : null;
-        }
+            return PreviewStreamUtil.ResolveAudio(context, selection);
         foreach (var program in context.Programs)
         {
             if (!program.ContainsStream(videoStreamIndex))

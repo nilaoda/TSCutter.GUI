@@ -23,7 +23,7 @@ namespace TSCutter.GUI.ViewModels.Editing;
 public record BatchTask(string SourcePath, string DestinationPath, long StartPosition, long EndPosition, int? ProgramId = null,
     RemuxExportSettings? RemuxSettings = null, double StartSeconds = 0, double? EndSeconds = null,
     FrameAccurateExportSettings? FrameAccurate = null, long StartPts = 0, long? EndPts = null,
-    string? StartSignature = null, string? EndSignature = null);
+    string? StartSignature = null, string? EndSignature = null, int AudioDelayMs = 0, int? AudioDelayProgramId = null);
 
 public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
@@ -75,6 +75,10 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private FrameAccurateExportRequest? _frameAccurateRequest;
     public RemuxExportSettings? RemuxSettings { get; set; }
     public FrameAccurateExportSettings? FrameAccurate { get; set; }
+    /// <summary>单个关键帧模式 TS 任务的音频延迟（毫秒）。</summary>
+    public int AudioDelayMs { get; set; }
+    /// <summary>音频延迟作用的节目号（所编辑的节目）；null 表示全部音轨。</summary>
+    public int? AudioDelayProgramId { get; set; }
     public long StartPts { get; set; }
     public long? EndPts { get; set; }
     private bool UsesManagedOutput => ProgramId is not null || RemuxSettings is not null || FrameAccurate is not null;
@@ -417,7 +421,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _startTime = DateTime.Now;
             _lastUpdateTime = _startTime;
             await CopyClipAsync(new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId,
-                RemuxSettings, StartSeconds, EndSeconds, FrameAccurate, StartPts, EndPts));
+                RemuxSettings, StartSeconds, EndSeconds, FrameAccurate, StartPts, EndPts, AudioDelayMs: AudioDelayMs,
+                AudioDelayProgramId: AudioDelayProgramId));
             Percent = 100;
             RemainingSeconds = 0;
             DialogResult = true;
@@ -501,12 +506,16 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             return ExportRemuxAsync(new RemuxExportRequest(task.DestinationPath,
                 [new RemuxExportSegment(task.SourcePath, task.StartSeconds, task.EndSeconds, settings,
                     StartSignature: task.StartSignature, EndSignature: task.EndSignature)]), generation, checkSession);
-        if (AddsProgramTablesTo(task.DestinationPath))
+        // 补节目表或改写音频延迟时逐包处理：仍是原包复制，只改写节目表前缀与音轨时间戳（含只导出当前节目）。
+        var addTables = AddsProgramTablesTo(task.DestinationPath);
+        if (addTables || task.AudioDelayMs != 0 && !IsRawByteRange)
             return ExportTsAsync(new TsClipMergeRequest
             {
                 SourcePath = task.SourcePath, OutputPath = task.DestinationPath,
-                Ranges = [new(task.StartPosition, task.EndPosition, 0, 1)]
-            }, generation, true, checkSession);
+                Ranges = [new(task.StartPosition, task.EndPosition, 0, 1)],
+                ProgramId = task.ProgramId, AudioOffset90k = AudioDelay.To90k(task.AudioDelayMs),
+                AudioDelayProgramId = task.AudioDelayProgramId
+            }, generation, addTables, checkSession);
         if (task.ProgramId is { } programId)
         {
             var progress = new Progress<TsFilterProgress>(value =>

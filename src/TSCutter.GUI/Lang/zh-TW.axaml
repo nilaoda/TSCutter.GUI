@@ -1300,6 +1300,7 @@
     <x:String x:Key="String.PreviewTrack.Program">節目</x:String>
     <x:String x:Key="String.PreviewTrack.Video">影片</x:String>
     <x:String x:Key="String.PreviewTrack.Audio">音訊：</x:String>
+    <x:String x:Key="String.PreviewTrack.AudioLabel">音訊</x:String>
     <x:String x:Key="String.PreviewTrack.ProgramFallback">節目 {0}</x:String>
     <x:String x:Key="String.PreviewTrack.AllStreams">未歸屬節目</x:String>
     <x:String x:Key="String.PreviewTrack.NoAudio">無</x:String>
@@ -1662,4 +1663,8 @@
     <x:String x:Key="String.Chapter.AddClip">按章節新增片段</x:String>
     <x:String x:Key="String.Chapter.Tab">章節</x:String>
     <x:String x:Key="String.Chapter.Empty">此檔案沒有章節或 EPG。</x:String>
+    <x:String x:Key="String.AudioDelay.Tip">音訊延遲（毫秒），勾選後生效：&#10;正數讓聲音延後，負數提前。&#10;作用於目前節目的全部音軌，不只是這裡選取的一條；&#10;多節目 TS 中其他節目的聲音不變。&#10;匯出時只改寫音軌時間戳，TS 仍按原封包複製。&#10;預覽播放與波形同樣平移。&#10;偏移越大，部分硬體播放器越可能丟失開頭的聲音。</x:String>
+    <x:String x:Key="String.AudioDelay.Label">延遲</x:String>
+    <x:String x:Key="String.AudioDelay.Reset">重設為 0</x:String>
+    <x:String x:Key="String.AudioDelay.Unit">ms</x:String>
 </ResourceDictionary>
