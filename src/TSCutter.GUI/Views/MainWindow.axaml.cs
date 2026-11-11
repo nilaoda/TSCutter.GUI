@@ -50,6 +50,12 @@ public partial class MainWindow : ClassicWindow
             () => IsVideoFullScreen || DataContext is MainWindowViewModel { IsVideoInitialized: true });
         InitializeComponent();
         InitializeFullScreenPlayback();
+        // 缩略图大小改变时立即按新尺寸更新可见数量：主窗口随后按新尺寸重新解码，直接使用新数量，不必等到重新布局。
+        KeyFrameStripView.PropertyChanged += (_, e) =>
+        {
+            if (e.Property == KeyFrameStripControl.ThumbnailSizeProperty)
+                SyncKeyFrameStripCapacity();
+        };
 
         // Windows 平面主题的窗口内菜单和标题区占用更多高度，启动时为 16:9 预览补足空间。
         if (CustomTheme.IsWindows8(ActualThemeVariant) || CustomTheme.IsWindows10(ActualThemeVariant) ||
@@ -132,8 +138,7 @@ public partial class MainWindow : ClassicWindow
         vm.PropertyChanged += FullScreenViewModelChanged;
         vm.PropertyChanged += CutModeViewModelChanged;
         SyncCutModeButton();
-        if (KeyFrameStripView.Bounds.Width >= 24)
-            vm.KeyFrameStrip.SetVisibleCount(KeyFrameStripView.VisibleCapacity);
+        SyncKeyFrameStripCapacity();
     }
 
     private void CutModeViewModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
@@ -359,7 +364,9 @@ public partial class MainWindow : ClassicWindow
         PreviewVolumeSlider.Width = Math.Clamp(e.NewSize.Width, PreviewVolumeSlider.MinWidth, PreviewVolumeSlider.MaxWidth);
     }
 
-    private void KeyFrameStrip_OnSizeChanged(object? sender, SizeChangedEventArgs e)
+    private void KeyFrameStrip_OnSizeChanged(object? sender, SizeChangedEventArgs e) => SyncKeyFrameStripCapacity();
+
+    private void SyncKeyFrameStripCapacity()
     {
         if (DataContext is MainWindowViewModel vm && KeyFrameStripView.Bounds.Width >= 24)
             vm.KeyFrameStrip.SetVisibleCount(KeyFrameStripView.VisibleCapacity);

@@ -13,6 +13,7 @@ public class AppConfig : ObservableObject
     private string _darkThemeName = ThemeModel.AllDarkThemes[0].Name;
     private bool _showImageNavigator = true;
     private bool _showKeyFrameStrip = true;
+    private KeyFrameStripThumbnailSize _keyFrameStripThumbnailSize = KeyFrameStripThumbnailSize.Medium;
     private bool _enableSdrToneMapping = true;
     private bool _preferHardwareDecoding = IsHardwareDecodingSupported;
     private InputPreferences _input = new();
@@ -48,6 +49,13 @@ public class AppConfig : ObservableObject
     {
         get => _showKeyFrameStrip;
         set => SetProperty(ref _showKeyFrameStrip, value);
+    }
+    // 导航条缩略图大小；配置文件中未知的取值回落到“中”。
+    [JsonConverter(typeof(KeyFrameStripThumbnailSizeJsonConverter))]
+    public KeyFrameStripThumbnailSize KeyFrameStripThumbnailSize
+    {
+        get => _keyFrameStripThumbnailSize;
+        set => SetProperty(ref _keyFrameStripThumbnailSize, KeyFrameStripThumbnailSizeJsonConverter.Normalize(value));
     }
     public bool EnableSdrToneMapping
     {

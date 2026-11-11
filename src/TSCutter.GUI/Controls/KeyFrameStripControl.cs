@@ -7,6 +7,7 @@ using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Media;
 using TSCutter.GUI.Models.Editing;
+using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.ViewModels.Preview;
 
@@ -39,6 +40,10 @@ public sealed class KeyFrameStripControl : Control
     /// <summary>反转滚轮方向：默认向下滚前进。</summary>
     public static readonly StyledProperty<bool> ReverseWheelProperty =
         AvaloniaProperty.Register<KeyFrameStripControl, bool>(nameof(ReverseWheel));
+    /// <summary>缩略图大小：决定条的高度、每格尺寸与可见数量。</summary>
+    public static readonly StyledProperty<KeyFrameStripThumbnailSize> ThumbnailSizeProperty =
+        AvaloniaProperty.Register<KeyFrameStripControl, KeyFrameStripThumbnailSize>(nameof(ThumbnailSize),
+            KeyFrameStripThumbnailSize.Medium);
 
     public IReadOnlyList<KeyFrameStripItem>? Items { get => GetValue(ItemsProperty); set => SetValue(ItemsProperty, value); }
     public IBrush? TextBrush { get => GetValue(TextBrushProperty); set => SetValue(TextBrushProperty, value); }
@@ -50,6 +55,8 @@ public sealed class KeyFrameStripControl : Control
     public int WheelStep { get => GetValue(WheelStepProperty); set => SetValue(WheelStepProperty, value); }
     public int ShiftWheelStep { get => GetValue(ShiftWheelStepProperty); set => SetValue(ShiftWheelStepProperty, value); }
     public bool ReverseWheel { get => GetValue(ReverseWheelProperty); set => SetValue(ReverseWheelProperty, value); }
+    public KeyFrameStripThumbnailSize ThumbnailSize { get => GetValue(ThumbnailSizeProperty); set => SetValue(ThumbnailSizeProperty, value); }
+    internal KeyFrameStripLayout Layout { get; private set; } = KeyFrameStripLayout.Medium;
     public event EventHandler<KeyFrameStripItem>? SeekRequested;
     /// <summary>滚轮滚动的格数：正数前进，负数后退；已按每格步长与方向设置换算。</summary>
     public event EventHandler<int>? WheelStepRequested;
@@ -63,13 +70,23 @@ public sealed class KeyFrameStripControl : Control
 
     public KeyFrameStripControl()
     {
-        Height = 80;
+        Height = Layout.Height;
         ClipToBounds = true;
         Cursor = new Cursor(StandardCursorType.Hand);
     }
 
-    internal int VisibleCapacity => Math.Clamp((int)((Bounds.Width - 8) / 108),
+    internal int VisibleCapacity => Math.Clamp((int)((Bounds.Width - 8) / Layout.Pitch),
         1, KeyFrameStripViewModel.MaximumVisibleCount);
+
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property != ThumbnailSizeProperty)
+            return;
+        // 可见数量立即按新尺寸计算（宽度不变）；各档高度不同，改变高度即触发重新布局与绘制。
+        Layout = KeyFrameStripLayout.For(ThumbnailSize);
+        Height = Layout.Height;
+    }
 
     internal IReadOnlyList<(KeyFrameStripItem Item, Rect Bounds)> GetTiles()
     {
@@ -78,10 +95,11 @@ public sealed class KeyFrameStripControl : Control
         var count = Math.Min(frames.Count, VisibleCapacity);
         var current = frames.Select((item, index) => (item, index)).FirstOrDefault(pair => pair.item.IsCurrent).index;
         var start = Math.Clamp(current - count / 2, 0, frames.Count - count);
-        var width = Math.Min(112, (Bounds.Width - 8) / count);
+        var width = Math.Min(Layout.MaxTileWidth, (Bounds.Width - 8) / count);
         var left = (Bounds.Width - count * width) / 2;
+        var height = Layout.TileHeight;
         return Enumerable.Range(start, count).Select((index, offset) =>
-            (frames[index], new Rect(left + offset * width + 2, 3, width - 4, 73))).ToArray();
+            (frames[index], new Rect(left + offset * width + 2, 3, width - 4, height))).ToArray();
     }
 
     public override void Render(DrawingContext context)

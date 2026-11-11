@@ -242,6 +242,11 @@
     <x:String x:Key="String.Settings.ShowImageNavigatorTip">畫面超出可視區域時顯示導覽縮圖，可點擊或拖曳定位。</x:String>
     <x:String x:Key="String.Settings.ShowKeyFrameStrip">顯示關鍵影格預覽列</x:String>
     <x:String x:Key="String.Settings.ShowKeyFrameStripTip">在時間軸上方顯示指標附近的關鍵影格縮圖，點擊可跳至對應畫面。</x:String>
+    <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize">縮圖大小</x:String>
+    <x:String x:Key="String.Settings.KeyFrameStripThumbnailSizeTip">關鍵影格預覽列中每張縮圖的大小。縮圖越大，同樣寬度內顯示的畫面越少。</x:String>
+    <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize.Small">小</x:String>
+    <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize.Medium">中</x:String>
+    <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize.Large">大</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecoding">優先使用硬體解碼</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecodingTip">Windows 和 macOS 在裝置支援時可用；不支援的編碼會自動使用軟體解碼。</x:String>
     <x:String x:Key="String.Settings.EnableSdrToneMapping">預設啟用 HDR 到 SDR 預覽映射</x:String>

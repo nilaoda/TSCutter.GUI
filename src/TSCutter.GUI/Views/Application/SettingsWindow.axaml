@@ -155,6 +155,21 @@
                         <CheckBox IsChecked="{Binding ShowKeyFrameStrip}"
                                   Content="{DynamicResource String.Settings.ShowKeyFrameStrip}"
                                   ToolTip.Tip="{DynamicResource String.Settings.ShowKeyFrameStripTip}" />
+                        <!-- 选项顺序与 KeyFrameStripThumbnailSize 枚举一致；隐藏预览条时不可修改。 -->
+                        <Grid ColumnDefinitions="100, *" IsEnabled="{Binding ShowKeyFrameStrip}">
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{DynamicResource String.Settings.KeyFrameStripThumbnailSize}" />
+                            <ComboBox Grid.Column="1" HorizontalAlignment="Stretch"
+                                      SelectedIndex="{Binding KeyFrameStripThumbnailSizeIndex, Mode=TwoWay}">
+                                <ToolTip.Tip>
+                                    <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                               Text="{DynamicResource String.Settings.KeyFrameStripThumbnailSizeTip}" />
+                                </ToolTip.Tip>
+                                <ComboBoxItem Content="{DynamicResource String.Settings.KeyFrameStripThumbnailSize.Small}" />
+                                <ComboBoxItem Content="{DynamicResource String.Settings.KeyFrameStripThumbnailSize.Medium}" />
+                                <ComboBoxItem Content="{DynamicResource String.Settings.KeyFrameStripThumbnailSize.Large}" />
+                            </ComboBox>
+                        </Grid>
                         <CheckBox IsChecked="{Binding PreferHardwareDecoding}"
                                   IsEnabled="{Binding IsHardwareDecodingAvailable}"
                                   Content="{DynamicResource String.Settings.PreferHardwareDecoding}"

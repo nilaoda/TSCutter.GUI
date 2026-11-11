@@ -236,7 +236,7 @@ internal sealed partial class KeyFrameStripService
         {
             for (var count = 0; count < budget; count++)
             {
-                var result = await video.DecodeNextSearchFrameAsync(320, 180, token, Filter);
+                var result = await video.DecodeNextSearchFrameAsync(thumbnailWidth, thumbnailHeight, token, Filter);
                 if (result is null)
                 {
                     if (!stopped)
@@ -272,7 +272,7 @@ internal sealed partial class KeyFrameStripService
 
         async Task DrainAsync()
         {
-            foreach (var remaining in await video.DrainSearchFramesAsync(320, 180, token))
+            foreach (var remaining in await video.DrainSearchFramesAsync(thumbnailWidth, thumbnailHeight, token))
                 if (Accept(remaining) is not null)
                     cursor = Math.Max(cursor ?? long.MinValue, remaining.FramePts);
         }

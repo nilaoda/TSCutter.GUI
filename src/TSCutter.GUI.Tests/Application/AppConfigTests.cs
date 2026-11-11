@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Xunit;
 using TSCutter.GUI.Models.Application;
+using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Utils.Application;
 
 namespace TSCutter.GUI.Tests.Application;
@@ -45,6 +46,23 @@ public class AppConfigTests
         var json = JsonSerializer.Serialize(config, AppJsonContext.Default.AppConfig);
         var restored = JsonSerializer.Deserialize(json, AppJsonContext.Default.AppConfig)!;
         Assert.False(restored.ShowKeyFrameStrip);
+    }
+
+    [Theory]
+    [InlineData("{}", KeyFrameStripThumbnailSize.Medium)]
+    [InlineData("""{"KeyFrameStripThumbnailSize":"Large"}""", KeyFrameStripThumbnailSize.Large)]
+    [InlineData("""{"KeyFrameStripThumbnailSize":"Huge","ShowKeyFrameStrip":false}""", KeyFrameStripThumbnailSize.Medium)]
+    [InlineData("""{"KeyFrameStripThumbnailSize":7,"ShowKeyFrameStrip":false}""", KeyFrameStripThumbnailSize.Medium)]
+    [InlineData("""{"KeyFrameStripThumbnailSize":null,"ShowKeyFrameStrip":false}""", KeyFrameStripThumbnailSize.Medium)]
+    public void KeyFrameStripThumbnailSizeDefaultsToMediumAndInvalidValuesFallBack(string json, KeyFrameStripThumbnailSize expected)
+    {
+        var config = JsonSerializer.Deserialize(json, AppJsonContext.Default.AppConfig)!;
+        Assert.Equal(expected, config.KeyFrameStripThumbnailSize);
+        // 非法值只影响这一项，其他设置照常读取。
+        Assert.Equal(!json.Contains("ShowKeyFrameStrip"), config.ShowKeyFrameStrip);
+        var restored = JsonSerializer.Deserialize(JsonSerializer.Serialize(config, AppJsonContext.Default.AppConfig),
+            AppJsonContext.Default.AppConfig)!;
+        Assert.Equal(expected, restored.KeyFrameStripThumbnailSize);
     }
 
     [Fact]

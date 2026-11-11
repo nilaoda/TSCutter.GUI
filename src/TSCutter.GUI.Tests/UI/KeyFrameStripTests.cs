@@ -18,6 +18,7 @@ using Splat;
 using System.Reflection;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Editing;
+using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.ViewModels.Application;
 using TSCutter.GUI.Views;
@@ -544,6 +545,22 @@ public sealed class KeyFrameStripTests
                 await vm.KeyFrameStrip.IdleTask;
                 Assert.NotEmpty(vm.KeyFrameStrip.Items);
                 Assert.Equal(2, config.Saves);
+                // 缩略图大小：可见数量随设置立即按新尺寸计算，条高、每格尺寸与解码尺寸随之改变，缓存全部换成新尺寸的图片。
+                foreach (var size in new[] { KeyFrameStripThumbnailSize.Large, KeyFrameStripThumbnailSize.Small,
+                             KeyFrameStripThumbnailSize.Medium })
+                {
+                    new SettingsWindowViewModel(config, locale) { KeyFrameStripThumbnailSize = size }.ApplyCommand.Execute(null);
+                    Assert.Equal(strip.VisibleCapacity, vm.KeyFrameStrip.VisibleCount);
+                    await vm.KeyFrameStrip.IdleTask;
+                    Dispatcher.UIThread.RunJobs();
+                    window.UpdateLayout();
+                    var layout = KeyFrameStripLayout.For(size);
+                    Assert.Equal(layout.Height, strip.Bounds.Height);
+                    Assert.Equal(strip.VisibleCapacity, strip.Items!.Count);
+                    Assert.All(strip.GetTiles(), tile => Assert.Equal(layout.TileHeight, tile.Bounds.Height));
+                    Assert.All(strip.Items.Where(item => !item.IsPlaceholder), item =>
+                        Assert.Equal(new PixelSize(layout.DecodeWidth, layout.DecodeHeight), item.Bitmap!.PixelSize));
+                }
             }
             finally { window.Close(); vm.Close(); await vm.KeyFrameStrip.IdleTask; }
             return true;

@@ -12,7 +12,8 @@ namespace TSCutter.GUI.Services.Preview;
 
 // EveryFrame 为帧精确模式：导航条显示每一帧及其画面类型，而不只是关键帧。
 internal sealed record KeyFrameStripSource(string Path, PreviewStreamSelection? Selection, bool ToneMapping,
-    DiscInput? Disc = null, bool EveryFrame = false);
+    DiscInput? Disc = null, bool EveryFrame = false,
+    KeyFrameStripThumbnailSize ThumbnailSize = KeyFrameStripThumbnailSize.Medium);
 internal sealed record KeyFrameStripFrame(long Pts, TimeSpan Timestamp, Bitmap? Bitmap, string? KeyFrameType = null);
 internal sealed record KeyFrameStripRange(IReadOnlyList<KeyFrameStripFrame> Frames, bool AtStart, bool AtEnd);
 
@@ -43,10 +44,15 @@ internal sealed partial class KeyFrameStripService : IKeyFrameStripService
     private double? observedInterval;
     private double? leftWindowSpan;
     private int leftWindowCount;
+    // 解码与缩略图的尺寸，打开时按导航条缩略图大小确定；改变大小会换用新的来源与服务。
+    private int thumbnailWidth, thumbnailHeight;
 
     public async Task OpenAsync(KeyFrameStripSource source, CancellationToken token)
     {
         everyFrame = source.EveryFrame;
+        var layout = KeyFrameStripLayout.For(source.ThumbnailSize);
+        thumbnailWidth = layout.DecodeWidth;
+        thumbnailHeight = layout.DecodeHeight;
         cursorPts = null;
         observedInterval = leftWindowSpan = null;
         leftWindowCount = 0;
@@ -90,7 +96,7 @@ internal sealed partial class KeyFrameStripService : IKeyFrameStripService
             {
                 token.ThrowIfCancellationRequested();
                 cursorPts = null;
-                var result = await video.DecodeNextSearchFrameAsync(320, 180, token);
+                var result = await video.DecodeNextSearchFrameAsync(thumbnailWidth, thumbnailHeight, token);
                 if (result is null)
                 {
                     atEnd = true;
@@ -181,11 +187,12 @@ internal sealed partial class KeyFrameStripService : IKeyFrameStripService
         return range;
     }
 
-    private static async Task<KeyFrameStripRange> ReadEveryFrameAsync(VideoInstance video, double target, int leftCount,
+    private async Task<KeyFrameStripRange> ReadEveryFrameAsync(VideoInstance video, double target, int leftCount,
         int rightCount, Func<long, bool> isCached, Action<KeyFrameStripFrame> received, CancellationToken token)
     {
         target = Math.Clamp(target, 0, Math.Max(0, video.GetVideoDurationInSeconds()));
-        var window = await video.DecodeFrameWindowAsync(video.SecondsToPts(target), leftCount, rightCount, 320, 180, token);
+        var window = await video.DecodeFrameWindowAsync(video.SecondsToPts(target), leftCount, rightCount,
+            thumbnailWidth, thumbnailHeight, token);
         var frames = new List<KeyFrameStripFrame>(window.Frames.Count);
         try
         {
@@ -216,8 +223,8 @@ internal sealed partial class KeyFrameStripService : IKeyFrameStripService
             return await ReadNeighborAsync(anchor, direction, isCached, token) is { } frame ? [frame] : [];
         count = Math.Min(count, 48);
         var results = direction > 0
-            ? await video.DecodeFollowingFramesAsync(anchor.Pts, count, 320, 180, token)
-            : await video.DecodePrecedingFramesAsync(anchor.Pts, count, 320, 180, token);
+            ? await video.DecodeFollowingFramesAsync(anchor.Pts, count, thumbnailWidth, thumbnailHeight, token)
+            : await video.DecodePrecedingFramesAsync(anchor.Pts, count, thumbnailWidth, thumbnailHeight, token);
         var frames = new List<KeyFrameStripFrame>(results.Count);
         try
         {
@@ -245,8 +252,8 @@ internal sealed partial class KeyFrameStripService : IKeyFrameStripService
         if (everyFrame)
         {
             var result = direction > 0
-                ? await video.DecodeFollowingFrameAsync(anchor.Pts, 320, 180, token)
-                : await video.DecodePrecedingFrameAsync(anchor.Pts, 320, 180, token);
+                ? await video.DecodeFollowingFrameAsync(anchor.Pts, thumbnailWidth, thumbnailHeight, token)
+                : await video.DecodePrecedingFrameAsync(anchor.Pts, thumbnailWidth, thumbnailHeight, token);
             if (result is null)
                 return null;
             try { return CreateFrame(result, isCached); }
@@ -266,7 +273,7 @@ internal sealed partial class KeyFrameStripService : IKeyFrameStripService
                         TimeSpan.FromSeconds(Math.Max(0, anchor.Timestamp.TotalSeconds - preroll)), token);
                     for (var count = 0; count < 48; count++)
                     {
-                        var positioned = await video.DecodeNextSearchFrameAsync(320, 180, token);
+                        var positioned = await video.DecodeNextSearchFrameAsync(thumbnailWidth, thumbnailHeight, token);
                         if (positioned is null)
                             break;
                         var pts = positioned.FramePts;
@@ -288,7 +295,7 @@ internal sealed partial class KeyFrameStripService : IKeyFrameStripService
             for (var count = 0; count < 48; count++)
             {
                 cursorPts = null;
-                var result = await video.DecodeNextSearchFrameAsync(320, 180, token);
+                var result = await video.DecodeNextSearchFrameAsync(thumbnailWidth, thumbnailHeight, token);
                 if (result is null)
                     return null;
                 try
@@ -314,7 +321,7 @@ internal sealed partial class KeyFrameStripService : IKeyFrameStripService
                     for (var count = 0; count < 48; count++)
                     {
                         cursorPts = null;
-                        var result = await video.DecodeNextSearchFrameAsync(320, 180, token);
+                        var result = await video.DecodeNextSearchFrameAsync(thumbnailWidth, thumbnailHeight, token);
                         if (result is null)
                             break;
                         cursorPts = result.FramePts;
@@ -351,14 +358,14 @@ internal sealed partial class KeyFrameStripService : IKeyFrameStripService
         throw new InvalidOperationException("Unable to locate the adjacent keyframe within the scan budget.");
     }
 
-    private static KeyFrameStripFrame CreateFrame(DecodeResult result, Func<long, bool> isCached)
+    private KeyFrameStripFrame CreateFrame(DecodeResult result, Func<long, bool> isCached)
     {
         Bitmap? bitmap = null;
         if (!isCached(result.FramePts) && result.Bitmap is not null)
         {
             var aspect = result.RequiresSampleAspectRatioCorrection && result.SourcePixelSize.Height > 0
                 ? result.SourcePixelSize.Width / (double)result.SourcePixelSize.Height : 0;
-            bitmap = ImageUtil.CreateThumbnail(result.Bitmap, 320, 180, aspect);
+            bitmap = ImageUtil.CreateThumbnail(result.Bitmap, thumbnailWidth, thumbnailHeight, aspect);
         }
         return new KeyFrameStripFrame(result.FramePts, result.FrameTimestamp, bitmap, result.KeyFrameType);
     }
