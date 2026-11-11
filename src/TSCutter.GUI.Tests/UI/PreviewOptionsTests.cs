@@ -227,15 +227,19 @@ public sealed class PreviewOptionsTests
                     .Single(item => item.Header?.ToString() == LocalizationManager.Instance.String_Menu_ImageNavigator);
                 var strip = view.Items.OfType<MenuItem>()
                     .Single(item => item.Header?.ToString() == LocalizationManager.Instance.String_Menu_KeyFrameStrip);
+                var waveform = view.Items.OfType<MenuItem>()
+                    .Single(item => item.Header?.ToString() == LocalizationManager.Instance.String_Menu_AudioWaveform);
                 var viewer = window.FindControl<ImageViewer>("ImageViewer")!;
                 Assert.True(navigator.IsChecked);
                 Assert.True(strip.IsChecked);
+                Assert.True(waveform.IsChecked);
                 Assert.True(viewer.ShowNavigator);
                 var settings = new SettingsWindowViewModel(config, locale);
                 Assert.True(settings.ShowImageNavigator);
                 Assert.True(settings.ShowKeyFrameStrip);
                 settings.ShowImageNavigator = false;
                 settings.ShowKeyFrameStrip = false;
+                settings.ShowAudioWaveform = false;
                 // Esc 必须取消窗口，不能触发“应用”而意外保存尚未确认的设置。
                 var settingsWindow = new SettingsWindow { DataContext = settings };
                 try
@@ -252,11 +256,14 @@ public sealed class PreviewOptionsTests
                 }
                 Assert.True(vm.ShowImageNavigator);
                 Assert.True(vm.ShowKeyFrameStrip);
+                Assert.True(vm.ShowAudioWaveform);
                 Assert.Equal(0, config.SaveCount);
 
                 settings.ApplyCommand.Execute(null);
                 Assert.False(navigator.IsChecked);
                 Assert.False(strip.IsChecked);
+                Assert.False(waveform.IsChecked);
+                Assert.False(waveform.IsEnabled);
                 Assert.False(viewer.ShowNavigator);
                 Assert.False(vm.ShowKeyFrameStrip);
                 Assert.Equal(1, config.SaveCount);
@@ -269,20 +276,27 @@ public sealed class PreviewOptionsTests
                 Assert.True(vm.ShowImageNavigator);
                 Assert.True(vm.ShowKeyFrameStrip);
                 Assert.True(viewer.ShowNavigator);
-                Assert.Equal(3, config.SaveCount);
+                Assert.True(vm.ShowAudioWaveform);
+                Assert.True(waveform.IsChecked);
+                Assert.True(waveform.IsEnabled);
+                Assert.Equal(4, config.SaveCount);
                 settings = new SettingsWindowViewModel(config, locale);
                 Assert.True(settings.ShowImageNavigator);
                 Assert.True(settings.ShowKeyFrameStrip);
+                Assert.True(settings.ShowAudioWaveform);
 
                 // 关闭文件不应解除配置监听，随后打开文件仍然使用同一窗口。
                 vm.Close();
                 settings.ShowImageNavigator = false;
                 settings.ShowKeyFrameStrip = false;
+                settings.ShowAudioWaveform = false;
                 settings.OkCommand.Execute(null);
                 Assert.False(navigator.IsChecked);
                 Assert.False(strip.IsChecked);
+                Assert.False(waveform.IsChecked);
+                Assert.False(waveform.IsEnabled);
                 Assert.False(viewer.ShowNavigator);
-                Assert.Equal(4, config.SaveCount);
+                Assert.Equal(5, config.SaveCount);
             }
             finally { window.Close(); vm.Close(); }
         }, CancellationToken.None);

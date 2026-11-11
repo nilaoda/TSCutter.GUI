@@ -1421,6 +1421,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             OnPropertyChanged(nameof(ShowImageNavigator));
         else if (e.PropertyName == nameof(AppConfig.ShowKeyFrameStrip))
             OnKeyFrameStripPreferenceChanged();
+        else if (e.PropertyName == nameof(AppConfig.ShowAudioWaveform))
+            OnAudioWaveformPreferenceChanged();
         else if (e.PropertyName == nameof(AppConfig.KeyFrameStripThumbnailSize))
             OnKeyFrameStripThumbnailSizeChanged();
         else if (e.PropertyName is nameof(AppConfig.ThemeName) or nameof(AppConfig.DarkThemeName))

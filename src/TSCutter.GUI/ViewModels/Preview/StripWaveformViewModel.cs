@@ -206,7 +206,7 @@ public sealed class StripWaveformViewModel : ObservableObject
         OnPropertyChanged(nameof(Version));
     }
 
-    /// <summary>画面时间 [start, end) 对应声音的峰值（0–1，已按延迟平移）；这段没有读到声音时返回 false。</summary>
+    /// <summary>画面时间 [start, end) 对应声音的峰值（0–1，已按延迟平移）；已读取的采样空隙为 0，尚未读取时返回 false。</summary>
     internal bool TryGetPeak(double start, double end, out float peak)
     {
         peak = 0;
@@ -224,11 +224,12 @@ public sealed class StripWaveformViewModel : ObservableObject
                 cache.TryGetValue((int)second, out chunk);
             }
             if (chunk is null)
-                continue;
+                return false;
+            // 已完成读取的一秒中，没有采样的位置画在底线；不与尚未加载的范围混为一谈。
+            found = true;
             var value = chunk[bucket % AudioWaveformReader.BucketsPerSecond];
             if (float.IsNaN(value))
                 continue;
-            found = true;
             peak = Math.Max(peak, value);
         }
         return found;

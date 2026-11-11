@@ -3,6 +3,7 @@
     <x:String x:Key="String.Preview.KeyFrameSeekFailed">無法定位到所選關鍵影格。</x:String>
     <x:String x:Key="String.Menu.ImageNavigator">影像導覽小地圖</x:String>
     <x:String x:Key="String.Menu.KeyFrameStrip">關鍵影格預覽列</x:String>
+    <x:String x:Key="String.Menu.AudioWaveform">音訊波形</x:String>
     <x:String x:Key="String.Window.Minimize">最小化</x:String>
     <x:String x:Key="String.Window.Maximize">最大化</x:String>
     <x:String x:Key="String.Window.Restore">還原</x:String>
@@ -242,6 +243,8 @@
     <x:String x:Key="String.Settings.ShowImageNavigatorTip">畫面超出可視區域時顯示導覽縮圖，可點擊或拖曳定位。</x:String>
     <x:String x:Key="String.Settings.ShowKeyFrameStrip">顯示關鍵影格預覽列</x:String>
     <x:String x:Key="String.Settings.ShowKeyFrameStripTip">在時間軸上方顯示指標附近的關鍵影格縮圖，點擊可跳至對應畫面。</x:String>
+    <x:String x:Key="String.Settings.ShowAudioWaveform">顯示音訊波形</x:String>
+    <x:String x:Key="String.Settings.ShowAudioWaveformTip">在導覽列下方顯示所選音軌的波形，關閉後停止讀取波形資料。</x:String>
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize">縮圖大小</x:String>
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSizeTip">關鍵影格預覽列中每張縮圖的大小。縮圖越大，同樣寬度內顯示的畫面越少。</x:String>
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize.Small">小</x:String>
