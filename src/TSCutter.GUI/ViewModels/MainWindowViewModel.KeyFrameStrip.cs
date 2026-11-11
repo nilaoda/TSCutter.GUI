@@ -1,6 +1,8 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Preview;
 using TSCutter.GUI.ViewModels.Preview;
@@ -73,7 +75,7 @@ public partial class MainWindowViewModel
     private bool wheelNavigationRunning;
 
     /// <summary>
-    /// 在导航条上滚动滚轮：正数前进、负数后退，两种剪辑模式均按关键帧移动。
+    /// 滚轮定位：正数前进、负数后退，单位按设置为关键帧、帧（只在智能剪辑模式下逐帧，其他模式按关键帧）或秒。
     /// 定位期间继续滚动的格数累计起来，当前定位完成后一次处理。
     /// </summary>
     public async Task ScrollKeyFrameStripAsync(int steps)
@@ -93,7 +95,19 @@ public partial class MainWindowViewModel
                 pendingWheelSteps = 0;
                 if (!IsVideoInitialized || IsDecoding || CurrentPts == long.MinValue)
                     break;
-                await DrawNextFrameAsync(count, clampAtEnd: true);
+                var unit = ViewerPreferences.Input.WheelStepUnit;
+                if (unit == WheelStepUnit.Frame && CanStepFrame)
+                {
+                    if (!await StepFramesAsync(count))
+                        break;
+                }
+                else if (unit == WheelStepUnit.Second)
+                {
+                    if (!await StepSecondsAsync(count))
+                        break;
+                }
+                else
+                    await DrawNextFrameAsync(count, clampAtEnd: true);
             }
         }
         finally
@@ -101,6 +115,29 @@ public partial class MainWindowViewModel
             pendingWheelSteps = 0;
             wheelNavigationRunning = false;
         }
+    }
+
+    /// <summary>
+    /// 按秒前后移动。智能剪辑模式下精确解码目标时间的那一帧；其他模式与点击时间轴相同，落在目标时间附近的关键帧，
+    /// 关键帧间隔比步长更长时至少移动一个关键帧，避免滚轮停在原地。画面没有变化（到达片头片尾）时返回 false。
+    /// </summary>
+    private async Task<bool> StepSecondsAsync(int seconds)
+    {
+        if (seconds == 0 || _videoInstance is not { Inited: true } video)
+            return false;
+        var before = CurrentPts;
+        var target = Math.Clamp(CurrentTime + seconds, 0, Math.Max(0, DurationMax));
+        if (CanStepFrame)
+        {
+            var targetPts = video.SecondsToPts(target);
+            await DecodeExactFrameAsync(instance => instance.DecodeFrameFromPtsAsync(targetPts));
+            return CurrentPts != before;
+        }
+        await SeekToTimeAndDrawFrameAsync(TimeSpan.FromSeconds(target));
+        var moved = seconds > 0 ? CurrentPts > before : CurrentPts < before;
+        if (!moved)
+            await DrawNextFrameAsync(Math.Sign(seconds), clampAtEnd: true);
+        return CurrentPts != before;
     }
 
     private void ResetKeyFrameStrip()

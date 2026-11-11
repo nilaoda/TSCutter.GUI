@@ -30,6 +30,15 @@ public sealed class KeyFrameStripControl : Control
     /// <summary>删除模式下要删除的画面所用的颜色。</summary>
     public static readonly StyledProperty<IBrush?> RemovedBrushProperty =
         AvaloniaProperty.Register<KeyFrameStripControl, IBrush?>(nameof(RemovedBrush));
+    /// <summary>滚轮每格移动的格数。</summary>
+    public static readonly StyledProperty<int> WheelStepProperty =
+        AvaloniaProperty.Register<KeyFrameStripControl, int>(nameof(WheelStep), 1);
+    /// <summary>按住 Shift 滚动时每格移动的格数。</summary>
+    public static readonly StyledProperty<int> ShiftWheelStepProperty =
+        AvaloniaProperty.Register<KeyFrameStripControl, int>(nameof(ShiftWheelStep), 10);
+    /// <summary>反转滚轮方向：默认向下滚前进。</summary>
+    public static readonly StyledProperty<bool> ReverseWheelProperty =
+        AvaloniaProperty.Register<KeyFrameStripControl, bool>(nameof(ReverseWheel));
 
     public IReadOnlyList<KeyFrameStripItem>? Items { get => GetValue(ItemsProperty); set => SetValue(ItemsProperty, value); }
     public IBrush? TextBrush { get => GetValue(TextBrushProperty); set => SetValue(TextBrushProperty, value); }
@@ -38,8 +47,11 @@ public sealed class KeyFrameStripControl : Control
     public IReadOnlyList<KeyFrameRetentionRange>? Ranges { get => GetValue(RangesProperty); set => SetValue(RangesProperty, value); }
     public IBrush? ClipBrush { get => GetValue(ClipBrushProperty); set => SetValue(ClipBrushProperty, value); }
     public IBrush? RemovedBrush { get => GetValue(RemovedBrushProperty); set => SetValue(RemovedBrushProperty, value); }
+    public int WheelStep { get => GetValue(WheelStepProperty); set => SetValue(WheelStepProperty, value); }
+    public int ShiftWheelStep { get => GetValue(ShiftWheelStepProperty); set => SetValue(ShiftWheelStepProperty, value); }
+    public bool ReverseWheel { get => GetValue(ReverseWheelProperty); set => SetValue(ReverseWheelProperty, value); }
     public event EventHandler<KeyFrameStripItem>? SeekRequested;
-    /// <summary>滚轮滚动的格数：正数前进（向下滚），负数后退（向上滚）。</summary>
+    /// <summary>滚轮滚动的格数：正数前进，负数后退；已按每格步长与方向设置换算。</summary>
     public event EventHandler<int>? WheelStepRequested;
     /// <summary>间隔不足该值的滚轮事件忽略（触控板、平滑滚动等连续事件流），与图片预览的滚轮缩放相同。</summary>
     internal const ulong WheelIntervalMs = 16;
@@ -195,24 +207,33 @@ public sealed class KeyFrameStripControl : Control
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
-        e.Handled |= ApplyWheel(e.Delta.Y, e.Timestamp);
+        e.Handled |= ApplyWheel(e.Delta, e.KeyModifiers, e.Timestamp);
     }
 
     /// <summary>
-    /// 处理一次滚轮滚动：与图片预览的滚轮缩放相同，每个事件按方向移动一格，不按增量大小换算——
+    /// 处理一次滚轮滚动：与图片预览的滚轮缩放相同，每个事件按方向移动一次，不按增量大小换算——
     /// macOS 普通滚轮每格的增量随滚动加速变化且常小于 1（Avalonia 换算为 scrollingDeltaY / 5），
-    /// 按增量累计会出现有时滚两格才移动一次。距上一次移动不足 <see cref="WheelIntervalMs"/> 毫秒的事件忽略。
-    /// 解码期间主窗口的遮罩拦截输入，落在导航条上的滚轮由窗口转交到这里。返回是否处理了这次滚动。
+    /// 按增量累计会出现有时滚两格才移动一次。每次移动 <see cref="WheelStep"/> 格，按住 Shift 时移动
+    /// <see cref="ShiftWheelStep"/> 格。距上一次移动不足 <see cref="WheelIntervalMs"/> 毫秒的事件忽略。
+    /// 解码期间主窗口的遮罩拦截输入，落在导航条上的滚轮由窗口转交到这里；预览画面与时间轴设为滚轮定位时
+    /// 也转交到这里，共用步长与间隔。返回是否处理了这次滚动。
     /// </summary>
-    internal bool ApplyWheel(double deltaY, ulong timestamp)
+    internal bool ApplyWheel(Vector delta, KeyModifiers modifiers, ulong timestamp)
     {
-        if (!IsEffectivelyEnabled || deltaY == 0)
+        var shift = modifiers.HasFlag(KeyModifiers.Shift);
+        // macOS 按住 Shift 滚动时系统把纵向滚动换成横向，增量落在 X 上。
+        var amount = delta.Y != 0 ? delta.Y : shift ? delta.X : 0;
+        if (!IsEffectivelyEnabled || amount == 0)
             return false;
         if (lastWheelStep is { } last && timestamp >= last && timestamp - last < WheelIntervalMs)
             return true;
         lastWheelStep = timestamp;
         // 向上滚 Delta.Y 为正（后退），向下滚为负（前进）。
-        WheelStepRequested?.Invoke(this, deltaY < 0 ? 1 : -1);
+        var direction = amount < 0 ? 1 : -1;
+        if (ReverseWheel)
+            direction = -direction;
+        var step = Math.Max(1, shift ? ShiftWheelStep : WheelStep);
+        WheelStepRequested?.Invoke(this, direction * step);
         return true;
     }
 }

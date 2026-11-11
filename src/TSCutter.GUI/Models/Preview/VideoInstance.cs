@@ -1029,17 +1029,19 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         if (retryCount > MAX_FAILURE_COUT)
             ThrowDecodeFailure();
         
+        // 一次跳多个关键帧时按估算间隔定位，随后取定位处的第一个关键帧。目标比第 N 个关键帧的估算位置
+        // 少半个间隔：向后定位取不晚于目标的关键帧、向前定位取不早于目标的关键帧，间隔均匀时正好移动 N 个，
+        // 间隔略有出入也不会多走或少走一个。
+        var gap = Math.Abs(keyFrameGap);
         if (applyInitialSeek && count < 0)
         {
-            // Seek backward by keyframe gap * abs(count)
-            var targetPts = Math.Max(0, currentKeyFramePts - Math.Abs(keyFrameGap) * (Math.Abs(count) + 1)) - 2;
+            var targetPts = Math.Max(0, currentKeyFramePts - gap * Math.Abs(count) + gap / 2);
             Seek(targetPts, AVSEEK_FLAG.Backward);
         }
 
         if (applyInitialSeek && count > 1)
         {
-            // Seek forward by keyframe gap * abs(count)
-            var targetPts = Math.Min(maxPts, currentKeyFramePts + Math.Abs(keyFrameGap) * Math.Abs(count)) + 2;
+            var targetPts = Math.Min(maxPts, currentKeyFramePts + gap * count - gap / 2);
             Seek(targetPts);
         }
 

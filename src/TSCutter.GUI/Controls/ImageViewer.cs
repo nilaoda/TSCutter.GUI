@@ -10,6 +10,7 @@ using Avalonia.Interactivity;
 using CommunityToolkit.Mvvm.Input;
 using TSCutter.GUI.Rendering;
 using TSCutter.GUI.Rendering.Gpu;
+using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Preview;
 
 namespace TSCutter.GUI.Controls;
@@ -70,6 +71,19 @@ public class ImageViewer : Control
 
     public static readonly StyledProperty<bool> ShowNavigatorProperty =
         AvaloniaProperty.Register<ImageViewer, bool>(nameof(ShowNavigator), true);
+
+    /// <summary>不按修饰键滚动滚轮时的动作；设为定位时按住 Ctrl（macOS 为 ⌘）滚动仍缩放画面。</summary>
+    public static readonly StyledProperty<PreviewWheelAction> WheelActionProperty =
+        AvaloniaProperty.Register<ImageViewer, PreviewWheelAction>(nameof(WheelAction));
+
+    /// <summary>滚轮动作设为定位时，滚轮事件交给窗口按滚轮定位的步长处理。</summary>
+    public event EventHandler<PointerWheelEventArgs>? WheelNavigationRequested;
+
+    public PreviewWheelAction WheelAction
+    {
+        get => GetValue(WheelActionProperty);
+        set => SetValue(WheelActionProperty, value);
+    }
 
     /// <summary>
     /// When true, the image automatically scales to fit the control bounds when the control is resized.
@@ -360,6 +374,13 @@ public class ImageViewer : Control
 
     private void OnPointerWheelChanged(object? sender, PointerWheelEventArgs e)
     {
+        if (WheelAction == PreviewWheelAction.Navigate
+            && !e.KeyModifiers.HasFlag(KeyModifiers.Control) && !e.KeyModifiers.HasFlag(KeyModifiers.Meta))
+        {
+            if (Image is not null || GpuFrame is not null)
+                WheelNavigationRequested?.Invoke(this, e);
+            return;
+        }
         if ((Image is null && GpuFrame is null) || (DateTime.Now - _lastZoomTime).TotalMilliseconds < ZoomIntervalMs) return;
         
         var zoomDelta = e.Delta.Y > 0 ? 1.1 : 0.9;

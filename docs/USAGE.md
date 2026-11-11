@@ -32,7 +32,7 @@ Clips cannot be saved, queued or exported separately in remove mode. The mode is
 ## Smart cut mode
 
 1. After opening a video, turn on the **Smart cut** switch on the right side of the toolbar.
-2. Find frames with the timeline, the navigation strip, or the **,** / **.** keys, then mark the start and end. Scrolling the mouse wheel over the navigation strip moves one second per notch (one keyframe per notch in keyframe cut mode).
+2. Find frames with the timeline, the navigation strip, or the **,** / **.** keys, then mark the start and end. Scrolling the mouse wheel over the navigation strip moves to the previous or next keyframe per notch; Settings can make it step by frames or seconds instead (see Preview options).
 3. Save, queue, or merge the clips; the export window shows re-encoding and copying progress.
 
 The switch state is remembered and saved with projects, and queued exports keep the mode chosen when they were added. If any clip boundaries fall outside keyframes, the app lists those clips. Adjust their boundaries before switching back to keyframe cutting.
@@ -62,6 +62,8 @@ In **Tools → Settings**, choose the default HDR to SDR mapping and hardware de
 - The **SDR mapping** control appears only when an HDR frame is detected. The selected mapping is also used when opening keyframe overviews, thumbnail sheets, and frame searches.
 - **H/W / S/W** shows the current decoding mode. Switching is available on Windows and macOS when the current video and device support hardware decoding; the control is disabled when hardware decoding is unavailable or has failed and fallen back to software.
 - Mapping and decoder switches preserve the displayed frame and clip boundaries.
+- **Mouse wheel**: in **Tools → Settings → Preview**, choose the wheel step unit (keyframes, frames or seconds), how many units each notch moves, the step while holding Shift (10 by default, like Shift+arrow keys) and the scroll direction. Frames apply only in Smart cut mode; other modes move by keyframes. With seconds, Smart cut mode goes to the frame at the target time, and keyframe cut mode goes to a keyframe near it, as clicking the timeline does, always moving at least one keyframe. The wheel over the preview can navigate instead of zooming (hold Ctrl, or ⌘ on macOS, to zoom); over the timeline it can navigate or, when zoomed in, pan left and right. Ctrl/⌘ plus the wheel always zooms the timeline.
+- **Tools → Settings → Shortcuts** lists every keyboard and mouse action for the current platform and can be searched by action or key; key bindings cannot be changed yet.
 
 ## Clip labels and output filenames
 
