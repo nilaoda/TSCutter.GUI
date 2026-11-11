@@ -38,7 +38,7 @@ python tools/prepare-test-media.py --group remux subtitles
 
 | 组 | 覆盖内容 |
 | --- | --- |
-| `keyframes` | H.264/HEVC、固定和变长 GOP、密集 GOP、B 帧、分数帧率、非零 PTS 的 TS、HLG、短片和单帧 |
+| `keyframes` | H.264/HEVC、固定和变长 GOP、密集 GOP、B 帧、分数帧率、非零 PTS 的 TS、HLG、IDR 与场景切换 CRA 混用且重排序深度为 4 的 HEVC TS、短片和单帧 |
 | `remux` | MP4/MKV 导出、多音轨、文字/PGS 字幕、分数帧率 HEVC、章节、附件、封面、HDR 和 open GOP |
 | `subtitles` | mov_text、ASS 动画、PGS 和 DVB 字幕的预览、局部定位、稀疏/空轨道和切换 |
 | `frameaccurate` | 帧精确剪辑：画面内绘制帧序号，TS/M2TS/MP4/MKV 中带 B 帧的闭合 GOP H.264、带 RADL 的 10 位 HEVC（HLG/HDR10）、只有 CRA 关键帧且带 RASL 前导画面的开放 GOP HEVC（TS 与 MP4）、隔行开放 GOP MPEG-2、分数帧率、很大及回绕的 TS PTS、mov_text、H.264 High 4:2:2 与 HEVC 4:2:2（HEVC：带 RADL 的 10 位 TS、8 位 MP4；H.264：8 位；10 位开放 GOP、B 帧金字塔且 SPS 不声明重排序深度；隔行 MBAFF）、MP4/MKV 中的 AV1（8 位带 Opus 音频、10 位；含隐藏帧，每个关键帧带序列头）、MP4/MKV 中的 VP9（两遍编码的 8 位带 Opus 音频、10 位 Profile 2；含带隐藏替代参考帧的超帧）、PCM 音频未声明声道布局的 MOV、带接收中断的录制（PES 不完整、时间戳跳变 90 秒、参考帧缺失），只有普通 I 帧的开放 GOP H.264（CABAC、CAVLC、MBAFF，以及前导画面中有作参考 B 帧的 B 帧金字塔），以及应被拒绝的 4:4:4 素材 |

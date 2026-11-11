@@ -12,6 +12,11 @@ public readonly unsafe struct Codec
     internal Codec(AVCodec* raw) => this.raw = raw;
     public string Name => Marshal.PtrToStringUTF8((IntPtr)raw->name) ?? "";
     public AVCodecID Id => raw->id;
+    /// <summary>
+    /// FFmpeg 自带的 AV1 解码器只能配合硬件加速输出画面，不带硬件设备时能打开但每个包都会失败；
+    /// 软解应优先使用 libdav1d/libaom-av1，只有别无选择时才尝试它。
+    /// </summary>
+    public bool RequiresHardwareAcceleration => raw->id == AVCodecID.AV_CODEC_ID_AV1 && Name == "av1";
     public static implicit operator AVCodec*(Codec codec) => codec.raw;
     public static Codec FindDecoderById(AVCodecID id)
     {
@@ -96,6 +101,7 @@ public sealed unsafe class CodecContext : SafeHandle
         => value is null ? null : (AVCodecContext*)value.handle;
     public AVRational PacketTimeBase { set => Raw->pkt_timebase = value; }
     public AVDiscard SkipFrame { set => Raw->skip_frame = value; }
+    public AVDiscard SkipLoopFilter { set => Raw->skip_loop_filter = value; }
     public int ThreadCount { set => Raw->thread_count = value; }
     public void FillParameters(CodecParameters parameters)
         => FFmpegException.Check(FF.avcodec_parameters_to_context(Raw, parameters));

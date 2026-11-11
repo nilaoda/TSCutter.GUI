@@ -34,7 +34,7 @@ internal interface IKeyFrameStripService : IAsyncDisposable
 }
 
 /// <summary>只扫描指针附近的真实关键帧（或帧精确模式下的每一帧），不创建全片索引，也不占用主预览解码器。</summary>
-internal sealed class KeyFrameStripService : IKeyFrameStripService
+internal sealed partial class KeyFrameStripService : IKeyFrameStripService
 {
     private const int MaximumWindowAttempts = 4;
     private VideoInstance? decoder;
@@ -50,9 +50,11 @@ internal sealed class KeyFrameStripService : IKeyFrameStripService
         cursorPts = null;
         observedInterval = leftWindowSpan = null;
         leftWindowCount = 0;
+        // 始终软解：不与主预览争用硬件解码器，也不额外占用显存。
         decoder = new VideoInstance(source.Path, enableHardwareDecoding: false,
-            source.Selection, () => source.ToneMapping, discInput: source.Disc);
+            source.Selection, () => source.ToneMapping, discInput: source.Disc) { ThumbnailDecoding = true };
         await decoder.InitVideoAsync(token);
+        await OpenHelpersAsync(source, token);
     }
 
     public async Task<KeyFrameStripRange> ReadAsync(double target, Func<long, bool> isCached,
@@ -65,6 +67,9 @@ internal sealed class KeyFrameStripService : IKeyFrameStripService
         if (everyFrame)
             return await ReadEveryFrameAsync(video, target, leftCount, rightCount, isCached, received, token);
         target = Math.Clamp(target, 0, Math.Max(0, video.GetVideoDurationInSeconds()));
+        if (video.SupportsParallelKeyFrameScan && await ReadParallelAsync(video, target, leftCount, rightCount, frameCount,
+                isCached, received, progress, token) is { } parallel)
+            return parallel;
         var interval = Math.Clamp(observedInterval ?? video.EstimatedKeyFrameIntervalSeconds, 0.04, 30);
         // 复用上一屏实际的左侧跨度；宽度改变时按槽位数估算，再预留 TS seek 的落点偏差。
         var leftSpan = leftWindowSpan is { } span && leftWindowCount > 0
@@ -372,8 +377,10 @@ internal sealed class KeyFrameStripService : IKeyFrameStripService
         var current = Math.Max(0, frames.FindLastIndex(frame => frame.Timestamp.TotalSeconds <= target));
         var start = Math.Clamp(current - (frameCount - 1) / 2, 0, Math.Max(0, frames.Count - frameCount));
         var visible = frames.Skip(start).Take(frameCount).ToArray();
+        // 读到的画面可能比显示的多，只有显示到最后一张时才算到达开头或结尾。
         return new KeyFrameStripRange(visible,
-            scannedFromStart && visible.Length > 0 && visible[0].Pts == firstPts, atEnd);
+            scannedFromStart && visible.Length > 0 && visible[0].Pts == firstPts,
+            atEnd && visible.Length > 0 && visible[^1].Pts == frames[^1].Pts);
     }
 
     public async ValueTask DisposeAsync()
@@ -382,5 +389,6 @@ internal sealed class KeyFrameStripService : IKeyFrameStripService
         decoder = null;
         if (previous is not null)
             await Task.Run(previous.Dispose);
+        await DisposeHelpersAsync();
     }
 }

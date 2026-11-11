@@ -62,7 +62,7 @@ public partial class VideoInstance
     {
         if (fullDecoderUnavailable)
             return null;
-        foreach (var codec in softwareDecoders.AsEnumerable().Reverse())
+        foreach (var codec in SoftwareDecoderCandidates)
         {
             CodecContext? candidate = null;
             try
@@ -221,7 +221,7 @@ public partial class VideoInstance
                     passed = true;
                 return anchored && predicate(pts);
             };
-            videoDecoder.SkipFrame = AVDiscard.AVDISCARD_DEFAULT;
+            SetKeyFramesOnly(false);
             try
             {
                 foreach (var packet in inFc.ReadPackets())
@@ -248,7 +248,7 @@ public partial class VideoInstance
                 exactFrameFilter = null;
                 // 丢弃逐帧解码遗留的重排序缓存，后续关键帧导航从当前文件位置继续读取下一个关键包。
                 videoDecoder.FlushBuffers();
-                videoDecoder.SkipFrame = useFullPacketDecoding ? AVDiscard.AVDISCARD_DEFAULT : AVDiscard.AVDISCARD_NONKEY;
+                SetKeyFramesOnly(true);
             }
             // 看到过不晚于 seekPts 的画面仍未匹配：确实没有目标。否则（先出现的画面已晚于 seekPts，或一帧都没有输出——
             // 按时间戳定位落在最后一个 GOP 中间，之后再无关键帧）从更早的位置重试。
