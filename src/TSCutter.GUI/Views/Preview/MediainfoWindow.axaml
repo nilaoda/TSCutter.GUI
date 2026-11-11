@@ -64,6 +64,7 @@
             <TabItem Header="{Binding SegmentTabHeader}">
                 <Panel>
                     <ListBox ItemsSource="{Binding SegmentItems}"
+                             Background="Transparent"
                              IsVisible="{Binding HasSegmentItems}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
                              Tapped="SegmentList_OnTapped"
@@ -98,13 +99,12 @@
                                         <TextBlock Text="{Binding Time}" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="1" Text="{Binding Title}" FontWeight="Bold"
                                                    TextTrimming="CharacterEllipsis" Margin="0,0,12,0" />
-                                        <TextBlock Grid.Column="2" Text="{Binding Status}"
-                                                   Foreground="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding Status}" Opacity="0.75" />
                                         <TextBlock Grid.Row="1" Grid.Column="1" Grid.ColumnSpan="2"
                                                    Text="{Binding Description}" IsVisible="{Binding HasDescription}"
                                                    ToolTip.Tip="{Binding Description}"
                                                    TextWrapping="Wrap" MaxLines="2" TextTrimming="CharacterEllipsis"
-                                                   Foreground="{DynamicResource {x:Static common:SystemColors.GrayTextBrushKey}}" />
+                                                   Opacity="0.75" />
                                     </Grid>
                                 </Panel>
                             </DataTemplate>

@@ -1645,7 +1645,7 @@
     <x:String x:Key="String.Shortcuts.PacketViewerJump">TS 封包檢視器：跳至輸入的封包或偏移</x:String>
     <x:String x:Key="String.Epg.Summary">EPG：{0} 個節目</x:String>
     <x:String x:Key="String.Epg.Schedule">排期 {0}（{1}）</x:String>
-    <x:String x:Key="String.Epg.InRecording">錄製中 {0} – {1}</x:String>
+    <x:String x:Key="String.Epg.InRecording">檔案內位置：{0} – {1}</x:String>
     <x:String x:Key="String.Epg.TimingHint">EPG 按排期時刻切換，實際播出可能相差數分鐘。</x:String>
     <x:String x:Key="String.Epg.DurationHours">{0} 小時</x:String>
     <x:String x:Key="String.Epg.DurationMinutes">{0} 分鐘</x:String>
@@ -1654,7 +1654,7 @@
     <x:String x:Key="String.Epg.JumpToEnd">跳到節目結束</x:String>
     <x:String x:Key="String.Epg.AddClip">按節目新增片段</x:String>
     <x:String x:Key="String.Epg.ReviewBoundaries">EPG 時間，請核對起訖</x:String>
-    <x:String x:Key="String.Epg.NotInRecording">不在錄製內</x:String>
+    <x:String x:Key="String.Epg.NotInRecording">不在此檔案內</x:String>
     <x:String x:Key="String.Epg.Tab">EPG</x:String>
     <x:String x:Key="String.MediaInfo.InfoTab">資訊</x:String>
     <x:String x:Key="String.Chapter.Summary">章節：{0} 個</x:String>
