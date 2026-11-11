@@ -153,7 +153,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             };
             recordId = registry.Register(record).Id;
         }
-        var outcome = new ExportTaskOutcome(recordId, outputPath, success);
+        var outcome = new ExportTaskOutcome(recordId, outputPath, success, elapsed, kind);
         Outcomes.Add(outcome);
         return outcome;
     }
@@ -408,6 +408,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     private async Task RunSingleAsync()
     {
+        var startedUtc = DateTime.UtcNow;
         try
         {
             CurrentFileName = Path.GetFileName(OutputPath!);
@@ -425,17 +426,34 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         catch (OperationCanceledException)
         {
             Console.WriteLine("File copy was canceled.");
-            if (UsesManagedOutput || AddsProgramTablesTo(OutputPath!))
-            {
-                DialogResult = false;
-                RequestClose?.Invoke();
-            }
+            // 重新封装、按节目过滤和补充节目表的服务取消后自行删除半成品；按字节复制由这里清理。
+            if (!UsesManagedOutput && !AddsProgramTablesTo(OutputPath!))
+                DeletePartialOutput(OutputPath!, startedUtc);
+            DialogResult = false;
+            RequestClose?.Invoke();
         }
         catch (Exception e)
         {
             Exception = e;
             DialogResult = false;
             RequestClose?.Invoke();
+        }
+    }
+
+    /// <summary>
+    /// 删除取消后留下的按字节复制半成品：只删除本次导出开始后被写过的文件，开始前已存在且尚未改写的文件保留。
+    /// 修改时间放宽 2 秒，兼容 FAT 类文件系统的时间精度。
+    /// </summary>
+    private static void DeletePartialOutput(string path, DateTime startedUtc)
+    {
+        try
+        {
+            if (File.Exists(path) && File.GetLastWriteTimeUtc(path) >= startedUtc.AddSeconds(-2))
+                File.Delete(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Partial output was not removed: {exception.Message}");
         }
     }
 
@@ -629,22 +647,17 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _batchCancelled = true;
             _cts.Cancel();
         }
-        else if (IsMergeMode || UsesManagedOutput || HasProgramTableSupplement)
-        {
-            // 过滤和合并服务在取消后删除半成品；等待清理完成再关闭窗口，避免误报成功。
-            _cts.Cancel();
-        }
         else
         {
+            // 等待导出停止并清理半成品后再关闭窗口，结果为未完成，不会把半截文件当作导出成功。
             _cts.Cancel();
-            DialogResult = true;
-            RequestClose?.Invoke();
         }
     }
     
     public void OnClosing(CancelEventArgs e)
     {
-        if ((checkingProgramTables || IsMergeMode || UsesManagedOutput || HasProgramTableSupplement ||
+        // 单个导出总是等到停止并清理后才关闭；批量导出只为会自行清理的任务等待。
+        if ((checkingProgramTables || !IsBatchMode ||
              _tasks.Exists(task => task.ProgramId is not null || task.RemuxSettings is not null || task.FrameAccurate is not null)) &&
             DialogResult is null)
             e.Cancel = true;

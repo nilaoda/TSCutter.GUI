@@ -40,8 +40,11 @@ public enum TsExportCheckFailure
     SeekDetected
 }
 
-/// <summary>一次导出任务的结果索引；RecordId 为空表示本次导出未成功或未登记。</summary>
-public sealed record ExportTaskOutcome(long? RecordId, string OutputPath, bool Success);
+/// <summary>
+/// 一次导出任务的结果索引；RecordId 为空表示本次导出未成功或未登记。Elapsed 为该任务的导出用时，Kind 为导出类型。
+/// </summary>
+public sealed record ExportTaskOutcome(long? RecordId, string OutputPath, bool Success, TimeSpan Elapsed = default,
+    ExportKind? Kind = null);
 
 /// <summary>按检测类型保存的有界分类统计。</summary>
 public sealed record ExportCheckCategory(TsCheckEventType Type, long Count);

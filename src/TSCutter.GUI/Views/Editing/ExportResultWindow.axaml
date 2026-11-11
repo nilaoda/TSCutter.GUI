@@ -1,0 +1,153 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TSCutter.GUI.ViewModels.Editing"
+        x:Class="TSCutter.GUI.Views.Editing.ExportResultWindow"
+        x:DataType="vm:ExportResultWindowViewModel"
+        Width="520" SizeToContent="Height" CanResize="False"
+        CanMinimize="False" CanMaximize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" Title="{Binding Title}">
+    <Window.Styles>
+        <!-- 信息行：标签列共享宽度；隐藏的行不占位，行间距由下边距提供。 -->
+        <Style Selector="Grid.row">
+            <Setter Property="Margin" Value="0,0,0,6" />
+        </Style>
+        <Style Selector="Grid.row > TextBlock.label">
+            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}" />
+            <Setter Property="Margin" Value="0,0,12,0" />
+        </Style>
+    </Window.Styles>
+    <StackPanel Margin="16">
+        <!-- 标题：结果图标、文件名、导出类型标签；失败时附错误说明。 -->
+        <Grid ColumnDefinitions="Auto,*" Margin="0,0,0,14">
+            <Viewbox Width="32" Height="32" VerticalAlignment="Top" Margin="0,0,12,0">
+                <Panel Width="24" Height="24">
+                    <Canvas IsVisible="{Binding IsSuccess}">
+                        <Ellipse Canvas.Left="1" Canvas.Top="1" Width="22" Height="22" StrokeThickness="2"
+                                 Stroke="{DynamicResource AppStatusSuccessForegroundBrush}" />
+                        <Path Data="M7,12.5 L10.5,16 L17,8.5" StrokeThickness="2.2" StrokeLineCap="Round" StrokeJoin="Round"
+                              Stroke="{DynamicResource AppStatusSuccessForegroundBrush}" />
+                    </Canvas>
+                    <Canvas IsVisible="{Binding IsFailure}">
+                        <Ellipse Canvas.Left="1" Canvas.Top="1" Width="22" Height="22" StrokeThickness="2"
+                                 Stroke="{DynamicResource AppStatusErrorForegroundBrush}" />
+                        <Path Data="M8,8 L16,16 M16,8 L8,16" StrokeThickness="2.2" StrokeLineCap="Round"
+                              Stroke="{DynamicResource AppStatusErrorForegroundBrush}" />
+                    </Canvas>
+                </Panel>
+            </Viewbox>
+            <StackPanel Grid.Column="1" Spacing="6">
+                <SelectableTextBlock Text="{Binding FileName}" FontSize="15" FontWeight="SemiBold" TextWrapping="Wrap" />
+                <ItemsControl ItemsSource="{Binding Tags}" IsVisible="{Binding HasTags}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate><WrapPanel /></ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="x:String">
+                            <Border BorderThickness="1" BorderBrush="{DynamicResource AppSecondaryTextBrush}"
+                                    CornerRadius="3" Padding="6,1" Margin="0,0,6,0">
+                                <TextBlock Text="{Binding}" FontSize="11" />
+                            </Border>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <SelectableTextBlock Text="{Binding ErrorText}" IsVisible="{Binding IsFailure}" TextWrapping="Wrap"
+                                     Foreground="{DynamicResource AppStatusErrorForegroundBrush}" />
+            </StackPanel>
+        </Grid>
+
+        <!-- 详情：每行一个 Grid，标签列通过共享尺寸组对齐。 -->
+        <StackPanel Grid.IsSharedSizeScope="True">
+            <Grid Classes="row" IsVisible="{Binding ShowsLocation}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Classes="label" Text="{DynamicResource String.ExportResult.Location}" />
+                <TextBlock Grid.Column="1" Text="{Binding LocationText}" ToolTip.Tip="{Binding OutputPath}"
+                           TextWrapping="Wrap" MaxLines="3" TextTrimming="CharacterEllipsis" />
+            </Grid>
+            <Grid Classes="row" IsVisible="{Binding ShowsNoFile}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Classes="label" Text="{DynamicResource String.ExportResult.Location}" />
+                <TextBlock Grid.Column="1" Text="{DynamicResource String.ExportResult.NoFile}" TextWrapping="Wrap" />
+            </Grid>
+            <Grid Classes="row" IsVisible="{Binding IsSuccess}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Classes="label" Text="{DynamicResource String.Export_Records_Column_Size}" />
+                <TextBlock Grid.Column="1" Text="{Binding SizeText}" />
+            </Grid>
+            <Grid Classes="row">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Classes="label" Text="{DynamicResource String.Export_Records_Column_Elapsed}" />
+                <TextBlock Grid.Column="1" Text="{Binding ElapsedText}" TextWrapping="Wrap" />
+            </Grid>
+            <Grid Classes="row" IsVisible="{Binding HasContent}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Classes="label" Text="{DynamicResource String.ExportResult.Content}" />
+                <TextBlock Grid.Column="1" Text="{Binding ContentText}" TextWrapping="Wrap" />
+            </Grid>
+            <Grid Classes="row" IsVisible="{Binding HasRanges}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Classes="label" Text="{DynamicResource String.ExportResult.Ranges}" />
+                <SelectableTextBlock Grid.Column="1" Text="{Binding RangesText}" TextWrapping="Wrap" />
+            </Grid>
+            <Grid Classes="row" IsVisible="{Binding HasReencode}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Classes="label" Text="{DynamicResource String.ExportResult.Reencode}" />
+                <TextBlock Grid.Column="1" Text="{Binding ReencodeText}" TextWrapping="Wrap" />
+            </Grid>
+            <Grid Classes="row" IsVisible="{Binding HasCheck}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Classes="label" Text="{DynamicResource String.Export_Check_Title}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="1" Text="{Binding CheckStatusText}" ToolTip.Tip="{Binding CheckDetailText}"
+                           TextWrapping="Wrap" VerticalAlignment="Center" />
+                <Button Grid.Column="2" Name="ViewCheckButton" Content="{DynamicResource String.Export_Records_ViewDetails}"
+                        Command="{Binding ViewCheckDetailsCommand}" IsVisible="{Binding CanViewCheckDetails}" Margin="8,0,0,0" />
+            </Grid>
+        </StackPanel>
+
+        <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,4,0,0"
+                   Foreground="{DynamicResource AppSecondaryTextBrush}" IsVisible="{Binding StatusText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}" />
+
+        <!-- 底部：成功时可选择不再显示；操作按钮靠右，关闭为默认按钮。 -->
+        <Border Height="1" Margin="0,10,0,10" Background="{DynamicResource SystemBaseLowColor}" />
+        <Grid ColumnDefinitions="*,Auto">
+            <CheckBox Name="DontShowAgainBox" Content="{DynamicResource String.ExportResult.DontShowAgain}"
+                      IsChecked="{Binding DontShowAgain}" IsVisible="{Binding IsSuccess}" VerticalAlignment="Center" />
+            <WrapPanel Grid.Column="1" HorizontalAlignment="Right">
+                <Button Name="OpenFileButton" Content="{DynamicResource String.ExportResult.OpenFile}" Margin="6,0,0,0"
+                        Command="{Binding OpenFileCommand}" IsVisible="{Binding IsSuccess}" />
+                <Button Name="OpenFolderButton" Content="{DynamicResource String.Export_Records_OpenFolder}" Margin="6,0,0,0"
+                        Command="{Binding OpenFolderCommand}" IsVisible="{Binding HasOutputFile}" />
+                <Button Name="CopySummaryButton" Content="{DynamicResource String.Export_Records_CopySummary}" Margin="6,0,0,0"
+                        Command="{Binding CopySummaryCommand}" IsVisible="{Binding IsSuccess}" />
+                <Button Name="CopyErrorButton" Content="{DynamicResource String.ExportResult.CopyError}" Margin="6,0,0,0"
+                        Command="{Binding CopySummaryCommand}" IsVisible="{Binding IsFailure}" />
+                <Button Name="CloseButton" Content="{DynamicResource String.Window.Close}" Margin="6,0,0,0" MinWidth="80"
+                        Command="{Binding CloseCommand}" IsDefault="True" IsCancel="True" />
+            </WrapPanel>
+        </Grid>
+    </StackPanel>
+</Window>

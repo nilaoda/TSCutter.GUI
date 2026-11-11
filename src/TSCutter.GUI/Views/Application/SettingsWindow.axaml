@@ -181,6 +181,9 @@
                                   Margin="0,6,0,0" />
                         <TextBlock Text="{DynamicResource String.Settings.TsCheckOnExportHint}"
                                    TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                        <CheckBox IsChecked="{Binding ShowExportResult}"
+                                  Content="{DynamicResource String.Settings.ShowExportResult}"
+                                  Margin="0,6,0,0" />
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
