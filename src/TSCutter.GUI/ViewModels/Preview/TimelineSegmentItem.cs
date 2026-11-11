@@ -74,27 +74,43 @@ public sealed record TimelineSegmentItem(
     }
 }
 
-/// <summary>媒体信息中节目/章节列表的一行；关联到节目带上某一段的行可单击跳转。</summary>
+/// <summary>
+/// 媒体信息中节目/章节列表的一行；关联到节目带上某一段的行可单击跳转。
+/// 日期标题行（<see cref="IsHeader"/>）只显示 <see cref="Title"/> 中的日期，不可选中。
+/// </summary>
 public sealed record SegmentListItem(string Time, string Title, string Description, string Status,
     TimelineSegmentItem? Segment)
 {
+    public bool IsHeader { get; init; }
     public bool CanJump => Segment is not null;
     public bool HasDescription => Description.Length > 0;
 
-    /// <summary>按开播时间列出读到的全部 EPG 节目，录制中的节目关联节目带上的对应段。</summary>
+    /// <summary>
+    /// 按开播时间列出读到的全部 EPG 节目，录制中的节目关联节目带上的对应段。
+    /// 日期变化处插入一行日期标题，节目行只写时段，标题与简介不因日期多占一行。
+    /// </summary>
     public static IReadOnlyList<SegmentListItem> FromEpg(EpgGuide guide, IReadOnlyList<TimelineSegmentItem> segments)
     {
         var strings = LocalizationManager.Instance;
-        return guide.Events.Select(value =>
+        var items = new List<SegmentListItem>(guide.Events.Count + 1);
+        var lastDate = "";
+        foreach (var value in guide.Events)
         {
+            var date = EpgText.Date(value, guide.LocalOffset);
+            if (date.Length > 0 && date != lastDate)
+            {
+                items.Add(new SegmentListItem("", date, "", "", null) { IsHeader = true });
+                lastDate = date;
+            }
             var segment = segments.FirstOrDefault(item => item.Event?.EventId == value.EventId);
             var status = segment is null
                 ? strings.String_Epg_NotInRecording
                 : string.Format(strings.String_Epg_InRecording, CommonUtil.FormatSeconds(segment.StartSeconds),
                     CommonUtil.FormatSeconds(segment.EndSeconds));
-            return new SegmentListItem(EpgText.Schedule(value, guide.LocalOffset), value.Title,
-                value.Description.Trim(), status, segment);
-        }).ToArray();
+            items.Add(new SegmentListItem(EpgText.Schedule(value, guide.LocalOffset), value.Title,
+                value.Description.Trim(), status, segment));
+        }
+        return items;
     }
 
     public static IReadOnlyList<SegmentListItem> FromChapters(IReadOnlyList<TimelineSegmentItem> segments) =>
@@ -110,14 +126,20 @@ public static class EpgText
 {
     public static string Schedule(EpgEvent value, TimeSpan? localOffset, bool withDate = false)
     {
-        if (value.Start is not { } start)
+        if (Local(value, localOffset) is not { } local)
             return "";
-        var local = localOffset is { } offset ? start.ToOffset(offset) : start.ToLocalTime();
         var time = value.Duration > TimeSpan.Zero
             ? $"{local:HH:mm}–{local + value.Duration:HH:mm}"
             : $"{local:HH:mm}";
-        return withDate ? $"{local.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)} {time}" : time;
+        return withDate ? $"{Date(value, localOffset)} {time}" : time;
     }
+
+    /// <summary>开播日期（与排期同一时区）；节目表没有开播时间时为空。</summary>
+    public static string Date(EpgEvent value, TimeSpan? localOffset) =>
+        Local(value, localOffset)?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) ?? "";
+
+    private static DateTimeOffset? Local(EpgEvent value, TimeSpan? localOffset) => value.Start is not { } start ? null
+        : localOffset is { } offset ? start.ToOffset(offset) : start.ToLocalTime();
 
     public static string Duration(TimeSpan duration)
     {

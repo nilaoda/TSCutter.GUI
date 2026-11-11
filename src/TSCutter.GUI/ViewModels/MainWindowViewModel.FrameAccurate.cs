@@ -270,7 +270,7 @@ public partial class MainWindowViewModel
 
     /// <summary>为片段创建帧精确导出快照；终点未标记时保留到文件末尾。</summary>
     private (FrameAccurateExportSettings Settings, long StartPts, long? EndPts) CreateFrameAccurateTask(PickedClip clip) =>
-        (_videoInstance!.CreateFrameAccurateSettings(CurrentRemuxSettings), FrameAccurateStartPts(clip),
+        (CreateFrameAccurateExportSettings(_videoInstance!), FrameAccurateStartPts(clip),
             clip.EndPosition < 0 ? null : clip.EndPts);
 
     /// <summary>
@@ -281,7 +281,7 @@ public partial class MainWindowViewModel
 
     private IReadOnlyList<FrameAccurateExportSegment> CreateFrameAccurateSegments(IEnumerable<PickedClip> clips)
     {
-        var settings = _videoInstance!.CreateFrameAccurateSettings(CurrentRemuxSettings);
+        var settings = CreateFrameAccurateExportSettings(_videoInstance!);
         var segments = new List<FrameAccurateExportSegment>();
         foreach (var clip in clips.OrderBy(FrameAccurateStartPts))
         {

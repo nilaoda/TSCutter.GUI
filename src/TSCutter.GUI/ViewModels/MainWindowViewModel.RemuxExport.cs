@@ -23,7 +23,7 @@ public partial class MainWindowViewModel
     }
     public bool IsRemuxExport => _videoInstance is { Inited: true, CanRemuxClip: true };
     private RemuxExportSettings? CurrentRemuxSettings => IsRemuxExport
-        ? _remuxExportSettings ??= _videoInstance!.CreateExportSettings() : null;
+        ? _remuxExportSettings ??= CreateRemuxExportSettings(_videoInstance!) : null;
     private string ExportFileFilterName => CurrentRemuxSettings?.Container is "vob" or "m2ts"
         ? LocalizationManager.Instance.String_Disc_ExportFiles
         : IsRemuxExport ? LocalizationManager.Instance.String_RemuxExport_Files : LocalizationManager.Instance.String_TsFiles;

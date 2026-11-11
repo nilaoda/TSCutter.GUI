@@ -13,6 +13,10 @@ public sealed class CutterProject
     public RemuxExportSettings? RemuxSettings { get; set; }
     public ClipCutMode CutMode { get; set; }
     public ClipListMode ClipMode { get; set; }
+    /// <summary>音频相对视频的延迟（毫秒），见 <see cref="AudioDelay"/>。</summary>
+    public int AudioDelayMs { get; set; }
+    /// <summary>是否启用音频延迟；未启用时导出不改写音轨时间戳。</summary>
+    public bool AudioDelayEnabled { get; set; }
     public List<ProjectClip> Clips { get; set; } = [];
     public List<ProjectQueueItem> Queue { get; set; } = [];
     public int SelectedClipIndex { get; set; } = -1;
@@ -69,6 +73,10 @@ public sealed class ProjectQueueItem
     public long StartPts { get; set; }
     public long? EndPts { get; set; }
     public int? ProgramId { get; set; }
+    /// <summary>关键帧模式 TS 任务的音频延迟（毫秒）；封装与帧精确任务的延迟在各自设置中。</summary>
+    public int AudioDelayMs { get; set; }
+    /// <summary>音频延迟作用的节目号（所编辑的节目）；null 表示全部音轨。</summary>
+    public int? AudioDelayProgramId { get; set; }
     public string OutputFilePath { get; set; } = string.Empty;
     public double StartTime { get; set; }
     public double EndTime { get; set; }

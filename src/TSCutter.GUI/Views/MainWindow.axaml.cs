@@ -27,6 +27,14 @@ public partial class MainWindow : ClassicWindow
     public static FuncValueConverter<bool, GridLength> OptionalTrackColumnWidthConverter { get; } =
         new(visible => visible ? new GridLength(1, GridUnitType.Star) : new GridLength(0));
 
+    // 视频选择框显示时占较宽的比例，隐藏时不占位。
+    public static FuncValueConverter<bool, GridLength> OptionalWideTrackColumnWidthConverter { get; } =
+        new(visible => visible ? new GridLength(2, GridUnitType.Star) : new GridLength(0));
+
+    // 视频选择框隐藏时由末尾的空白列占用剩余宽度，其他选择框不被拉得过宽。
+    public static FuncValueConverter<bool, GridLength> TrackSpacerColumnWidthConverter { get; } =
+        new(videoVisible => videoVisible ? new GridLength(0) : new GridLength(1, GridUnitType.Star));
+
     // 提前创建禁用条目，鼠标和未展开时的键盘导航都不能选中不支持的音轨。
     public static FuncValueConverter<IReadOnlyList<PreviewAudioTrackOption>?, ComboBoxItem[]?> AudioTrackItemsConverter { get; } =
         new(items => items?.Select(item =>

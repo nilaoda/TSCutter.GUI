@@ -38,6 +38,7 @@ public partial class MainWindowViewModel
             ProgramId = programId,
             VideoPid = streamPids.VideoPid,
             AudioPids = streamPids.AudioPids,
+            AudioOffset90k = AudioDelay.To90k(EffectiveAudioDelayMs), AudioDelayProgramId = AudioDelayProgramId,
             Ranges = selected.Select(clip => new TsClipMergeRange(
                 clip.StartPosition, clip.EndPosition, clip.StartTime,
                 clip.EndTime < 0 ? DurationMax : clip.EndTime)).ToArray()
@@ -82,7 +83,8 @@ public partial class MainWindowViewModel
             output.SetMergeTask(new TsClipMergeRequest
             {
                 SourcePath = request.SourcePath, OutputPath = path, ProgramId = request.ProgramId,
-                VideoPid = request.VideoPid, AudioPids = request.AudioPids, Ranges = request.Ranges
+                VideoPid = request.VideoPid, AudioPids = request.AudioPids, Ranges = request.Ranges,
+                AudioOffset90k = request.AudioOffset90k, AudioDelayProgramId = request.AudioDelayProgramId
             });
         }
     }

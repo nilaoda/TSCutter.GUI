@@ -37,6 +37,15 @@ internal static class PreviewStreamUtil
         return matches[0];
     }
 
+    /// <summary>按所选音轨找回音频流；找不到或不唯一时返回 null。TS 的流序号可能变化，按 PID 匹配。</summary>
+    public static MediaStream? ResolveAudio(FormatContext context, PreviewStreamSelection selection)
+    {
+        var candidates = context.Streams.Where(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO &&
+            stream.Id == selection.StreamId && (context.InputFormat?.Name == "mpegts" || stream.Index == selection.StreamIndex) &&
+            (selection.ProgramId is not { } id || context.Programs.Any(program => program.Id == id && program.ContainsStream(stream.Index)))).ToArray();
+        return candidates.Length == 1 ? candidates[0] : null;
+    }
+
     public static PreviewStreamSelection GetSelection(FormatContext context, MediaStream video,
         PreviewStreamSelection? requested)
     {

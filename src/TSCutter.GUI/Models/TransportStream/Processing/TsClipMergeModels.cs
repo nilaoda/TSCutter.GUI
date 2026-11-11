@@ -17,6 +17,12 @@ internal sealed class TsClipMergeRequest
     public int VideoPid { get; init; } = -1;
     public int? ProgramId { get; init; }
     public IReadOnlyList<int> AudioPids { get; init; } = [];
+    /// <summary>
+    /// 音频相对视频的延迟（90 kHz，正数推后）：原地改写音轨 PES 的 PTS/DTS，包、CC、PCR 与其他 PID 不变。
+    /// </summary>
+    public long AudioOffset90k { get; init; }
+    /// <summary>音频延迟作用的节目号（所编辑的节目）：只改写这个节目的音轨；null 表示文件中的全部音轨。</summary>
+    public int? AudioDelayProgramId { get; init; }
 }
 
 internal readonly record struct TsClipMergeProgress(

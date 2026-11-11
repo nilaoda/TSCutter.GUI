@@ -34,7 +34,9 @@ public partial class MainWindowViewModel
 
     public bool ShowPreviewTrackSelector => PreviewPrograms.Count > 1 || PreviewVideoTracks.Count > 1 ||
                                             _videoInstance?.ProgramCount > 1 || HasPreviewSubtitles || HasPreviewAudioTracks;
-    public bool HasPreviewPrograms => PreviewPrograms.Any(program => program.Id is not null);
+    // 只有一个可选项时不显示选择框：单节目不显示节目，节目内只有一条视频轨时不显示视频（状态栏已有视频信息）。
+    public bool ShowPreviewProgramSelector => PreviewPrograms.Count > 1;
+    public bool ShowPreviewVideoSelector => PreviewVideoTracks.Count > 1;
     public bool CanSelectPreviewProgram => CanSwitchPreviewTrack && PreviewPrograms.Count > 1;
     public bool CanSelectPreviewVideo => CanSwitchPreviewTrack && PreviewVideoTracks.Count > 1;
     // 整次拖动期间保持禁用，避免每次预览解码结束时短暂重新启用。
@@ -112,7 +114,8 @@ public partial class MainWindowViewModel
     private void NotifyPreviewTrackChoicesChanged()
     {
         OnPropertyChanged(nameof(ShowPreviewTrackSelector));
-        OnPropertyChanged(nameof(HasPreviewPrograms));
+        OnPropertyChanged(nameof(ShowPreviewProgramSelector));
+        OnPropertyChanged(nameof(ShowPreviewVideoSelector));
         OnPropertyChanged(nameof(CanSwitchPreviewTrack));
         OnPropertyChanged(nameof(CanSelectPreviewProgram));
         OnPropertyChanged(nameof(CanSelectPreviewVideo));

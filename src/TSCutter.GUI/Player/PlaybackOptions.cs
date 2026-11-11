@@ -19,6 +19,8 @@ public sealed record PlaybackOptions
     public DiscInput? Disc { get; init; }
     /// <summary>时间线原点（首关键帧包 PTS 对应的秒数），来自导航预览，保证时间轴一致。</summary>
     public double TimelineOriginSeconds { get; init; }
+    /// <summary>音频相对视频的延迟秒数（正数推后），与导出改写音轨时间戳的方向一致。</summary>
+    public double AudioDelaySeconds { get; init; }
     /// <summary>估算的关键帧间隔秒数，用于预滚锚点的向后余量。</summary>
     public double EstimatedKeyFrameIntervalSeconds { get; init; }
     /// <summary>预滚至少回退的秒数：逐行刷新码流从恢复点起需数秒才完整，来自导航预览的检测。</summary>

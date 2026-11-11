@@ -63,6 +63,18 @@ internal sealed class TsClipMergeService
         var audioPids = ranges.Count > 1 && request.AudioPids.Count == 0
             ? await ReadAudioPidsAsync(source, ranges[0].StartPosition, request.ProgramId, cancellationToken).ConfigureAwait(false)
             : request.AudioPids;
+        // 音频延迟作用于所编辑节目的全部音轨（按切点附近的 PMT 确定）；其他节目的声音与本节目的画面无关，保持不变。
+        // PMT 中找不到音轨时（如缺少节目表的片段）退回已知的音轨清单。没有延迟时不查找音轨，音频包与原来完全相同。
+        var audioOffset = request.AudioOffset90k;
+        bool[]? delayedPids = null;
+        if (audioOffset != 0)
+        {
+            delayedPids = new bool[8192];
+            var delayed = await ReadAudioPidsAsync(source, ranges[0].StartPosition, request.AudioDelayProgramId,
+                cancellationToken).ConfigureAwait(false);
+            foreach (var pid in delayed.Count > 0 ? delayed : audioPids)
+                delayedPids[pid & 0x1FFF] = true;
+        }
         using var splitHeaderReader = new TsSplitPesHeaderReader();
         var splitTimestampRewriter = new TsSplitPesTimestampRewriter();
         var totalBytes = ranges.Sum(item => item.EndPosition - item.StartPosition);
@@ -214,11 +226,14 @@ internal sealed class TsClipMergeService
                                 chunkStart + offset >= range.EndPosition))
                             continue;
                         TsSplitPesHeader splitHeader = default;
-                        if ((rangeIndex + 1 < ranges.Count || correction != 0) &&
+                        if ((rangeIndex + 1 < ranges.Count || correction != 0 || audioOffset != 0) &&
                             TsSplitPesHeaderReader.NeedsRead(layout.GetPacketBody(buffer.AsSpan(), offset)))
                             splitHeader = await splitHeaderReader.ReadAsync(source, buffer, chunkStart,
                                 requested, offset, scanEnd, cancellationToken, layout).ConfigureAwait(false);
                         var packet = layout.GetPacketBody(buffer.AsSpan(), offset);
+                        // 音轨的 PES 时间戳另加音频延迟；PCR 只按片段校正。
+                        var pesCorrection = delayedPids is not null && delayedPids[((packet[1] & 31) << 8) | packet[2]]
+                            ? correction + audioOffset : correction;
 
                         var transportError = (packet[1] & 0x80) != 0;
                         // 最后一段之后没有接缝；单段导出也无需统计时间戳。
@@ -232,20 +247,19 @@ internal sealed class TsClipMergeService
                                 ObserveAudio(packet, audioTimelines);
                             }
                         }
-                        if (!transportError && correction != 0)
+                        if (!transportError && (correction != 0 || pesCorrection != 0))
                         {
                             // 完整头在前读时已取得，分片在写入输出前完成改写。
                             // 重复包使用同一头片段，不能让重复的部分仍保留旧时间戳。
                             var continuation = splitTimestampRewriter.RewriteContinuation(packet);
                             if (!continuation && splitHeader.IsValid)
                             {
-                                splitTimestampRewriter.Start(packet, splitHeader, correction);
+                                splitTimestampRewriter.Start(packet, splitHeader, pesCorrection);
                                 rewrittenTimestampCount += splitHeader.Length == 19 ? 2 : 1;
                             }
                             else if (!continuation)
-                                rewrittenTimestampCount += TsTimestampFieldCodec.RewritePesTimestamps(packet, correction);
-                            if (TsTimestampFieldCodec.RewritePcr(
-                                    packet, correction))
+                                rewrittenTimestampCount += TsTimestampFieldCodec.RewritePesTimestamps(packet, pesCorrection);
+                            if (correction != 0 && TsTimestampFieldCodec.RewritePcr(packet, correction))
                                 rewrittenPcrCount++;
                         }
 

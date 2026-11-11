@@ -16,10 +16,12 @@ public sealed class FrameAccurateExportSettings
     public string Container { get; set; } = "";
     public int VideoIndex { get; set; }
     public List<int> StreamIndices { get; set; } = [];
+    /// <summary>音频相对视频的延迟（毫秒，正数推后），见 <see cref="AudioDelay"/>。</summary>
+    public int AudioDelayMs { get; set; }
 
     public FrameAccurateExportSettings Snapshot() => new()
     {
-        Container = Container, VideoIndex = VideoIndex, StreamIndices = [.. StreamIndices]
+        Container = Container, VideoIndex = VideoIndex, StreamIndices = [.. StreamIndices], AudioDelayMs = AudioDelayMs
     };
 
     [JsonIgnore]

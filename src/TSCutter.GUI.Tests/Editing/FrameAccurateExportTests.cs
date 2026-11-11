@@ -1089,6 +1089,30 @@ public sealed class FrameAccurateExportTests
         }
     }
 
+    [NativeMediaFact("frameaccurate")]
+    public async Task AudioDelayShiftsOnlyTheAudioTrack()
+    {
+        // 同一范围（片头片尾重编码、中间复制）分别不加与加 200 ms 音频延迟导出：音频相对视频推后 200 ms。
+        const string name = "h264.ts";
+        var source = Fixture(name);
+        var frames = Decode(source, out _);
+        async Task<double> AudioOffset(int delayMs)
+        {
+            var output = Temporary(name);
+            try
+            {
+                var settings = Settings(source);
+                settings.AudioDelayMs = delayMs;
+                await new FrameAccurateExportService().ExportAsync(new FrameAccurateExportRequest(output,
+                    [new FrameAccurateExportSegment(source, frames[40].Pts, frames[200].Pts, settings)]));
+                var decoded = Decode(output, out _);
+                return FirstAudioAfter(output, long.MinValue) - Seconds(output, decoded[0].Pts);
+            }
+            finally { File.Delete(output); }
+        }
+        Assert.Equal(await AudioOffset(0) + 0.2, await AudioOffset(200), 3);
+    }
+
     /// <summary>首个显示时间不早于视频时间戳 videoPts 的音频包时间（秒）。</summary>
     private static unsafe double FirstAudioAfter(string path, long videoPts)
     {
