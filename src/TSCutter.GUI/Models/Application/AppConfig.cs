@@ -86,6 +86,8 @@ public class AppConfig : ObservableObject
             value,
             IsHardwareDecodingSupported);
     }
+    // 硬件解码使用的设备 Id；null 表示自动选择。设备已移除时解码沿用自动选择，保留原值以便设备恢复后继续使用。
+    public string? HardwareDecodingDevice { get; set; }
     public string? FFmpegRootPath { get; set; }
     public ThumbnailSheetPreferences ThumbnailSheetPreferences { get; set; } = new();
     // 鼠标滚轮行为；整体替换以便界面通过属性通知同步，读入时把取值改回允许的范围。

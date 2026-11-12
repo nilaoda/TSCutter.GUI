@@ -33,6 +33,7 @@ public partial class MainWindowViewModel
         if (filePath is null)
             return;
         var vm = _dialogService.CreateViewModel<PlaybackBenchmarkWindowViewModel>();
+        vm.HardwareDecodingDevice = _configService.CurrentConfig.HardwareDecodingDevice;
         var video = _videoInstance;
         VideoInstance? suspendedVideo = null;
         vm.BeforeTestAsync = async () =>

@@ -105,6 +105,9 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     private bool useFullPacketDecoding;
     private readonly bool preferHardwareDecoding = enableHardwareDecoding && AppConfig.IsHardwareDecodingSupported;
 
+    /// <summary>硬件解码使用的显卡 Id；null 或显卡已移除时按系统默认选择。</summary>
+    internal string? HardwareDecodingDevice { get; init; }
+
     /// <summary>
     /// 缩略图解码：只解关键帧的解码器跳过环路滤波，小尺寸缩略图看不出差别，4K HEVC 约快一成。
     /// 每个关键帧独立解码，误差不会传给其他画面；完整解码（逐帧、精确定位）仍按规范解码。
@@ -349,13 +352,16 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         PresentationMode = VideoPresentationMode.HardwareCpuTransfer;
         hardwareDecoderName = GetHardwareDeviceDisplayName(deviceType);
         Console.WriteLine($"Hardware decoder opened: {hardwareDecoderName} ("
-            + (fullPacketDecoding ? "full packets" : "key packets") + ")");
+            + (fullPacketDecoding ? "full packets" : "key packets") + ")"
+            + (HardwareDecodingDevices.DescribeAdapter(videoDecoder) is { } adapter ? " on " + adapter : string.Empty));
         return true;
     }
 
     private CodecContext? TryCreateHardwareDecoder(bool fullPacketDecoding, out AVHWDeviceType selectedDevice)
     {
-        foreach (var deviceType in GetHardwareDeviceCandidates())
+        // 指定设备时只用该设备的接口（Windows 上 DXVA2 序号按显示器编号，无法对应到显卡）。
+        var selected = HardwareDecodingDevices.Resolve(HardwareDecodingDevice);
+        foreach (var deviceType in selected is null ? GetHardwareDeviceCandidates() : [selected.DeviceType])
         {
             foreach (var decoder in softwareDecoders.AsEnumerable().Reverse())
             {
@@ -369,7 +375,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                     candidate.FillParameters(inVideoStream.Codecpar!);
                     candidate.PacketTimeBase = inVideoStream.TimeBase;
                     ApplyKeyFrameDecodingOptions(candidate, fullPacketDecoding);
-                    candidate.AttachHardwareDevice(deviceType);
+                    candidate.AttachHardwareDevice(deviceType, selected?.DeviceArgument);
                     candidate.Open();
                     var opened = candidate;
                     candidate = null;

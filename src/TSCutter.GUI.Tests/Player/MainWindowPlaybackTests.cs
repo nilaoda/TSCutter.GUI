@@ -29,7 +29,7 @@ namespace TSCutter.GUI.Tests.Player;
 [Collection("Avalonia UI")]
 public sealed class MainWindowPlaybackTests
 {
-    private static MainWindowViewModel CreateViewModel()
+    private static MainWindowViewModel CreateViewModel(MemoryConfiguration? configuration = null)
     {
         var localization = new LocalizationService();
         localization.SwitchLanguage("en-US");
@@ -37,7 +37,7 @@ public sealed class MainWindowPlaybackTests
         return new MainWindowViewModel(
             new HanumanInstitute.MvvmDialogs.Avalonia.DialogService(
                 System.Reflection.DispatchProxy.Create<IDialogManager, UnusedDialogs>()),
-            new MemoryConfiguration());
+            configuration ?? new MemoryConfiguration());
     }
 
     private static async Task WaitForAsync(Func<bool> condition, int timeoutMs = 8000)
@@ -221,7 +221,8 @@ public sealed class MainWindowPlaybackTests
             using var resolver = new ModernDependencyResolver();
             using var scope = resolver.WithResolver();
             Locator.CurrentMutable.RegisterConstant<ILocalizationService>(new LocalizationService());
-            var vm = CreateViewModel();
+            var configuration = new MemoryConfiguration();
+            var vm = CreateViewModel(configuration);
             vm.VideoPath = Path.Combine(NativeTestEnvironment.FixtureDirectory("keyframes"), "fixed.mp4");
             var load = typeof(MainWindowViewModel).GetMethod("LoadVideoAsync",
                 BindingFlags.Instance | BindingFlags.NonPublic)!;
@@ -271,6 +272,18 @@ public sealed class MainWindowPlaybackTests
                 Assert.Equal(pausedTime, vm.CurrentTime, 6);
                 Assert.Same(pausedBitmap, vm.DecodedBitmap);
                 Assert.True(vm.TogglePlaybackCommand.CanExecute(null));
+                var sessionField = typeof(MainWindowViewModel).GetField("playbackSession",
+                    BindingFlags.Instance | BindingFlags.NonPublic)!;
+                var retained = sessionField.GetValue(vm);
+                Assert.NotNull(retained);
+                await vm.TogglePlaybackCommand.ExecuteAsync(null);
+                Assert.Same(retained, sessionField.GetValue(vm));
+                await vm.TogglePlaybackCommand.ExecuteAsync(null);
+                configuration.CurrentConfig.HardwareDecodingDevice = "d3d11va:changed";
+                await vm.TogglePlaybackCommand.ExecuteAsync(null);
+                var replaced = Assert.IsType<TSCutter.GUI.Player.PlaybackSession>(sessionField.GetValue(vm));
+                Assert.NotSame(retained, replaced);
+                Assert.Equal(configuration.CurrentConfig.HardwareDecodingDevice, replaced.HardwareDecodingDevice);
                 return true;
             }
             finally

@@ -84,7 +84,8 @@ public partial class VideoInstance
             TimelineOriginSeconds = TimelineOriginSeconds, TsSyncOffset = TsSyncOffset,
             EstimatedKeyFrameIntervalSeconds = EstimatedKeyFrameIntervalSeconds,
             MinimumPrerollSeconds = RecoveryPrerollSeconds,
-            PreferHardwareDecoding = hardwareDecoderOpened, EnableGpuPresentation = false
+            PreferHardwareDecoding = hardwareDecoderOpened, HardwareDecodingDevice = HardwareDecodingDevice,
+            EnableGpuPresentation = false
         }, queue);
         var task = Task.Run(engine.RunAsync, token);
         using var registration = token.Register(engine.Cancel);

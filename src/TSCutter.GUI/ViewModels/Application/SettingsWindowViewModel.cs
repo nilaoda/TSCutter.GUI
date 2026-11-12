@@ -9,6 +9,7 @@ using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Editing;
+using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.ViewModels;
 
 namespace TSCutter.GUI.ViewModels.Application;
@@ -49,6 +50,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     private KeyFrameStripThumbnailSize _keyFrameStripThumbnailSize = KeyFrameStripThumbnailSize.Medium;
     [ObservableProperty]
     private bool _preferHardwareDecoding;
+    [ObservableProperty]
+    private HardwareDecodingDeviceOption? _selectedHardwareDecodingDevice;
     [ObservableProperty]
     private bool _enableSdrToneMapping;
     [ObservableProperty]
@@ -161,6 +164,10 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
 
     public bool HasNoShortcutMatch => ShortcutGroups.Count == 0;
     public bool IsHardwareDecodingAvailable => AppConfig.IsHardwareDecodingSupported;
+    /// <summary>“自动”加当前可选的解码设备；已保存但当前不可用的设备也列出，避免打开设置后被静默改回自动。</summary>
+    public IReadOnlyList<HardwareDecodingDeviceOption> HardwareDecodingDeviceOptions { get; }
+    /// <summary>只有自动一项时（macOS、Linux 或未找到显卡）不可选择。</summary>
+    public bool CanSelectHardwareDecodingDevice => HardwareDecodingDeviceOptions.Count > 1;
     public IReadOnlyList<ThemePickerItem> ThemePresetOptions { get; } = ThemePickerItem.CreatePresets(ThemeModel.AllThemes);
     public IReadOnlyList<ThemePickerItem> ThemeOptions { get; } = ThemePickerItem.Create(ThemeModel.AllThemes);
     public IReadOnlyList<ThemePickerItem> DarkThemeOptions { get; } = ThemePickerItem.Create(ThemeModel.AllDarkThemes);
@@ -180,6 +187,10 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         ShowAudioWaveform = _configService.CurrentConfig.ShowAudioWaveform;
         KeyFrameStripThumbnailSize = _configService.CurrentConfig.KeyFrameStripThumbnailSize;
         PreferHardwareDecoding = _configService.CurrentConfig.PreferHardwareDecoding;
+        HardwareDecodingDeviceOptions = CreateHardwareDecodingDeviceOptions(
+            _configService.CurrentConfig.HardwareDecodingDevice, HardwareDecodingDevices.Enumerate());
+        SelectedHardwareDecodingDevice = HardwareDecodingDeviceOptions.FirstOrDefault(option =>
+            option.Id == _configService.CurrentConfig.HardwareDecodingDevice) ?? HardwareDecodingDeviceOptions[0];
         EnableSdrToneMapping = _configService.CurrentConfig.EnableSdrToneMapping;
         TsCheckOnExport = _configService.CurrentConfig.TsCheckOnExport;
         ShowExportResult = _configService.CurrentConfig.ShowExportResult;
@@ -268,6 +279,17 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         return -1;
     }
 
+    /// <summary>保留已保存但当前不可用的设备，避免打开设置就丢失原选择。</summary>
+    internal static IReadOnlyList<HardwareDecodingDeviceOption> CreateHardwareDecodingDeviceOptions(string? savedId,
+        IReadOnlyList<HardwareDecodingDevice> devices)
+    {
+        var options = new List<HardwareDecodingDeviceOption> { new(null, null) };
+        options.AddRange(devices.Select(device => new HardwareDecodingDeviceOption(device.Id, device.Name)));
+        if (!string.IsNullOrEmpty(savedId) && devices.All(device => device.Id != savedId))
+            options.Add(new(savedId, null, IsMissing: true));
+        return options;
+    }
+
     /// <summary>按当前语言生成步长下拉框的文字。</summary>
     private void RefreshWheelStepTexts()
     {
@@ -313,6 +335,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.CurrentConfig.KeyFrameStripThumbnailSize = KeyFrameStripThumbnailSize;
         _configService.CurrentConfig.ShowKeyFrameStrip = ShowKeyFrameStrip;
         _configService.CurrentConfig.PreferHardwareDecoding = PreferHardwareDecoding;
+        _configService.CurrentConfig.HardwareDecodingDevice = SelectedHardwareDecodingDevice?.Id;
         _configService.CurrentConfig.EnableSdrToneMapping = EnableSdrToneMapping;
         _configService.CurrentConfig.TsCheckOnExport = TsCheckOnExport;
         _configService.CurrentConfig.ShowExportResult = ShowExportResult;
@@ -347,4 +370,11 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         // 保存
         _configService.Save();
     }
+}
+
+/// <summary>解码设备下拉项：Id 为 null 表示自动选择；IsMissing 表示已保存但当前找不到的设备。</summary>
+public sealed record HardwareDecodingDeviceOption(string? Id, string? Name, bool IsMissing = false)
+{
+    public bool IsAutomatic => Id is null;
+    public bool HasName => Name is not null;
 }

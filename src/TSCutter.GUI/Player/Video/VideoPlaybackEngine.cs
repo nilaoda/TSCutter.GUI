@@ -52,6 +52,8 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
     private Frame? reusableSoftwareFrame;
     private bool hardwareDecoderOpened;
     private bool rendererDirectDecoder;
+    // Windows 上解码设备不是渲染设备时，表面无法导入渲染上下文，只能回读。
+    private bool rendererCannotImportSurfaces;
     private int hardwareNoFrameCount;
     private bool waitingForKeyFrame = true;
     private MediaStream videoStream;
@@ -402,24 +404,27 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
     /// <summary>
     /// 优先硬件解码（VideoToolbox/D3D11VA）；打开成功不代表首帧一定输出，
     /// 运行期失败先重试不带 SRV 的呈现设备，再回退软件解码。
+    /// 指定了解码设备时只用该设备；它与渲染设备是同一张显卡时仍共享渲染设备，否则单独创建并回读画面。
     /// </summary>
     private bool TryOpenHardwareDecoder(bool copyOnly = false)
     {
         var codecId = videoStream.Codecpar?.CodecId;
         if (codecId is null || HardwareDevices.Length == 0)
             return false;
+        var selected = HardwareDecodingDevices.Resolve(options.HardwareDecodingDevice);
+        var useRenderer = selected is null || selected.Luid != 0 && selected.Luid == WindowsVideoTexture.RendererAdapterLuid;
         // 与导航一致：给普通解码器附加硬件设备（videotoolbox/d3d11va 不是独立解码器名）。
         var decoders = Codec.FindDecoders(codecId.Value)
             .Where(decoder => HardwareDeviceTags.All(tag => !decoder.Name.Contains(tag, StringComparison.OrdinalIgnoreCase)))
             .Reverse()
             .ToList();
-        foreach (var deviceType in HardwareDevices)
+        foreach (var deviceType in selected is null ? HardwareDevices : [selected.DeviceType])
         {
             if (copyOnly && deviceType != AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA)
                 continue;
+            var rendererDevice = useRenderer && deviceType == AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA;
             // 不支持解码表面同时绑定 SRV 时，使用同一设备重试仅解码绑定，保留 GPU 内复制回退。
-            foreach (var allowDirect in !copyOnly && deviceType == AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA
-                         ? new[] { true, false } : new[] { false })
+            foreach (var allowDirect in !copyOnly && rendererDevice ? new[] { true, false } : new[] { false })
             {
                 foreach (var decoder in decoders)
                 {
@@ -432,8 +437,7 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
                         candidate.FillParameters(videoStream.Codecpar!);
                         candidate.PacketTimeBase = timeBase;
                         // 播放需要全部画面：不设置 AVDISCARD_NONKEY。
-                        var rendererAttached = deviceType == AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA
-                            && WindowsVideoTexture.TryAttachDecoder(candidate, allowDirect);
+                        var rendererAttached = rendererDevice && WindowsVideoTexture.TryAttachDecoder(candidate, allowDirect);
                         if (!rendererAttached)
                         {
                             if (copyOnly)
@@ -441,12 +445,16 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
                                 candidate.Dispose();
                                 continue;
                             }
-                            candidate.AttachHardwareDevice(deviceType);
+                            candidate.AttachHardwareDevice(deviceType, selected?.DeviceArgument);
                         }
                         candidate.Open();
                         videoDecoder = candidate;
                         hardwareDecoderOpened = true;
                         rendererDirectDecoder = rendererAttached && allowDirect;
+                        rendererCannotImportSurfaces = OperatingSystem.IsWindows() && !rendererAttached;
+                        if (HardwareDecodingDevices.DescribeAdapter(candidate) is { } adapter)
+                            Console.WriteLine($"Playback hardware decoder opened: {deviceType} on {adapter}"
+                                + (rendererAttached ? " (renderer device)" : string.Empty));
                         hardwareNoFrameCount = 0;
                         return true;
                     }
@@ -488,6 +496,7 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
                 candidate.Open();
                 videoDecoder = candidate;
                 hardwareDecoderOpened = false;
+                rendererCannotImportSurfaces = false;
                 return;
             }
             catch (Exception)
@@ -922,7 +931,7 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
         CompleteFrameColorMetadata(frame);
         // 兼容的硬件表面直接排队，由渲染线程导入；其余情况保留回读路径。
         var hardwareSurface = options.EnableGpuPresentation && options.EnableHardwareSurfacePresentation
-            && HardwareVideoTexture.CanImport(frame);
+            && !rendererCannotImportSurfaces && HardwareVideoTexture.CanImport(frame);
         var presentationSource = hardwareSurface ? frame : GetSoftwareFrame(frame);
         // 滤镜后的帧来自系统内存，仍保留本轮解码方式的诊断状态。
         if (presentationPts is null)

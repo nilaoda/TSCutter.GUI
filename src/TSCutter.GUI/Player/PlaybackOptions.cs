@@ -41,4 +41,6 @@ public sealed record PlaybackOptions
     public double Volume { get; init; } = 1.0;
     /// <summary>优先硬件解码（VideoToolbox/D3D11VA），运行期失效自动回退软件。</summary>
     public bool PreferHardwareDecoding { get; init; }
+    /// <summary>硬件解码使用的显卡 Id；null 或显卡已移除时按系统默认选择。</summary>
+    public string? HardwareDecodingDevice { get; init; }
 }

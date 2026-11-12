@@ -149,6 +149,9 @@ public partial class PlaybackBenchmarkWindowViewModel : ViewModelBase, IModalDia
     public IReadOnlyList<BenchmarkDecoderChoice> DecoderChoices { get; } = [new(true), new(false)];
     public ObservableCollection<BenchmarkSizeChoice> SizeChoices { get; } = [];
 
+    /// <summary>硬件解码使用的设备 Id，与主窗口设置一致；null 表示自动选择。</summary>
+    internal string? HardwareDecodingDevice { get; set; }
+
     public PlaybackBenchmarkWindowViewModel(IDialogService dialogs)
     {
         this.dialogs = dialogs;
@@ -346,7 +349,7 @@ public partial class PlaybackBenchmarkWindowViewModel : ViewModelBase, IModalDia
             }
             operation.Token.ThrowIfCancellationRequested();
             var request = new PlaybackBenchmarkRequest(source, SelectedTrack, StartSeconds, SelectedSize.Size,
-                SelectedDecoder.Hardware, ToneMapping);
+                SelectedDecoder.Hardware, ToneMapping, HardwareDecodingDevice);
             var updates = new Progress<PlaybackBenchmarkProgress>(update =>
             {
                 if (closed || current != generation || !IsBusy)

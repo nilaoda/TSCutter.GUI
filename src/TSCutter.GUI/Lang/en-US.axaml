@@ -252,6 +252,10 @@
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize.Large">Large</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecoding">Prefer hardware decoding</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecodingTip">Available on Windows and macOS when a compatible device is present. Unsupported codecs automatically use software decoding.</x:String>
+    <x:String x:Key="String.Settings.HardwareDecodingDevice">Decoding device</x:String>
+    <x:String x:Key="String.Settings.HardwareDecodingDevice.Automatic">Automatic</x:String>
+    <x:String x:Key="String.Settings.HardwareDecodingDevice.Missing">Unavailable device (automatic)</x:String>
+    <x:String x:Key="String.Settings.HardwareDecodingDeviceTip">Graphics card used for hardware decoding in preview and playback.&#10;Automatic lets the system choose. Only Windows can pick a card; macOS always chooses the GPU itself.&#10;If the chosen card is removed, automatic selection is used; if it cannot decode the video, software decoding is used.&#10;Applies to videos opened and playback started afterwards.</x:String>
     <x:String x:Key="String.Settings.EnableSdrToneMapping">Default to HDR to SDR preview mapping</x:String>
     <x:String x:Key="String.Settings.EnableSdrToneMappingTip">Map HDR10/PQ, HLG and Dolby Vision Profile 5 to SDR by default. The status bar temporarily overrides this for the current file.</x:String>
     <x:String x:Key="String.Status.SdrToneMappingOn">SDR mapping: On</x:String>

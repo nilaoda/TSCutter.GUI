@@ -1605,7 +1605,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             {
                 prepared = new VideoInstance(project.Source.Path,
                     _configService.CurrentConfig.PreferHardwareDecoding, project.PreviewSelection,
-                    () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true);
+                    () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true)
+                {
+                    HardwareDecodingDevice = _configService.CurrentConfig.HardwareDecodingDevice
+                };
                 await prepared.InitVideoAsync();
                 if (project.Clips.Count > 0 && !prepared.CanClip)
                     throw new InvalidDataException("Clips require a supported TS, M2TS, MP4 or MKV source file.");
@@ -2564,7 +2567,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                     VideoPath,
                     preferHardwareDecodingForPreview,
                     enableSdrToneMapping: () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true,
-                    discInput: _discInput);
+                    discInput: _discInput)
+                {
+                    HardwareDecodingDevice = _configService.CurrentConfig.HardwareDecodingDevice
+                };
                 if (prepared is null)
                     await _videoInstance.InitVideoAsync();
                 _remuxExportSettings = null;

@@ -252,6 +252,10 @@
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize.Large">大</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecoding">优先使用硬件解码</x:String>
     <x:String x:Key="String.Settings.PreferHardwareDecodingTip">Windows 和 macOS 在设备支持时可用；不支持的编码会自动使用软件解码。</x:String>
+    <x:String x:Key="String.Settings.HardwareDecodingDevice">解码设备</x:String>
+    <x:String x:Key="String.Settings.HardwareDecodingDevice.Automatic">自动</x:String>
+    <x:String x:Key="String.Settings.HardwareDecodingDevice.Missing">设备不可用（自动选择）</x:String>
+    <x:String x:Key="String.Settings.HardwareDecodingDeviceTip">预览和播放进行硬件解码时使用的显卡。&#10;“自动”由系统选择。仅 Windows 可指定显卡，macOS 始终由系统选择 GPU。&#10;所选显卡被移除时改用自动选择；无法解码当前视频时改用软件解码。&#10;对之后打开的视频和开始的播放生效。</x:String>
     <x:String x:Key="String.Settings.EnableSdrToneMapping">默认启用 HDR 到 SDR 预览映射</x:String>
     <x:String x:Key="String.Settings.EnableSdrToneMappingTip">默认将 HDR10/PQ、HLG 和杜比视界 Profile 5 映射为 SDR。状态栏可临时切换当前文件的预览方式。</x:String>
     <x:String x:Key="String.Status.SdrToneMappingOn">SDR 映射：开</x:String>

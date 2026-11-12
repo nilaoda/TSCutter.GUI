@@ -23,7 +23,8 @@ public sealed record PlaybackBenchmarkSource(string FilePath, IReadOnlyList<Play
     double DurationSeconds, DiscInput? Disc);
 
 public sealed record PlaybackBenchmarkRequest(PlaybackBenchmarkSource Source, PlaybackBenchmarkTrack Track,
-    double StartSeconds, PixelSize OutputSize, bool PreferHardwareDecoding, bool EnableSdrToneMapping);
+    double StartSeconds, PixelSize OutputSize, bool PreferHardwareDecoding, bool EnableSdrToneMapping,
+    string? HardwareDecodingDevice = null);
 
 public sealed record PlaybackBenchmarkResult(PlaybackBenchmarkStage Stage, double FramesPerSecond,
     double SourceFrameRate, int FrameCount, double ElapsedSeconds, bool HardwareDecoding,

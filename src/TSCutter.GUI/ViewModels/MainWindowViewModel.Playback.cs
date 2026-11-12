@@ -333,6 +333,10 @@ public partial class MainWindowViewModel
         var instance = _videoInstance;
         if (instance is null || !CanTogglePlayback || IsPlaybackActive)
             return;
+        var hardwareDevice = _configService.CurrentConfig.HardwareDecodingDevice;
+        // 设备未变时继续复用暂停会话；换设备后在本次起播中重新创建解码器。
+        if (playbackSession is { } previous && previous.HardwareDecodingDevice != hardwareDevice)
+            StopPlaybackSession();
         using var cancellation = new CancellationTokenSource();
         playbackStartCancellation = cancellation;
         playbackStarting = true;
@@ -376,6 +380,7 @@ public partial class MainWindowViewModel
                     TsSyncOffset = instance.TsSyncOffset,
                     EnableSdrToneMapping = EnableSdrToneMapping, Volume = EffectivePreviewVolume,
                     PreferHardwareDecoding = preferHardwareDecodingForPreview,
+                    HardwareDecodingDevice = hardwareDevice,
                     MaxPresentWidth = targetSize.Width, MaxPresentHeight = targetSize.Height,
                 }, uiPost: null, cancellationToken: cancellation.Token, initialize: owner =>
                 {
