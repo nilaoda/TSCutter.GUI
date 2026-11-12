@@ -4,11 +4,16 @@ using TSCutter.GUI.FFmpeg;
 
 namespace TSCutter.GUI.Utils.Media;
 
-/// <summary>从 H.264/HEVC 包的首个 VCL NAL 读取随机访问类型，兼容 Annex B 和长度前缀格式。</summary>
+/// <summary>
+/// 从 H.264/HEVC 包的首个 VCL NAL 读取随机访问类型，兼容 Annex B 和长度前缀格式；
+/// MPEG-2 只识别帧内刷新的入口（见 <see cref="RecoveryPoint"/>）。
+/// </summary>
 internal static class KeyFrameTypeReader
 {
     /// <summary>
-    /// H.264 恢复点：解复用器按恢复点 SEI 标为关键帧，但首个条带是 P/B（非 IDR、非 I）。
+    /// 恢复点。H.264：解复用器按恢复点 SEI 标为关键帧，但首个条带是 P/B（非 IDR、非 I）。
+    /// MPEG-2：图像前重复了序列头，但图像是 P 帧；解复用器只把 I 帧标为关键帧，需由读取层补标（见
+    /// <see cref="InterruptibleInputFormatContext.Mpeg2RefreshPointStreamIndex"/>）。
     /// 逐行刷新（周期帧内刷新）的码流只有这种“关键帧”，单独从这里解码要经过若干秒画面才完整。
     /// </summary>
     internal const string RecoveryPoint = "RP";
@@ -34,6 +39,8 @@ internal static class KeyFrameTypeReader
 
     internal static string? Read(ReadOnlySpan<byte> packet, AVCodecID codec, int lengthSize = 0)
     {
+        if (codec == AVCodecID.AV_CODEC_ID_MPEG2VIDEO)
+            return IsMpeg2RefreshPoint(packet) ? RecoveryPoint : null;
         if (codec is not (AVCodecID.AV_CODEC_ID_H264 or AVCodecID.AV_CODEC_ID_HEVC)
             || lengthSize is < 0 or > 4)
             return null;
@@ -88,6 +95,29 @@ internal static class KeyFrameTypeReader
             }
         }
         return null;
+    }
+
+    /// <summary>
+    /// MPEG-2 帧内刷新入口：包内首个图像之前有序列头，而图像编码类型是 P。常规码流的序列头只出现在 I 帧前；
+    /// 部分广播回传编码器全程没有 I 帧，只在部分 P 帧前重复序列头和 GOP 头作为解码入口。
+    /// 只检查首个图像头之前的起始码，遇到条带即停止，不扫描图像数据。
+    /// </summary>
+    private static bool IsMpeg2RefreshPoint(ReadOnlySpan<byte> packet)
+    {
+        var sequenceHeader = false;
+        for (var start = FindStartCode(packet, 0); start >= 0 && start + 3 < packet.Length;
+             start = FindStartCode(packet, start + 4))
+        {
+            var code = packet[start + 3];
+            if (code == 0xB3)
+                sequenceHeader = true;
+            else if (code == 0x00)
+                // picture_header：10 位 temporal_reference 之后是 3 位 picture_coding_type，2 为 P。
+                return sequenceHeader && start + 5 < packet.Length && ((packet[start + 5] >> 3) & 7) == 2;
+            else if (code <= 0xAF)
+                return false;
+        }
+        return false;
     }
 
     /// <summary>读取 slice_header 的 first_mb_in_slice 与 slice_type，判断是否为 P/B/SP 条带。</summary>

@@ -25,6 +25,8 @@ public sealed record PlaybackOptions
     public double EstimatedKeyFrameIntervalSeconds { get; init; }
     /// <summary>预滚至少回退的秒数：逐行刷新码流从恢复点起需数秒才完整，来自导航预览的检测。</summary>
     public double MinimumPrerollSeconds { get; init; }
+    /// <summary>MPEG-2 帧内刷新：没有 I 帧，按导航预览的检测把带序列头的 P 帧补标为关键包。</summary>
+    public bool Mpeg2RefreshPoints { get; init; }
     /// <summary>停止播放的时间线秒数；null 表示播到文件尾。</summary>
     public double? EndSeconds { get; init; }
     /// <summary>与导航预览一致的节目/视频轨选择；null 表示默认视频轨。</summary>

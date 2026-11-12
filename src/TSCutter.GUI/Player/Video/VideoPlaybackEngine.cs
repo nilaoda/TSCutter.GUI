@@ -370,6 +370,9 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
         ReadOperation(() => { formatContext.LoadStreamInfo(); return true; });
         videoStream = PreviewStreamUtil.ResolveVideo(formatContext, options.StreamSelection);
         videoStreamIndex = videoStream.Index;
+        // 等待关键帧与追帧都按关键包判断；帧内刷新的 MPEG-2 须与导航一样补标入口包。
+        if (options.Mpeg2RefreshPoints && options.Disc is null && formatContext is InterruptibleInputFormatContext input)
+            input.Mpeg2RefreshPointStreamIndex = videoStreamIndex;
         timeBase = videoStream.TimeBase;
         if (timeBase.num <= 0 || timeBase.den <= 0)
             throw new InvalidOperationException("视频流缺少有效时间基，无法建立播放时间轴。");

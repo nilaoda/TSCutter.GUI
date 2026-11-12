@@ -85,6 +85,88 @@ public sealed class GradualRefreshTests
         }, CancellationToken.None);
     }
 
+    /// <summary>
+    /// MPEG-2 帧内刷新（杜比 E 回传源的结构）：全程没有 I 帧，解复用器一个关键包都不标，只在部分 P 帧前重复序列头。
+    /// 以前只把关键包送入解码器，打开即“解码失败”，视频不可预览。现在带序列头的 P 帧作为恢复点，
+    /// 按逐行刷新预滚：从入口单独解码画面不完整，跳转、导航和播放须先连续解码，结果才与从片头连续解码一致。
+    /// </summary>
+    [NativeMediaFact("frameaccurate")]
+    public async Task Mpeg2IntraRefreshUsesSequenceHeadersAsRecoveryPoints()
+    {
+        var path = Path.Combine(NativeTestEnvironment.FixtureDirectory("frameaccurate"), "mpeg2-refresh.ts");
+        using var headless = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await headless.Dispatch<bool>(async () =>
+        {
+            var reference = new List<(long Pts, TimeSpan Time, string Hash)>();
+            using (var scan = new VideoInstance(path))
+            {
+                await scan.InitVideoAsync();
+                Assert.True(scan.UsesMpeg2RefreshPoints);
+                Assert.True(scan.UsesGradualRefresh);
+                Assert.True(scan.CanBinaryClip);
+                Assert.Equal(1, scan.EstimatedKeyFrameIntervalSeconds, 3);
+                // MPEG-2 4:2:2 不能重新编码衔接（Codec），4:2:0 时为 GradualRefresh；都不提供智能剪辑。
+                Assert.NotEqual(FrameAccurateSupport.Supported, scan.FrameAccurateSupport);
+                while (await scan.DecodeNextSearchFrameAsync(0, 0, CancellationToken.None) is { } frame)
+                {
+                    Assert.Equal(KeyFrameTypeReader.RecoveryPoint, frame.KeyFrameType);
+                    reference.Add((frame.FramePts, frame.FrameTimestamp, Hash(frame)));
+                    Dispose(frame);
+                }
+            }
+            // 499 帧，每 25 帧一个入口。
+            Assert.Equal(20, reference.Count);
+            Assert.Equal(reference.Count, reference.Select(item => item.Hash).Distinct().Count());
+
+            using var video = new VideoInstance(path);
+            await video.InitVideoAsync();
+            // 打开后的首帧即第一个入口；片头的入口缺少参考帧，只核对位置。
+            var first = await video.DecodeNextFrameAsync(1);
+            Assert.Equal(reference[0].Pts, first.FramePts);
+            Dispose(first);
+            // 以下目标都在片头 12 秒之后，预滚从片中的入口开始。
+            foreach (var index in new[] { reference.Count - 2, 14 })
+            {
+                var frame = await video.DecodeKeyFrameAtPtsAsync(reference[index].Pts);
+                Assert.NotNull(frame);
+                Assert.Equal(reference[index].Pts, frame.FramePts);
+                Assert.Equal(reference[index].Hash, Hash(frame));
+                Dispose(frame);
+            }
+            var target = reference[^3];
+            // 按时间向后定位：与普通 TS 一样，正好落在关键帧时间时可能取到下一个关键帧。
+            var seeked = await video.DecodeAtTimeAsync(target.Time);
+            var landed = reference.FindIndex(item => item.Pts == seeked.FramePts);
+            Assert.InRange(landed, reference.Count - 3, reference.Count - 2);
+            Assert.Equal(reference[landed].Hash, Hash(seeked));
+            Dispose(seeked);
+            var previous = await video.DecodeNextFrameAsync(-1);
+            Assert.Equal(reference[landed - 1].Pts, previous.FramePts);
+            Assert.Equal(reference[landed - 1].Hash, Hash(previous));
+            Dispose(previous);
+
+            // 播放同样按入口包等待关键帧：须由预览的检测开启补标，否则一直等不到画面。
+            var presented = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+            await using (var session = await PlaybackSession.StartAsync(new PlaybackOptions
+                         {
+                             FilePath = path, StartSeconds = target.Time.TotalSeconds,
+                             EndSeconds = target.Time.TotalSeconds + 1,
+                             TimelineOriginSeconds = video.TimelineOriginSeconds,
+                             EstimatedKeyFrameIntervalSeconds = video.EstimatedKeyFrameIntervalSeconds,
+                             MinimumPrerollSeconds = video.RecoveryPrerollSeconds,
+                             Mpeg2RefreshPoints = video.UsesMpeg2RefreshPoints,
+                             TsSyncOffset = video.TsSyncOffset,
+                         }, uiPost: action => action(), initialize: owner => owner.FramePresented += result =>
+                         {
+                             if (result.FramePts == target.Pts)
+                                 presented.TrySetResult(Hash(result));
+                             Dispose(result);
+                         }))
+                Assert.Equal(target.Hash, await presented.Task.WaitAsync(TimeSpan.FromSeconds(15)));
+            return true;
+        }, CancellationToken.None);
+    }
+
     private static string Hash(DecodeResult result)
     {
         var bitmap = result.BitmapLease?.Bitmap ?? result.Bitmap;

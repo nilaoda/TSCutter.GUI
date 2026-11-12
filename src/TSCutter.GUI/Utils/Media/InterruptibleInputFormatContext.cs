@@ -43,8 +43,32 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
         }
     }
 
-    public override int ReadPacket(Packet packet) =>
-        DvdTimeline is { } timeline ? timeline.Read(this, packet) : base.ReadPacket(packet);
+    /// <summary>
+    /// MPEG-2 帧内刷新码流的视频流索引，-1 表示不处理。这种码流没有 I 帧，解复用器一个关键包都不标；
+    /// 设置后把带序列头的 P 帧（<see cref="KeyFrameTypeReader.RecoveryPoint"/>）补标为关键包，
+    /// 定位、导航、播放和字节剪辑沿用关键帧流程，入口画面仍需预滚才完整。由检测到这种码流的调用方设置。
+    /// </summary>
+    public int Mpeg2RefreshPointStreamIndex { get; set; } = -1;
+
+    public override int ReadPacket(Packet packet)
+    {
+        var result = DvdTimeline is { } timeline ? timeline.Read(this, packet) : base.ReadPacket(packet);
+        if (result >= 0 && Mpeg2RefreshPointStreamIndex >= 0 && packet.StreamIndex == Mpeg2RefreshPointStreamIndex)
+            MarkMpeg2RefreshPoint(packet);
+        return result;
+    }
+
+    private static void MarkMpeg2RefreshPoint(Packet packet)
+    {
+        AVPacket* raw = packet;
+        if ((raw->flags & AV_PKT_FLAG_KEY) != 0 || raw->data == null || raw->size <= 0)
+            return;
+        if (KeyFrameTypeReader.Read(new ReadOnlySpan<byte>(raw->data, raw->size), AVCodecID.AV_CODEC_ID_MPEG2VIDEO)
+            == KeyFrameTypeReader.RecoveryPoint)
+            raw->flags |= AV_PKT_FLAG_KEY;
+    }
+
+    private const int AV_PKT_FLAG_KEY = 0x0001;
 
     public override void SeekFrame(long timestamp, int streamIndex, AVSEEK_FLAG flags = AVSEEK_FLAG.Backward)
     {

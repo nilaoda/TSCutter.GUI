@@ -376,6 +376,7 @@ public partial class MainWindowViewModel
                     AudioDelaySeconds = EffectiveAudioDelayMs / 1000.0,
                     EstimatedKeyFrameIntervalSeconds = instance.EstimatedKeyFrameIntervalSeconds,
                     MinimumPrerollSeconds = instance.RecoveryPrerollSeconds,
+                    Mpeg2RefreshPoints = instance.UsesMpeg2RefreshPoints,
                     StreamSelection = instance.StreamSelection, AudioSelection = SelectedPreviewAudioTrack?.Selection,
                     TsSyncOffset = instance.TsSyncOffset,
                     EnableSdrToneMapping = EnableSdrToneMapping, Volume = EffectivePreviewVolume,

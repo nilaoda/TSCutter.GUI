@@ -153,6 +153,7 @@ def main():
     without_channel_layout(root / "pcm-layout.mov", root / "pcm-no-layout.mov")
 
     gradual_refresh(ffmpeg, root)
+    mpeg2_refresh(ffmpeg, root)
 
     for path in sorted(root.iterdir()):
         print(f"{path.name}: {path.stat().st_size} bytes")
@@ -427,6 +428,53 @@ def gradual_refresh(ffmpeg, root):
                     output += b"\x00\x00\x00\x01" + parameter_set
     raw.write_bytes(bytes(output))
     ffmpeg("-f", "h264", "-framerate", 25, "-i", raw, "-c", "copy", "-output_ts_offset", 10, root / "gradual-refresh.ts")
+    raw.unlink()
+
+
+def mpeg2_refresh(ffmpeg, root):
+    """MPEG-2 帧内刷新：全程没有 I 帧，只在部分 P 帧前重复序列头和 GOP 头，附 SMPTE 302M 音轨。
+
+    与杜比 E 回传源的结构相同：4:2:2 视频、MP2 与 302M（BSSD 注册描述符）音轨，解复用器一个关键包都不标。
+    去掉编码器开头的 I 帧，每 25 帧在 P 帧前插入原序列头、序列扩展与 GOP 头。
+    FFmpeg 的 MPEG-2 编码器不支持帧内刷新：画面用逐帧独立的随机噪声，并关闭场景切换检测，
+    帧间预测毫无收益，编码器把 P 帧的宏块都编成帧内块，从任一入口解码几帧后即与连续解码一致。
+    逐行画面，播放去隔行后仍可与预览比对；302M 码率高，只保留开头 4 秒。
+    """
+    raw = root / "mpeg2-refresh.m2v"
+    ffmpeg("-f", "lavfi", "-i", "nullsrc=size=160x90:rate=25:duration=20",
+           "-vf", "format=yuv422p,geq=lum='random(1)*255':cb='random(2)*255':cr='random(3)*255'",
+           "-c:v", "mpeg2video", "-q:v", 31, "-g", 900, "-bf", 0, "-sc_threshold", 1000000000,
+           "-f", "mpeg2video", raw)
+    data = raw.read_bytes()
+    starts = []
+    index = data.find(b"\x00\x00\x01")
+    while index >= 0:
+        starts.append(index)
+        index = data.find(b"\x00\x00\x01", index + 3)
+    pictures = [start for start in starts if data[start + 3] == 0]
+    # 开头的序列头、扩展与 GOP 头整体复用；其余图像之间不应再有序列头。
+    header = data[:pictures[0]]
+    assert header.startswith(b"\x00\x00\x01\xb3") and b"\x00\x00\x01\xb8" in header
+    assert not any(data[start + 3] in (0xB3, 0xB8) for start in starts if start > pictures[0])
+    end = data.rfind(b"\x00\x00\x01\xb7")
+    bounds = pictures + [end if end > pictures[-1] else len(data)]
+    units = [data[bounds[number]:bounds[number + 1]] for number in range(len(pictures))]
+    # picture_coding_type：首帧为 I，其余必须都是 P。
+    assert (units[0][5] >> 3) & 7 == 1 and all((unit[5] >> 3) & 7 == 2 for unit in units[1:])
+    output = bytearray()
+    for number, unit in enumerate(units[1:]):
+        if number % 25 == 0:
+            output += header
+        output += unit
+    output += b"\x00\x00\x01\xb7"
+    raw.write_bytes(bytes(output))
+    # 裸流没有时间戳，也没有关键帧：生成时间戳，并保留首个关键帧之前的包。
+    ffmpeg("-fflags", "+genpts", "-f", "mpegvideo", "-framerate", 25, "-i", raw,
+           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=20",
+           "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000:duration=4",
+           "-map", 0, "-map", 1, "-map", 2, "-c:v", "copy", "-copyinkf",
+           "-c:a:0", "mp2", "-b:a:0", "192k", "-c:a:1", "s302m", "-ac", 2, "-strict", "-2",
+           "-output_ts_offset", 10, root / "mpeg2-refresh.ts")
     raw.unlink()
 
 
