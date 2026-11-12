@@ -109,6 +109,7 @@ public sealed class PlaybackSession : IAsyncDisposable
     public PlaybackState State => state;
     public PlaybackClock Clock => clock;
     internal double? EndSeconds => options.EndSeconds;
+    internal string? HardwareDecodingDevice => options.HardwareDecodingDevice;
     internal double LastPresentedSeconds => Interlocked.CompareExchange(ref lastPresentedSeconds, 0, 0);
     public PlaybackAudioStatus AudioStatus { get; private set; } = PlaybackAudioStatus.Normal;
     public bool IsHardwareDecodingAware => engine.IsHardwareDecoding;

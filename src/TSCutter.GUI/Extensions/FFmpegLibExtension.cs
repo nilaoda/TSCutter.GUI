@@ -65,12 +65,12 @@ public static unsafe class FFmpegLibExtension
     }
 
     /// <summary>
-    /// 创建硬件设备并将其所有权交给解码器上下文。
+    /// 创建硬件设备并将其所有权交给解码器上下文。device 为 FFmpeg 设备参数（如 D3D11VA 的显卡序号），null 表示由系统选择。
     /// </summary>
-    public static void AttachHardwareDevice(this CodecContext codecContext, AVHWDeviceType deviceType)
+    public static void AttachHardwareDevice(this CodecContext codecContext, AVHWDeviceType deviceType, string? device = null)
     {
         AVBufferRef* deviceContext = null;
-        av_hwdevice_ctx_create(&deviceContext, deviceType, null, null, 0)
+        av_hwdevice_ctx_create(&deviceContext, deviceType, device, null, 0)
             .ThrowIfError($"Failed to create {deviceType} hardware device.");
 
         if (deviceContext == null)

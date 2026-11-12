@@ -17,6 +17,7 @@ internal sealed unsafe class WindowsVideoTexture : IDisposable
 {
     private static readonly object DeviceSync = new();
     private static nint renderDevice, renderDisplay;
+    private static long renderAdapterLuid;
     private static int available;
     private static int failureReported;
     private static int retirementFailed;
@@ -29,6 +30,8 @@ internal sealed unsafe class WindowsVideoTexture : IDisposable
     private bool disposed;
 
     internal static bool IsAvailable => Volatile.Read(ref available) != 0;
+    /// <summary>渲染设备所在显卡的 LUID；尚未探测到渲染设备时为 0。</summary>
+    internal static long RendererAdapterLuid => Volatile.Read(ref renderAdapterLuid);
     internal static string? Capability { get; private set; }
 
     internal static void Probe(GRContext? context)
@@ -70,7 +73,8 @@ internal sealed unsafe class WindowsVideoTexture : IDisposable
                 WindowsD3D11.Release(renderDevice);
                 renderDevice = d3d;
                 renderDisplay = display;
-                Capability = $"{Text(QueryString(display, 0x3054))}; {WindowsD3D11.Adapter(d3d)}";
+                Capability = $"{Text(QueryString(display, 0x3054))}; {WindowsD3D11.Adapter(d3d, out var luid)}";
+                Volatile.Write(ref renderAdapterLuid, luid);
                 Volatile.Write(ref available, 1);
                 Volatile.Write(ref failureReported, 0);
                 Console.WriteLine("Windows video interop: " + Capability);

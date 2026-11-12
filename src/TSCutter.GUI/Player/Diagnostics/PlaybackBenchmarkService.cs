@@ -64,6 +64,7 @@ internal static class PlaybackBenchmarkService
             FilePath = request.Source.FilePath, Disc = request.Source.Disc, StreamSelection = request.Track.Selection,
             StartSeconds = request.StartSeconds, TimelineOriginSeconds = request.Track.OriginSeconds,
             EstimatedKeyFrameIntervalSeconds = 1, PreferHardwareDecoding = request.PreferHardwareDecoding,
+            HardwareDecodingDevice = request.HardwareDecodingDevice,
             EnableSdrToneMapping = request.EnableSdrToneMapping, Volume = 0,
             MaxPresentWidth = request.OutputSize.Width, MaxPresentHeight = request.OutputSize.Height,
             EnableGpuPresentation = present is not null, RenderAtRequestedSize = true,

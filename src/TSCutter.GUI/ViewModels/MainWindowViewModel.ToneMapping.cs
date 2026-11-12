@@ -89,7 +89,10 @@ public partial class MainWindowViewModel
             var targetPts = _displayedFramePts;
             candidate = new VideoInstance(VideoPath, targetHardware, _activePreviewSelection,
                 () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true,
-                discInput: previous.Disc);
+                discInput: previous.Disc)
+            {
+                HardwareDecodingDevice = _configService.CurrentConfig.HardwareDecodingDevice
+            };
             await candidate.InitVideoAsync();
             result = await candidate.DecodePreviewFrameAtPtsAsync(targetPts);
             if (result is null || result.FramePts != targetPts)
