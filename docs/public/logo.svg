@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256"
+     shape-rendering="geometricPrecision" role="img" aria-labelledby="title description">
+  <title id="title">TSCutter.GUI 程序图标</title>
+  <desc id="description">像素风格的剪刀与胶片图标，包含方形台阶、浅色描边、透明背景及手柄孔洞。</desc>
+  <defs>
+    <linearGradient id="film-frame" x1="0" y1="128" x2="0" y2="214" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#53545b" />
+      <stop offset="1" stop-color="#52535a" />
+    </linearGradient>
+    <linearGradient id="film-image" x1="0" y1="148" x2="0" y2="195" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#34c4e8" />
+      <stop offset="1" stop-color="#3cc9ed" />
+    </linearGradient>
+    <linearGradient id="lower-perforation" x1="0" y1="200" x2="0" y2="208" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#fff0b7" />
+      <stop offset="1" stop-color="#f8e5a6" />
+    </linearGradient>
+    <clipPath id="film-images">
+      <path d="M33 148h60v47H33z M101 148h61v47h-61z M170 148h61v47h-61z" />
+    </clipPath>
+    <clipPath id="shadow-panel"><path d="M170 148H231V195H170Z" /></clipPath>
+    <clipPath id="above-film"><path d="M0 0H256V128H0Z" /></clipPath>
+  </defs>
+
+  <!-- 胶片：独立保留边框、画格和上下两排齿孔，便于以后调整输出尺寸。 -->
+  <g id="film">
+    <path d="M25 128h214v86H25z" fill="url(#film-frame)" stroke="#dedede" stroke-width="1.5" />
+    <path d="M33 148h60v47H33z M101 148h61v47h-61z M170 148h61v47h-61z"
+          fill="url(#film-image)" stroke="#327f91" stroke-width="1.5" />
+    <path d="M31 135.5h8v7.5h-8z M47.25 135.5h8v7.5h-8z M63.5 135.5h8v7.5h-8z
+             M79.75 135.5h8v7.5h-8z M96 135.5h8v7.5h-8z M112.25 135.5h8v7.5h-8z
+             M128.5 135.5h8v7.5h-8z M144.75 135.5h8v7.5h-8z M161 135.5h8v7.5h-8z
+             M177.25 135.5h8v7.5h-8z M193.5 135.5h8v7.5h-8z M209.75 135.5h8v7.5h-8z
+             M226 135.5h8v7.5h-8z" fill="#fafafa" />
+    <path d="M31 200h8v8h-8z M47.25 200h8v8h-8z M63.5 200h8v8h-8z
+             M79.75 200h8v8h-8z M96 200h8v8h-8z M112.25 200h8v8h-8z
+             M128.5 200h8v8h-8z M144.75 200h8v8h-8z M161 200h8v8h-8z
+             M177.25 200h8v8h-8z M193.5 200h8v8h-8z M209.75 200h8v8h-8z
+             M226 200h8v8h-8z" fill="url(#lower-perforation)" />
+    <!-- 刀刃投影裁到右侧画格。 -->
+    <path id="blade-shadow" d="M171 150V151.5H173V155H177V158.5H180V162H183V165.5H186V169H189V172.5H193V176H196V179.5H199V183H202V186.5H206V190H209V193.5H211V195H197V193.5H195V190H191V186.5H188V183H184V179.5H181V176H177V172.5H174V169H170V165.5H167V162H163V158.5H160V155H156V151.5H154V150Z" fill="#259fbf" clip-path="url(#shadow-panel)" />
+  </g>
+
+  <!-- 胶片上方的剪刀外描边。 -->
+  <g clip-path="url(#above-film)" stroke-linejoin="miter">
+    <path fill="#f3f3ef" stroke="#f3f3ef" stroke-width="2" fill-rule="evenodd"
+          d="M46 129H77V127H83V123H89V121H100V127H106V133H112V139H100V141H92V147H87V170H81V177H76V183H70V188H46V183H40V177H35V171H29V149H35V142H40V136H46Z
+             M48 140H72V148H78V171H71V177H46V171H39V148H46V142H48Z" />
+    <path fill="#f3f3ef" stroke="#f3f3ef" stroke-width="2" fill-rule="evenodd"
+          d="M94 94H106V101H118V107H124V113H130V123H136V129H143V135H148V141H153V147H159V153H164V159H169V165H175V171H180V177H185V183H190V189H196V193V198H174V195H168V193V189H162V183H156V177H150V171H143V165H137V159H131V153H124V147H118V141H112V135H106V129H100V123H94V113H88V107H82V101H88V95H94Z" />
+  </g>
+
+  <!-- 剪刀的像素台阶使用水平、垂直路径。 -->
+  <g id="scissors" stroke-linejoin="miter">
+    <path id="upper-handle" fill="#30302e" fill-rule="evenodd" stroke="#f3f3ef" stroke-width="2"
+          d="M55 39H80V45H89V54H95V85H101V91H107V97H113V103H119V109H125V115H131V121H125V127H113V121H107V115H101V109H95V103H83V97H76V95H55V89H45V83H39V55H45V45H55Z
+             M56 50H78V56H85V77H79V84H56V78H49V56H56Z" />
+
+    <path id="upper-blade-outline" fill="#30302e" stroke="#f3f3ef" stroke-width="2"
+          d="M167 43H197V53H190V59H185V65H179V71H174V77H168V83H163V89H157V95H152V101H146V107H141V113H135V119H130V125H96V119H101V113H107V107H112V101H118V95H123V89H129V83H134V77H140V71H145V65H151V59H156V53H162V47H167Z" />
+    <path id="upper-blade" fill="#818286"
+          d="M168 50H191V53H185V59H180V65H174V71H169V77H163V83H158V89H152V95H147V101H141V107H136V113H130V119H125V125H101V119H106V113H112V107H117V101H123V95H128V89H134V83H139V77H145V71H150V65H156V59H161V53H168Z" />
+
+    <path id="lower-handle" fill="#30302e" fill-rule="evenodd" stroke="#f3f3ef" stroke-width="1.5" stroke-opacity="0.8"
+          d="M46 129H77V127H83V123H89V121H100V127H106V133H112V139H100V141H92V147H87V170H81V177H76V183H70V188H46V183H40V177H35V171H29V149H35V142H40V136H46Z
+             M48 140H72V148H78V171H71V177H46V171H39V148H46V142H48Z" />
+
+    <path id="lower-blade-outline" fill="#30302e"
+          d="M94 94H106V101H118V107H124V113H130V123H136V129H143V135H148V141H153V147H159V153H164V159H169V165H175V171H180V177H185V183H190V189H196V193V198H174V195H168V193V189H162V183H156V177H150V171H143V165H137V159H131V153H124V147H118V141H112V135H106V129H100V123H94V113H88V107H82V101H88V95H94Z" />
+    <path id="lower-blade" fill="#d9d9d9"
+          d="M94 95H100V101H110V107H118V113H124V123H130V129H137V135H142V141H147V147H153V153H158V159H163V165H169V171H174V177H179V183H184V189H190V193H174V189H168V183H162V177H156V171H149V165H143V159H137V153H130V147H124V141H118V135H112V129H106V123H100V113H94V107H88V101H94Z" />
+    <path id="handle-joint" d="M89 123H105V133H99V139H94V134H89Z" fill="#85868a" />
+    <path id="pivot" d="M109 115H118V125H109Z" fill="#73767b" />
+  </g>
+</svg>

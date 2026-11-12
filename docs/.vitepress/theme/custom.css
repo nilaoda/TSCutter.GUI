@@ -1,0 +1,66 @@
+:root {
+  --vp-c-brand-1: #2f6fd1;
+  --vp-c-brand-2: #3c7fe4;
+  --vp-c-brand-3: #2a63bd;
+  --vp-c-brand-soft: rgba(47, 111, 209, 0.14);
+  --vp-home-hero-name-color: transparent;
+  --vp-home-hero-name-background: linear-gradient(120deg, #2f6fd1 20%, #e0752d);
+  --vp-home-hero-image-background-image: linear-gradient(-45deg, rgba(47, 111, 209, 0.45) 50%, rgba(224, 117, 45, 0.4) 50%);
+  --vp-home-hero-image-filter: blur(56px);
+}
+
+.dark {
+  --vp-c-brand-1: #6ea2f0;
+  --vp-c-brand-2: #5b92e6;
+  --vp-c-brand-3: #4a80d6;
+  --vp-c-brand-soft: rgba(110, 162, 240, 0.16);
+}
+
+.screenshot {
+  margin: 24px 0;
+}
+
+.screenshot img {
+  width: 100%;
+  height: auto;
+  border-radius: 8px;
+  box-shadow: var(--vp-shadow-3);
+}
+
+.screenshot-dark,
+.dark .screenshot-light {
+  display: none;
+}
+
+.dark .screenshot-dark {
+  display: block;
+}
+
+/* 首页大图下方的截图区域 */
+.home-showcase {
+  max-width: 1152px;
+  margin: 0 auto;
+  padding: 0 24px 48px;
+}
+
+@media (min-width: 640px) {
+  .home-showcase {
+    padding: 0 48px 64px;
+  }
+}
+
+@media (min-width: 960px) {
+  .home-showcase {
+    padding: 0 64px 64px;
+  }
+}
+
+/* 文档页底部的 AI 生成说明 */
+.site-notice {
+  margin: 0 0 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--vp-c-divider);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--vp-c-text-3);
+}
