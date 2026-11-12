@@ -35,7 +35,7 @@ public partial class MainWindowViewModel
             RequestStripWaveform();
     }
 
-    // 范围取导航条显示的画面：从第一张到最后一张之后一段，以当前位置为中心。
+    // 范围取导航条显示的画面：从第一张到最后一张之后一段，当前位置只决定读取优先级。
     private void RequestStripWaveform()
     {
         if (!KeyFrameStripWaveform.IsAvailable)

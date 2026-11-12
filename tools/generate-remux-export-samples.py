@@ -127,6 +127,11 @@ def main():
     write_pgs_sample(root / "bitmap.sup")
     ffmpeg("-copyts", "-i", root / "multi.mp4", "-i", root / "bitmap.sup",
            "-map", "0:v:0", "-map", "0:a:0", "-map", "1:s:0", "-c", "copy", root / "bitmap.mkv")
+    # 超过 30 秒的音频，覆盖片头、片中和片尾的完整可视波形范围。
+    ffmpeg("-f", "lavfi", "-i", "color=c=black:s=128x72:r=1:d=40",
+           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=40",
+           "-c:v", "libx264", "-preset", "ultrafast", "-g", 1,
+           "-c:a", "aac", "-b:a", "64k", root / "waveform.mp4")
     manifest.write_text(json.dumps({"formatVersion": 1}, indent=2) + "\n", encoding="utf-8")
     print(root)
 
