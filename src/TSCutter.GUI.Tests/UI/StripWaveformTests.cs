@@ -6,12 +6,14 @@ using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.Avalonia;
 using Splat;
 using TSCutter.GUI.Controls;
+using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Services.Preview;
 using TSCutter.GUI.Tests.Editing;
 using TSCutter.GUI.Tests.FFmpeg;
+using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Application;
 using TSCutter.GUI.ViewModels.Preview;
@@ -36,6 +38,58 @@ public sealed class StripWaveformTests
         Assert.Equal(0.5f, sound);
         Assert.False(waveform.TryGetPeak(1.280, 1.302, out _));
         Assert.False(waveform.TryGetPeak(0.990, 1.010, out _));
+    }
+
+    [NativeMediaTheory("remux")]
+    [InlineData(0)]
+    [InlineData(20)]
+    [InlineData(39)]
+    public async Task FullVisibleWaveformLoadsRegardlessOfTheCurrentPosition(double center)
+    {
+        var path = Path.Combine(NativeTestEnvironment.FixtureDirectory("remux"), "waveform.mp4");
+        Assert.True(File.Exists(path), "缺少 waveform.mp4；请重新生成 remux 合成素材。");
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            using var input = FormatContext.OpenInputUrl(path);
+            input.LoadStreamInfo();
+            var video = input.GetVideoStream();
+            var selection = PreviewStreamUtil.GetSelection(input, video, null);
+            var audio = Assert.Single(PreviewStreamUtil.CreateAudioOptions(input, selection));
+            var waveform = new StripWaveformViewModel();
+            waveform.SetSource(new AudioWaveformSource(path, null, -1, selection, audio.Selection, 0));
+            try
+            {
+                waveform.Request(0, 20, 0);
+                await waveform.IdleTask;
+                Dispatcher.UIThread.RunJobs();
+                // 回到已缓存的窗口时，另一侧尚未完成的读取必须取消。
+                waveform.Request(20, 40, 30);
+                var cancellation = (CancellationTokenSource)typeof(StripWaveformViewModel)
+                    .GetField("active", BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(waveform)!;
+                waveform.Request(0, 20, 0);
+                Assert.True(cancellation.IsCancellationRequested);
+                await waveform.IdleTask;
+                Dispatcher.UIThread.RunJobs();
+
+                waveform.Request(0, 40, center);
+                await waveform.IdleTask;
+                Dispatcher.UIThread.RunJobs();
+                foreach (var second in new[] { 0.1, 15.1, 30.1, 39.1 })
+                {
+                    Assert.True(waveform.TryGetPeak(second, second + 0.1, out var peak), $"{center}: {second}");
+                    Assert.InRange(peak, 0.05, 0.2);
+                }
+                Assert.False(waveform.TryGetPeak(40, 40.1, out _));
+            }
+            finally
+            {
+                waveform.SetSource(null);
+                await waveform.IdleTask;
+                Dispatcher.UIThread.RunJobs();
+            }
+            return true;
+        }, CancellationToken.None);
     }
 
     [NativeMediaFact("frameaccurate")]

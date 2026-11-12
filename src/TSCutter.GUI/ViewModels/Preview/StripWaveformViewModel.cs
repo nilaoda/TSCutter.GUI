@@ -10,14 +10,14 @@ using TSCutter.GUI.Services.Preview;
 namespace TSCutter.GUI.ViewModels.Preview;
 
 /// <summary>
-/// 导航条下方的音频波形：只读取导航条可见的时间范围（以当前位置为中心，最多 <see cref="MaxSpanSeconds"/> 秒），
+/// 导航条下方的音频波形：读取导航条可见的完整时间范围，每段最多 <see cref="ReadChunkSeconds"/> 秒，
 /// 从当前位置起逐秒读取，按秒缓存峰值；后台只保留一个读取任务，范围变化时取消旧任务。
 /// 音轨不能解码时 <see cref="IsAvailable"/> 为 false，整条波形不显示。
 /// </summary>
 public sealed class StripWaveformViewModel : ObservableObject
 {
-    internal const double MaxSpanSeconds = 30;
-    // 每秒峰值 4 KB，缓存约十分钟。
+    private const int ReadChunkSeconds = 30;
+    // 每秒峰值 4 KB，保留约十分钟的历史缓存；当前可见范围在移出窗口前不淘汰。
     private const int CacheSeconds = 600;
 
     private readonly Dictionary<int, float[]> cache = [];
@@ -28,6 +28,7 @@ public sealed class StripWaveformViewModel : ObservableObject
     private long generation;
     private CancellationTokenSource? active;
     private (int First, int End) activeRange = (0, 0);
+    private (int First, int End) visibleRange = (0, 0);
     private Task worker = Task.CompletedTask;
     private AudioWaveformReader? reader;
 
@@ -63,6 +64,7 @@ public sealed class StripWaveformViewModel : ObservableObject
         cache.Clear();
         cacheOrder.Clear();
         cacheNodes.Clear();
+        visibleRange = (0, 0);
         OnPropertyChanged(nameof(IsAvailable));
         BumpVersion();
     }
@@ -76,13 +78,22 @@ public sealed class StripWaveformViewModel : ObservableObject
         start -= OffsetSeconds;
         end -= OffsetSeconds;
         center -= OffsetSeconds;
-        start = Math.Max(Math.Max(0, start), center - MaxSpanSeconds / 2);
-        end = Math.Min(end, center + MaxSpanSeconds / 2);
+        start = Math.Max(0, start);
+        if (end <= start)
+            return;
         var first = (int)Math.Floor(start);
         var last = (int)Math.Ceiling(end);
+        visibleRange = (first, last);
+        TrimCache();
         var missing = Enumerable.Range(first, Math.Max(0, last - first)).Where(second => !cache.ContainsKey(second))
             .ToArray();
-        if (missing.Length == 0 || active is { IsCancellationRequested: false }
+        if (missing.Length == 0)
+        {
+            // 新窗口已经全部缓存，停止旧窗口尚未完成的读取。
+            Cancel();
+            return;
+        }
+        if (active is { IsCancellationRequested: false }
             && missing.All(second => second >= activeRange.First && second < activeRange.End))
             return;
         Cancel();
@@ -155,7 +166,7 @@ public sealed class StripWaveformViewModel : ObservableObject
 
     /// <summary>
     /// 读取顺序：把缺少的秒合并成连续段并在当前位置处断开，先读当前位置及之后的段，再由近及远读之前的段，
-    /// 当前画面附近的波形最先出现；每段只需一次定位。
+    /// 当前画面附近的波形最先出现；每段不超过 <see cref="ReadChunkSeconds"/> 秒，只需一次定位。
     /// </summary>
     private static IReadOnlyList<(int First, int End)> Runs(IEnumerable<int> seconds, int centerSecond)
     {
@@ -164,7 +175,8 @@ public sealed class StripWaveformViewModel : ObservableObject
         for (var i = 0; i < sorted.Length;)
         {
             var j = i;
-            while (j + 1 < sorted.Length && sorted[j + 1] == sorted[j] + 1 && sorted[j + 1] != centerSecond)
+            while (j + 1 < sorted.Length && sorted[j + 1] == sorted[j] + 1 && sorted[j + 1] != centerSecond
+                   && sorted[j + 1] - sorted[i] < ReadChunkSeconds)
                 j++;
             runs.Add((sorted[i], sorted[j] + 1));
             i = j + 1;
@@ -192,11 +204,23 @@ public sealed class StripWaveformViewModel : ObservableObject
             cacheOrder.Remove(existing);
         cache[second] = peaks;
         cacheNodes[second] = cacheOrder.AddLast(second);
-        while (cache.Count > CacheSeconds && cacheOrder.First is { } oldest)
+        TrimCache();
+    }
+
+    private void TrimCache()
+    {
+        var limit = Math.Max(CacheSeconds, visibleRange.End - visibleRange.First);
+        var oldest = cacheOrder.First;
+        while (cache.Count > limit && oldest is not null)
         {
-            cacheOrder.RemoveFirst();
-            cacheNodes.Remove(oldest.Value);
-            cache.Remove(oldest.Value);
+            var next = oldest.Next;
+            if (oldest.Value < visibleRange.First || oldest.Value >= visibleRange.End)
+            {
+                cacheOrder.Remove(oldest);
+                cacheNodes.Remove(oldest.Value);
+                cache.Remove(oldest.Value);
+            }
+            oldest = next;
         }
     }
 

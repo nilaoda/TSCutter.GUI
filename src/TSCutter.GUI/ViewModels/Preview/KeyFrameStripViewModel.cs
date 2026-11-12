@@ -306,7 +306,14 @@ public sealed class KeyFrameStripViewModel : ObservableObject
             frame => Receive(frame, generation), token,
             range => PublishProgress(range, request, generation, token), request.Count);
         if (IsCurrent(request, generation, token))
+        {
             PublishProgress(range, request, generation, token);
+            // 扫描窗口以新目标居中，界面可能仍沿用之前的窗口锚点，边缘因此还差一张。
+            // 按实际显示的窗口补齐，保留窗口内移动时只切换高亮的行为。
+            if (Items.FirstOrDefault(item => item.IsCurrent && !item.IsPlaceholder) is { } current &&
+                windowAnchorPts != current.Pts && Items.Any(item => item.IsPlaceholder))
+                await FillEdgesAsync(request, current.Pts, generation, token);
+        }
     }
 
     private void PublishProgress(KeyFrameStripRange range, Request request, long generation, CancellationToken token)

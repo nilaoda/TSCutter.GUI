@@ -626,8 +626,10 @@ public sealed class KeyFrameStripTests
         }, CancellationToken.None);
     }
 
-    [Fact]
-    public async Task PartialLeftEdgeReloadsOneWindowAndReusesCachedPictures()
+    [Theory]
+    [InlineData(10)]
+    [InlineData(11)]
+    public async Task PartialLeftEdgeReloadsOneWindowAndReusesCachedPictures(int target)
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
         await session.Dispatch<bool>(async () =>
@@ -640,12 +642,15 @@ public sealed class KeyFrameStripTests
                 vm.RequestAt(10, immediate: true);
                 await vm.IdleTask;
                 Assert.Equal(4, vm.Items.Count(item => item.IsPlaceholder));
-                var current = vm.Items.Single(item => item.IsCurrent);
+                var current = vm.Items.Single(item => item.Pts == target);
                 fake.StartAtTarget = false;
-                vm.RequestAt(10, immediate: true, currentPts: 10);
+                vm.RequestAt(target, immediate: true, currentPts: target);
                 await vm.IdleTask;
-                Assert.Equal(new double[] { 10, 10 }, fake.Targets);
-                Assert.Empty(fake.NeighborRequests);
+                Assert.Equal(new double[] { 10, target }, fake.Targets);
+                if (target == 10)
+                    Assert.Empty(fake.NeighborRequests);
+                else
+                    Assert.Equal((7L, -1), Assert.Single(fake.NeighborRequests));
                 Assert.Equal(Enumerable.Range(6, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
                 Assert.Same(current.Bitmap, vm.Items.Single(item => item.IsCurrent).Bitmap);
                 Assert.Equal(1, fake.MaximumConcurrency);
