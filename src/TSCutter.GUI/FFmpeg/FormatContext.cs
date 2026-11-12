@@ -34,6 +34,9 @@ public unsafe class FormatContext : SafeHandle
     public static FormatContext OpenInputUrl(string path)
         => Utils.Media.InterruptibleInputFormatContext.Open(path, static () => false);
 
+    /// <summary>探测流参数之后、建立流列表之前调用，供子类补全解复用器没有给出的参数。</summary>
+    protected virtual void CompleteStreamInfo() { }
+
     public void LoadStreamInfo()
     {
         // 纯二进制剪辑可能从两次节目表之间开始。仅在 TS 尚未找到节目表时
@@ -43,6 +46,7 @@ public unsafe class FormatContext : SafeHandle
         if (Raw->nb_programs == 0 && InputFormat?.Name == "mpegts")
             Raw->probesize = Math.Max(Raw->probesize, Models.TransportStream.Analysis.TsStreamAnalyzeOptions.StandardProbeBytes);
         FFmpegException.Check(FF.avformat_find_stream_info(Raw, null));
+        CompleteStreamInfo();
         var streams = new MediaStream[Raw->nb_streams];
         for (var i = 0; i < streams.Length; i++) streams[i] = new MediaStream(Raw->streams[i]);
         Streams = streams;

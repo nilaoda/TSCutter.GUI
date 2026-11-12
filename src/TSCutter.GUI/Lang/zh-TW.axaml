@@ -1545,7 +1545,6 @@
     <x:String x:Key="String.CutMode.FrameAccurateOff">智慧剪輯：已關閉，目前為關鍵影格剪輯。&#10;依關鍵影格選擇範圍，無需重新編碼。&#10;開啟後可逐影格選擇範圍，僅重新編碼切點附近的部分。</x:String>
     <x:String x:Key="String.CutMode.Unavailable">無法使用智慧剪輯：{0}</x:String>
     <x:String x:Key="String.CutMode.FallbackKeyFrame">目前改用關鍵影格剪輯；&#10;開啟支援的視訊時會自動恢復智慧剪輯。</x:String>
-    <x:String x:Key="String.CutMode.Reason.Disc">暫不支援光碟輸入。</x:String>
     <x:String x:Key="String.CutMode.Reason.Codec">目前僅支援以下視訊：&#10;H.264（Baseline、Main、High 或 High 4:2:2 設定檔）&#10;HEVC（Main、Main 10 或 4:2:2 設定檔）&#10;MPEG-2（Main 或 Simple 設定檔）&#10;AV1（Main 設定檔）和 VP9（Profile 0 或 2）</x:String>
     <x:String x:Key="String.CutMode.Reason.Interlaced">暫不支援交錯式視訊。</x:String>
     <x:String x:Key="String.CutMode.Reason.PixelFormat">目前僅支援 4:2:0 視訊&#10;（8 位元；HEVC、AV1 與 VP9 也支援 10 位元），&#10;以及 8 位元或 10 位元的 H.264、HEVC 4:2:2 視訊。</x:String>

@@ -12,11 +12,39 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
     private readonly double? dvdExportSeekAnchor;
 
     private InterruptibleInputFormatContext(AVFormatContext* context, AVIOInterruptCB_callback callback,
-        double? dvdExportSeekAnchor = null) : base(context, isOwner: true)
+        double? dvdExportSeekAnchor = null, Discs.DvdTimeline? dvdTimeline = null) : base(context, isOwner: true)
     {
         interruptCallback = callback;
         this.dvdExportSeekAnchor = dvdExportSeekAnchor;
+        DvdTimeline = dvdTimeline;
     }
+
+    /// <summary>DVD 标题的统一时间轴：各次定位后的时间戳按已读到的关键帧校正；其他来源为 null。</summary>
+    public Discs.DvdTimeline? DvdTimeline { get; }
+
+    /// <summary>
+    /// DVD-Video 的视频只允许 MPEG-2 主档次主级别（MP@ML），dvdvideo 解复用器不填档次与级别；按规范补上，
+    /// 智能剪辑的编码检查与重编码参数（码率与 VBV 上限）据此确定。
+    /// </summary>
+    protected override void CompleteStreamInfo()
+    {
+        if (DvdTimeline is null)
+            return;
+        AVFormatContext* context = this;
+        for (var i = 0; i < context->nb_streams; i++)
+        {
+            var parameters = context->streams[i]->codecpar;
+            if (parameters->codec_id != AVCodecID.AV_CODEC_ID_MPEG2VIDEO)
+                continue;
+            if (parameters->profile < 0)
+                parameters->profile = 4;
+            if (parameters->level < 0)
+                parameters->level = 8;
+        }
+    }
+
+    public override int ReadPacket(Packet packet) =>
+        DvdTimeline is { } timeline ? timeline.Read(this, packet) : base.ReadPacket(packet);
 
     public override void SeekFrame(long timestamp, int streamIndex, AVSEEK_FLAG flags = AVSEEK_FLAG.Backward)
     {
@@ -29,7 +57,18 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
                 : context->streams[streamIndex]->time_base;
             timestamp = (long)Math.Round(anchor * timeBase.den / timeBase.num);
         }
+        else if (DvdTimeline is not null && (flags & AVSEEK_FLAG.Backward) != 0)
+        {
+            // DVD 只能定位到 VOBU（约半秒），统一时间轴与读取层的时间通常也相差一个 VOBU 以内：多退 1 秒，
+            // 让落点一般不晚于目标，调用方照常从落点向后读到目标。个别光盘的时间定位偏差可达数十秒，
+            // 预览按读到的画面显示；导出不依赖这里的定位精度（见智能剪辑导出的 DVD 锚点）。
+            AVFormatContext* context = this;
+            var timeBase = streamIndex < 0 ? new AVRational { num = 1, den = FF.AV_TIME_BASE }
+                : context->streams[streamIndex]->time_base;
+            timestamp = Math.Max(0, timestamp - timeBase.den / Math.Max(1, timeBase.num));
+        }
         base.SeekFrame(timestamp, streamIndex, flags);
+        DvdTimeline?.Reset();
     }
 
     public static FormatContext Open(string path, Func<bool> shouldInterrupt, long tsSyncOffset = -1)
@@ -109,7 +148,9 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
             var code = FF.avformat_open_input(&context, disc.OpenUrl, inputFormat, &options);
             if (code < 0)
                 throw DiscOpenException.FromErrorCode(code);
-            var input = new InterruptibleInputFormatContext(context, callback, dvdExportSeekAnchor);
+            // 预览各处共用同一标题的关键帧记录，时间戳一致；导出（带锚点）各用一份，结果不受预览读取影响。
+            var keyFrames = dvdExportSeekAnchor is null ? Discs.DvdKeyFrameIndex.For(disc) : new Discs.DvdKeyFrameIndex();
+            var input = new InterruptibleInputFormatContext(context, callback, dvdExportSeekAnchor, new Discs.DvdTimeline(keyFrames));
             context = null;
             return input;
         }
@@ -126,6 +167,7 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
     {
         // 由基类统一释放输入上下文及可复用包，原生关闭完成前保持回调存活。
         var released = base.ReleaseHandle();
+        DvdTimeline?.Dispose();
         GC.KeepAlive(interruptCallback);
         return released;
     }

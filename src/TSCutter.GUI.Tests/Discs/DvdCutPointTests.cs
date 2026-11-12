@@ -110,6 +110,24 @@ public sealed class DvdCutPointTests
                         Assert.InRange(leading, 0, 3);
                         Assert.Equal(tail.Skip(1), all.Skip(head.Count + 1 + leading));
                     }
+                    // 片尾签名查找和 GOP 检查可能读到 EOF，后续仍应能定位并输出所选关键帧。
+                    var endingFrame = VideoInstance.DecodeAtTimeSync(video, TimeSpan.FromSeconds(duration - 0.1));
+                    try
+                    {
+                        var tailOutput = Path.Combine(directory.FullName, $"tail.{settings.Container}");
+                        await service.ExportAsync(new RemuxExportRequest(tailOutput,
+                            [new RemuxExportSegment(input.SourcePath, Math.Max(0, duration - 3),
+                                endingFrame.FrameTimestamp.TotalSeconds, settings.Snapshot(),
+                                EndSignature: endingFrame.FrameEndSignature.ToTextOrNull())]));
+                        Assert.True(endingFrame.FrameEndSignature.MatchesHash(
+                            Convert.FromHexString(VideoPackets(tailOutput, keysOnly: true)[^1])));
+                    }
+                    finally
+                    {
+                        endingFrame.BitmapLease?.Dispose();
+                        if (endingFrame.BitmapLease is null) endingFrame.Bitmap?.Dispose();
+                        endingFrame.GpuFrame?.Dispose();
+                    }
                 }
                 finally
                 {
@@ -124,7 +142,7 @@ public sealed class DvdCutPointTests
         }
     }
 
-    private static unsafe List<string> VideoPackets(string path)
+    private static unsafe List<string> VideoPackets(string path, bool keysOnly = false)
     {
         using var input = FormatContext.OpenInputUrl(path);
         input.LoadStreamInfo();
@@ -132,7 +150,7 @@ public sealed class DvdCutPointTests
         var result = new List<string>();
         foreach (var packet in input.ReadPackets())
         {
-            if (packet.StreamIndex != video.Index) continue;
+            if (packet.StreamIndex != video.Index || keysOnly && (packet.Flags & 1) == 0) continue;
             AVPacket* raw = packet;
             result.Add(Convert.ToHexString(SHA256.HashData(new ReadOnlySpan<byte>(raw->data, raw->size))));
         }

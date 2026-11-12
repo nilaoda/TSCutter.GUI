@@ -102,7 +102,6 @@ public partial class MainWindowViewModel
         var strings = LocalizationManager.Instance;
         return support switch
         {
-            FrameAccurateSupport.Disc => strings.String_CutMode_Reason_Disc,
             FrameAccurateSupport.Codec => strings.String_CutMode_Reason_Codec,
             FrameAccurateSupport.Interlaced => strings.String_CutMode_Reason_Interlaced,
             FrameAccurateSupport.PixelFormat => strings.String_CutMode_Reason_PixelFormat,
@@ -213,9 +212,10 @@ public partial class MainWindowViewModel
         if (!CanStepFrame || IsDecoding || CurrentPts == long.MinValue)
             return;
         var anchor = CurrentPts;
+        var frameAnchor = _displayedFrameAnchor;
         if (ShowKeyFrameStrip)
             KeyFrameStrip.PreviewStep(direction);
-        await DecodeExactFrameAsync(video => video.DecodeAdjacentFrameAsync(anchor, direction));
+        await DecodeExactFrameAsync(video => video.DecodeAdjacentFrameAsync(anchor, direction, frameAnchor));
     }
 
     /// <summary>逐帧连续移动多帧；画面没有变化（到达片头片尾或解码失败）时停止并返回 false。</summary>
@@ -287,14 +287,19 @@ public partial class MainWindowViewModel
         {
             var start = FrameAccurateStartPts(clip);
             long? end = clip.EndPosition < 0 ? null : clip.EndPts;
+            // DVD 按画面签名定位：起点被钳到时间轴原点时不再是标记的画面，改按原点处理。
+            var startSignature = start == clip.StartPts ? clip.StartSignature : null;
+            var endSignature = end is null ? null : clip.EndSignature;
             // 重叠或相接的片段合并为一段，避免同一画面重复输出。
             if (segments.Count > 0 && (segments[^1].EndPts is null || start <= segments[^1].EndPts))
             {
                 var previous = segments[^1];
-                segments[^1] = previous with { EndPts = previous.EndPts is null || end is null
-                    ? null : Math.Max(previous.EndPts.Value, end.Value) };
+                segments[^1] = previous.EndPts is null || end is null
+                    ? previous with { EndPts = null, EndSignature = null }
+                    : end.Value > previous.EndPts.Value ? previous with { EndPts = end, EndSignature = endSignature } : previous;
             }
-            else segments.Add(new FrameAccurateExportSegment(clip.InFileInfo.FullName, start, end, settings.Snapshot()));
+            else segments.Add(new FrameAccurateExportSegment(clip.InFileInfo.FullName, start, end, settings.Snapshot(),
+                StartSignature: startSignature, EndSignature: endSignature));
         }
         return segments;
     }

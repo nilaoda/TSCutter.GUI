@@ -81,6 +81,9 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     public int? AudioDelayProgramId { get; set; }
     public long StartPts { get; set; }
     public long? EndPts { get; set; }
+    /// <summary>单个 DVD 片段的起止画面签名（关键帧剪辑为切点关键帧，智能剪辑为附近关键帧与偏移）；其他来源为 null。</summary>
+    public string? StartSignature { get; set; }
+    public string? EndSignature { get; set; }
     private bool UsesManagedOutput => ProgramId is not null || RemuxSettings is not null || FrameAccurate is not null;
     public double StartSeconds { get; set; }
     public double? EndSeconds { get; set; }
@@ -421,8 +424,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _startTime = DateTime.Now;
             _lastUpdateTime = _startTime;
             await CopyClipAsync(new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId,
-                RemuxSettings, StartSeconds, EndSeconds, FrameAccurate, StartPts, EndPts, AudioDelayMs: AudioDelayMs,
-                AudioDelayProgramId: AudioDelayProgramId));
+                RemuxSettings, StartSeconds, EndSeconds, FrameAccurate, StartPts, EndPts, StartSignature, EndSignature,
+                AudioDelayMs, AudioDelayProgramId));
             Percent = 100;
             RemainingSeconds = 0;
             DialogResult = true;
@@ -501,7 +504,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         var generation = ++_copyGeneration;
         if (task.FrameAccurate is { } frameAccurate)
             return ExportFrameAccurateAsync(new FrameAccurateExportRequest(task.DestinationPath,
-                [new FrameAccurateExportSegment(task.SourcePath, task.StartPts, task.EndPts, frameAccurate)]), generation, checkSession);
+                [new FrameAccurateExportSegment(task.SourcePath, task.StartPts, task.EndPts, frameAccurate,
+                    StartSignature: task.StartSignature, EndSignature: task.EndSignature)]), generation, checkSession);
         if (task.RemuxSettings is { } settings)
             return ExportRemuxAsync(new RemuxExportRequest(task.DestinationPath,
                 [new RemuxExportSegment(task.SourcePath, task.StartSeconds, task.EndSeconds, settings,

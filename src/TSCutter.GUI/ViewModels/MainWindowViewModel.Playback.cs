@@ -471,6 +471,7 @@ public partial class MainWindowViewModel
         _displayedFramePts90k = result.FramePts90k;
         _displayedFrameTime = result.FrameTimestamp.TotalSeconds;
         _displayedFrameEndSignature = result.FrameEndSignature;
+        _displayedFrameAnchor = result.FrameAnchor;
         IsHardwareDecoding = result.PresentationMode
             is VideoPresentationMode.HardwareCpuTransfer or VideoPresentationMode.HardwareGpu or VideoPresentationMode.HardwareGpuCopy or VideoPresentationMode.HardwareGpuUpload;
         SetDisplayedVideoDynamicRange(result.VideoDynamicRange);

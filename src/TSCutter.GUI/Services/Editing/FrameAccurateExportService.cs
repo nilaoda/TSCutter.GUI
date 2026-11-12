@@ -8,9 +8,12 @@ using System.Threading;
 using System.Threading.Tasks;
 using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.FFmpeg;
+using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Services.TransportStream.Processing;
+using TSCutter.GUI.Utils.Discs;
+using TSCutter.GUI.Utils.Editing;
 using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.Utils.TransportStream.Packets;
@@ -50,7 +53,7 @@ internal sealed unsafe class FrameAccurateExportService
             try
             {
                 token.ThrowIfCancellationRequested();
-                using var input = InterruptibleInputFormatContext.Open(first.SourcePath, () => token.IsCancellationRequested);
+                using var input = OpenInput(first.SourcePath, first.Settings.Disc, token, null);
                 input.LoadStreamInfo();
                 AVFormatContext* raw = input;
                 var index = first.Settings.VideoIndex;
@@ -92,7 +95,7 @@ internal sealed unsafe class FrameAccurateExportService
     internal static FrameAccurateSupport CheckSupport(FormatContext input, int videoIndex, IEnumerable<int> streamIndices,
         string container)
     {
-        if (container is not ("ts" or "m2ts" or "mp4" or "mkv"))
+        if (container is not ("ts" or "m2ts" or "mp4" or "mkv" or "vob"))
             return FrameAccurateSupport.Container;
         AVFormatContext* raw = input;
         if (videoIndex < 0 || videoIndex >= raw->nb_streams)
@@ -182,9 +185,12 @@ internal sealed unsafe class FrameAccurateExportService
         token.ThrowIfCancellationRequested();
         var settings = request.Segments[0].Settings;
         var sourcePath = request.Segments[0].SourcePath;
-        var source = new FileInfo(sourcePath);
-        var sourceLength = source.Length;
-        var sourceModified = source.LastWriteTimeUtc;
+        // 光盘标题经读取层打开，输出由复用器写出；来源变化按光盘中的各文件判断。
+        var disc = settings.Disc;
+        var source = disc is null ? new FileInfo(sourcePath) : null;
+        var sourceLength = source?.Length ?? 0;
+        var sourceModified = source?.LastWriteTimeUtc ?? default;
+        var discSource = disc is null ? null : RemuxExportService.CaptureSource(sourcePath, disc);
         var temporary = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(request.OutputPath))!,
             $".tscutter-{Guid.NewGuid():N}.tmp");
         AVIOInterruptCB_callback interrupt = _ => token.IsCancellationRequested ? 1 : 0;
@@ -199,11 +205,15 @@ internal sealed unsafe class FrameAccurateExportService
         var isTsOutput = settings.Container is "ts" or "m2ts";
         try
         {
-            input = InterruptibleInputFormatContext.Open(sourcePath, () => token.IsCancellationRequested);
+            // DVD 导出从固定锚点顺序读取，见 ResolveDvdSegments；锚点取最早起点之前一段，时间定位偏差较大的光盘也能覆盖。
+            // dvdvideo 的时间基固定为 1/90000。
+            var dvdAnchor = disc?.Kind == DiscKind.Dvd
+                ? DvdExportAnchor.For(request.Segments.Min(segment => segment.StartPts) / 90_000.0) : (double?)null;
+            input = OpenInput(sourcePath, disc, token, dvdAnchor);
             input.LoadStreamInfo();
             AVFormatContext* rawInput = input;
             var isTsInput = input.InputFormat?.Name == "mpegts";
-            if (isTsInput != isTsOutput)
+            if (disc is null && isTsInput != isTsOutput)
                 throw new FrameAccurateExportException(FrameAccurateExportError.Unsupported, settings.Container,
                     FrameAccurateSupport.Container);
             if (settings.StreamIndices.Any(index => index >= rawInput->nb_streams))
@@ -212,6 +222,22 @@ internal sealed unsafe class FrameAccurateExportService
             if (support != FrameAccurateSupport.Supported)
                 throw new FrameAccurateExportException(FrameAccurateExportError.Unsupported, support.ToString(), support);
             var video = rawInput->streams[settings.VideoIndex];
+            var segments = request.Segments;
+            if (dvdAnchor is { } anchor)
+            {
+                var resolved = ResolveDvdSegments(input, video, request.Segments, token);
+                if (resolved is null && anchor > 0)
+                {
+                    // 锚点之后没有读到所选画面：从标题开头重新读取。
+                    input.Dispose();
+                    input = OpenInput(sourcePath, disc, token, 0);
+                    input.LoadStreamInfo();
+                    rawInput = input;
+                    video = rawInput->streams[settings.VideoIndex];
+                    resolved = ResolveDvdSegments(input, video, request.Segments, token);
+                }
+                segments = resolved ?? throw new FrameAccurateExportException(FrameAccurateExportError.FrameNotFound, "DVD");
+            }
             var hevc = video->codecpar->codec_id == AVCodecID.AV_CODEC_ID_HEVC;
             // AV1 的附加数据是 av1C、VP9 的是 vpcC，都不是 NAL 参数集。
             var lengthSize = video->codecpar->codec_id is AVCodecID.AV_CODEC_ID_AV1 or AVCodecID.AV_CODEC_ID_VP9 ? 0
@@ -226,7 +252,7 @@ internal sealed unsafe class FrameAccurateExportService
             // 规划时用同一解码器验证普通 I 帧能否作为衔接点。
             context.Decoder = decoder;
             var plans = new List<SegmentPlan>();
-            foreach (var segment in request.Segments)
+            foreach (var segment in segments)
             {
                 token.ThrowIfCancellationRequested();
                 var end = segment.EndExclusive && segment.EndPts is { } exclusive
@@ -244,7 +270,7 @@ internal sealed unsafe class FrameAccurateExportService
                 {
                     context.DtsCorrection = context.MaxDtsAfterPts;
                     plans.Clear();
-                    foreach (var segment in request.Segments)
+                    foreach (var segment in segments)
                     {
                         token.ThrowIfCancellationRequested();
                         var end = segment.EndExclusive && segment.EndPts is { } exclusive
@@ -281,16 +307,17 @@ internal sealed unsafe class FrameAccurateExportService
 
             FFmpegException.Check(FF.avformat_alloc_output_context2(&output, null, settings.Container switch
             {
-                "mp4" => "mp4", "mkv" => "matroska", _ => "mpegts"
+                "mp4" => "mp4", "mkv" => "matroska", "vob" => "vob", _ => "mpegts"
             }, temporary));
             if (output == null)
                 throw new OutOfMemoryException();
             output->interrupt_callback = new AVIOInterruptCB { callback = interrupt };
             output->avoid_negative_ts = isTsOutput ? 1 : 0;
             var map = CreateStreams(output, input, settings, context);
-            var packetLayout = isTsOutput ? TsPacketLayout.Detect(sourcePath, token) : default;
-            // 修正 DTS 时由复用器重建 PCR 与 PES（包括补写缺失的 DTS），不再复用原传输包。
-            var native = isTsOutput && context.DtsCorrection == 0 && FrameAccurateTsOutput.CanUse(packetLayout, settings.Container);
+            var packetLayout = isTsOutput && disc is null ? TsPacketLayout.Detect(sourcePath, token) : default;
+            // 修正 DTS 时由复用器重建 PCR 与 PES（包括补写缺失的 DTS），不再复用原传输包；光盘没有可逐包复制的源文件。
+            var native = disc is null && isTsOutput && context.DtsCorrection == 0 &&
+                         FrameAccurateTsOutput.CanUse(packetLayout, settings.Container);
             if (isTsOutput && !native && FrameAccurateVideoEncoder.DolbyVisionConfiguration(video->codecpar) != null)
                 throw new FrameAccurateExportException(FrameAccurateExportError.Unsupported, settings.Container,
                     FrameAccurateSupport.DolbyVisionContainer);
@@ -436,9 +463,10 @@ internal sealed unsafe class FrameAccurateExportService
                 FFmpegException.Check(FF.avio_closep(&output->pb));
             }
             // TS 源可能仍在录制追加；只要已读取部分仍在，就不视为来源变化。
-            source.Refresh();
-            if (!source.Exists || (isTsInput ? source.Length < sourceLength
-                    : source.Length != sourceLength || source.LastWriteTimeUtc != sourceModified))
+            source?.Refresh();
+            if (source is not null ? !source.Exists || (isTsInput ? source.Length < sourceLength
+                    : source.Length != sourceLength || source.LastWriteTimeUtc != sourceModified)
+                : !discSource!.SequenceEqual(RemuxExportService.CaptureSource(sourcePath, disc)))
                 throw new FrameAccurateExportException(FrameAccurateExportError.SourceChanged, sourcePath);
             token.ThrowIfCancellationRequested();
             File.Move(temporary, request.OutputPath, overwrite: true);
@@ -448,6 +476,11 @@ internal sealed unsafe class FrameAccurateExportService
         catch (FFmpegException) when (token.IsCancellationRequested)
         {
             throw new OperationCanceledException(token);
+        }
+        catch (InvalidDataException exception) when (disc?.Kind == DiscKind.Dvd)
+        {
+            // 定位落在已登记的关键帧之外，无法确认画面：报告找不到画面，不按近似时间剪切。
+            throw new FrameAccurateExportException(FrameAccurateExportError.FrameNotFound, exception.Message);
         }
         finally
         {
@@ -478,6 +511,54 @@ internal sealed unsafe class FrameAccurateExportService
             GC.KeepAlive(interrupt);
         }
     }
+
+    /// <summary>
+    /// DVD：dvdvideo 按标题时间定位只到 VOBU，并以目标时间重建时间戳；有的光盘定位偏差可达数十秒，
+    /// 预览时记下的 PTS 不能直接使用。导出时所有定位都改为回到同一锚点（见 <see cref="InterruptibleInputFormatContext"/>），
+    /// 每次读取的内容与时间戳完全相同；从锚点顺序读到各起止画面（附近关键帧签名与相对偏移）的关键帧，
+    /// 换算到这条时间轴。锚点之后读不到某个画面时返回 null。
+    /// </summary>
+    private static IReadOnlyList<FrameAccurateExportSegment>? ResolveDvdSegments(FormatContext input, AVStream* video,
+        IReadOnlyList<FrameAccurateExportSegment> segments, CancellationToken token)
+    {
+        if ((input as InterruptibleInputFormatContext)?.DvdTimeline is not { } timeline)
+            throw new FrameAccurateExportException(FrameAccurateExportError.InvalidRequest);
+        var pending = new HashSet<PacketEndSignature>();
+        foreach (var text in segments.SelectMany(segment => new[] { segment.StartSignature, segment.EndSignature }))
+        {
+            if (text is null)
+                continue;
+            if (!DvdFrameAnchor.TryParse(text, out var anchor))
+                throw new FrameAccurateExportException(FrameAccurateExportError.FrameNotFound, "DVD");
+            pending.Add(anchor.Key);
+        }
+        input.SeekFrame(0, video->index);
+        if (pending.Count > 0)
+        {
+            foreach (var packet in input.ReadPackets())
+            {
+                token.ThrowIfCancellationRequested();
+                if (packet.StreamIndex == video->index && (packet.Flags & ffmpeg.AV_PKT_FLAG_KEY) != 0 &&
+                    pending.Remove(packet.EndSignature) && pending.Count == 0)
+                    break;
+            }
+            if (pending.Count > 0)
+                return null;
+        }
+        long Resolve(long pts, string? text) =>
+            text is not null && DvdFrameAnchor.TryParse(text, out var anchor) && timeline.TryGetKeyFramePts(anchor.Key, out var key)
+                ? key + anchor.Offset : pts;
+        timeline.RequireKnownKeyFrames = true;
+        return segments.Select(segment => segment with
+        {
+            StartPts = Resolve(segment.StartPts, segment.StartSignature),
+            EndPts = segment.EndPts is { } end ? Resolve(end, segment.EndSignature) : null
+        }).ToArray();
+    }
+
+    private static FormatContext OpenInput(string path, DiscInput? disc, CancellationToken token, double? dvdAnchor) => disc is null
+        ? InterruptibleInputFormatContext.Open(path, () => token.IsCancellationRequested)
+        : InterruptibleInputFormatContext.Open(disc, () => token.IsCancellationRequested, dvdAnchor);
 
     /// <summary>所选音视频与字幕流的 PID（mpegts 解复用器中 AVStream.id 即 PID，不含封面）。</summary>
     private static List<int> MediaPids(AVFormatContext* input, IEnumerable<int> indices)
@@ -1390,13 +1471,15 @@ internal sealed unsafe class FrameAccurateExportService
                 AVMediaType.AVMEDIA_TYPE_AUDIO => true,
                 AVMediaType.AVMEDIA_TYPE_SUBTITLE => IsTextSubtitle(source->codecpar->codec_id) ||
                     settings.Container is "ts" or "m2ts" && source->codecpar->codec_id is
-                        AVCodecID.AV_CODEC_ID_DVB_SUBTITLE or AVCodecID.AV_CODEC_ID_DVB_TELETEXT,
+                        AVCodecID.AV_CODEC_ID_DVB_SUBTITLE or AVCodecID.AV_CODEC_ID_DVB_TELETEXT ||
+                    IsDiscSubtitle(settings.Disc, settings.Container, source->codecpar->codec_id),
                 AVMediaType.AVMEDIA_TYPE_ATTACHMENT => settings.Container == "mkv",
                 _ => false
             };
             // mpegts 复用器不提供编码查询，由写文件头时校验。
             if (!supported || type != AVMediaType.AVMEDIA_TYPE_ATTACHMENT && settings.Container is not ("ts" or "m2ts") &&
-                FF.avformat_query_codec(output->oformat, source->codecpar->codec_id, 0) <= 0)
+                FF.avformat_query_codec(output->oformat, source->codecpar->codec_id, 0) <= 0 &&
+                !RemuxExportService.SupportsNativeDiscTrack(settings.Container, source->codecpar->codec_id))
                 throw new FrameAccurateExportException(FrameAccurateExportError.UnsupportedTrack,
                     $"#{index}: {input.Streams[index].Codecpar?.CodecName}");
             var stream = FF.avformat_new_stream(output, null);
@@ -1467,6 +1550,88 @@ internal sealed unsafe class FrameAccurateExportService
             raw->pos = -1;
             FFmpegException.Check(FF.av_interleaved_write_frame(output, raw));
         }
+    }
+
+    /// <summary>
+    /// 光盘的位图字幕：DVD 字幕写入 VOB 与 MKV，每个字幕包是完整的位图与显示时间，按包复制（起点之前开始显示的不输出）；
+    /// 蓝光 PGS 写入 M2TS 与 MKV，显示集合会复用之前的对象，片段起点补写当时的显示状态，见 <see cref="ReadPgsStart"/>。
+    /// </summary>
+    internal static bool IsDiscSubtitle(DiscInput? disc, string container, AVCodecID codec) => disc?.Kind switch
+    {
+        DiscKind.Dvd => codec == AVCodecID.AV_CODEC_ID_DVD_SUBTITLE && container is "vob" or "mkv",
+        DiscKind.BluRay => codec == AVCodecID.AV_CODEC_ID_HDMV_PGS_SUBTITLE && container is "m2ts" or "mkv",
+        _ => false
+    };
+
+    /// <summary>
+    /// 片段起点的 PGS 显示状态：从起点前 <see cref="SubtitleReadDefaults.LookbackSeconds"/> 秒读到起点，
+    /// 重建当时显示的完整显示集合（不解码图形）。回看范围内没有完整状态（没有找到这段字幕的起点）时，
+    /// 视为起点处没有字幕，不补写；之后的显示集合照常复制。
+    /// </summary>
+    private static Dictionary<int, (PgsSubtitleState State, byte[] Start)> ReadPgsStart(SpliceContext context,
+        IEnumerable<int> streams, long startPts, CancellationToken token)
+    {
+        var input = context.Input;
+        AVFormatContext* raw = input;
+        var video = context.Video;
+        var indices = streams.Where(index => raw->streams[index]->codecpar->codec_id == AVCodecID.AV_CODEC_ID_HDMV_PGS_SUBTITLE)
+            .ToArray();
+        var result = new Dictionary<int, (PgsSubtitleState, byte[])>();
+        if (indices.Length == 0)
+            return result;
+        var states = indices.ToDictionary(index => index, _ => new PgsSubtitleState());
+        var origin = video->start_time == FF.AV_NOPTS_VALUE ? 0 : video->start_time;
+        var from = startPts - context.Ticks(SubtitleReadDefaults.LookbackSeconds);
+        var fromBeginning = from <= origin;
+        var discards = new AVDiscard[raw->nb_streams];
+        for (var i = 0; i < raw->nb_streams; i++)
+        {
+            discards[i] = raw->streams[i]->discard;
+            if (i != video->index && !states.ContainsKey(i))
+                raw->streams[i]->discard = AVDiscard.AVDISCARD_ALL;
+        }
+        try
+        {
+            input.SeekFrame(Math.Max(origin, from), video->index);
+            var remaining = indices.ToHashSet();
+            var stop = startPts + context.Ticks(2);
+            foreach (var packet in input.ReadPackets())
+            {
+                token.ThrowIfCancellationRequested();
+                AVPacket* data = packet;
+                if (data->pts == FF.AV_NOPTS_VALUE)
+                    continue;
+                if (data->stream_index == video->index)
+                {
+                    // 起点之后一段时间都没有字幕包：其余轨道的状态已经完整读到。
+                    if (data->pts > stop)
+                        break;
+                    continue;
+                }
+                if (!remaining.Contains(data->stream_index))
+                    continue;
+                if (CompareTime(data->pts, raw->streams[data->stream_index]->time_base, startPts, video->time_base) >= 0)
+                {
+                    remaining.Remove(data->stream_index);
+                    if (remaining.Count == 0)
+                        break;
+                    continue;
+                }
+                states[data->stream_index].Read(new ReadOnlySpan<byte>(data->data, data->size));
+            }
+        }
+        catch (RemuxExportException exception)
+        {
+            throw new FrameAccurateExportException(FrameAccurateExportError.UnsupportedTrack, exception.Message);
+        }
+        finally
+        {
+            for (var i = 0; i < discards.Length; i++)
+                raw->streams[i]->discard = discards[i];
+        }
+        foreach (var (index, state) in states)
+            result[index] = (state, state.CreateEpoch(fromBeginning) ?? []);
+        return result;
     }
 
     internal static bool IsTextSubtitle(AVCodecID codec) => codec is AVCodecID.AV_CODEC_ID_MOV_TEXT or
@@ -1838,6 +2003,10 @@ internal sealed unsafe class FrameAccurateExportService
         var offset = writer.Ts is not null && writer.LastVideoDts == FF.AV_NOPTS_VALUE
             ? plan.StartPts : writer.Offset + writer.SegmentLength;
         writer.BeginSegment(plan.StartPts, offset, plan.FirstDts);
+        // 蓝光 PGS：起点补写当时的显示状态，片段内的显示集合照常复制并跟踪状态，片段结束时清屏。
+        var pgs = ReadPgsStart(context, settings.StreamIndices, plan.StartPts, token);
+        foreach (var (index, start) in pgs)
+            WritePgs(index, start.Start, plan.StartPts);
         writer.Ts?.BeginSegment(plan.StartPts, plan.EndPts,
             Rescale(offset - plan.StartPts, videoTimeBase, new AVRational { num = 1, den = 90000 }));
         // 解析器把同一 PES 中的后续访问单元（场编码的第二场、多帧音频 PES）标为无位置，沿用该 PES 的位置。
@@ -1936,6 +2105,10 @@ internal sealed unsafe class FrameAccurateExportService
                 throw new FrameAccurateExportException(FrameAccurateExportError.SourceChanged, "copy end");
             if (phase == Phase.WaitStart)
                 throw new FrameAccurateExportException(FrameAccurateExportError.FrameNotFound, plan.StartPts.ToString());
+            // 保留到文件末尾的片段不清屏，与源文件一致。
+            if (plan.EndExclusive != long.MaxValue)
+                foreach (var (index, state) in pgs)
+                    WritePgs(index, state.State.CreateClear(), plan.EndExclusive);
             writer.Ts?.EndSegment();
         }
         finally
@@ -2087,6 +2260,23 @@ internal sealed unsafe class FrameAccurateExportService
             copiedPackets++;
         }
 
+        // 写出补写的 PGS 显示集合（起点状态或清屏）；sourcePts 为源视频时间基。
+        void WritePgs(int sourceIndex, byte[] bytes, long sourcePts)
+        {
+            if (bytes.Length == 0)
+                return;
+            var outputIndex = writer.Map.Output[sourceIndex];
+            using var replacement = new Packet();
+            AVPacket* raw = replacement;
+            FFmpegException.Check(FF.av_new_packet(raw, bytes.Length));
+            bytes.CopyTo(new Span<byte>(raw->data, raw->size));
+            raw->stream_index = outputIndex;
+            raw->pts = raw->dts = writer.MapTime(sourcePts, videoTimeBase, outputIndex);
+            raw->pos = -1;
+            raw->flags = 1;
+            writer.Write(raw, outputIndex, strict: false, -1);
+        }
+
         void HandleOther(AVPacket* packet)
         {
             var stream = rawInput->streams[packet->stream_index];
@@ -2124,6 +2314,14 @@ internal sealed unsafe class FrameAccurateExportService
             }
             else if (startsBefore)
                 return;
+            if (pgs.TryGetValue(packet->stream_index, out var pgsState))
+            {
+                try { pgsState.State.Read(new ReadOnlySpan<byte>(packet->data, packet->size)); }
+                catch (RemuxExportException exception)
+                {
+                    throw new FrameAccurateExportException(FrameAccurateExportError.UnsupportedTrack, exception.Message);
+                }
+            }
             var outputTimeBase = writer.Output->streams[outputIndex]->time_base;
             packet->pts = writer.MapTime(packet->pts, timeBase, outputIndex);
             packet->dts = writer.MapTime(packet->dts, timeBase, outputIndex);

@@ -10,6 +10,8 @@ using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Models.Discs;
 using System.Diagnostics;
 using TSCutter.GUI.Utils.Media;
+using TSCutter.GUI.Utils.Discs;
+using TSCutter.GUI.Utils.Editing;
 using TSCutter.GUI.Rendering.Gpu;
 using FFmpeg.AutoGen.Abstractions;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
@@ -38,6 +40,11 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
     private CancellationTokenSource? packetReadCancellation;
     private Task? packetReadTask;
     private long queuedVideoBytes, inputBytesRead;
+    // DVD：读取线程最近读到的视频关键包（签名与统一时间轴上的 PTS），解码出的画面以它为定位锚点。
+    // 读取线程写、解码线程读，以不可变对象整体发布。
+    private DvdKeyPacket? lastDvdKeyPacket;
+
+    private sealed record DvdKeyPacket(PacketEndSignature Key, long Pts);
     private volatile bool audioTailRead;
     private TSCutter.GUI.Player.Audio.AudioPlaybackPipeline? audioPipeline;
     private Func<Task<TSCutter.GUI.Player.Audio.AudioPlaybackPipeline?>>? restartAudioPreroll;
@@ -702,6 +709,9 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
                             continue;
                         waitingForKeyFrame = false;
                     }
+                    if ((packet.Flags & 1) != 0 && packet.Pts != FF.AV_NOPTS_VALUE &&
+                        formatContext is InterruptibleInputFormatContext { DvdTimeline: not null })
+                        Volatile.Write(ref lastDvdKeyPacket, new DvdKeyPacket(packet.EndSignature, packet.Pts));
                     // 允许一个大包跨过字节上限，但后续读取必须等消费者释放空间。
                     while (Interlocked.Read(ref queuedVideoBytes) >= VideoPacketByteLimit)
                         await Task.Delay(2, token).ConfigureAwait(false);
@@ -921,9 +931,11 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
         var mode = hardwareSurface ? VideoPresentationMode.HardwareGpu : IsHardwareDecoding
             ? VideoPresentationMode.HardwareCpuTransfer : VideoPresentationMode.SoftwareBitmap;
         var (pixelSize, requiresCorrection) = GetDisplayGeometry(frame);
+        var anchor = Volatile.Read(ref lastDvdKeyPacket) is { Key.IsValid: true } mark
+            ? new DvdFrameAnchor(mark.Key, (sourcePts ?? pts) - mark.Pts) : default;
         var item = QueuedVideoFrame.FromDecoded(presentationSource, timelineSeconds, sourcePts ?? pts,
             range, mode, pixelSize, requiresCorrection,
-            (long)Math.Round((sourcePts ?? pts) * (double)timeBase.num * 90_000 / timeBase.den), frame.PacketPosition);
+            (long)Math.Round((sourcePts ?? pts) * (double)timeBase.num * 90_000 / timeBase.den), frame.PacketPosition, anchor);
         try
         {
             await outputQueue.EnqueueAsync(item, token).ConfigureAwait(false);

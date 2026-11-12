@@ -26,7 +26,7 @@ public partial class ExportQueueItem : ObservableObject
     // 帧精确任务按视频原始 PTS 定位，加入队列时固定设置快照。
     public FrameAccurateExportSettings? FrameAccurate { get; init; }
     public long StartPts { get; init; }
-    /// <summary>起点、终点关键帧压缩包的签名（DVD 导出按画面定位切点）；没有时为 null。</summary>
+    /// <summary>DVD 起止画面的定位签名；智能剪辑另含相对关键帧的偏移，其他来源为 null。</summary>
     public string? StartSignature { get; init; }
     public string? EndSignature { get; init; }
     public long? EndPts { get; init; }

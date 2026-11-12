@@ -1545,7 +1545,6 @@
     <x:String x:Key="String.CutMode.FrameAccurateOff">Smart cut: off. Keyframe cut is used.&#10;Ranges snap to keyframes; no re-encoding.&#10;Turn it on to select any frame; only the parts near the cut points are re-encoded.</x:String>
     <x:String x:Key="String.CutMode.Unavailable">Smart cut is unavailable: {0}</x:String>
     <x:String x:Key="String.CutMode.FallbackKeyFrame">Keyframe cut is used for now;&#10;smart cut resumes automatically for supported videos.</x:String>
-    <x:String x:Key="String.CutMode.Reason.Disc">disc input is not supported.</x:String>
     <x:String x:Key="String.CutMode.Reason.Codec">only these videos are supported for now:&#10;H.264 (Baseline, Main, High or High 4:2:2 profile)&#10;HEVC (Main, Main 10 or 4:2:2 profile)&#10;MPEG-2 (Main or Simple profile)&#10;AV1 (Main profile) and VP9 (Profile 0 or 2)</x:String>
     <x:String x:Key="String.CutMode.Reason.Interlaced">interlaced video is not supported yet.</x:String>
     <x:String x:Key="String.CutMode.Reason.PixelFormat">only 4:2:0 video&#10;(8-bit, or 10-bit for HEVC, AV1 and VP9)&#10;and 8- or 10-bit H.264 and HEVC 4:2:2 video are supported for now.</x:String>

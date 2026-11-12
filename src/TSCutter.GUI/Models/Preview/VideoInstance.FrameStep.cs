@@ -8,6 +8,9 @@ using TSCutter.GUI.Extensions;
 using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Editing;
+using TSCutter.GUI.Utils.Discs;
+using TSCutter.GUI.Utils.Media;
+using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 
 namespace TSCutter.GUI.Models.Preview;
 
@@ -118,19 +121,53 @@ public partial class VideoInstance
             AVMediaType.AVMEDIA_TYPE_VIDEO => stream.Index == videoStreamIndex || stream.IsAttachedPicture && !ts,
             AVMediaType.AVMEDIA_TYPE_AUDIO => true,
             AVMediaType.AVMEDIA_TYPE_SUBTITLE => FrameAccurateExportService.IsTextSubtitle(stream.Codecpar.CodecId) && !ts ||
-                ts && stream.Codecpar.CodecId is AVCodecID.AV_CODEC_ID_DVB_SUBTITLE or AVCodecID.AV_CODEC_ID_DVB_TELETEXT,
+                ts && stream.Codecpar.CodecId is AVCodecID.AV_CODEC_ID_DVB_SUBTITLE or AVCodecID.AV_CODEC_ID_DVB_TELETEXT ||
+                FrameAccurateExportService.IsDiscSubtitle(Disc, container, stream.Codecpar.CodecId),
             AVMediaType.AVMEDIA_TYPE_ATTACHMENT => container == "mkv",
             _ => false
         }).Select(stream => stream.Index).ToList();
         if (!indices.Contains(videoStreamIndex))
             indices.Insert(0, videoStreamIndex);
-        return new FrameAccurateExportSettings { Container = container, VideoIndex = videoStreamIndex, StreamIndices = indices };
+        return new FrameAccurateExportSettings
+        {
+            Container = container, VideoIndex = videoStreamIndex, StreamIndices = indices, Disc = Disc
+        };
     }
 
-    /// <summary>解码与锚点相邻的上一帧或下一帧；片头没有上一帧时返回 null。</summary>
-    internal Task<DecodeResult?> DecodeAdjacentFrameAsync(long anchorPts, int direction, CancellationToken cancellationToken = default) =>
-        Task.Run(() => RunReadOperation(() => DecodeAdjacentFrame(anchorPts, direction, cancellationToken),
-            cancellationToken), cancellationToken);
+    /// <summary>
+    /// 解码与锚点相邻的上一帧或下一帧；片头没有上一帧时返回 null。
+    /// DVD 的当前画面可能来自播放（另一条读取的时间轴），按画面锚点换算到本预览的时间轴。
+    /// </summary>
+    internal Task<DecodeResult?> DecodeAdjacentFrameAsync(long anchorPts, int direction, DvdFrameAnchor frameAnchor = default,
+        CancellationToken cancellationToken = default) =>
+        Task.Run(() => RunReadOperation(() => DecodeAdjacentFrame(ResolveDvdFramePts(anchorPts, frameAnchor, cancellationToken),
+            direction, cancellationToken), cancellationToken), cancellationToken);
+
+    /// <summary>
+    /// DVD 画面锚点在本预览时间轴上的 PTS；锚点关键帧还没在本预览中读到时，先在附近读一遍包登记关键帧。
+    /// 非 DVD、锚点无效或附近找不到该关键帧时沿用原 PTS。
+    /// </summary>
+    private long ResolveDvdFramePts(long pts, DvdFrameAnchor anchor, CancellationToken token)
+    {
+        if (!anchor.IsValid || inFc is not InterruptibleInputFormatContext { DvdTimeline: { } timeline })
+            return pts;
+        if (!timeline.TryGetKeyFramePts(anchor.Key, out var key))
+        {
+            var gap = Math.Max(1, keyFrameGap);
+            var approximate = pts - anchor.Offset;
+            Seek(approximate - gap * 2, AVSEEK_FLAG.Backward);
+            foreach (var packet in inFc.ReadPackets())
+            {
+                token.ThrowIfCancellationRequested();
+                activeReadDeadline?.ThrowIfInterrupted();
+                if (packet.StreamIndex == videoStreamIndex && packet.Pts != FF.AV_NOPTS_VALUE && packet.Pts > approximate + gap * 4)
+                    break;
+            }
+            if (!timeline.TryGetKeyFramePts(anchor.Key, out key))
+                return pts;
+        }
+        return key + anchor.Offset;
+    }
 
     /// <summary>
     /// 按时间偏移定位：精确解码显示时间不早于 targetPts 的第一帧（目标早于首帧时取首帧）；

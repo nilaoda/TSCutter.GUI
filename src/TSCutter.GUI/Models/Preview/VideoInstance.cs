@@ -16,6 +16,7 @@ using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils;
+using TSCutter.GUI.Utils.Discs;
 using TSCutter.GUI.Utils.Editing;
 using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.Utils.TransportStream.Packets;
@@ -276,7 +277,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
 
         videoStreamIndex = inVideoStream.Index;
         timeBase = inVideoStream.TimeBase;
-        FrameAccurateSupport = Disc is not null ? FrameAccurateSupport.Disc : !CanClip ? FrameAccurateSupport.Container
+        FrameAccurateSupport = !CanClip ? FrameAccurateSupport.Container
             : FrameAccurateExportService.CheckSupport(inFc, videoStreamIndex,
                 CreateFrameAccurateSettings(CanRemuxClip ? CreateExportSettings() : null).StreamIndices, ClipExtension);
         UpdateTimelineDuration();
@@ -628,7 +629,29 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             lastSeekPts = pts;
             if (Disc is not null)
                 pts = Math.Max(0, pts);
-            inFc.SeekFrame(pts, videoStreamIndex, flag);
+            try
+            {
+                inFc.SeekFrame(pts, videoStreamIndex, flag);
+            }
+            catch (FFmpegException) when (Disc is { Kind: DiscKind.Dvd })
+            {
+                activeReadDeadline!.ThrowIfInterrupted();
+                // dvdnav 到达标题末尾后可能无法再次定位，重新打开读取上下文后重试一次。
+                var replacement = InterruptibleInputFormatContext.Open(Disc, () => activeReadDeadline?.ShouldInterrupt == true);
+                try
+                {
+                    replacement.LoadStreamInfo();
+                    replacement.SeekFrame(pts, videoStreamIndex, flag);
+                }
+                catch
+                {
+                    replacement.Dispose();
+                    throw;
+                }
+                inFc.Dispose();
+                inFc = replacement;
+                inVideoStream = inFc.Streams[videoStreamIndex];
+            }
             activeReadDeadline!.ThrowIfInterrupted();
             PrerollToRecoveredKeyFrame(pts, flag);
             videoDecoder.FlushBuffers();
@@ -880,7 +903,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 0,
                 cancellationToken,
                 maxWidth,
-                maxHeight);
+                maxHeight,
+                requireForwardAfterAnchor: isNavigation && count > 0 && Disc?.Kind == DiscKind.Dvd);
         }
         catch (HardwareDecodeException exception)
         {
@@ -1508,6 +1532,14 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         keyPacketBoundaryCount = Math.Min(keyPacketBoundaryCount + 1, keyPacketBoundaries.Length);
     }
 
+    // DVD：本次读取中最近送入解码器的视频关键包（统一时间轴上的 PTS），解码出的画面以它为定位锚点；
+    // 定位之前读到的关键包不用，避免两次读取的时间轴没有对齐时算错偏移。
+    private (PacketEndSignature Key, long Pts, long Generation) lastDvdKeyPacket;
+
+    private DvdFrameAnchor DvdAnchor(long pts) => lastDvdKeyPacket.Key.IsValid && pts != FF.AV_NOPTS_VALUE &&
+        inFc is InterruptibleInputFormatContext { DvdTimeline: { } timeline } && timeline.Generation == lastDvdKeyPacket.Generation
+            ? new DvdFrameAnchor(lastDvdKeyPacket.Key, pts - lastDvdKeyPacket.Pts) : default;
+
     private PacketEndSignature FindKeyPacketBoundary(long position, long pts)
     {
         var matches = 0;
@@ -1537,6 +1569,9 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             cancellationToken.ThrowIfCancellationRequested();
             if (keyPacketBoundaries.Length > 0 && !isSearchScan && packet is { Position: >= 0 } && (packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0)
                 RememberKeyPacketBoundary(packet);
+            if (packet is not null && (packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0 && packet.Pts != FF.AV_NOPTS_VALUE &&
+                inFc is InterruptibleInputFormatContext { DvdTimeline: { } dvdTimeline })
+                lastDvdKeyPacket = (packet.EndSignature, packet.Pts, dvdTimeline.Generation);
             if (isSearchScan && packet is not null && (packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0)
             {
                 // 包与输出画面可能错开，按原始 PTS 保存类型，不把当前输入包的类型套到延迟输出上。
@@ -1624,6 +1659,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                                     : (long)Math.Round(pts * (double)timeBase.num * 90_000 / timeBase.den),
                                 FramePosition = PositionInFile,
                                 FrameEndSignature = FindKeyPacketBoundary(pktPosition, pts),
+                                FrameAnchor = DvdAnchor(pts),
                                 PresentationMode = PresentationMode,
                             };
                         }
@@ -1702,6 +1738,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                             : (long)Math.Round(pts * (double)timeBase.num * 90_000 / timeBase.den),
                         FramePosition = PositionInFile,
                         FrameEndSignature = FindKeyPacketBoundary(pktPosition, pts),
+                        FrameAnchor = DvdAnchor(pts),
                         PresentationMode = PresentationMode,
                     };
                     try
