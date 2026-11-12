@@ -1545,7 +1545,6 @@
     <x:String x:Key="String.CutMode.FrameAccurateOff">智能剪辑：已关闭，当前为关键帧剪辑。&#10;按关键帧选择范围，无需重新编码。&#10;开启后可按帧选择范围，仅重新编码切点附近的部分。</x:String>
     <x:String x:Key="String.CutMode.Unavailable">无法使用智能剪辑：{0}</x:String>
     <x:String x:Key="String.CutMode.FallbackKeyFrame">目前改用关键帧剪辑；&#10;打开支持的视频时会自动恢复智能剪辑。</x:String>
-    <x:String x:Key="String.CutMode.Reason.Disc">暂不支持光盘输入。</x:String>
     <x:String x:Key="String.CutMode.Reason.Codec">目前仅支持以下视频：&#10;H.264（Baseline、Main、High 或 High 4:2:2 档次）&#10;HEVC（Main、Main 10 或 4:2:2 档次）&#10;MPEG-2（Main 或 Simple 档次）&#10;AV1（Main 档次）和 VP9（Profile 0 或 2）</x:String>
     <x:String x:Key="String.CutMode.Reason.Interlaced">暂不支持隔行视频。</x:String>
     <x:String x:Key="String.CutMode.Reason.PixelFormat">目前仅支持 4:2:0 视频&#10;（8 位；HEVC、AV1 与 VP9 也支持 10 位），&#10;以及 8 位或 10 位的 H.264、HEVC 4:2:2 视频。</x:String>

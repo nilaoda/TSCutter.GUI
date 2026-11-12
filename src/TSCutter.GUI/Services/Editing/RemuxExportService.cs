@@ -14,6 +14,7 @@ using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Services.TransportStream.Analysis;
+using TSCutter.GUI.Utils.Discs;
 using TSCutter.GUI.Utils.Editing;
 using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.Media;
@@ -232,12 +233,13 @@ internal sealed unsafe class RemuxExportService
     private sealed record PreparedSegment(RemuxExportSegment Segment, FormatContext Input, int[] Streams,
         double Start, double End, long[] StartDts, long[] EndPts, long[] EndDurations, SourceStamp[] Source);
 
-    private sealed record SourceStamp(string Path, long Length, DateTime Modified);
+    internal sealed record SourceStamp(string Path, long Length, DateTime Modified);
 
-    private static PreparedSegment Prepare(RemuxExportSegment segment, CancellationToken token)
+    private static PreparedSegment Prepare(RemuxExportSegment segment, CancellationToken token, double? dvdAnchor = null)
     {
         var source = CaptureSource(segment.SourcePath, segment.Settings.Disc);
-        var input = OpenInput(segment, token);
+        dvdAnchor ??= DvdExportAnchor.For(segment.StartSeconds);
+        var input = OpenInput(segment, token, dvdAnchor);
         try
         {
             input.LoadStreamInfo();
@@ -252,6 +254,18 @@ internal sealed unsafe class RemuxExportService
             var reference = raw->streams[segment.Settings.ReferenceVideoIndex];
             if (reference->codecpar->codec_type != AVMediaType.AVMEDIA_TYPE_VIDEO || (reference->disposition & 1024) != 0)
                 throw new RemuxExportException(RemuxExportError.InvalidRequest);
+            void ReopenAfterDvdEof()
+            {
+                if (input is not InterruptibleInputFormatContext { DvdTimeline.ReachedEof: true })
+                    return;
+                // 固定锚点保证重新打开后的时间戳与准备阶段相同。
+                input.Dispose();
+                input = OpenInput(segment, token, dvdAnchor);
+                input.LoadStreamInfo();
+                ResolveDvdMpegAudioLayers(input, token);
+                raw = input;
+                reference = raw->streams[segment.Settings.ReferenceVideoIndex];
+            }
             var sourceEnd = segment.Settings.Disc is { } disc
                 ? disc.Duration.TotalSeconds + segment.Settings.TimelineOriginSeconds
                 : StreamEnd(raw, reference, segment.Settings.TimelineOriginSeconds);
@@ -271,15 +285,27 @@ internal sealed unsafe class RemuxExportService
                 throw new RemuxExportException(RemuxExportError.InvalidBoundary);
             // 从时间轴原点开始的片段（如只标记终点、或删除模式中开头的保留段）：光盘标题的首帧可能略晚于原点，
             // 原点之前没有关键帧时从第一个关键帧开始。
-            // DVD 跳转后以目标时间重建时间戳，预览标记的时间与导出读取时的时间可能相差一个 VOBU；
-            // 片段带有关键帧压缩包签名时按签名找到标记时看到的那一帧，找不到再按时间定位。
+            // DVD 跳转后以目标时间重建时间戳，有的光盘定位偏差可达数十秒，预览标记的时间与导出读取时的时间可能相差很多；
+            // 片段带有关键帧压缩包签名时按签名找到标记时看到的那一帧。锚点之后读不到签名时从标题开头重读一次，
+            // 仍找不到（或没有签名）再按时间定位。
             var dvd = segment.Settings.Disc?.Kind == DiscKind.Dvd;
-            var startBoundary = (dvd ? FindBoundaryBySignature(input, reference->index, requestedStart, segment.StartSignature, token) : null)
+            var toEnd = segment.EndSeconds is null || requestedEnd >= sourceEnd - 0.002;
+            var signatures = dvd ? FindDvdBoundaries(input, reference->index, requestedStart, requestedEnd,
+                segment.StartSignature, toEnd ? null : segment.EndSignature, token) : default;
+            var (startBySignature, endBySignature) = (signatures.Start, signatures.End);
+            ReopenAfterDvdEof();
+            if (dvd && dvdAnchor > 0 && (startBySignature is null && PacketEndSignature.TryParse(segment.StartSignature, out _) ||
+                    !toEnd && endBySignature is null && PacketEndSignature.TryParse(segment.EndSignature, out _)))
+            {
+                input.Dispose();
+                input = null!;
+                return Prepare(segment, token, 0);
+            }
+            var startBoundary = startBySignature
                 ?? FindBoundary(input, reference->index, requestedStart, false, token, firstIfNone: segment.StartSeconds <= 0);
-            var endBoundary = segment.EndSeconds is null || requestedEnd >= sourceEnd - 0.002
+            var endBoundary = toEnd
                 ? (Time: requestedEnd, Dts: long.MaxValue)
-                : (dvd ? FindBoundaryBySignature(input, reference->index, requestedEnd, segment.EndSignature, token) : null)
-                  ?? FindBoundary(input, reference->index, requestedEnd, true, token);
+                : endBySignature ?? FindBoundary(input, reference->index, requestedEnd, true, token);
             if (endBoundary.Time <= startBoundary.Time)
                 throw new RemuxExportException(RemuxExportError.InvalidBoundary);
             var endTime = endBoundary.Time;
@@ -319,6 +345,7 @@ internal sealed unsafe class RemuxExportService
                       stream->codecpar->codec_id is AVCodecID.AV_CODEC_ID_HDMV_PGS_SUBTITLE or AVCodecID.AV_CODEC_ID_DVD_SUBTITLE))
                     throw new RemuxExportException(RemuxExportError.UnsupportedTrack, $"#{stream->index}: {stream->codecpar->codec_id}");
             }
+            ReopenAfterDvdEof();
             var result = new PreparedSegment(segment, input, indices, startBoundary.Time, endTime,
                 starts, ends, endDurations, source);
             input = null!;
@@ -333,35 +360,44 @@ internal sealed unsafe class RemuxExportService
         : input->duration / (double)FF.AV_TIME_BASE +
           (input->start_time == FF.AV_NOPTS_VALUE ? 0 : input->start_time / (double)FF.AV_TIME_BASE);
 
-    // DVD 预览与导出的时间戳之差不超过一个 VOBU（规范上限约 1 秒），签名在其两倍范围内查找。
-    private const double SignatureSearchSeconds = 2.0;
-
     /// <summary>
-    /// 在 time 前后 <see cref="SignatureSearchSeconds"/> 内查找压缩内容与签名相同的关键帧，多个相同时取时间最接近者。
-    /// 没有签名、签名无效、找不到或关键帧缺少时间戳时返回 null，由调用方按时间定位。
+    /// DVD 起止画面一起按签名查找，避免两次完整遍历。重复内容取离标记时间最近的一次；
+    /// 读过两个候选的等距范围后即可停止，后续相同内容只会更远。
     /// </summary>
-    private static (double Time, long Dts)? FindBoundaryBySignature(FormatContext input, int index, double time,
-        string? signatureText, CancellationToken token)
+    private static ((double Time, long Dts)? Start, (double Time, long Dts)? End) FindDvdBoundaries(
+        FormatContext input, int index, double start, double end, string? startText, string? endText, CancellationToken token)
     {
-        if (!PacketEndSignature.TryParse(signatureText, out var signature))
-            return null;
+        var hasStart = PacketEndSignature.TryParse(startText, out var startKey);
+        var hasEnd = PacketEndSignature.TryParse(endText, out var endKey);
+        if (!hasStart && !hasEnd)
+            return default;
         AVStream* stream = input.Streams[index];
-        input.SeekFrame(Ticks(Math.Max(0, time - SignatureSearchSeconds), stream->time_base), index);
-        (double Time, long Dts)? best = null;
+        input.SeekFrame(0, index);
+        (double Time, long Dts)? first = null, last = null;
         foreach (var packet in input.ReadPackets())
         {
             token.ThrowIfCancellationRequested();
-            if (packet.StreamIndex != index || (packet.Flags & 1) == 0) continue;
-            AVPacket* raw = packet;
-            if (raw->pts == FF.AV_NOPTS_VALUE) continue;
-            var value = Seconds(raw->pts, stream->time_base);
-            if (value > time + SignatureSearchSeconds) break;
-            if (value < time - SignatureSearchSeconds || raw->dts == FF.AV_NOPTS_VALUE || packet.EndSignature != signature)
+            if (packet.StreamIndex != index || (packet.Flags & 1) == 0)
                 continue;
-            if (best is not { } current || Math.Abs(value - time) < Math.Abs(current.Time - time))
-                best = (value, raw->dts);
+            AVPacket* raw = packet;
+            if (raw->pts == FF.AV_NOPTS_VALUE)
+                continue;
+            var time = Seconds(raw->pts, stream->time_base);
+            if (time > Math.Max(start, end) + DvdExportAnchor.LookbackSeconds)
+                return (first, last);
+            if (raw->dts != FF.AV_NOPTS_VALUE)
+            {
+                var key = packet.EndSignature;
+                if (hasStart && key == startKey && (first is null || Math.Abs(time - start) < Math.Abs(first.Value.Time - start)))
+                    first = (time, raw->dts);
+                if (hasEnd && key == endKey && (last is null || Math.Abs(time - end) < Math.Abs(last.Value.Time - end)))
+                    last = (time, raw->dts);
+            }
+            if ((!hasStart || first is { } a && time >= start + Math.Abs(a.Time - start)) &&
+                (!hasEnd || last is { } b && time >= end + Math.Abs(b.Time - end)))
+                return (first, last);
         }
-        return best;
+        return (first, last);
     }
 
     /// <summary>
@@ -461,7 +497,8 @@ internal sealed unsafe class RemuxExportService
         return double.IsFinite(nextTime) ? nextTime : packetEnd;
     }
 
-    private static bool SupportsNativeDiscTrack(string container, AVCodecID codec) => container switch
+    /// <summary>VOB/M2TS 复用器不提供编码查询，按光盘规范列出可写入的编码。</summary>
+    internal static bool SupportsNativeDiscTrack(string container, AVCodecID codec) => container switch
     {
         "vob" => codec is AVCodecID.AV_CODEC_ID_MPEG1VIDEO or AVCodecID.AV_CODEC_ID_MPEG2VIDEO or
             AVCodecID.AV_CODEC_ID_MP1 or AVCodecID.AV_CODEC_ID_MP2 or AVCodecID.AV_CODEC_ID_AC3 or
@@ -1116,13 +1153,15 @@ internal sealed unsafe class RemuxExportService
         FF.av_packet_move_ref(packet, raw);
     }
 
-    private static FormatContext OpenInput(RemuxExportSegment segment, CancellationToken token) =>
+    // DVD 的所有定位都回到锚点（见 DvdExportAnchor），锚点同时覆盖字幕的回看范围。
+    private static FormatContext OpenInput(RemuxExportSegment segment, CancellationToken token, double? dvdAnchor = null) =>
         segment.Settings.Disc is { } disc
             ? InterruptibleInputFormatContext.Open(disc, () => token.IsCancellationRequested,
-                disc.Kind == DiscKind.Dvd ? Math.Max(0, segment.StartSeconds - SubtitleReadDefaults.LookbackSeconds) : null)
+                disc.Kind == DiscKind.Dvd ? dvdAnchor ?? DvdExportAnchor.For(segment.StartSeconds) : null)
             : InterruptibleInputFormatContext.Open(segment.SourcePath, () => token.IsCancellationRequested);
 
-    private static SourceStamp[] CaptureSource(string path, DiscInput? disc)
+    /// <summary>来源文件的大小与修改时间；光盘目录记录其中的光盘文件，镜像与普通文件记录文件本身。</summary>
+    internal static SourceStamp[] CaptureSource(string path, DiscInput? disc)
     {
         var files = disc is not null && Directory.Exists(path)
             ? Directory.EnumerateFiles(Path.Combine(path, disc.Kind == DiscKind.Dvd ? "VIDEO_TS" : "BDMV"), "*", new EnumerationOptions

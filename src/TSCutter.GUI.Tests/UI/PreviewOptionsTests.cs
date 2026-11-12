@@ -620,6 +620,15 @@ public sealed class PreviewOptionsTests
                     Assert.Null(typeof(MainWindowViewModel).GetField("_discInput", flags)!.GetValue(vm));
                     Assert.Null(typeof(MainWindowViewModel).GetField("_discTitleInfo", flags)!.GetValue(vm));
                     Assert.True(vm.SaveProjectCommand.CanExecute(null));
+                    var discTask = new TSCutter.GUI.Models.Editing.ExportQueueItem
+                    {
+                        SourceFilePath = input.SourcePath,
+                        FrameAccurate = new() { Container = "vob", VideoIndex = 0, StreamIndices = [0], Disc = input }
+                    };
+                    vm.ExportQueue.Add(discTask);
+                    Assert.False(vm.SaveProjectCommand.CanExecute(null));
+                    vm.ExportQueue.Remove(discTask);
+                    Assert.True(vm.SaveProjectCommand.CanExecute(null));
                     var output = new TSCutter.GUI.ViewModels.Editing.OutputWindowViewModel();
                     var protectedPath = Path.Combine(input.SourcePath, "VIDEO_TS", "VTS_01_1.VOB");
                     output.SetBatchTasks([

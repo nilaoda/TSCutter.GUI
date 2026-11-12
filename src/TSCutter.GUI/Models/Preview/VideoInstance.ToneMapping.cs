@@ -163,6 +163,6 @@ public partial class VideoInstance
         VideoDynamicRange = source.VideoDynamicRange, FrameTimestamp = source.FrameTimestamp,
         FramePts = source.FramePts, FramePts90k = source.FramePts90k, FramePosition = source.FramePosition,
         KeyFrameType = source.KeyFrameType,
-        FrameEndSignature = source.FrameEndSignature, PresentationMode = source.PresentationMode
+        FrameEndSignature = source.FrameEndSignature, FrameAnchor = source.FrameAnchor, PresentationMode = source.PresentationMode
     };
 }

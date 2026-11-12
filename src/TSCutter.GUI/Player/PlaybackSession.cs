@@ -642,7 +642,7 @@ public sealed class PlaybackSession : IAsyncDisposable
                 SourcePixelSize = item.PixelSize, RequiresSampleAspectRatioCorrection = item.RequiresCorrection,
                 VideoDynamicRange = item.Range, FrameTimestamp = TimeSpan.FromSeconds(item.TimelineSeconds),
                 FramePts = item.Pts, FramePts90k = item.Pts90k, FramePosition = item.Position,
-                PresentationMode = presentationMode
+                FrameAnchor = item.Anchor, PresentationMode = presentationMode
             };
             if (CapturePresentedFrame is not null)
                 capturedFrame = item.Frame.CloneReference();

@@ -34,6 +34,7 @@ using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Discs;
 using TSCutter.GUI.Utils.Editing;
 using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.Media;
@@ -159,6 +160,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private long _displayedFramePts90k = long.MinValue;
     private double _displayedFrameTime;
     private PacketEndSignature _displayedFrameEndSignature;
+    private DvdFrameAnchor _displayedFrameAnchor;
     private bool _isResolvingClipEnd;
     private CancellationTokenSource? _clipEndCancellation;
     private long PositionInFile => _displayedFramePosition;
@@ -511,8 +513,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     }
 
     // 只有 DVD 需要按画面定位切点（跳转后的时间戳不稳定），其他来源不保存关键帧签名。
-    private static string? BoundarySignature(VideoInstance? video, PacketEndSignature signature) =>
-        video?.Disc?.Kind == DiscKind.Dvd ? signature.ToTextOrNull() : null;
+    // 关键帧剪辑保存切点关键帧本身的签名；智能剪辑的切点可以是任意帧，保存附近关键帧的签名与相对偏移。
+    private static string? BoundarySignature(VideoInstance? video, PacketEndSignature signature, DvdFrameAnchor anchor,
+        bool frameAccurate) =>
+        video?.Disc?.Kind != DiscKind.Dvd ? null : frameAccurate ? anchor.ToTextOrNull() : signature.ToTextOrNull();
 
     private PickedClip AddClipCore()
     {
@@ -526,7 +530,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             StartTime = _displayedFrameTime,
             StartPosition = Math.Max(0, PositionInFile),
             StartPts = CurrentPts,
-            StartSignature = BoundarySignature(_videoInstance, _displayedFrameEndSignature),
+            StartSignature = BoundarySignature(_videoInstance, _displayedFrameEndSignature, _displayedFrameAnchor, UsesFrameAccurateCut),
             EndTime = DurationMax,
         };
         newClip.ReplaceStartThumbnail(CreateCurrentFrameThumbnail());
@@ -566,7 +570,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         SelectedClip!.StartTime = _displayedFrameTime;
         SelectedClip!.StartPts = CurrentPts;
-        SelectedClip!.StartSignature = BoundarySignature(_videoInstance, _displayedFrameEndSignature);
+        SelectedClip!.StartSignature = BoundarySignature(_videoInstance, _displayedFrameEndSignature, _displayedFrameAnchor,
+            UsesFrameAccurateCut);
         SelectedClip!.RequiresFrameAccurate |= UsesFrameAccurateCut;
         SelectedClip!.StartPosition = Math.Max(0, PositionInFile);
         SelectedClip!.NeedsBoundaryReview = false;
@@ -601,6 +606,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         var position = PositionInFile;
         var pts90k = _displayedFramePts90k;
         var signature = _displayedFrameEndSignature;
+        var anchor = _displayedFrameAnchor;
         var frameAccurate = UsesFrameAccurateCut;
         var thumbnail = CreateCurrentFrameThumbnail();
         using var cancellation = new CancellationTokenSource();
@@ -634,7 +640,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             clip.EndPts = pts;
             clip.EndPosition = endPosition;
             clip.EndFramePosition = position;
-            clip.EndSignature = BoundarySignature(video, signature);
+            clip.EndSignature = BoundarySignature(video, signature, anchor, frameAccurate);
             clip.NeedsBoundaryReview = false;
             clip.RequiresFrameAccurate |= frameAccurate;
             clip.ReplaceEndThumbnail(thumbnail);
@@ -1707,7 +1713,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     // 首版不支持把 ISO 来源与所选标题写入工程文件，避免只存路径而丢失标题。
     private bool CanSaveProject => !_isLoadingVideo && !HasDiscSources && (IsVideoInitialized || ExportQueue.Count > 0);
-    private bool HasDiscSources => _discInput is not null || ExportQueue.Any(item => item.RemuxSettings?.Disc is not null);
+    private bool HasDiscSources => _discInput is not null || ExportQueue.Any(item =>
+        item.RemuxSettings?.Disc is not null || item.FrameAccurate?.Disc is not null);
 
     private async Task<bool> SaveProjectCoreAsync(bool saveAs)
     {
@@ -2370,6 +2377,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         _displayedFramePts90k = decodeResult.FramePts90k;
         _displayedFrameTime = decodeResult.FrameTimestamp.TotalSeconds;
         _displayedFrameEndSignature = decodeResult.FrameEndSignature;
+        _displayedFrameAnchor = decodeResult.FrameAnchor;
         AddClipCommand.NotifyCanExecuteChanged();
         MarkClipStartCommand.NotifyCanExecuteChanged();
         MarkClipEndCommand.NotifyCanExecuteChanged();
@@ -2526,6 +2534,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         _displayedFramePts90k = long.MinValue;
         _displayedFrameTime = 0;
         _displayedFrameEndSignature = default;
+        _displayedFrameAnchor = default;
         TimelineViewport.Reset(0, 0);
         DecodeCost = 0L;
         IsHardwareDecoding = false;
@@ -2934,6 +2943,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         }
         dialogViewModel.StartSeconds = clip.StartTime;
         dialogViewModel.EndSeconds = clip.EndPosition < 0 ? null : clip.EndTime;
+        dialogViewModel.StartSignature = UsesFrameAccurateCut && dialogViewModel.StartPts != clip.StartPts ? null : clip.StartSignature;
+        dialogViewModel.EndSignature = clip.EndPosition < 0 ? null : clip.EndSignature;
         bool ClipUnchanged() => _exportSettingsRevision == exportRevision && ReferenceEquals(_videoInstance, video) && ReferenceEquals(SelectedClip, clip) &&
             clip.StartPosition == dialogViewModel.StartPosition && clip.EndPosition == dialogViewModel.EndPosition &&
             clip.StartTime == dialogViewModel.StartSeconds &&
@@ -2998,7 +3009,12 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             if (UsesFrameAccurateCut)
             {
                 var (settings, startPts, endPts) = CreateFrameAccurateTask(clip);
-                task = task with { ProgramId = null, RemuxSettings = null, FrameAccurate = settings, StartPts = startPts, EndPts = endPts };
+                // DVD 起点被钳到时间轴原点时不再是标记的画面，不按签名定位。
+                task = task with
+                {
+                    ProgramId = null, RemuxSettings = null, FrameAccurate = settings, StartPts = startPts, EndPts = endPts,
+                    StartSignature = startPts == clip.StartPts ? task.StartSignature : null
+                };
             }
             tasks.Add(task);
         }

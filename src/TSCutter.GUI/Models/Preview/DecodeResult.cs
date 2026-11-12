@@ -27,6 +27,8 @@ public class DecodeResult
     public long FramePts90k { get; init; } = long.MinValue;
     public long FramePosition { get; init; } = -1;
     internal TSCutter.GUI.Utils.Editing.PacketEndSignature FrameEndSignature { get; init; }
+    /// <summary>DVD 画面的定位锚点（附近关键帧签名与相对偏移）；其他来源无效。</summary>
+    internal TSCutter.GUI.Utils.Discs.DvdFrameAnchor FrameAnchor { get; init; }
     private VideoPresentationMode presentationMode;
     public VideoPresentationMode PresentationMode
     {

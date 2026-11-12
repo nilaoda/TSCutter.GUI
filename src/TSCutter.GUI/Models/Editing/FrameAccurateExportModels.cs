@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
+using TSCutter.GUI.Models.Discs;
 
 namespace TSCutter.GUI.Models.Editing;
 
@@ -18,22 +19,29 @@ public sealed class FrameAccurateExportSettings
     public List<int> StreamIndices { get; set; } = [];
     /// <summary>音频相对视频的延迟（毫秒，正数推后），见 <see cref="AudioDelay"/>。</summary>
     public int AudioDelayMs { get; set; }
+    /// <summary>光盘标题：导出时经光盘读取层打开输入；与封装导出相同，随任务快照保留、不写入工程文件。</summary>
+    [JsonIgnore]
+    public DiscInput? Disc { get; set; }
 
     public FrameAccurateExportSettings Snapshot() => new()
     {
-        Container = Container, VideoIndex = VideoIndex, StreamIndices = [.. StreamIndices], AudioDelayMs = AudioDelayMs
+        Container = Container, VideoIndex = VideoIndex, StreamIndices = [.. StreamIndices], AudioDelayMs = AudioDelayMs,
+        Disc = Disc
     };
 
     [JsonIgnore]
-    public bool IsValid => Container is "ts" or "m2ts" or "mp4" or "mkv" && VideoIndex >= 0 &&
+    public bool IsValid => (Container is "ts" or "m2ts" or "mp4" or "mkv" || Disc is { Kind: DiscKind.Dvd } && Container == "vob") &&
+        VideoIndex >= 0 &&
         StreamIndices is { Count: > 0 and <= 256 } && StreamIndices.Contains(VideoIndex) &&
         StreamIndices.TrueForAll(index => index >= 0) && new HashSet<int>(StreamIndices).Count == StreamIndices.Count;
 }
 
 /// <summary>起止均为视频流原始 PTS，包含所选帧；EndPts 为 null 表示保留到文件末尾。</summary>
 /// <param name="EndExclusive">终点画面本身不输出，片段止于它之前的画面（删除模式的保留段止于删除起点之前）。</param>
+/// <param name="StartSignature">DVD 起点画面的锚点文本（附近关键帧签名与相对偏移）；导出时据此换算起点，其他来源为 null。</param>
+/// <param name="EndSignature">DVD 终点画面的锚点文本，用法同上。</param>
 internal sealed record FrameAccurateExportSegment(string SourcePath, long StartPts, long? EndPts,
-    FrameAccurateExportSettings Settings, bool EndExclusive = false);
+    FrameAccurateExportSettings Settings, bool EndExclusive = false, string? StartSignature = null, string? EndSignature = null);
 
 internal sealed record FrameAccurateExportRequest(string OutputPath, IReadOnlyList<FrameAccurateExportSegment> Segments,
     bool NormalizeTimestamps = false);
@@ -41,7 +49,6 @@ internal sealed record FrameAccurateExportRequest(string OutputPath, IReadOnlyLi
 public enum FrameAccurateSupport
 {
     Supported,
-    Disc,
     Codec,
     Interlaced,
     PixelFormat,

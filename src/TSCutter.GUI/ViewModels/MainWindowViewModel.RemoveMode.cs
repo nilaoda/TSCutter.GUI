@@ -240,7 +240,8 @@ public partial class MainWindowViewModel
         {
             var settings = CreateFrameAccurateExportSettings(video);
             frameAccurateSegments = kept.Select(range => new FrameAccurateExportSegment(sourcePath, range.Start.Pts,
-                range.End?.Pts, settings.Snapshot(), EndExclusive: range.End is not null)).ToArray();
+                range.End?.Pts, settings.Snapshot(), EndExclusive: range.End is not null,
+                StartSignature: range.Start.Signature, EndSignature: range.End?.Signature)).ToArray();
         }
         else if (IsRemuxExport)
             remuxSegments = kept.Select(range => new RemuxExportSegment(sourcePath, range.Start.Time, range.End?.Time,

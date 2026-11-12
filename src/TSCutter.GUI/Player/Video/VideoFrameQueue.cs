@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Avalonia;
 using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Models.Preview;
+using TSCutter.GUI.Utils.Discs;
 
 namespace TSCutter.GUI.Player.Video;
 
@@ -15,7 +16,7 @@ internal sealed unsafe class QueuedVideoFrame : IDisposable
 
     public static QueuedVideoFrame FromDecoded(Frame decoded, double timelineSeconds, long pts,
         VideoDynamicRange range, VideoPresentationMode mode, PixelSize pixelSize, bool requiresCorrection,
-        long pts90k = long.MinValue, long position = -1)
+        long pts90k = long.MinValue, long position = -1, DvdFrameAnchor anchor = default)
     {
         var owned = decoded.CloneReference();
         try
@@ -31,6 +32,7 @@ internal sealed unsafe class QueuedVideoFrame : IDisposable
                 RequiresCorrection = requiresCorrection,
                 Pts90k = pts90k,
                 Position = position,
+                Anchor = anchor,
             };
         }
         catch
@@ -44,6 +46,8 @@ internal sealed unsafe class QueuedVideoFrame : IDisposable
     public required long Pts { get; init; }
     public long Pts90k { get; private init; }
     public long Position { get; private init; }
+    /// <summary>DVD 画面的定位锚点，见 <see cref="DvdFrameAnchor"/>。</summary>
+    public DvdFrameAnchor Anchor { get; private init; }
     /// <summary>入队时捕获的动态范围：硬件帧回读可能丢失 HDR 边数据。</summary>
     public VideoDynamicRange Range { get; private init; }
     public VideoPresentationMode Mode { get; private init; }
