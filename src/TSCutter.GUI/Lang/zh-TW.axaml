@@ -4,6 +4,7 @@
     <x:String x:Key="String.Menu.ImageNavigator">影像導覽小地圖</x:String>
     <x:String x:Key="String.Menu.KeyFrameStrip">關鍵影格預覽列</x:String>
     <x:String x:Key="String.Menu.AudioWaveform">音訊波形</x:String>
+    <x:String x:Key="String.Menu.TimelineSegments">章節/節目帶</x:String>
     <x:String x:Key="String.Window.Minimize">最小化</x:String>
     <x:String x:Key="String.Window.Maximize">最大化</x:String>
     <x:String x:Key="String.Window.Restore">還原</x:String>
@@ -232,6 +233,7 @@
     <x:String x:Key="String.Settings.CustomTheme">自訂</x:String>
     <x:String x:Key="String.Menu.CustomTheme">自訂…</x:String>
     <x:String x:Key="String.Settings.Preview">預覽</x:String>
+    <x:String x:Key="String.Settings.Video">影片</x:String>
     <x:String x:Key="String.Settings.Language">語言</x:String>
     <x:String x:Key="String.Settings.AutoDetectLanguage">自動偵測語言</x:String>
     <x:String x:Key="String.Settings.CurrentLanguage">目前語言</x:String>
@@ -245,6 +247,8 @@
     <x:String x:Key="String.Settings.ShowKeyFrameStripTip">在時間軸上方顯示指標附近的關鍵影格縮圖，點擊可跳至對應畫面。</x:String>
     <x:String x:Key="String.Settings.ShowAudioWaveform">顯示音訊波形</x:String>
     <x:String x:Key="String.Settings.ShowAudioWaveformTip">在導覽列下方顯示所選音軌的波形，關閉後停止讀取波形資料。</x:String>
+    <x:String x:Key="String.Settings.ShowTimelineSegments">顯示章節/節目帶</x:String>
+    <x:String x:Key="String.Settings.ShowTimelineSegmentsTip">在時間軸上方按章節，或按電視錄影 EPG 中播出的節目分段顯示。&#10;關閉後不讀取章節和 EPG，節目帶、狀態列的章節/節目數和資訊視窗的章節/EPG 分頁都不顯示。&#10;關閉也可避免在網路或慢速磁碟上額外讀取 EPG。修改對目前檔案立即生效。</x:String>
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize">縮圖大小</x:String>
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSizeTip">關鍵影格預覽列中每張縮圖的大小。縮圖越大，同樣寬度內顯示的畫面越少。</x:String>
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize.Small">小</x:String>

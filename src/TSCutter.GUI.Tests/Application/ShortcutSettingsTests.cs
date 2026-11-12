@@ -249,7 +249,7 @@ public sealed class ShortcutSettingsTests
         {
             var viewModel = new SettingsWindowViewModel(new MemoryConfiguration(), new KeyLocalization())
             {
-                SelectedTabIndex = 4
+                SelectedTabIndex = 5
             };
             var window = new SettingsWindow { DataContext = viewModel };
             window.Show();

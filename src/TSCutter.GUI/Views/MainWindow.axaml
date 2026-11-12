@@ -336,6 +336,8 @@
                         <MenuItem Header="{DynamicResource String.Menu.AudioWaveform}"
                                   ToggleType="CheckBox" IsChecked="{Binding ShowAudioWaveform, Mode=TwoWay}"
                                   IsEnabled="{Binding ShowKeyFrameStrip}" />
+                        <MenuItem Header="{DynamicResource String.Menu.TimelineSegments}"
+                                  ToggleType="CheckBox" IsChecked="{Binding ShowTimelineSegments, Mode=TwoWay}" />
                         <MenuItem Header="{DynamicResource String.Menu.Theme}" ItemsSource="{Binding ThemeMenuItems}" />
                     </MenuItem>
                     <MenuItem Header="{DynamicResource String.Menu.Help}">

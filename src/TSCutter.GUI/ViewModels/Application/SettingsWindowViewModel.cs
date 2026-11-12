@@ -55,6 +55,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     [ObservableProperty]
     private bool _enableSdrToneMapping;
     [ObservableProperty]
+    private bool _showTimelineSegments;
+    [ObservableProperty]
     private bool _tsCheckOnExport;
     [ObservableProperty]
     private bool _showExportResult;
@@ -192,6 +194,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         SelectedHardwareDecodingDevice = HardwareDecodingDeviceOptions.FirstOrDefault(option =>
             option.Id == _configService.CurrentConfig.HardwareDecodingDevice) ?? HardwareDecodingDeviceOptions[0];
         EnableSdrToneMapping = _configService.CurrentConfig.EnableSdrToneMapping;
+        ShowTimelineSegments = _configService.CurrentConfig.ShowTimelineSegments;
         TsCheckOnExport = _configService.CurrentConfig.TsCheckOnExport;
         ShowExportResult = _configService.CurrentConfig.ShowExportResult;
         LoadInputPreferences(_configService.CurrentConfig.Input);
@@ -337,6 +340,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.CurrentConfig.PreferHardwareDecoding = PreferHardwareDecoding;
         _configService.CurrentConfig.HardwareDecodingDevice = SelectedHardwareDecodingDevice?.Id;
         _configService.CurrentConfig.EnableSdrToneMapping = EnableSdrToneMapping;
+        _configService.CurrentConfig.ShowTimelineSegments = ShowTimelineSegments;
         _configService.CurrentConfig.TsCheckOnExport = TsCheckOnExport;
         _configService.CurrentConfig.ShowExportResult = ShowExportResult;
         _configService.CurrentConfig.Input = CurrentInputPreferences();

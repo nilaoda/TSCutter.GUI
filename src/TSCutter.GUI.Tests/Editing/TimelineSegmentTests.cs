@@ -55,4 +55,43 @@ public sealed class TimelineSegmentTests
             return true;
         }, CancellationToken.None);
     }
+
+    [RemuxExportFact]
+    public async Task TurningTheBandOffSkipsChaptersAndTurningItOnReadsThemForTheOpenFile()
+    {
+        var source = Path.Combine(TSCutter.GUI.Tests.FFmpeg.NativeTestEnvironment.FixtureDirectory("remux"), "multi.mkv");
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            using var resolver = new ModernDependencyResolver();
+            using var scope = resolver.WithResolver();
+            var locale = new LocalizationService();
+            Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+            var dialogs = new DialogService(DispatchProxy.Create<IDialogManager, ExportDialogManager>());
+            var config = new RemoveModeWorkflowTests.MemoryConfiguration();
+            config.CurrentConfig.ShowTimelineSegments = false;
+            var vm = new MainWindowViewModel(dialogs, config) { VideoPath = source };
+            try
+            {
+                var prepared = new VideoInstance(source);
+                prepared.InitVideo();
+                Assert.True(await (Task<bool>)typeof(MainWindowViewModel)
+                    .GetMethod("LoadVideoAsync", BindingFlags.Instance | BindingFlags.NonPublic)!.Invoke(vm, [prepared])!);
+                Assert.False(vm.HasTimelineSegments);
+
+                config.CurrentConfig.ShowTimelineSegments = true;
+                Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+                Assert.Equal(2, vm.TimelineSegments.Count);
+
+                config.CurrentConfig.ShowTimelineSegments = false;
+                Avalonia.Threading.Dispatcher.UIThread.RunJobs();
+                Assert.False(vm.HasTimelineSegments);
+            }
+            finally
+            {
+                vm.Close();
+            }
+            return true;
+        }, CancellationToken.None);
+    }
 }

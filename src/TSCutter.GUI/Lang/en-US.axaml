@@ -4,6 +4,7 @@
     <x:String x:Key="String.Menu.ImageNavigator">Image navigator</x:String>
     <x:String x:Key="String.Menu.KeyFrameStrip">Keyframe strip</x:String>
     <x:String x:Key="String.Menu.AudioWaveform">Audio waveform</x:String>
+    <x:String x:Key="String.Menu.TimelineSegments">Chapters / program band</x:String>
     <x:String x:Key="String.Window.Minimize">Minimize</x:String>
     <x:String x:Key="String.Window.Maximize">Maximize</x:String>
     <x:String x:Key="String.Window.Restore">Restore</x:String>
@@ -232,6 +233,7 @@
     <x:String x:Key="String.Settings.CustomTheme">Custom</x:String>
     <x:String x:Key="String.Menu.CustomTheme">Custom…</x:String>
     <x:String x:Key="String.Settings.Preview">Preview</x:String>
+    <x:String x:Key="String.Settings.Video">Video</x:String>
     <x:String x:Key="String.Settings.Language">Language</x:String>
     <x:String x:Key="String.Settings.AutoDetectLanguage">Auto detect language</x:String>
     <x:String x:Key="String.Settings.CurrentLanguage">Current language</x:String>
@@ -245,6 +247,8 @@
     <x:String x:Key="String.Settings.ShowKeyFrameStripTip">Show nearby keyframe thumbnails above the timeline. Click a thumbnail to seek to that frame.</x:String>
     <x:String x:Key="String.Settings.ShowAudioWaveform">Show audio waveform</x:String>
     <x:String x:Key="String.Settings.ShowAudioWaveformTip">Show the selected audio track’s waveform below the navigation strip. Turn off to stop reading waveform data.</x:String>
+    <x:String x:Key="String.Settings.ShowTimelineSegments">Show chapter and program band</x:String>
+    <x:String x:Key="String.Settings.ShowTimelineSegmentsTip">Shows a band above the timeline split by chapter, or by the program on air read from the EPG of TV recordings.&#10;When off, chapters and EPG are not read: the band, the chapter or program count in the status bar and the Chapters / EPG tab of the Info window are hidden.&#10;Turning it off also avoids the extra EPG reads on network or slow drives. The change applies to the open file immediately.</x:String>
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize">Thumbnail size</x:String>
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSizeTip">Size of each thumbnail in the keyframe strip. Larger thumbnails show fewer frames across the same width.</x:String>
     <x:String x:Key="String.Settings.KeyFrameStripThumbnailSize.Small">Small</x:String>
