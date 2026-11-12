@@ -2,7 +2,7 @@
 
 [English](README.md) | 简体中文
 
-Windows、macOS 和 Linux 使用同一个测试项目，需要 .NET 10 SDK。
+Windows、macOS 和 Linux 使用同一个测试项目，需要 .NET 11 SDK。
 
 ```sh
 dotnet test src/TSCutter.GUI.Tests -c Debug
@@ -60,8 +60,8 @@ python tools/prepare-test-media.py --group remux subtitles
 
 从 [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries) 准备与当前系统和测试进程架构匹配的完整运行库。自动查找位置包括：
 
-- 测试输出目录：`src/TSCutter.GUI.Tests/bin/Debug/net10.0/`。
-- 应用输出目录：`src/TSCutter.GUI/bin/Debug/net10.0/`，也支持带 RID 的子目录。
+- 测试输出目录：`src/TSCutter.GUI.Tests/bin/Debug/net11.0/`。
+- 应用输出目录：`src/TSCutter.GUI/bin/Debug/net11.0/`，也支持带 RID 的子目录。
 - `TSCUTTER_FFMPEG_ROOT` / `FFMPEG_ROOT` 指定的目录。
 - macOS/Linux 上应用本身支持的系统库目录。
 

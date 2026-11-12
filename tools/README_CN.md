@@ -101,7 +101,7 @@ dotnet test src/TSCutter.GUI.Tests -c Debug
 
 ## 运行测试
 
-Windows、macOS 和 Linux 使用相同流程。安装 .NET 10 后，可以直接运行普通逻辑和无头 UI 测试，无需设置素材环境变量：
+Windows、macOS 和 Linux 使用相同流程。安装 .NET 11 后，可以直接运行普通逻辑和无头 UI 测试，无需设置素材环境变量：
 
 ```sh
 dotnet test src/TSCutter.GUI.Tests -c Debug

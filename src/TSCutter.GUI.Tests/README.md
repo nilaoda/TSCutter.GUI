@@ -2,7 +2,7 @@
 
 English | [简体中文](README_CN.md)
 
-Windows, macOS, and Linux use the same test project. The .NET 10 SDK is required.
+Windows, macOS, and Linux use the same test project. The .NET 11 SDK is required.
 
 ```sh
 dotnet test src/TSCutter.GUI.Tests -c Debug
@@ -62,8 +62,8 @@ Fixture generation uses the `ffmpeg` / `ffprobe` command-line tools. The C# deco
 
 Prepare the complete runtime from [FFmpegSharedLibraries](https://github.com/nilaoda/FFmpegSharedLibraries), matching the operating system and test process architecture. Automatic lookup includes:
 
-- The test output directory: `src/TSCutter.GUI.Tests/bin/Debug/net10.0/`.
-- The application output directory: `src/TSCutter.GUI/bin/Debug/net10.0/`, including its RID subdirectory.
+- The test output directory: `src/TSCutter.GUI.Tests/bin/Debug/net11.0/`.
+- The application output directory: `src/TSCutter.GUI/bin/Debug/net11.0/`, including its RID subdirectory.
 - Directories specified by `TSCUTTER_FFMPEG_ROOT` / `FFMPEG_ROOT`.
 - The system library directories supported by the application on macOS/Linux.
 

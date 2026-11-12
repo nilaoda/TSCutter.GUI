@@ -123,7 +123,7 @@ extra dvdauthor title sets.
 
 ## Running tests
 
-Windows, macOS and Linux use the same setup. With .NET 10 installed, run ordinary
+Windows, macOS and Linux use the same setup. With .NET 11 installed, run ordinary
 logic and headless UI tests without sample environment variables:
 
 ```sh

@@ -77,6 +77,8 @@ Cut TS/M2TS, remux MP4/MOV and MKV/WebM, and preview other video formats support
 
 Official packages include the required [FFmpeg runtime](https://github.com/nilaoda/FFmpegSharedLibraries); no separate FFmpeg installation is needed.
 
+On x64, the CPU must support SSE4.2 and POPCNT (x86-64-v2). Unsupported CPUs include Intel Core 2 and Atom models before 2013, and AMD Athlon 64, Phenom, Athlon II, A-series 3000 and E-series (Bobcat); on these the app exits right after launch, so use version 0.7.1 or earlier. Apple silicon and Arm64 are not affected.
+
 On macOS, if quarantine blocks the app, run `xattr -dr com.apple.quarantine TSCutter.GUI.app`.
 
 ## Appearance and documentation
