@@ -40,6 +40,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     private const int FastPathNoFrameThreshold = 8;
     // 逐行刷新码流从恢复点起需要数秒才能刷新完整（实测最长约 9 秒），定位时从更早处连续解码。
     internal const double GradualRefreshPrerollSeconds = 12;
+    // MPEG-2 入口包（带序列头的 P 帧）跨过这么长仍没有 I 帧，才认定为帧内刷新，避免误判长 GOP 的普通码流。
+    private const double Mpeg2RefreshProbeSeconds = 10;
     private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan KeyFrameProbeTimeout = TimeSpan.FromSeconds(5);
     private MediaReadDeadline? activeReadDeadline;
@@ -60,8 +62,16 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         : 0;
     public bool Inited { get; private set; } = false;
     public bool CanBinaryClip { get; private set; }
-    /// <summary>H.264 关键帧都是 P/B 条带的恢复点（逐行刷新）：单独从关键帧解码不完整，需预滚。</summary>
+    /// <summary>H.264 或 MPEG-2 关键帧都是 P/B 条带的恢复点（逐行刷新）：单独从关键帧解码不完整，需预滚。</summary>
     internal bool UsesGradualRefresh { get; private set; }
+    /// <summary>
+    /// MPEG-2 帧内刷新：没有 I 帧，关键包由读取层按序列头补标。其他打开同一文件的读取（如播放）也须补标，
+    /// 见 <see cref="InterruptibleInputFormatContext.Mpeg2RefreshPointStreamIndex"/>。
+    /// </summary>
+    internal bool UsesMpeg2RefreshPoints { get; private set; }
+    // 解码器不会把 MPEG-2 入口 P 帧标为关键帧；完整解码时按送入的入口包 PTS 认出这些画面。
+    private readonly long[] mpeg2RefreshFramePts = [.. Enumerable.Repeat(long.MinValue, 16)];
+    private int nextMpeg2RefreshFrame;
     /// <summary>定位到关键帧前需要连续解码的秒数；0 表示关键帧可独立解码。</summary>
     internal double RecoveryPrerollSeconds => UsesGradualRefresh ? GradualRefreshPrerollSeconds : 0;
     public IReadOnlyList<PreviewProgramOption> PreviewPrograms { get; private set; } = [];
@@ -1304,6 +1314,11 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     {
         var keyFramePtsList = new List<long>();
         var recoveryPoints = 0;
+        // MPEG-2 帧内刷新的码流没有关键包，只在部分 P 帧前重复序列头；始终读不到关键包时改用这些入口。
+        var mpeg2RefreshPts = new List<long>();
+        var detectMpeg2Refresh = Disc is null && inFc is InterruptibleInputFormatContext &&
+            inVideoStream.Codecpar!.CodecId == AVCodecID.AV_CODEC_ID_MPEG2VIDEO;
+        var mpeg2RefreshProbePts = (long)Math.Ceiling(Mpeg2RefreshProbeSeconds * timeBase.den / timeBase.num);
         try
         {
             RunReadOperation(() =>
@@ -1311,9 +1326,20 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 foreach (var packet in inFc.ReadPackets())
                 {
                     activeReadDeadline!.ThrowIfInterrupted();
-                    if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0 ||
-                        (packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
+                    if (packet.StreamIndex != videoStreamIndex || packet.Pts < 0)
                         continue;
+                    if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) == 0)
+                    {
+                        if (detectMpeg2Refresh && keyFramePtsList.Count == 0 &&
+                            KeyFrameTypeReader.Read(packet, inVideoStream.Codecpar!) == KeyFrameTypeReader.RecoveryPoint)
+                        {
+                            mpeg2RefreshPts.Add(packet.Pts);
+                            if (mpeg2RefreshPts.Count >= requiredKeyFrames &&
+                                packet.Pts - mpeg2RefreshPts[0] >= mpeg2RefreshProbePts)
+                                break;
+                        }
+                        continue;
+                    }
 
                     keyFramePtsList.Add(packet.Pts);
                     if (inVideoStream.Codecpar!.CodecId == AVCodecID.AV_CODEC_ID_H264
@@ -1330,6 +1356,15 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         {
             // Sampling is optional; a long GOP must not switch the selected video to audio.
             Console.WriteLine("Keyframe sampling timed out; using the available timestamps.");
+        }
+        UsesMpeg2RefreshPoints = detectMpeg2Refresh && keyFramePtsList.Count == 0 && mpeg2RefreshPts.Count > 0;
+        if (UsesMpeg2RefreshPoints)
+        {
+            // 此后读到的入口包都补标为关键包；这些入口与 H.264 恢复点一样需要预滚。
+            ((InterruptibleInputFormatContext)inFc).Mpeg2RefreshPointStreamIndex = videoStreamIndex;
+            keyFramePtsList = mpeg2RefreshPts;
+            recoveryPoints = keyFramePtsList.Count;
+            Console.WriteLine("MPEG-2 intra refresh detected; sequence headers before P pictures are used as keyframes.");
         }
         UsesGradualRefresh = Disc is null && keyFramePtsList.Count > 0 && recoveryPoints == keyFramePtsList.Count;
 
@@ -1562,6 +1597,10 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         return matches == 1 ? signature : default;
     }
 
+    private bool IsMpeg2RefreshFrame(Frame frame) =>
+        UsesMpeg2RefreshPoints &&
+        Array.IndexOf(mpeg2RefreshFramePts, frame.Pts != FF.AV_NOPTS_VALUE ? frame.Pts : frame.BestEffortTimestamp) >= 0;
+
     private DecodeResult? DecodePacket(
         Packet? packet,
         CancellationToken cancellationToken,
@@ -1584,6 +1623,12 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 keyFrameTypes[nextKeyFrameType] = (packet.Pts, KeyFrameTypeReader.Read(packet, inVideoStream.Codecpar!));
                 nextKeyFrameType = (nextKeyFrameType + 1) % keyFrameTypes.Length;
             }
+            if (UsesMpeg2RefreshPoints && packet is not null && (packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0 &&
+                packet.Pts != FF.AV_NOPTS_VALUE)
+            {
+                mpeg2RefreshFramePts[nextMpeg2RefreshFrame] = packet.Pts;
+                nextMpeg2RefreshFrame = (nextMpeg2RefreshFrame + 1) % mpeg2RefreshFramePts.Length;
+            }
             reusableDecodeFrame ??= new Frame();
             var destRef = reusableDecodeFrame;
             // 1 packet -> 0..N frame
@@ -1594,7 +1639,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 cancellationToken.ThrowIfCancellationRequested();
                 // 回退路径仍只向关键帧导航返回关键帧，但必须先喂入完整码流。
                 if (useFullPacketDecoding && !AudioMode && exactFrameFilter is null
-                    && (frame.Flags & FF.AV_FRAME_FLAG_KEY) == 0)
+                    && (frame.Flags & FF.AV_FRAME_FLAG_KEY) == 0 && !IsMpeg2RefreshFrame(frame))
                     continue;
                 if (firstFrameTimestamp == -1)
                 {

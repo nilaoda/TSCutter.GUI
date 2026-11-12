@@ -59,7 +59,7 @@ public enum FrameAccurateSupport
     MultipleVideo,
     Encoder,
     Container,
-    /// <summary>H.264 只有 P/B 条带的恢复点、没有完整关键帧（逐行刷新），复制部分无法无缝衔接。</summary>
+    /// <summary>H.264 或 MPEG-2 只有 P/B 条带的恢复点、没有完整关键帧（逐行刷新），复制部分无法无缝衔接。</summary>
     GradualRefresh
 }
 
