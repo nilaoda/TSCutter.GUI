@@ -8,13 +8,15 @@
         <ReleaseTag>v$(Version)</ReleaseTag>
         <OutputType>WinExe</OutputType>
         <ApplicationIcon>Assets/logo.ico</ApplicationIcon>
-        <TargetFramework>net10.0</TargetFramework>
+        <TargetFramework>net11.0</TargetFramework>
         <Nullable>enable</Nullable>
         <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <LangVersion>preview</LangVersion>
+        <!-- 运行时原生 async（.NET 11 预览）：由运行时管理挂起与恢复，不再生成状态机，减少 await 的开销与内存分配。 -->
+        <Features>runtime-async=on</Features>
     </PropertyGroup>
 
     <ItemGroup>

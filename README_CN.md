@@ -77,6 +77,8 @@ TSCutter.GUI 是一款跨平台视频剪辑工具，支持快速的关键帧剪�
 
 官方发布包已内置所需的 [FFmpeg 运行库](https://github.com/nilaoda/FFmpegSharedLibraries)，无需另行安装。
 
+x64 电脑的 CPU 需支持 SSE4.2 和 POPCNT（x86-64-v2）。不支持的有 Intel Core 2、2013 年以前的 Atom，以及 AMD Athlon 64、Phenom、Athlon II、A 系列 3000 和 E 系列（Bobcat）；在这些 CPU 上程序打开后会直接退出，请使用 0.7.1 或更早的版本。苹果芯片和 Arm64 设备不受影响。
+
 macOS 若因隔离属性被拦截，可执行 `xattr -dr com.apple.quarantine TSCutter.GUI.app`。
 
 ## 外观与文档
