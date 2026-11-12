@@ -17,6 +17,7 @@ public class AppConfig : ObservableObject
     private KeyFrameStripThumbnailSize _keyFrameStripThumbnailSize = KeyFrameStripThumbnailSize.Medium;
     private bool _enableSdrToneMapping = true;
     private bool _preferHardwareDecoding = IsHardwareDecodingSupported;
+    private bool _showTimelineSegments = true;
     private InputPreferences _input = new();
 
     // 系统当前是否处于深色模式
@@ -67,6 +68,12 @@ public class AppConfig : ObservableObject
     {
         get => _enableSdrToneMapping;
         set => SetProperty(ref _enableSdrToneMapping, value);
+    }
+    // 时间轴上方的章节/节目带；关闭时不读取章节和 EPG。
+    public bool ShowTimelineSegments
+    {
+        get => _showTimelineSegments;
+        set => SetProperty(ref _showTimelineSegments, value);
     }
     public string ClipOutputTemplate { get; set; } = Utils.Editing.ClipOutputNaming.DefaultTemplate;
     public bool TsBatchCheckSaveLogs { get; set; }

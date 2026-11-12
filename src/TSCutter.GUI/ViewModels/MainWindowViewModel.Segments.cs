@@ -51,6 +51,8 @@ public partial class MainWindowViewModel
     private void StartTimelineSegmentLoad(VideoInstance video)
     {
         ResetTimelineSegments();
+        if (!ShowTimelineSegments)
+            return;
         var chapters = video.GetChapters(_discTitleInfo);
         if (chapters.Count > 0)
         {
@@ -132,6 +134,32 @@ public partial class MainWindowViewModel
                 _epgCancellation = null;
             cancellation.Dispose();
         }
+    }
+
+    /// <summary>章节/节目带开关，与“视图”菜单和设置共用配置。</summary>
+    public bool ShowTimelineSegments
+    {
+        get => _configService.CurrentConfig.ShowTimelineSegments;
+        set
+        {
+            if (value == ShowTimelineSegments)
+                return;
+            _configService.CurrentConfig.ShowTimelineSegments = value;
+            _configService.Save();
+        }
+    }
+
+    /// <summary>
+    /// 关闭时停止 EPG 读取并清空章节与节目段；开启时为当前文件重新读取。
+    /// 视频仍在载入时，由载入完成后的节目带读取按设置处理。
+    /// </summary>
+    private void OnTimelineSegmentsPreferenceChanged()
+    {
+        OnPropertyChanged(nameof(ShowTimelineSegments));
+        if (!ShowTimelineSegments)
+            ResetTimelineSegments();
+        else if (_videoInstance is { Inited: true } video && !_isLoadingVideo && !HasTimelineSegments && _epgSource is null)
+            StartTimelineSegmentLoad(video);
     }
 
     private void ResetTimelineSegments()

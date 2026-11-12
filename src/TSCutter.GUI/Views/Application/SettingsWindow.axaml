@@ -174,39 +174,13 @@
                                   IsEnabled="{Binding ShowKeyFrameStrip}"
                                   Content="{DynamicResource String.Settings.ShowAudioWaveform}"
                                   ToolTip.Tip="{DynamicResource String.Settings.ShowAudioWaveformTip}" />
-                        <CheckBox IsChecked="{Binding PreferHardwareDecoding}"
-                                  IsEnabled="{Binding IsHardwareDecodingAvailable}"
-                                  Content="{DynamicResource String.Settings.PreferHardwareDecoding}"
-                                  ToolTip.Tip="{DynamicResource String.Settings.PreferHardwareDecodingTip}" />
-                        <!-- 未勾选优先硬解（含不支持硬解的平台）或只有自动一项（macOS、Linux 或未找到显卡）时禁用。 -->
-                        <Grid ColumnDefinitions="100, *" IsEnabled="{Binding PreferHardwareDecoding}">
-                            <TextBlock VerticalAlignment="Center"
-                                       Text="{DynamicResource String.Settings.HardwareDecodingDevice}" />
-                            <ComboBox Grid.Column="1" HorizontalAlignment="Stretch"
-                                      ItemsSource="{Binding HardwareDecodingDeviceOptions}"
-                                      SelectedItem="{Binding SelectedHardwareDecodingDevice, Mode=TwoWay}"
-                                      IsEnabled="{Binding CanSelectHardwareDecodingDevice}">
-                                <ToolTip.Tip>
-                                    <TextBlock MaxWidth="320" TextWrapping="Wrap"
-                                               Text="{DynamicResource String.Settings.HardwareDecodingDeviceTip}" />
-                                </ToolTip.Tip>
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate x:DataType="viewModels:HardwareDecodingDeviceOption">
-                                        <Panel>
-                                            <TextBlock IsVisible="{Binding IsAutomatic}" TextTrimming="CharacterEllipsis"
-                                                       Text="{DynamicResource String.Settings.HardwareDecodingDevice.Automatic}" />
-                                            <TextBlock IsVisible="{Binding IsMissing}" TextTrimming="CharacterEllipsis"
-                                                       Text="{DynamicResource String.Settings.HardwareDecodingDevice.Missing}" />
-                                            <TextBlock IsVisible="{Binding HasName}" TextTrimming="CharacterEllipsis"
-                                                       Text="{Binding Name}" />
-                                        </Panel>
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                        </Grid>
-                        <CheckBox IsChecked="{Binding EnableSdrToneMapping}"
-                                  Content="{DynamicResource String.Settings.EnableSdrToneMapping}"
-                                  ToolTip.Tip="{DynamicResource String.Settings.EnableSdrToneMappingTip}" />
+                        <CheckBox IsChecked="{Binding ShowTimelineSegments}"
+                                  Content="{DynamicResource String.Settings.ShowTimelineSegments}">
+                            <ToolTip.Tip>
+                                <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                           Text="{DynamicResource String.Settings.ShowTimelineSegmentsTip}" />
+                            </ToolTip.Tip>
+                        </CheckBox>
                         <!-- 鼠标滚轮：步长用下拉档位，避免数字微调框占用过多空间；档位只写数量，单位由“移动单位”决定。 -->
                         <TextBlock Text="{DynamicResource String.Settings.Shortcuts.Wheel}" FontWeight="Bold" Margin="0,6,0,0" />
                         <Grid ColumnDefinitions="100, *" RowDefinitions="Auto, Auto, Auto, Auto, Auto" RowSpacing="6">
@@ -253,6 +227,46 @@
                         </Grid>
                         <CheckBox IsChecked="{Binding ReverseWheel}"
                                   Content="{DynamicResource String.Settings.Shortcuts.ReverseWheel}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <!-- 解码与画面相关的选项单独成页，避免预览页过长。 -->
+            <TabItem Header="{DynamicResource String.Settings.Video}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="10,12" Spacing="10">
+                        <CheckBox IsChecked="{Binding PreferHardwareDecoding}"
+                                  IsEnabled="{Binding IsHardwareDecodingAvailable}"
+                                  Content="{DynamicResource String.Settings.PreferHardwareDecoding}"
+                                  ToolTip.Tip="{DynamicResource String.Settings.PreferHardwareDecodingTip}" />
+                        <!-- 未勾选优先硬解（含不支持硬解的平台）或只有自动一项（macOS、Linux 或未找到显卡）时禁用。 -->
+                        <Grid ColumnDefinitions="100, *" IsEnabled="{Binding PreferHardwareDecoding}">
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{DynamicResource String.Settings.HardwareDecodingDevice}" />
+                            <ComboBox Grid.Column="1" HorizontalAlignment="Stretch"
+                                      ItemsSource="{Binding HardwareDecodingDeviceOptions}"
+                                      SelectedItem="{Binding SelectedHardwareDecodingDevice, Mode=TwoWay}"
+                                      IsEnabled="{Binding CanSelectHardwareDecodingDevice}">
+                                <ToolTip.Tip>
+                                    <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                               Text="{DynamicResource String.Settings.HardwareDecodingDeviceTip}" />
+                                </ToolTip.Tip>
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="viewModels:HardwareDecodingDeviceOption">
+                                        <Panel>
+                                            <TextBlock IsVisible="{Binding IsAutomatic}" TextTrimming="CharacterEllipsis"
+                                                       Text="{DynamicResource String.Settings.HardwareDecodingDevice.Automatic}" />
+                                            <TextBlock IsVisible="{Binding IsMissing}" TextTrimming="CharacterEllipsis"
+                                                       Text="{DynamicResource String.Settings.HardwareDecodingDevice.Missing}" />
+                                            <TextBlock IsVisible="{Binding HasName}" TextTrimming="CharacterEllipsis"
+                                                       Text="{Binding Name}" />
+                                        </Panel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                        </Grid>
+                        <CheckBox IsChecked="{Binding EnableSdrToneMapping}"
+                                  Content="{DynamicResource String.Settings.EnableSdrToneMapping}"
+                                  ToolTip.Tip="{DynamicResource String.Settings.EnableSdrToneMappingTip}" />
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

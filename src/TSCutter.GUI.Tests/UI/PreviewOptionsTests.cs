@@ -185,9 +185,13 @@ public sealed class PreviewOptionsTests
                             button.Command = command;
                             button.ClearValue(InputElement.IsEnabledProperty);
                         }
-                        foreach (var content in new[] { LocalizationManager.Instance.String_Settings_ShowKeyFrameStrip,
-                                     LocalizationManager.Instance.String_Settings_EnableSdrToneMapping })
+                        // 预览条位于「预览」页，HDR 映射位于「视频」页。
+                        foreach (var (tab, content) in new[] { (2, LocalizationManager.Instance.String_Settings_ShowKeyFrameStrip),
+                                     (3, LocalizationManager.Instance.String_Settings_EnableSdrToneMapping) })
                         {
+                            settingsWindow.FindControl<TabControl>("SettingsTabs")!.SelectedIndex = tab;
+                            Dispatcher.UIThread.RunJobs();
+                            settingsWindow.UpdateLayout();
                             var setting = settingsWindow.GetVisualDescendants().OfType<CheckBox>()
                                 .Single(box => box.Content?.ToString() == content);
                             Assert.True(setting.IsEffectivelyVisible);
@@ -279,7 +283,9 @@ public sealed class PreviewOptionsTests
                 Assert.True(vm.ShowAudioWaveform);
                 Assert.True(waveform.IsChecked);
                 Assert.True(waveform.IsEnabled);
-                Assert.Equal(4, config.SaveCount);
+                // 章节/节目带默认开启，经原生菜单切换后关闭。
+                Assert.False(vm.ShowTimelineSegments);
+                Assert.Equal(5, config.SaveCount);
                 settings = new SettingsWindowViewModel(config, locale);
                 Assert.True(settings.ShowImageNavigator);
                 Assert.True(settings.ShowKeyFrameStrip);
@@ -296,7 +302,7 @@ public sealed class PreviewOptionsTests
                 Assert.False(waveform.IsChecked);
                 Assert.False(waveform.IsEnabled);
                 Assert.False(viewer.ShowNavigator);
-                Assert.Equal(5, config.SaveCount);
+                Assert.Equal(6, config.SaveCount);
             }
             finally { window.Close(); vm.Close(); }
         }, CancellationToken.None);

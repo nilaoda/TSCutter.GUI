@@ -30,6 +30,8 @@ public partial class MediainfoWindowViewModel : ViewModelBase, IModalDialogViewM
 
     /// <summary>列表为 EPG 节目（标签页标题为“EPG”）；否则为章节。</summary>
     public bool ListsEpgPrograms { get; set; }
+    /// <summary>关闭章节/节目带时不显示章节/EPG 标签页。</summary>
+    public bool ShowsSegments { get; set; } = true;
     public string SegmentTabHeader => ListsEpgPrograms
         ? LocalizationManager.Instance.String_Epg_Tab : LocalizationManager.Instance.String_Chapter_Tab;
 

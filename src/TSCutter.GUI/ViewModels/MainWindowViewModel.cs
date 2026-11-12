@@ -1280,6 +1280,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         dialogViewModel.DiscTitle = _discTitleInfo;
         dialogViewModel.SegmentItems = CreateSegmentListItems();
         dialogViewModel.ListsEpgPrograms = HasTimelineSegments && !ShowsChapters;
+        dialogViewModel.ShowsSegments = ShowTimelineSegments;
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
         if (dialogViewModel.JumpTarget is { } target)
             await JumpToSegmentStartAsync(target);
@@ -1431,6 +1432,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             OnAudioWaveformPreferenceChanged();
         else if (e.PropertyName == nameof(AppConfig.KeyFrameStripThumbnailSize))
             OnKeyFrameStripThumbnailSizeChanged();
+        else if (e.PropertyName == nameof(AppConfig.ShowTimelineSegments))
+            OnTimelineSegmentsPreferenceChanged();
         else if (e.PropertyName is nameof(AppConfig.ThemeName) or nameof(AppConfig.DarkThemeName))
             UpdateThemeMenuChecks();
     }

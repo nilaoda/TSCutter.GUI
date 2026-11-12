@@ -61,7 +61,7 @@
             </TabItem>
 
             <!-- 章节或读到的全部 EPG 节目：单击章节或录制中的节目跳到它的开始 -->
-            <TabItem Header="{Binding SegmentTabHeader}">
+            <TabItem Header="{Binding SegmentTabHeader}" IsVisible="{Binding ShowsSegments}">
                 <Panel>
                     <ListBox ItemsSource="{Binding SegmentItems}"
                              Background="Transparent"
