@@ -115,7 +115,7 @@ Open any utility directly from the **Tools** menu. Each tool opens in its own wi
 Turn on the **Smart cut** switch on the right side of the toolbar to place clip boundaries on any frame instead of keyframes. On export, only a few pictures near the start and end are re-encoded; the compressed video in between is copied directly, and audio and subtitles are copied packet by packet without re-encoding. When a boundary falls exactly on a keyframe that can be joined, that side is not re-encoded at all.
 
 - **Frame-by-frame navigation**: The navigation strip shows every frame, and **,** / **.** step one frame backward or forward. Marking after pausing playback no longer snaps to a keyframe.
-- **Supported video**: H.264 (Baseline, Main, High and High 4:2:2; 8/10-bit, including interlaced), HEVC (Main, Main 10 and 4:2:2), MPEG-2 (Main, Simple and 4:2:2, including open GOP and interlaced), AV1 (Main) and VP9 (Profile 0/2). Re-encoded pictures keep HDR10, HLG and single-layer Dolby Vision Profile 5/8.1.
+- **Supported video**: H.264 (Baseline, Main and High (8-bit) and High 4:2:2 (8/10-bit), including interlaced), HEVC (Main, Main 10 and 4:2:2), MPEG-2 (Main, Simple and 4:2:2, including open GOP and interlaced), AV1 (Main) and VP9 (Profile 0/2). Re-encoded pictures keep HDR10, HLG and single-layer Dolby Vision Profile 5/8.1.
 - **Broadcast recordings**: Some H.264 and HEVC open-GOP recordings without IDR frames are supported. The app checks whether video can be copied at the join and re-encodes leading pictures where needed. If a safe join is not possible, the export stops with an explanation.
 - **Gradual intra refresh**: H.264 and MPEG-2 recordings that have no complete keyframes and rely on gradual intra refresh (common on satellite contribution feeds, such as feeds carrying Dolby E) can also be smart cut. The copied part starts at a refresh entry point, so for its first few seconds the picture differs slightly from the original; after one refresh period (usually under 5 seconds) it matches the original exactly.
 - **Output formats**: TS/M2TS sources export to the same format; MP4, MKV and other remuxable sources export to MP4 or MKV. AV1 and VP9 support MP4/MKV only.
@@ -130,7 +130,7 @@ The switch is disabled for unsupported sources, and hovering over it explains wh
 
 The following describes keyframe-mode exports. Smart cut re-encodes video near cut points as described above.
 
-- Choose the output container and retained tracks in **MP4 / MKV export settings**. Track order, language, titles, and default/forced flags follow the source.
+- Choose the output container and retained tracks in **Export settings**. Track order, language, titles, and default/forced flags follow the source.
 - Export individual clips or batches, or merge selected ranges from one source. Overlapping selected clips are combined once.
 - Video cuts use keyframes and include the marked end frame; audio cuts use compressed packet boundaries. Compatible text subtitles, including MP4 mov_text and MKV ASS, and chapters are trimmed and retimed. MKV also supports PGS bitmap subtitles, restoring the picture active at each cut and clearing it at the end. MKV attachments and MP4 cover art can be retained.
 - Copy compressed audio/video and codec configuration, preserving container-supported color, HDR static data, and Dolby Vision configuration. Dynamic metadata in the bitstream travels with the packets.
