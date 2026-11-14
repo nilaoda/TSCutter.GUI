@@ -24,7 +24,7 @@
 
 | 編碼 | 支援範圍 |
 | --- | --- |
-| H.264 | Baseline、Main、High、High 4:2:2，8／10 位，含交錯式 |
+| H.264 | Baseline、Main、High（8 位）與 High 4:2:2（8／10 位），含交錯式 |
 | HEVC | Main、Main 10、4:2:2 |
 | MPEG-2 | Main、Simple、4:2:2，含開放 GOP 與交錯式 |
 | AV1 | Main（僅 MP4／MKV） |

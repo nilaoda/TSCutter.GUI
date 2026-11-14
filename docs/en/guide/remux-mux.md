@@ -4,7 +4,7 @@
 
 The following describes keyframe-mode exports. Smart cut re-encodes video near cut points; see [Smart cut](./smart-cut).
 
-- Choose the output container and retained tracks in **MP4 / MKV export settings**. Track order, language, titles, and default/forced flags follow the source.
+- Choose the output container and retained tracks in **Export settings**. Track order, language, titles, and default/forced flags follow the source.
 - Export individual clips or batches, or merge selected ranges from one source. Overlapping selected clips are combined once.
 - Video cuts use keyframes and include the marked end frame; audio cuts use compressed packet boundaries. Compatible text subtitles, including MP4 mov_text and MKV ASS, and chapters are trimmed and retimed. MKV also supports PGS bitmap subtitles, restoring the picture active at each cut and clearing it at the end. MKV attachments and MP4 cover art can be retained.
 - Copy compressed audio/video and codec configuration, preserving container-supported color, HDR static data, and Dolby Vision configuration. Dynamic metadata in the bitstream travels with the packets.

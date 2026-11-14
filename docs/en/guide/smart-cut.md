@@ -24,7 +24,7 @@ The switch state is remembered and saved with projects, and queued exports keep 
 
 | Codec | Supported |
 | --- | --- |
-| H.264 | Baseline, Main, High and High 4:2:2; 8/10-bit, including interlaced |
+| H.264 | Baseline, Main and High (8-bit) and High 4:2:2 (8/10-bit), including interlaced |
 | HEVC | Main, Main 10 and 4:2:2 |
 | MPEG-2 | Main, Simple and 4:2:2, including open GOP and interlaced |
 | AV1 | Main (MP4/MKV only) |
