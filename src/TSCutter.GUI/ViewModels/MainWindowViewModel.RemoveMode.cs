@@ -184,6 +184,7 @@ public partial class MainWindowViewModel
 
         var output = _dialogService.CreateViewModel<OutputWindowViewModel>();
         output.DolbyE = CurrentDolbyEPlan;
+        output.ExcludedPids = CurrentExcludedPids;
         ConfigureMergeExportTask(output, snapshot, string.Empty);
         if (!await ConfirmGradualRefreshExportAsync()) return;
         if (!await PrepareProgramTableExportAsync(output, removed.Select(GetProgramTableClipLabel).ToArray(), IsCurrent))

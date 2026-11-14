@@ -4,17 +4,36 @@ using TSCutter.GUI.Models.TransportStream.Analysis;
 
 namespace TSCutter.GUI.Models.Editing;
 
+/// <summary>导出的基本类型；在此之上的改动（只输出当前节目、音频延迟等）见 <see cref="ExportModifiers"/>。</summary>
 public enum ExportKind
 {
+    /// <summary>输出就是源文件中的一段原始字节，没有任何改动。</summary>
     TsCopy,
-    TsProgramOnly,
-    TsProgramTablesSupplement,
+    /// <summary>单段 TS 按包处理后写出：媒体数据仍是原包，但节目表、时间戳或轨道有改动。</summary>
+    TsPacket,
     TsMerge,
     M2tsRemux,
     Mp4Remux,
     MkvRemux,
     VobRemux,
     FrameAccurate
+}
+
+/// <summary>导出时在基本类型之外做过的改动，在导出记录与结果中作为附加标签显示。</summary>
+[Flags]
+public enum ExportModifiers
+{
+    None = 0,
+    /// <summary>只输出当前节目，节目表按该节目重建。</summary>
+    ProgramOnly = 1,
+    /// <summary>在输出开头补入了节目表。</summary>
+    TablesSupplemented = 2,
+    /// <summary>按音频延迟改写了音轨时间戳。</summary>
+    AudioDelay = 4,
+    /// <summary>删去了未选的轨道，节目表随之改写。</summary>
+    TracksSelected = 8,
+    /// <summary>转码了杜比 E 音轨。</summary>
+    DolbyETranscoded = 16
 }
 
 public enum TsExportCheckState
@@ -41,10 +60,11 @@ public enum TsExportCheckFailure
 }
 
 /// <summary>
-/// 一次导出任务的结果索引；RecordId 为空表示本次导出未成功或未登记。Elapsed 为该任务的导出用时，Kind 为导出类型。
+/// 一次导出任务的结果索引；RecordId 为空表示本次导出未成功或未登记。Elapsed 为该任务的导出用时，Kind 为导出类型，
+/// Modifiers 为类型之外的改动，AudioDelayMs 为改写音轨时间戳所用的延迟。
 /// </summary>
 public sealed record ExportTaskOutcome(long? RecordId, string OutputPath, bool Success, TimeSpan Elapsed = default,
-    ExportKind? Kind = null, bool DolbyETranscoded = false);
+    ExportKind? Kind = null, ExportModifiers Modifiers = ExportModifiers.None, int AudioDelayMs = 0);
 
 /// <summary>按检测类型保存的有界分类统计。</summary>
 public sealed record ExportCheckCategory(TsCheckEventType Type, long Count);
@@ -59,8 +79,10 @@ public sealed class ExportRecord
     public DateTime Timestamp { get; init; }
     public string OutputPath { get; init; } = "";
     public ExportKind Kind { get; init; }
-    /// <summary>导出时转码了杜比 E 音轨（导出类型之外的标记）。</summary>
-    public bool DolbyETranscoded { get; init; }
+    /// <summary>导出类型之外的改动。</summary>
+    public ExportModifiers Modifiers { get; init; }
+    /// <summary>改写音轨时间戳所用的音频延迟（毫秒）；没有 <see cref="ExportModifiers.AudioDelay"/> 时为 0。</summary>
+    public int AudioDelayMs { get; init; }
     public long FileSize { get; init; }
     public TimeSpan Elapsed { get; init; }
     /// <summary>本次导出包含的片段数量；合并导出为片段数，单段导出为 1。</summary>

@@ -46,7 +46,8 @@ public partial class MainWindowViewModel
     public bool ShowProgramExportChoice => _videoInstance is { CanBinaryClip: true, ProgramCount: > 1 } &&
                                           _activePreviewSelection?.ProgramId is not null;
     public bool IsProgramExportFiltered => ExportCurrentProgramOnly && ShowProgramExportChoice;
-    public bool ShowRawClipSizeEstimate => !IsProgramExportFiltered;
+    // 只导出当前节目或删去了轨道时，输出大小要导出后才能确定。
+    public bool ShowRawClipSizeEstimate => !IsProgramExportFiltered && !HasTsTrackSelection;
     public string FilteredClipSizeStr => LocalizationManager.Instance.String_SizePrefix
         + LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport;
     private bool CanLoadVideo => !_isLoadingVideo;
@@ -127,6 +128,9 @@ public partial class MainWindowViewModel
         OnPropertyChanged(nameof(ShowRawClipSizeEstimate));
         OnPropertyChanged(nameof(FilteredClipSizeStr));
         OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
+        // 导出范围随“仅导出当前节目”与所选节目变化，轨道摘要随之更新。
+        OnPropertyChanged(nameof(HasTsTrackSelection));
+        OnPropertyChanged(nameof(TsTrackSummary));
         LoadVideoClickCommand.NotifyCanExecuteChanged();
         OpenDiscFolderCommand.NotifyCanExecuteChanged();
         OpenProjectCommand.NotifyCanExecuteChanged();

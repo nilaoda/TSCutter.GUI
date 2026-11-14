@@ -381,8 +381,7 @@
     <x:String x:Key="String.Export_Check_Category_Tail">Extra data at end of file</x:String>
     <x:String x:Key="String.Export_Check_Category_Other">Other issues</x:String>
     <x:String x:Key="String.Export_Kind_TsCopy">TS byte copy</x:String>
-    <x:String x:Key="String.Export_Kind_TsProgramOnly">TS, current program only</x:String>
-    <x:String x:Key="String.Export_Kind_TsProgramTablesSupplement">TS, program tables supplemented</x:String>
+    <x:String x:Key="String.Export_Kind_TsPacket">TS packet export</x:String>
     <x:String x:Key="String.Export_Kind_TsMerge">TS merge</x:String>
     <x:String x:Key="String.Export_Kind_M2tsRemux">M2TS remux</x:String>
     <x:String x:Key="String.Export_Kind_Mp4Remux">MP4 remux</x:String>
@@ -1717,6 +1716,16 @@
     <x:String x:Key="String.DolbyE.Failed">Dolby E transcoding failed: {0}</x:String>
     <x:String x:Key="String.DolbyE.Config.71Screen">7.1 screen</x:String>
     <x:String x:Key="String.DolbyE.GroupsHint">A Dolby E track packs several channel groups (for example a 5.1 main mix and a stereo mix). After transcoding, each group becomes a separate audio track.</x:String>
-    <x:String x:Key="String.Export_Kind_TsDolbyE">TS (Dolby E transcoded)</x:String>
     <x:String x:Key="String.Export_Tag_DolbyE">Dolby E transcoded</x:String>
+    <x:String x:Key="String.Export_Tag_ProgramOnly">Current program only</x:String>
+    <x:String x:Key="String.Export_Tag_TablesSupplemented">Program tables added</x:String>
+    <x:String x:Key="String.Export_Tag_TracksSelected">Tracks selected</x:String>
+    <x:String x:Key="String.Export_Tag_AudioDelay">Audio delay {0} ms</x:String>
+    <!-- TS 导出的轨道选择 -->
+    <x:String x:Key="String.TsTracks.SameAsSource">Same as source ({0})</x:String>
+    <x:String x:Key="String.TsTracks.TrackHint">Sorted by PID · Current video required</x:String>
+    <x:String x:Key="String.TsTracks.Notice">With all tracks kept, the clip is copied as is. Unchecked tracks are removed from the output and their entries are dropped from the program tables; all other packets are copied unchanged.</x:String>
+    <x:String x:Key="String.TsTracks.FrameAccurateHint">Smart cut only outputs the video, audio and subtitles of the previewed program.</x:String>
+    <x:String x:Key="String.TsTracks.SummaryAll">All {0} tracks exported</x:String>
+    <x:String x:Key="String.TsTracks.Summary">{0} of {1} tracks exported · program tables rewritten</x:String>
 </ResourceDictionary>

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Text;
@@ -23,7 +24,7 @@ public sealed class ExportRecordView
     {
         Record = record;
         TimeText = record.Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
-        KindText = FormatKind(record.Kind, record.DolbyETranscoded, strings);
+        KindText = FormatKind(record.Kind, record.Modifiers, record.AudioDelayMs, strings);
         FileSizeText = CommonUtil.FormatFileSize(record.FileSize);
         CheckStatusText = BuildCheckStatus(record, strings, out var detail, out var canViewDetails);
         CheckDetailText = detail;
@@ -40,17 +41,32 @@ public sealed class ExportRecordView
     /// <summary>登记时完整结果是否可直接打开；点击时还会重新校验文件状态。</summary>
     public bool CanViewDetails { get; }
 
-    /// <summary>导出类型；转码了杜比 E 时，单段 TS 导出不再称为字节复制，其他类型另加转码标记。</summary>
-    public static string FormatKind(ExportKind kind, bool dolbyETranscoded, LocalizationManager strings) =>
-        !dolbyETranscoded ? FormatKind(kind, strings)
-        : kind == ExportKind.TsCopy ? strings.String_Export_Kind_TsDolbyE
-        : $"{FormatKind(kind, strings)} · {strings.String_Export_Tag_DolbyE}";
+    /// <summary>导出类型与附加标签连成一行，例如“TS 合并 · 仅当前节目 · 音频延迟 +120 ms”。</summary>
+    public static string FormatKind(ExportKind kind, ExportModifiers modifiers, int audioDelayMs, LocalizationManager strings) =>
+        string.Join(" · ", FormatTags(kind, modifiers, audioDelayMs, strings));
+
+    /// <summary>导出类型在前，随后按固定顺序列出类型之外的改动。</summary>
+    public static IReadOnlyList<string> FormatTags(ExportKind kind, ExportModifiers modifiers, int audioDelayMs,
+        LocalizationManager strings)
+    {
+        var tags = new List<string> { FormatKind(kind, strings) };
+        if (modifiers.HasFlag(ExportModifiers.ProgramOnly))
+            tags.Add(strings.String_Export_Tag_ProgramOnly);
+        if (modifiers.HasFlag(ExportModifiers.TablesSupplemented))
+            tags.Add(strings.String_Export_Tag_TablesSupplemented);
+        if (modifiers.HasFlag(ExportModifiers.TracksSelected))
+            tags.Add(strings.String_Export_Tag_TracksSelected);
+        if (modifiers.HasFlag(ExportModifiers.AudioDelay))
+            tags.Add(string.Format(strings.String_Export_Tag_AudioDelay, audioDelayMs.ToString("+0;-0;0")));
+        if (modifiers.HasFlag(ExportModifiers.DolbyETranscoded))
+            tags.Add(strings.String_Export_Tag_DolbyE);
+        return tags;
+    }
 
     public static string FormatKind(ExportKind kind, LocalizationManager strings) => kind switch
     {
         ExportKind.TsCopy => strings.String_Export_Kind_TsCopy,
-        ExportKind.TsProgramOnly => strings.String_Export_Kind_TsProgramOnly,
-        ExportKind.TsProgramTablesSupplement => strings.String_Export_Kind_TsProgramTablesSupplement,
+        ExportKind.TsPacket => strings.String_Export_Kind_TsPacket,
         ExportKind.TsMerge => strings.String_Export_Kind_TsMerge,
         ExportKind.M2tsRemux => strings.String_Export_Kind_M2tsRemux,
         ExportKind.Mp4Remux => strings.String_Export_Kind_Mp4Remux,
@@ -246,7 +262,7 @@ public partial class ExportRecordsWindowViewModel : ViewModelBase, IModalDialogV
         var builder = new StringBuilder(512);
         builder.AppendLine($"{strings.String_Export_Records_Column_File}: {record.FileName}");
         builder.AppendLine($"{strings.String_Export_Records_Column_Path}: {record.OutputPath}");
-        builder.AppendLine($"{strings.String_Export_Records_Column_Kind}: {ExportRecordView.FormatKind(record.Kind, record.DolbyETranscoded, strings)}");
+        builder.AppendLine($"{strings.String_Export_Records_Column_Kind}: {ExportRecordView.FormatKind(record.Kind, record.Modifiers, record.AudioDelayMs, strings)}");
         builder.AppendLine($"{strings.String_Export_Records_Column_Size}: {CommonUtil.FormatFileSize(record.FileSize)}");
         builder.AppendLine($"{strings.String_Export_Records_Column_Elapsed}: {record.Elapsed:hh\\:mm\\:ss\\.fff}");
         builder.AppendLine($"{strings.String_Export_Records_Column_Clips}: {record.ClipCount}");

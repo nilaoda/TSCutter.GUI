@@ -50,11 +50,19 @@ public sealed class ExportResultTests
                 Assert.Equal(strings.String_ExportResult_TitleSuccess, success.Title);
                 Assert.Equal("节目_cut.mp4", success.FileName);
                 Assert.Equal(new[] { strings.String_Export_Kind_Mp4Remux, strings.String_ExportResult_RemoveTag }, success.Tags);
-                // 转码了杜比 E：单段 TS 不再称为字节复制，其他类型加转码标记；未转码时与原来一致。
-                Assert.Equal(strings.String_Export_Kind_TsDolbyE, ExportRecordView.FormatKind(ExportKind.TsCopy, true, strings));
-                Assert.Equal($"{strings.String_Export_Kind_FrameAccurate} · {strings.String_Export_Tag_DolbyE}",
-                    ExportRecordView.FormatKind(ExportKind.FrameAccurate, true, strings));
-                Assert.Equal(strings.String_Export_Kind_TsCopy, ExportRecordView.FormatKind(ExportKind.TsCopy, false, strings));
+                // 导出类型在前，类型之外的改动按固定顺序作为附加标签；没有改动时只有类型。
+                Assert.Equal(strings.String_Export_Kind_TsCopy,
+                    ExportRecordView.FormatKind(ExportKind.TsCopy, ExportModifiers.None, 0, strings));
+                Assert.Equal(new[]
+                    {
+                        strings.String_Export_Kind_TsMerge, strings.String_Export_Tag_ProgramOnly,
+                        strings.String_Export_Tag_TablesSupplemented, strings.String_Export_Tag_TracksSelected,
+                        string.Format(strings.String_Export_Tag_AudioDelay, "+120"), strings.String_Export_Tag_DolbyE
+                    },
+                    ExportRecordView.FormatTags(ExportKind.TsMerge, ExportModifiers.DolbyETranscoded | ExportModifiers.AudioDelay |
+                        ExportModifiers.TracksSelected | ExportModifiers.TablesSupplemented | ExportModifiers.ProgramOnly, 120, strings));
+                Assert.Equal($"{strings.String_Export_Kind_TsPacket} · {string.Format(strings.String_Export_Tag_AudioDelay, "-40")}",
+                    ExportRecordView.FormatKind(ExportKind.TsPacket, ExportModifiers.AudioDelay, -40, strings));
                 Assert.Equal(CommonUtil.FormatFileSize(2 * 1024 * 1024), success.SizeText);
                 Assert.Equal("00:00:04.0 · " + string.Format(strings.String_ExportResult_AverageSpeed,
                     CommonUtil.FormatFileSize(512 * 1024)), success.ElapsedText);

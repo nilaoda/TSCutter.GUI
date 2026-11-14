@@ -97,7 +97,7 @@ public partial class MainWindowViewModel
 
     private FrameAccurateExportSettings CreateFrameAccurateExportSettings(VideoInstance video)
     {
-        var settings = video.CreateFrameAccurateSettings(CurrentRemuxSettings);
+        var settings = video.CreateFrameAccurateSettings(CurrentRemuxSettings, CurrentExcludedPids);
         settings.AudioDelayMs = EffectiveAudioDelayMs;
         return settings;
     }

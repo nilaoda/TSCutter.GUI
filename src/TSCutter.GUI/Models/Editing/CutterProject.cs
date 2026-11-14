@@ -19,6 +19,8 @@ public sealed class CutterProject
     public bool AudioDelayEnabled { get; set; }
     /// <summary>各杜比 E 轨（按 PID）的导出处理方式；没有杜比 E 轨时为 null。</summary>
     public List<Media.DolbyETrackSettings>? DolbyE { get; set; }
+    /// <summary>TS 导出时不输出的轨道（PID）；全部保留时为 null。</summary>
+    public List<int>? ExcludedTsPids { get; set; }
     public List<ProjectClip> Clips { get; set; } = [];
     public List<ProjectQueueItem> Queue { get; set; } = [];
     public int SelectedClipIndex { get; set; } = -1;
@@ -81,6 +83,8 @@ public sealed class ProjectQueueItem
     public int? AudioDelayProgramId { get; set; }
     /// <summary>杜比 E 转码计划；不转码时为 null。</summary>
     public Media.DolbyEExportPlan? DolbyE { get; set; }
+    /// <summary>TS 导出时不输出的轨道（PID）；全部保留时为 null。</summary>
+    public List<int>? ExcludedPids { get; set; }
     public string OutputFilePath { get; set; } = string.Empty;
     public double StartTime { get; set; }
     public double EndTime { get; set; }

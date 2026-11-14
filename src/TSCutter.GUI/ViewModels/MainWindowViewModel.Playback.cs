@@ -65,6 +65,7 @@ public partial class MainWindowViewModel
         }
         finally { updatingPreviewAudio = false; }
         ResetDolbyESettings();
+        ResetTsTrackSelection();
         UpdateStripWaveformSource();
     }
 

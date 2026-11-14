@@ -25,8 +25,9 @@ public sealed class ExportResultInfo
     public ExportRecord? Record { get; init; }
     /// <summary>导出类型；有记录时以记录为准。</summary>
     public ExportKind? Kind { get; init; }
-    /// <summary>转码了杜比 E 音轨；有记录时以记录为准。</summary>
-    public bool DolbyETranscoded { get; init; }
+    /// <summary>导出类型之外的改动与音频延迟；有记录时以记录为准。</summary>
+    public ExportModifiers Modifiers { get; init; }
+    public int AudioDelayMs { get; init; }
     public TimeSpan Elapsed { get; init; }
     /// <summary>导出类型之外的标签（如删除模式）。</summary>
     public IReadOnlyList<string> ExtraTags { get; init; } = [];
@@ -98,7 +99,8 @@ public partial class ExportResultWindowViewModel : ViewModelBase, IModalDialogVi
         HasOutputFile = File.Exists(info.OutputPath);
         var record = info.Record;
         Tags = (IsSuccess && (record?.Kind ?? info.Kind) is { } kind
-                ? new[] { ExportRecordView.FormatKind(kind, record?.DolbyETranscoded ?? info.DolbyETranscoded, strings) } : [])
+                ? ExportRecordView.FormatTags(kind, record?.Modifiers ?? info.Modifiers,
+                    record?.AudioDelayMs ?? info.AudioDelayMs, strings) : [])
             .Concat(info.ExtraTags).ToArray();
         var size = record?.FileSize ?? (HasOutputFile ? new FileInfo(info.OutputPath).Length : 0);
         SizeText = CommonUtil.FormatFileSize(size);
