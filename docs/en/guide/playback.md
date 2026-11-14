@@ -4,7 +4,9 @@
 
 Click the play button or press <kbd>Space</kbd> to play from the displayed frame; press again to pause. Right-click the play button and choose **Play selected clip** to play just that clip and pause at its end. Seeking through the timeline or thumbnails resumes playback if it was running, and stays paused otherwise. DVD and Blu-ray titles can also be played.
 
-Choose an audio track above the preview. The first decodable track is selected by default. Unsupported tracks, such as AV3A, remain visible but disabled; video plays silently if no track can be decoded. The volume button and slider affect preview audio only, not exports.
+Choose an audio track above the preview. The first decodable track is selected by default. Unsupported tracks, such as AV3A, remain visible but disabled; video plays silently if no track can be decoded. Dolby E tracks are listed per program group and can be played directly. The volume button and slider affect preview audio only, not exports.
+
+MPEG-2 recordings without any I-frames, where the picture is rebuilt only by a rolling intra refresh (common in satellite contribution feeds), can also be previewed and navigated.
 
 In keyframe mode, marking a boundary while paused snaps to a compatible keyframe at or before the displayed frame and shows the aligned frame. Smart cut uses the displayed frame itself.
 

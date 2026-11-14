@@ -16,6 +16,7 @@ The switch state is remembered and saved with projects, and queued exports keep 
 
 - **Frame-by-frame navigation**: The navigation strip shows every frame, and <kbd>,</kbd> / <kbd>.</kbd> step one frame backward or forward. Marking after pausing playback no longer snaps to a keyframe.
 - **Broadcast recordings**: Some H.264 and HEVC open-GOP recordings without IDR frames are supported. The app checks whether video can be copied at the join and re-encodes leading pictures where needed. If a safe join is not possible, the export stops with an explanation.
+- **Gradual refresh recordings**: H.264 and MPEG-2 with no complete keyframes, where the picture is rebuilt only by a rolling intra refresh (common in satellite contribution feeds, such as feeds carrying Dolby E), can also be smart cut. The copied part starts at a refresh entry point; the first few seconds differ slightly from the source and match it exactly after one refresh cycle, usually under 5 seconds.
 - **Export progress**: The export window shows a plan bar with re-encoded (orange) and copied (green) parts, the current phase, and the share that needs no re-encoding.
 - **Saving and merging**: Save single clips, use the batch export queue, or merge several clips from one file.
 
@@ -25,7 +26,7 @@ The switch state is remembered and saved with projects, and queued exports keep 
 | --- | --- |
 | H.264 | Baseline, Main, High and High 4:2:2; 8/10-bit, including interlaced |
 | HEVC | Main, Main 10 and 4:2:2 |
-| MPEG-2 | Main and Simple, including open GOP and interlaced |
+| MPEG-2 | Main, Simple and 4:2:2, including open GOP and interlaced |
 | AV1 | Main (MP4/MKV only) |
 | VP9 | Profile 0/2 (MP4/MKV only) |
 

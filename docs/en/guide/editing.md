@@ -14,8 +14,44 @@ Files with multiple programs, video tracks, or embedded subtitles show selectors
 For multi-program TS, “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks.
 
 ::: info TS exports in keyframe mode
-An ordinary single-clip TS/M2TS export copies the original bytes when all programs are retained and program tables are not patched. Merged and remuxed exports adjust some structures or timestamps and are not byte-for-byte copies.
+An ordinary single-clip TS/M2TS export copies the original bytes when all programs and tracks are retained, program tables are not patched and no audio delay is applied. Merged and remuxed exports adjust some structures or timestamps and are not byte-for-byte copies.
 :::
+
+## TS export settings
+
+With a TS/M2TS file open, the area below the clip list shows how many tracks will be exported. Click **Export settings** to adjust the options below. They are saved with the project and the export queue, and apply to both keyframe cuts and smart cuts.
+
+### Choose output tracks
+
+Untick tracks you don't need (the current video track can't be removed). Removed tracks are dropped from the output along with their entries in the program tables; all other packets are copied as they are. A dot on the **Export settings** button shows that tracks were removed.
+
+### Detect silent tracks
+
+**Detect silent tracks** finds audio tracks without sound, such as empty placeholder language tracks. It decodes 12 evenly spaced 1.5-second samples across the file and unticks tracks whose peak stays below −60 dBFS; you can tick them again if needed. Dolby E tracks are checked per program group and unticked only when every group is silent. Detection runs only when you click it, so it adds no overhead otherwise. A track that has sound in only one part of the file may be misjudged. The same option is available in the MP4/MKV export settings.
+
+### Dolby E transcoding
+
+Broadcast contribution feeds often carry Dolby E, which ordinary players can't play. When a file contains Dolby E, a **Dolby E…** button appears next to the audio selector above the preview, where you choose what happens on export:
+
+- **Leave the Dolby E track unchanged**: the track is copied as it is.
+- **Transcode to regular audio tracks**: Dolby E packs several program groups into one track (for example a 5.1 main mix and a stereo mix); each group becomes its own track. Each group can produce one or more tracks, each with its own codec (AC3, E-AC3, AAC, FLAC or PCM), channel layout (original, or a stereo or mono downmix), bitrate and language.
+- **Also keep the original Dolby E track**: when unticked, the transcoded tracks replace the original. The original takes about 2.3 Mbps, and some players play it as PCM noise.
+
+FLAC can't be stored in TS, so FLAC output is saved as a separate `.flac` file named after the output file. PCM is written to TS as SMPTE 302M (24-bit) at a high bitrate. If the Dolby E configuration changes mid-file, missing program groups are filled with silence. During preview you can also pick a Dolby E program group in the audio selector and listen to it directly.
+
+### Merge three stereo tracks into 5.1
+
+Some broadcast feeds, such as sports world feeds, carry one discrete 5.1 mix as three stereo tracks (L/R, C/LFE, Ls/Rs). When the current program has three or more stereo tracks with the same sample rate, a **Merge 5.1…** button appears next to the audio selector:
+
+1. Pick a track for each of the three slots, swapping left and right if needed.
+2. The stream doesn't say how the tracks map to channels, so click **Analyze** to sample-decode them. It finds LFE tracks that contain only low frequencies, silent, duplicated or mono tracks, and suggests a mapping or warns that the tracks don't look like a split 5.1.
+3. Choose the codec (AC3, E-AC3, AAC, FLAC or PCM) and whether to replace or keep the original tracks.
+
+Once set, the audio selector gains a "Merged 5.1 (downmix preview)" entry: playback and the waveform use the merged result downmixed to stereo, so you can listen before exporting. The tracks are aligned by timestamp, and parts that start late or are missing are filled with silence. Newly opened files are not merged by default.
+
+### Export types
+
+Export records and the result window label each export by what was actually done: output that is only copied is a "TS byte copy", and a single-clip export with any change is a "TS packet export", with tags listing changes such as current program only, patched program tables, selected tracks, audio delay, Dolby E transcoding and merged 5.1.
 
 ## Export results
 
