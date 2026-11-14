@@ -34,7 +34,8 @@ public sealed class GradualRefreshTests
                 await scan.InitVideoAsync();
                 Assert.True(scan.UsesGradualRefresh);
                 Assert.Equal(VideoInstance.GradualRefreshPrerollSeconds, scan.RecoveryPrerollSeconds);
-                Assert.Equal(FrameAccurateSupport.GradualRefresh, scan.FrameAccurateSupport);
+                // 智能剪辑以恢复点衔接（复制区开头几秒与原片略有差别）。
+                Assert.Equal(FrameAccurateSupport.Supported, scan.FrameAccurateSupport);
                 while (await scan.DecodeNextSearchFrameAsync(0, 0, CancellationToken.None) is { } frame)
                 {
                     Assert.Equal(KeyFrameTypeReader.RecoveryPoint, frame.KeyFrameType);
@@ -105,8 +106,8 @@ public sealed class GradualRefreshTests
                 Assert.True(scan.UsesGradualRefresh);
                 Assert.True(scan.CanBinaryClip);
                 Assert.Equal(1, scan.EstimatedKeyFrameIntervalSeconds, 3);
-                // MPEG-2 4:2:2 不能重新编码衔接（Codec），4:2:0 时为 GradualRefresh；都不提供智能剪辑。
-                Assert.NotEqual(FrameAccurateSupport.Supported, scan.FrameAccurateSupport);
+                // 4:2:2 档次可以重新编码，以带序列头的 P 帧衔接，提供智能剪辑。
+                Assert.Equal(FrameAccurateSupport.Supported, scan.FrameAccurateSupport);
                 while (await scan.DecodeNextSearchFrameAsync(0, 0, CancellationToken.None) is { } frame)
                 {
                     Assert.Equal(KeyFrameTypeReader.RecoveryPoint, frame.KeyFrameType);

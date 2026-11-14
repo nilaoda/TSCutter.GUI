@@ -350,8 +350,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             if (!reopened && !TryOpenSoftwareDecoder(fullPacketDecoding: true))
                 throw new VideoDecoderUnavailableException(inVideoStream.Codecpar.CodecId.ToString());
             Console.WriteLine("Gradual intra refresh detected; decoding full packets with preroll.");
-            if (FrameAccurateSupport == FrameAccurateSupport.Supported)
-                FrameAccurateSupport = FrameAccurateSupport.GradualRefresh;
+            // 智能剪辑以恢复点衔接，复制区开头几秒与原片略有差别（见 H264RefreshSplice）；
+            // 只有恢复点的码流只出现在 H.264 与 MPEG-2，两者都支持。
         }
         RunReadOperation(() => { SeekToTime(TimeSpan.Zero); return true; }, cancellationToken);
         

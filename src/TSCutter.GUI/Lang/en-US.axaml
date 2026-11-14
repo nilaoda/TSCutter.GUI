@@ -1552,9 +1552,9 @@
     <x:String x:Key="String.CutMode.FrameAccurateOff">Smart cut: off. Keyframe cut is used.&#10;Ranges snap to keyframes; no re-encoding.&#10;Turn it on to select any frame; only the parts near the cut points are re-encoded.</x:String>
     <x:String x:Key="String.CutMode.Unavailable">Smart cut is unavailable: {0}</x:String>
     <x:String x:Key="String.CutMode.FallbackKeyFrame">Keyframe cut is used for now;&#10;smart cut resumes automatically for supported videos.</x:String>
-    <x:String x:Key="String.CutMode.Reason.Codec">only these videos are supported for now:&#10;H.264 (Baseline, Main, High or High 4:2:2 profile)&#10;HEVC (Main, Main 10 or 4:2:2 profile)&#10;MPEG-2 (Main or Simple profile)&#10;AV1 (Main profile) and VP9 (Profile 0 or 2)</x:String>
+    <x:String x:Key="String.CutMode.Reason.Codec">only these videos are supported for now:&#10;H.264 (Baseline, Main, High or High 4:2:2 profile)&#10;HEVC (Main, Main 10 or 4:2:2 profile)&#10;MPEG-2 (Main, Simple or 4:2:2 profile)&#10;AV1 (Main profile) and VP9 (Profile 0 or 2)</x:String>
     <x:String x:Key="String.CutMode.Reason.Interlaced">interlaced video is not supported yet.</x:String>
-    <x:String x:Key="String.CutMode.Reason.PixelFormat">only 4:2:0 video&#10;(8-bit, or 10-bit for HEVC, AV1 and VP9)&#10;and 8- or 10-bit H.264 and HEVC 4:2:2 video are supported for now.</x:String>
+    <x:String x:Key="String.CutMode.Reason.PixelFormat">only 4:2:0 video&#10;(8-bit, or 10-bit for HEVC, AV1 and VP9)&#10;and 4:2:2 video (8- or 10-bit H.264 and HEVC,&#10;8-bit MPEG-2) are supported for now.</x:String>
     <x:String x:Key="String.CutMode.Reason.DynamicHdr">per-frame dynamic HDR metadata (such as HDR10+)&#10;cannot be kept for re-encoded frames.</x:String>
     <x:String x:Key="String.CutMode.Reason.Pulldown">soft pulldown (repeated fields)&#10;cannot be kept for re-encoded frames.</x:String>
     <x:String x:Key="String.CutMode.Reason.DolbyVision">only single-layer Dolby Vision Profile 5 and 8.1&#10;are supported; this video uses a different Dolby Vision format.</x:String>
@@ -1562,7 +1562,8 @@
     <x:String x:Key="String.CutMode.Reason.MultipleVideo">more than one video track is selected.</x:String>
     <x:String x:Key="String.CutMode.Reason.Encoder">the FFmpeg runtime has no encoder&#10;that can re-encode this video's codec and pixel format.</x:String>
     <x:String x:Key="String.CutMode.Reason.Container">this file format is not supported.</x:String>
-    <x:String x:Key="String.CutMode.Reason.GradualRefresh">this video has no independently decodable keyframes&#10;(gradual intra refresh), so re-encoded parts&#10;cannot join the copied parts seamlessly.</x:String>
+    <x:String x:Key="String.CutMode.Reason.GradualRefresh">this video has no independently decodable keyframes&#10;(gradual intra refresh), and its encoding settings&#10;cannot be matched by the re-encoded parts.</x:String>
+    <x:String x:Key="String.CutMode.GradualRefreshNote">This video has no complete keyframes (gradual intra refresh):&#10;for a few seconds after each re-encoded start,&#10;the copied picture differs slightly from the original,&#10;then matches it exactly.</x:String>
     <x:String x:Key="String.Export.GradualRefreshWarning">This video has no complete keyframes (gradual intra refresh). The first few seconds of the exported file may look corrupted until the picture refreshes; this comes from how the source was encoded. Continue exporting?</x:String>
     <x:String x:Key="String.CutMode.SwitchBlocked">Clips {0} were marked in smart cut mode and may not start or end on keyframes. Remove or re-mark them before switching to keyframe cut.</x:String>
     <x:String x:Key="String.Navigate.PreviousFrame">Previous frame (,)</x:String>

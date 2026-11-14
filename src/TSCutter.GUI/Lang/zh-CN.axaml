@@ -1552,9 +1552,9 @@
     <x:String x:Key="String.CutMode.FrameAccurateOff">智能剪辑：已关闭，当前为关键帧剪辑。&#10;按关键帧选择范围，无需重新编码。&#10;开启后可按帧选择范围，仅重新编码切点附近的部分。</x:String>
     <x:String x:Key="String.CutMode.Unavailable">无法使用智能剪辑：{0}</x:String>
     <x:String x:Key="String.CutMode.FallbackKeyFrame">目前改用关键帧剪辑；&#10;打开支持的视频时会自动恢复智能剪辑。</x:String>
-    <x:String x:Key="String.CutMode.Reason.Codec">目前仅支持以下视频：&#10;H.264（Baseline、Main、High 或 High 4:2:2 档次）&#10;HEVC（Main、Main 10 或 4:2:2 档次）&#10;MPEG-2（Main 或 Simple 档次）&#10;AV1（Main 档次）和 VP9（Profile 0 或 2）</x:String>
+    <x:String x:Key="String.CutMode.Reason.Codec">目前仅支持以下视频：&#10;H.264（Baseline、Main、High 或 High 4:2:2 档次）&#10;HEVC（Main、Main 10 或 4:2:2 档次）&#10;MPEG-2（Main、Simple 或 4:2:2 档次）&#10;AV1（Main 档次）和 VP9（Profile 0 或 2）</x:String>
     <x:String x:Key="String.CutMode.Reason.Interlaced">暂不支持隔行视频。</x:String>
-    <x:String x:Key="String.CutMode.Reason.PixelFormat">目前仅支持 4:2:0 视频&#10;（8 位；HEVC、AV1 与 VP9 也支持 10 位），&#10;以及 8 位或 10 位的 H.264、HEVC 4:2:2 视频。</x:String>
+    <x:String x:Key="String.CutMode.Reason.PixelFormat">目前仅支持 4:2:0 视频&#10;（8 位；HEVC、AV1 与 VP9 也支持 10 位），&#10;以及 4:2:2 视频（8 位或 10 位的 H.264、HEVC，&#10;8 位的 MPEG-2）。</x:String>
     <x:String x:Key="String.CutMode.Reason.DynamicHdr">重新编码的画面无法保留&#10;逐帧动态 HDR 元数据（如 HDR10+）。</x:String>
     <x:String x:Key="String.CutMode.Reason.Pulldown">重新编码的画面无法保留软下拉（重复场）。</x:String>
     <x:String x:Key="String.CutMode.Reason.DolbyVision">目前仅支持单层杜比视界 Profile 5 和 8.1，&#10;此视频的杜比视界格式暂不支持。</x:String>
@@ -1562,7 +1562,8 @@
     <x:String x:Key="String.CutMode.Reason.MultipleVideo">选择了多个视频轨道。</x:String>
     <x:String x:Key="String.CutMode.Reason.Encoder">FFmpeg 运行库中没有能按此视频的编码格式&#10;和像素格式重新编码的编码器。</x:String>
     <x:String x:Key="String.CutMode.Reason.Container">不支持此文件格式。</x:String>
-    <x:String x:Key="String.CutMode.Reason.GradualRefresh">此视频没有可独立解码的关键帧（逐行刷新编码），&#10;重新编码部分无法与直接复制部分无缝衔接。</x:String>
+    <x:String x:Key="String.CutMode.Reason.GradualRefresh">此视频没有可独立解码的关键帧（逐行刷新编码），&#10;且重新编码部分无法沿用它的编码设置。</x:String>
+    <x:String x:Key="String.CutMode.GradualRefreshNote">此视频没有完整的关键帧（逐行刷新编码）：&#10;每段重新编码的开头之后几秒内，&#10;直接复制的画面与原片略有差别，之后完全一致。</x:String>
     <x:String x:Key="String.Export.GradualRefreshWarning">此视频没有完整的关键帧（逐行刷新编码）。导出文件开头几秒的画面可能花屏，需要播放一段时间才会完整，这是片源的编码方式所致。是否继续导出？</x:String>
     <x:String x:Key="String.CutMode.SwitchBlocked">片段 {0} 是在智能剪辑模式下标记的，起止点可能不在关键帧上。请先删除或重新标记这些片段，再切换到关键帧剪辑。</x:String>
     <x:String x:Key="String.Navigate.PreviousFrame">上一帧（,）</x:String>

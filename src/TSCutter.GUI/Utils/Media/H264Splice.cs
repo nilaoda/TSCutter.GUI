@@ -153,6 +153,17 @@ internal static class H264Splice
         public bool Adaptive;
         public int NumRefIdxL0;
         public int NumRefIdxL1;
+        /// <summary>slice_type 原值（0–9），重写切片头时照写。</summary>
+        public int RawSliceType;
+        public int IdrPicId;
+        /// <summary>pic_order_cnt_lsb 的位置与值（POC 类型 0 时）。</summary>
+        public int PocLsbBit;
+        public int PocLsb;
+        public int CabacInitIdc;
+        public int SliceQpDelta;
+        public int DeblockingIdc;
+        public int SliceAlphaOffset;
+        public int SliceBetaOffset;
         public bool Intra => SliceType is 2 or 4;
     }
 
@@ -181,6 +192,7 @@ internal static class H264Splice
         if (sliceType > 9)
             return false;
         h.SliceType = (int)(sliceType % 5);
+        h.RawSliceType = (int)sliceType;
         var ppsId = (int)r.ReadUe();
         if (!sets.TryGet(ppsId, out var sps, out var pps))
             return false;
@@ -198,11 +210,12 @@ internal static class H264Splice
         }
         h.AfterFieldBit = r.Position;
         if (h.NalType == 5)
-            r.ReadUe();
+            h.IdrPicId = (int)r.ReadUe();
         h.AfterIdrBit = r.Position;
+        h.PocLsbBit = r.Position;
         if (h.Sps.PocType == 0)
         {
-            r.Skip(h.Sps.Log2MaxPocLsb);
+            h.PocLsb = (int)r.ReadBits(h.Sps.Log2MaxPocLsb);
             if (h.Pps.BottomFieldPicOrderPresent && !h.Field)
                 r.ReadSe();
         }
@@ -278,18 +291,18 @@ internal static class H264Splice
         }
         h.MarkingEnd = r.Position;
         if (h.Pps.Cabac && !h.Intra)
-            r.ReadUe();
-        r.ReadSe();
+            h.CabacInitIdc = (int)r.ReadUe();
+        h.SliceQpDelta = r.ReadSe();
         if (h.SliceType is 3 or 4)
         {
             if (h.SliceType == 3)
                 r.Skip(1);
             r.ReadSe();
         }
-        if (h.Pps.DeblockingControlPresent && r.ReadUe() != 1)
+        if (h.Pps.DeblockingControlPresent && (h.DeblockingIdc = (int)r.ReadUe()) != 1)
         {
-            r.ReadSe();
-            r.ReadSe();
+            h.SliceAlphaOffset = r.ReadSe();
+            h.SliceBetaOffset = r.ReadSe();
         }
         h.HeaderEnd = r.Position;
         return true;
