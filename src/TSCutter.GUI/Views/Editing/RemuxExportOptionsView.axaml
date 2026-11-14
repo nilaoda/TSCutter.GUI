@@ -6,6 +6,17 @@
         Width="500" SizeToContent="Height" CanResize="False"
         CanMinimize="False" CanMaximize="False" ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner" Title="{DynamicResource String.RemuxExport.Options}">
+    <Window.Styles>
+        <!-- 静音检测的结果：平时淡显，静音时醒目（透明度写在样式里，静音样式才能覆盖）。 -->
+        <Style Selector="TextBlock.level">
+            <Setter Property="Opacity" Value="0.7" />
+        </Style>
+        <Style Selector="TextBlock.level.silent">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+        </Style>
+    </Window.Styles>
     <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="16">
         <Grid ColumnDefinitions="*,Auto" ColumnSpacing="16">
             <TextBlock Text="{DynamicResource String.RemuxExport.Container}" FontWeight="Bold" VerticalAlignment="Center" />
@@ -23,23 +34,40 @@
                 <TextBlock Grid.Column="1" Text="{DynamicResource String.TsTracks.TrackHint}" Opacity="0.7"
                            TextWrapping="Wrap" HorizontalAlignment="Right" IsVisible="{Binding IsTsOutput}" />
             </Grid>
-            <ScrollViewer Grid.Row="1" MaxHeight="224" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
-                <ItemsControl ItemsSource="{Binding Tracks}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:RemuxExportTrackChoice">
-                            <StackPanel>
-                                <!-- TS 多节目时，每个节目的第一条轨道上方显示节目名。 -->
-                                <TextBlock Text="{Binding GroupHeader}" IsVisible="{Binding HasGroupHeader}"
-                                           FontWeight="SemiBold" Margin="0,8,0,2" TextTrimming="CharacterEllipsis" />
-                                <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" IsEnabled="{Binding CanChange}"
-                                          MinHeight="28" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
-                                    <TextBlock Text="{Binding Description}" TextWrapping="Wrap" Margin="2,3,0,3" />
-                                </CheckBox>
-                            </StackPanel>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-            </ScrollViewer>
+            <StackPanel Grid.Row="1" Spacing="6">
+                <ScrollViewer MaxHeight="224" HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <ItemsControl ItemsSource="{Binding Tracks}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:RemuxExportTrackChoice">
+                                <StackPanel>
+                                    <!-- TS 多节目时，每个节目的第一条轨道上方显示节目名。 -->
+                                    <TextBlock Text="{Binding GroupHeader}" IsVisible="{Binding HasGroupHeader}"
+                                               FontWeight="SemiBold" Margin="0,8,0,2" TextTrimming="CharacterEllipsis" />
+                                    <CheckBox IsChecked="{Binding IsSelected, Mode=TwoWay}" IsEnabled="{Binding CanChange}"
+                                              MinHeight="28" HorizontalAlignment="Stretch" HorizontalContentAlignment="Stretch">
+                                        <StackPanel Margin="2,3,0,3">
+                                            <TextBlock Text="{Binding Description}" TextWrapping="Wrap" />
+                                            <!-- 静音检测的结果：峰值，静音时醒目显示。 -->
+                                            <TextBlock Classes="level" Text="{Binding LevelText}" IsVisible="{Binding HasLevel}"
+                                                       FontSize="12" Classes.silent="{Binding IsSilent}" />
+                                        </StackPanel>
+                                    </CheckBox>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </ScrollViewer>
+                <!-- 静音检测：只在点击时抽样解码各音轨。 -->
+                <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10" IsVisible="{Binding CanDetectSilence}">
+                    <Button Content="{DynamicResource String.SilenceDetect.Button}" Command="{Binding DetectSilenceCommand}">
+                        <ToolTip.Tip>
+                            <TextBlock MaxWidth="320" TextWrapping="Wrap" Text="{DynamicResource String.SilenceDetect.Tip}" />
+                        </ToolTip.Tip>
+                    </Button>
+                    <TextBlock Grid.Column="1" Text="{Binding SilenceStatus}" TextWrapping="Wrap" Opacity="0.7"
+                               VerticalAlignment="Center" />
+                </Grid>
+            </StackPanel>
         </Grid>
         <StackPanel Grid.Row="2" Spacing="6">
             <StackPanel Spacing="4" Margin="0,0,0,6" IsVisible="{Binding CanUseFastSubtitleSeek}">

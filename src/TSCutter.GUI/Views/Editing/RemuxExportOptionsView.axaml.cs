@@ -22,7 +22,12 @@ public partial class RemuxExportOptionsView : ClassicWindow
 
     protected override void OnClosed(EventArgs e)
     {
-        if (_viewModel is not null) _viewModel.RequestClose -= Close;
+        if (_viewModel is not null)
+        {
+            _viewModel.RequestClose -= Close;
+            // 用标题栏关闭时同样停止静音检测。
+            _viewModel.StopSilenceDetection();
+        }
         _viewModel = null;
         base.OnClosed(e);
     }

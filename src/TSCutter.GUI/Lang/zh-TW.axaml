@@ -1729,4 +1729,18 @@
     <x:String x:Key="String.TsTracks.FrameAccurateHint">智慧剪輯只輸出預覽視訊所在節目的視訊、音訊和字幕。</x:String>
     <x:String x:Key="String.TsTracks.SummaryAll">輸出全部 {0} 條軌道</x:String>
     <x:String x:Key="String.TsTracks.Summary">輸出 {0}/{1} 條軌道 · 改寫節目表</x:String>
+    <x:String x:Key="String.SilenceDetect.Button">偵測靜音軌道</x:String>
+    <x:String x:Key="String.SilenceDetect.Tip">在全片平均抽取 12 段（每段 1.5 秒）解碼各音軌，&#10;峰值低於 −60 dBFS 的音軌視為靜音並取消勾選，&#10;需要時可以再勾選；&#10;杜比 E 依聲道組分別偵測，全部靜音才取消勾選。&#10;只在片中某一段才有聲音的音軌可能被誤判。</x:String>
+    <x:String x:Key="String.SilenceDetect.Running">正在偵測… {0}%</x:String>
+    <x:String x:Key="String.SilenceDetect.Found">{0} 條音軌靜音，已取消勾選 {1} 條。</x:String>
+    <x:String x:Key="String.SilenceDetect.NoneFound">沒有發現靜音的音軌。</x:String>
+    <x:String x:Key="String.SilenceDetect.Failed">偵測失敗：{0}</x:String>
+    <x:String x:Key="String.SilenceDetect.Silent">靜音（峰值 {0} dBFS）</x:String>
+    <x:String x:Key="String.SilenceDetect.SilentEmpty">靜音（沒有聲音）</x:String>
+    <x:String x:Key="String.SilenceDetect.Peak">峰值 {0} dBFS</x:String>
+    <x:String x:Key="String.SilenceDetect.Undecodable">無法偵測（無法解碼）</x:String>
+    <x:String x:Key="String.SilenceDetect.DolbyE">杜比 E：{0}</x:String>
+    <x:String x:Key="String.SilenceDetect.DolbyEGroup">聲道組 {0}（{1}）{2}</x:String>
+    <x:String x:Key="String.SilenceDetect.GroupPeak">峰值 {0} dBFS</x:String>
+    <x:String x:Key="String.SilenceDetect.SilentShort">靜音</x:String>
 </ResourceDictionary>

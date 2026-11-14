@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using FFmpeg.AutoGen.Abstractions;
 using HanumanInstitute.MvvmDialogs;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Utils.Application;
@@ -116,13 +117,15 @@ public partial class MainWindowViewModel
                                   (dolbyE.Contains(track.Pid) ? " · " + LocalizationManager.Instance.String_Export_Tag_DolbyE : ""),
                     CanChange = track.Pid != video.VideoPid,
                     GroupHeader = header,
-                    IsSelected = track.Pid == video.VideoPid || !_excludedTsPids.Contains(track.Pid)
+                    IsSelected = track.Pid == video.VideoPid || !_excludedTsPids.Contains(track.Pid),
+                    AudioStreamIndex = track.Track.Type == AVMediaType.AVMEDIA_TYPE_AUDIO ? track.Track.Index : -1
                 });
                 header = "";
             }
         }
         var dialog = _dialogService.CreateViewModel<RemuxExportOptionsViewModel>();
         dialog.InitializeTs(video.ClipExtension, choices, UsesFrameAccurateCut);
+        dialog.EnableSilenceDetection(AnalyzeAudioTracks(video, VideoPath));
         await _dialogService.ShowDialogAsync(this, dialog);
         if (dialog.DialogResult != true || !ReferenceEquals(video, _videoInstance))
             return;

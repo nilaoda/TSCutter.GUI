@@ -107,7 +107,7 @@ FFmpeg 解码和重采样仍复用上文所述的现有运行库。
 | `TSCUTTER_SUBTITLE_REAL_SAMPLE` | 可选的 MP4，恰有一个字幕轨道且 2.5 秒处有活动字幕 |
 | `TSCUTTER_GRADUAL_REFRESH_H264_SAMPLE` | 可选的逐行刷新 H.264 TS 的完整路径（全片没有 IDR 与 I 帧，只有 P 画面上的恢复点），至少 40 秒；在 20–30 秒之间智能剪辑，检查复制区画面接近原片并在 8 秒内与之完全一致 |
 | `TSCUTTER_GRADUAL_REFRESH_MPEG2_SAMPLE` | 可选的逐行刷新 MPEG-2 TS 的完整路径（全片没有 I 帧，只在部分 P 帧前重复序列头），检查同上 |
-| `TSCUTTER_DOLBY_E_SAMPLES` | 可选目录，放每个都含一条杜比 E（SMPTE 302M 承载）轨的 TS，用于识别、按声道组解码和 TS 重组检查（重组检查截取每个文件开头 24 MB 并注入传输错误） |
+| `TSCUTTER_DOLBY_E_SAMPLES` | 可选目录，放每个都含一条杜比 E（SMPTE 302M 承载）轨的 TS，用于识别、按声道组解码、静音检测和 TS 重组检查（重组检查截取每个文件开头 24 MB 并注入传输错误） |
 
 真实素材不下载、不生成、不入库。未配置时只跳过对应的真实素材用例，不影响合成测试和普通测试。
 关键帧测试使用公共的 `keyframes` 目录，不需要单独的素材目录变量。

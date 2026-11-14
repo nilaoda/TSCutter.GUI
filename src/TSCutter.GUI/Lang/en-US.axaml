@@ -1729,4 +1729,18 @@
     <x:String x:Key="String.TsTracks.FrameAccurateHint">Smart cut only outputs the video, audio and subtitles of the previewed program.</x:String>
     <x:String x:Key="String.TsTracks.SummaryAll">All {0} tracks exported</x:String>
     <x:String x:Key="String.TsTracks.Summary">{0} of {1} tracks exported · program tables rewritten</x:String>
+    <x:String x:Key="String.SilenceDetect.Button">Detect silent tracks</x:String>
+    <x:String x:Key="String.SilenceDetect.Tip">Decodes 12 short samples (1.5 seconds each) spread over the file.&#10;Audio tracks peaking below −60 dBFS are treated as silent&#10;and unchecked; you can check them again.&#10;Dolby E is checked per channel group and unchecked&#10;only when every group is silent.&#10;A track with sound in only one part of the file may be misjudged.</x:String>
+    <x:String x:Key="String.SilenceDetect.Running">Detecting… {0}%</x:String>
+    <x:String x:Key="String.SilenceDetect.Found">Silent audio tracks: {0}, unchecked: {1}.</x:String>
+    <x:String x:Key="String.SilenceDetect.NoneFound">No silent audio tracks found.</x:String>
+    <x:String x:Key="String.SilenceDetect.Failed">Detection failed: {0}</x:String>
+    <x:String x:Key="String.SilenceDetect.Silent">Silent (peak {0} dBFS)</x:String>
+    <x:String x:Key="String.SilenceDetect.SilentEmpty">Silent (no sound)</x:String>
+    <x:String x:Key="String.SilenceDetect.Peak">Peak {0} dBFS</x:String>
+    <x:String x:Key="String.SilenceDetect.Undecodable">Cannot check (could not decode)</x:String>
+    <x:String x:Key="String.SilenceDetect.DolbyE">Dolby E: {0}</x:String>
+    <x:String x:Key="String.SilenceDetect.DolbyEGroup">group {0} ({1}) {2}</x:String>
+    <x:String x:Key="String.SilenceDetect.GroupPeak">peak {0} dBFS</x:String>
+    <x:String x:Key="String.SilenceDetect.SilentShort">silent</x:String>
 </ResourceDictionary>

@@ -20,10 +20,10 @@ public sealed class KeyFrameStripWheelTests
     [InlineData(new[] { -1.0, -1.0 }, 2)]
     // 向上滚后退。
     [InlineData(new[] { 0.2, 0.6 }, -2)]
-    public void EachSpacedWheelEventMovesOneStep(double[] deltas, int expected)
+    public async Task EachSpacedWheelEventMovesOneStep(double[] deltas, int expected)
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
-        session.Dispatch(() =>
+        await session.Dispatch(() =>
         {
             var strip = new KeyFrameStripControl();
             var steps = new List<int>();
@@ -40,10 +40,10 @@ public sealed class KeyFrameStripWheelTests
     }
 
     [Fact]
-    public void ContinuousStreamsAreThrottled()
+    public async Task ContinuousStreamsAreThrottled()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
-        session.Dispatch(() =>
+        await session.Dispatch(() =>
         {
             var strip = new KeyFrameStripControl();
             var steps = new List<int>();
@@ -59,10 +59,10 @@ public sealed class KeyFrameStripWheelTests
     }
 
     [Fact]
-    public void StepSizeShiftAccelerationAndDirectionFollowTheSettings()
+    public async Task StepSizeShiftAccelerationAndDirectionFollowTheSettings()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
-        session.Dispatch(() =>
+        await session.Dispatch(() =>
         {
             var strip = new KeyFrameStripControl { WheelStep = 3, ShiftWheelStep = 12 };
             var steps = new List<int>();

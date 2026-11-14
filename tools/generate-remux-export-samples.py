@@ -132,6 +132,16 @@ def main():
            "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=40",
            "-c:v", "libx264", "-preset", "ultrafast", "-g", 1,
            "-c:a", "aac", "-b:a", "64k", root / "waveform.mp4")
+    # 静音检测：响亮的音轨、完全静音、约 -66 dBFS 的底噪、-40 dBFS 的小声音轨、后半段才开始有声音的音轨。
+    ffmpeg("-f", "lavfi", "-i", "color=c=black:s=128x72:r=25:d=30",
+           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=30",
+           "-f", "lavfi", "-i", "anullsrc=r=48000:cl=stereo",
+           "-f", "lavfi", "-i", "anoisesrc=a=0.0002:r=48000:d=30",
+           "-f", "lavfi", "-i", "aevalsrc=0.01*sin(2*PI*440*t):s=48000:d=30",
+           "-f", "lavfi", "-i", "aevalsrc=if(gt(t\\,15)\\,0.5*sin(2*PI*660*t)\\,0):s=48000:d=30",
+           "-map", "0:v", "-map", "1:a", "-map", "2:a", "-map", "3:a", "-map", "4:a", "-map", "5:a", "-t", 30,
+           "-c:v", "libx264", "-preset", "ultrafast", "-g", 25, "-c:a", "mp2", "-c:a:2", "ac3", "-c:a:3", "aac",
+           root / "silent-tracks.ts")
     manifest.write_text(json.dumps({"formatVersion": 1}, indent=2) + "\n", encoding="utf-8")
     print(root)
 
