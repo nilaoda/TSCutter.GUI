@@ -9,6 +9,7 @@ using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Models.TransportStream.Repair;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Services.TransportStream.Repair;
+using TSCutter.GUI.Utils.TransportStream.Packets;
 
 namespace TSCutter.GUI.Tests.TransportStream.Repair;
 
@@ -303,6 +304,54 @@ public sealed class TsTimelineRepairServiceTests
             Assert.True(Assert.Single(analysis.Issues).AffectsStreamTimestamps);
         else
             Assert.Empty(analysis.Issues);
+    }
+
+    /// <summary>
+    /// 音频 PES 在文件中常比同一时刻的视频晚：PCR 跳变点之后还会出现时间戳仍属于跳变前的 PES，
+    /// 它们不能按包位置加上跳变后的修正量；真正属于新时间线的 PES 照常修正。
+    /// </summary>
+    [Fact]
+    public void PesAfterTheBoundaryKeepsItsOwnTimeline()
+    {
+        var samples = Enumerable.Range(0, 200).Select(index =>
+        {
+            var pcr = index * 9_000L - (index >= 50 ? 450_000 : 0);
+            return new TsTimelineRepairService.PcrSample(index * 10, pcr, false, pcr + 7_200);
+        }).ToList();
+        var check = new TsCheckResult
+        {
+            FilePath = Path.Combine(Path.GetTempPath(), "timeline-clock-test.ts"),
+            FileSize = (samples[^1].PacketIndex + 1) * TsStreamAnalyzer.PacketSize,
+            SyncOffset = 0
+        };
+        var program = new TsCheckProgramSummary { ProgramNumber = 1, PmtPid = 0x0080, PcrPid = 0x0100 };
+        program.Streams.Add(0x0100, TsStreamTypes.Hevc);
+        program.Streams.Add(0x0101, TsStreamTypes.Mpeg1Audio);
+        check.Programs.Add(1, program);
+        check.Events.Add(new TsCheckEvent
+        {
+            Severity = TsCheckSeverity.Error, Type = TsCheckEventType.DtsBackward,
+            Pid = 0x0100, StartPacket = 500, FileOffset = 500 * TsStreamAnalyzer.PacketSize,
+            MessageCode = TsCheckMessageCode.DtsBackward, MessageArguments = [4.9]
+        });
+        var analysis = BuildAnalysis(samples, check);
+        Assert.True(Assert.Single(analysis.Issues).AffectsStreamTimestamps);
+        var rewriter = new TsTimelineRepairService.OutputPacketRewriter(analysis);
+
+        long Rewrite(long packetIndex, long pts)
+        {
+            var packet = CreateAudioPes(pts);
+            rewriter.ProcessPacket(packet, packetIndex * TsStreamAnalyzer.PacketSize, true, true);
+            return TsTimestampFieldCodec.ReadPesTimestamp(packet.AsSpan(13, 5));
+        }
+
+        // 跳变前：不变。
+        Assert.Equal(480_000, Rewrite(480, 480_000));
+        // 跳变点之后，但仍是跳变前的时间（晚复用的音频）：不加修正量。
+        Assert.Equal(482_160, Rewrite(505, 482_160));
+        // 新时间线上的 PES：加上 5 秒，与前面衔接。
+        Assert.Equal(484_320, Rewrite(510, 484_320 - 450_000));
+        Assert.Equal(486_480, Rewrite(515, 486_480 - 450_000));
     }
 
     [Fact]
@@ -856,6 +905,24 @@ public sealed class TsTimelineRepairServiceTests
         packet[9] = (byte)(pcr >> 1);
         packet[10] = (byte)(((pcr & 1) << 7) | 0x7E);
         packet[11] = 0;
+        return packet;
+    }
+
+    /// <summary>PID 0x0101 上只带 PTS 的音频 PES 起始包。</summary>
+    private static byte[] CreateAudioPes(long pts)
+    {
+        var packet = Enumerable.Repeat((byte)0xFF, TsStreamAnalyzer.PacketSize).ToArray();
+        packet[0] = 0x47;
+        packet[1] = 0x41;
+        packet[2] = 0x01;
+        packet[3] = 0x10;
+        byte[] header = [0x00, 0x00, 0x01, 0xC0, 0x00, 0x00, 0x80, 0x80, 0x05];
+        header.CopyTo(packet, 4);
+        packet[13] = (byte)(0x21 | ((pts >> 29) & 0x0E));
+        packet[14] = (byte)(pts >> 22);
+        packet[15] = (byte)(0x01 | ((pts >> 14) & 0xFE));
+        packet[16] = (byte)(pts >> 7);
+        packet[17] = (byte)(0x01 | ((pts << 1) & 0xFE));
         return packet;
     }
 
