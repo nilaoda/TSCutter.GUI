@@ -50,9 +50,11 @@ Keyframe-mode MP4/MKV exports rewrite the container and timestamps. Smart cut su
 - **Preview and navigate**: Audio playback, full screen, keyframe or frame thumbnails, a zoomable timeline, embedded subtitles and image search.
 - **HDR preview**: SDR mapping for HDR10/PQ, HLG and Dolby Vision Profile 5, with GPU presentation and CPU fallback.
 - **Media muxer**: Select and reorder tracks, edit languages and time offsets, convert text subtitles to suit the output format, and output MP4, MKV, TS or M2TS.
+- **Audio tracks**: Choose output tracks on TS export, detect silent tracks, transcode Dolby E to regular audio tracks, or merge three stereo tracks into 5.1.
 - **DVD and Blu-ray**: Open ISO images or disc folders, select titles and playlists, preview VOB/PGS subtitles, and export clips. Disc menus and protected Blu-ray are not supported.
 - **Export summaries**: View export records and TS check results. Checks run as the output is written, without a second scan.
 - **Capture and diagnostics**: Save frames and thumbnail sheets, inspect media information, or test playback performance.
+- **Recent files**: Reopen recent videos, discs and projects from File → Open Recent; discs preselect the last title.
 
 ### TS inspection and repair
 
