@@ -245,12 +245,19 @@ public partial class VideoInstance
         CancellationToken token)
     {
         var distance = Math.Max(1, keyFrameGap);
+        (long Pts, long Position)? beforeGap = null;
+        var gapDistance = 0L;
         for (var attempt = 0; attempt < 6; attempt++, distance *= 2)
         {
-            var start = attempt == 0 ? seekPts : seekPts - distance;
+            // 起点落在时间戳跳变的空白里时，改从跳变之前的关键包开始解码，经过跳变读到目标。
+            var start = beforeGap is { } gap ? gap.Pts - gapDistance : attempt == 0 ? seekPts : seekPts - distance;
             // 片头处 TS 带 B 帧时须从首帧之前预读，与关键帧导航相同。
-            Seek(start <= firstFrameTimestamp ? firstFrameTimestamp - Math.Max(1, keyFrameGap * 2) : start,
-                AVSEEK_FLAG.Backward);
+            if (start <= firstFrameTimestamp)
+                Seek(firstFrameTimestamp - Math.Max(1, keyFrameGap * 2), AVSEEK_FLAG.Backward);
+            else if (beforeGap is { } key && gapDistance == 0)
+                SeekToKeyPacket(key);
+            else
+                Seek(start, AVSEEK_FLAG.Backward);
             var anchored = false;
             var late = false;
             var passed = false;
@@ -295,6 +302,110 @@ public partial class VideoInstance
             // 看到过不晚于 seekPts 的画面仍未匹配：确实没有目标。否则（先出现的画面已晚于 seekPts，或一帧都没有输出——
             // 按时间戳定位落在最后一个 GOP 中间，之后再无关键帧）从更早的位置重试。
             if (anchored || start <= firstFrameTimestamp)
+                return null;
+            if (beforeGap is null)
+                beforeGap = FindKeyPacketBeforeGap(start, token);
+            else
+                gapDistance = Math.Max(Math.Max(1, keyFrameGap), gapDistance * 2);
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// 定位到不晚于 <paramref name="target"/> 的关键帧。target 落在时间戳跳变的空白里时，不晚于它的关键帧在跳变之前，
+    /// 按时间定位却会落到跳变之后：改为定位到跳变之前的最后一个关键包。没有跳变时与按时间定位完全相同。
+    /// </summary>
+    private void SeekBeforeAcrossGap(long target, CancellationToken token)
+    {
+        if (FindKeyPacketBeforeGap(target, token) is { } beforeGap)
+            SeekToKeyPacket(beforeGap);
+        else
+            Seek(target, AVSEEK_FLAG.Backward);
+    }
+
+    /// <summary>
+    /// 按字节位置定位到 <see cref="FindKeyPacketBeforeGap"/> 找到的关键包。TS 按时间定位的落点可能略晚于关键包本身，
+    /// 在跳变之前时会又落到跳变之后；字节位置是确定的。其余处理与 <see cref="Seek"/> 相同。
+    /// </summary>
+    private void SeekToKeyPacket((long Pts, long Position) key) =>
+        RunReadOperation(() =>
+        {
+            lastSeekPts = key.Pts;
+            inFc.SeekFrame(key.Position, -1, AVSEEK_FLAG.Byte);
+            activeReadDeadline!.ThrowIfInterrupted();
+            PrerollToRecoveredKeyFrame(key.Pts, AVSEEK_FLAG.Backward);
+            videoDecoder.FlushBuffers();
+            Array.Clear(keyFrameTypes);
+            nextKeyFrameType = 0;
+            return true;
+        }, CancellationToken.None);
+
+    /// <summary>
+    /// 判断 <paramref name="start"/> 是否落在时间戳跳变的空白里（例如拼接素材的时钟向前跳了几小时）：按时间定位到 start，
+    /// 解码要从之后的第一个关键包开始；这个关键包晚于 start，而它之前的视频包都早于 start，且与它相差远超正常的关键帧间隔。
+    /// 此时按时间往前退只会继续落在空白里，跳变之前的画面永远取不到。是跳变时从落点按字节向前回读，
+    /// 返回跳变之前最后一个关键包的 PTS 和字节位置；否则返回 null。
+    /// 只处理 TS：其他容器的时间戳由封装保证连续，光盘按标题读取，都不检测。
+    /// </summary>
+    private (long Pts, long Position)? FindKeyPacketBeforeGap(long start, CancellationToken token)
+    {
+        if (Disc is not null || inFc.InputFormat?.Name != "mpegts" || start <= firstFrameTimestamp)
+            return null;
+        // 跳变至少比正常间隔大得多：不少于 4 个关键帧间隔且不少于 10 秒。更小的空隙由调用方原有的加倍预读覆盖，
+        // 正常素材的落点与前一个画面只差一帧左右，不会被当作跳变。
+        var minimumGap = Math.Max(Math.Max(1, keyFrameGap) * 4,
+            timeBase.num > 0 ? (long)Math.Round(10.0 * timeBase.den / timeBase.num) : 0);
+        bool IsGap(long before, long after) => before < start && after - before > minimumGap;
+
+        inFc.SeekFrame(start, videoStreamIndex, AVSEEK_FLAG.Backward);
+        activeReadDeadline?.ThrowIfInterrupted();
+        long landedPts = FF.AV_NOPTS_VALUE, landedPosition = -1;
+        long? seen = null;
+        foreach (var packet in inFc.ReadPackets())
+        {
+            token.ThrowIfCancellationRequested();
+            activeReadDeadline?.ThrowIfInterrupted();
+            if (packet.StreamIndex != videoStreamIndex || packet.Pts == FF.AV_NOPTS_VALUE)
+                continue;
+            // 解码从第一个关键包开始，之前的非关键包解不出画面，落点以关键包为准。
+            if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0 && packet.Position >= 0)
+            {
+                landedPts = packet.Pts;
+                landedPosition = packet.Position;
+                break;
+            }
+            seen = Math.Max(seen ?? long.MinValue, packet.Pts);
+        }
+        if (landedPosition <= 0 || landedPts <= start)
+            return null;
+        // 落点之前读到的画面与落点相连：只是正常的定位偏差，不必回读。
+        if (seen is { } previous && !IsGap(previous, landedPts))
+            return null;
+        // 回读窗口从 1 MB 起逐次放大，直到找到落点之前最近的关键包。
+        for (var span = 1L << 20; span <= 1L << 26; span <<= 2)
+        {
+            var from = Math.Max(0, landedPosition - span);
+            inFc.SeekFrame(from, -1, AVSEEK_FLAG.Byte);
+            activeReadDeadline?.ThrowIfInterrupted();
+            (long Pts, long Position)? lastKey = null;
+            long? latest = null;
+            foreach (var packet in inFc.ReadPackets())
+            {
+                token.ThrowIfCancellationRequested();
+                activeReadDeadline?.ThrowIfInterrupted();
+                if (packet.Position >= landedPosition)
+                    break;
+                if (packet.StreamIndex != videoStreamIndex || packet.Pts == FF.AV_NOPTS_VALUE)
+                    continue;
+                latest = Math.Max(latest ?? long.MinValue, packet.Pts);
+                if ((packet.Flags & AV_PKT_FLAG_KEY_FRAME) != 0 && packet.Position >= 0)
+                    lastKey = (packet.Pts, packet.Position);
+            }
+            if (latest is { } last && !IsGap(last, landedPts))
+                return null;
+            if (lastKey is { } key)
+                return key.Pts >= firstFrameTimestamp ? key : null;
+            if (from == 0)
                 return null;
         }
         return null;

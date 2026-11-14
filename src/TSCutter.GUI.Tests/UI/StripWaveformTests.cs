@@ -8,11 +8,13 @@ using Splat;
 using TSCutter.GUI.Controls;
 using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Models.Application;
+using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Services.Preview;
 using TSCutter.GUI.Tests.Editing;
 using TSCutter.GUI.Tests.FFmpeg;
+using TSCutter.GUI.Tests.Preview;
 using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Application;
@@ -38,6 +40,95 @@ public sealed class StripWaveformTests
         Assert.Equal(0.5f, sound);
         Assert.False(waveform.TryGetPeak(1.280, 1.302, out _));
         Assert.False(waveform.TryGetPeak(0.990, 1.010, out _));
+    }
+
+    [Fact]
+    public void SpanAcrossATimestampJumpIsCappedWhileRegularSpansStayUnchanged()
+    {
+        static KeyFrameStripItem Frame(double seconds) =>
+            new((long)(seconds * 90000), TimeSpan.FromSeconds(seconds), null, false);
+        var placeholder = new KeyFrameStripItem(long.MinValue, default, null, false);
+        var limit = StripWaveformViewModel.MaximumSpanSeconds;
+
+        // 正常间隔照旧：到下一张为止，最后一张沿用前一段的长度；跨过跳变的一格只取开头一段。
+        var frames = new[] { placeholder, Frame(1), Frame(2), Frame(20002), Frame(20003), placeholder };
+        Assert.Null(StripWaveformViewModel.GetSpan(frames, 0));
+        Assert.Equal((1d, 2d), StripWaveformViewModel.GetSpan(frames, 1));
+        Assert.Equal((2d, 2 + limit), StripWaveformViewModel.GetSpan(frames, 2));
+        Assert.Equal((20002d, 20003d), StripWaveformViewModel.GetSpan(frames, 3));
+        Assert.Equal((20003d, 20004d), StripWaveformViewModel.GetSpan(frames, 4));
+        Assert.Null(StripWaveformViewModel.GetSpan(frames, 5));
+        Assert.Equal(4, StripWaveformViewModel.GetSpans(frames).Count);
+
+        // 跳变后的最后一张按前一段外推时同样受限，不会把读取范围再翻一倍。
+        Assert.Equal((20001d, 20001 + limit), StripWaveformViewModel.GetSpan([Frame(1), Frame(20001)], 1));
+    }
+
+    [NativeMediaFact("frameaccurate")]
+    public async Task WaveformSkipsTheGapOfAForwardClockJumpTheStripSpans()
+    {
+        // 12 秒的合成 TS（440 Hz 正弦波，振幅 1/8，约每秒一个关键帧）。从第 6 秒的关键帧起，PCR、PTS、DTS
+        // 一起向前跳 20000 秒，不设置不连续标志：时间轴约 20012 秒，打开时导航条有一格跨过跳变。
+        const double jumpSeconds = 20000;
+        using var sample = ClockJumpSample.Create(jumpSeconds);
+        var source = sample.Path;
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            using var resolver = new ModernDependencyResolver();
+            using var scope = resolver.WithResolver();
+            var locale = new LocalizationService();
+            Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+            var config = new MemoryConfiguration();
+            config.CurrentConfig.ClipCutMode = ClipCutMode.KeyFrame;
+            var vm = new MainWindowViewModel(
+                new DialogService(DispatchProxy.Create<IDialogManager, ExportDialogManager>()), config) { VideoPath = source };
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            try
+            {
+                Assert.True(await (Task<bool>)typeof(MainWindowViewModel).GetMethod("LoadVideoAsync", flags)!
+                    .Invoke(vm, [null])!);
+                Assert.InRange(vm.DurationMax, jumpSeconds, jumpSeconds + 20);
+                await vm.KeyFrameStrip.IdleTask;
+                var items = vm.KeyFrameStrip.Items.Where(item => !item.IsPlaceholder).ToArray();
+                Assert.Contains(items, item => item.Timestamp.TotalSeconds < 6);
+                Assert.Contains(items, item => item.Timestamp.TotalSeconds > jumpSeconds);
+
+                var waveform = vm.KeyFrameStripWaveform;
+                var spans = StripWaveformViewModel.GetSpans(vm.KeyFrameStrip.Items);
+                var probes = spans.Select(span => span.Start + 0.1).ToArray();
+                for (var attempt = 0; attempt < 100 && !probes.All(second => waveform.TryGetPeak(second, second + 0.1, out _)); attempt++)
+                {
+                    await waveform.IdleTask;
+                    await Task.Delay(50);
+                    Dispatcher.UIThread.RunJobs();
+                }
+                await waveform.IdleTask;
+                Dispatcher.UIThread.RunJobs();
+
+                // 跳变前后的每张画面下方都有波形，峰值与正弦波振幅一致。
+                foreach (var second in probes)
+                {
+                    Assert.True(waveform.TryGetPeak(second, second + 0.1, out var peak), $"{second}");
+                    Assert.InRange(peak, 0.08, 0.1);
+                }
+                // 跳变中间的空白不读取：跨过跳变的一格只读开头一段，而不是逐秒读完两万秒。
+                Assert.All(spans, span => Assert.InRange(span.End - span.Start, 0, StripWaveformViewModel.MaximumSpanSeconds));
+                Assert.False(waveform.TryGetPeak(jumpSeconds / 2, jumpSeconds / 2 + 0.1, out _));
+                var cached = ((Dictionary<int, float[]>)typeof(StripWaveformViewModel)
+                    .GetField("cache", flags)!.GetValue(waveform)!).Keys;
+                Assert.All(cached, second => Assert.True(
+                    second <= 6 + StripWaveformViewModel.MaximumSpanSeconds || second >= jumpSeconds, $"{second}"));
+            }
+            finally
+            {
+                vm.Close();
+                await vm.KeyFrameStrip.IdleTask;
+                await vm.KeyFrameStripWaveform.IdleTask;
+                Dispatcher.UIThread.RunJobs();
+            }
+            return true;
+        }, CancellationToken.None);
     }
 
     [NativeMediaTheory("remux")]

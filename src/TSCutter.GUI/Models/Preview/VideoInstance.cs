@@ -617,8 +617,10 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         {
             var target = Math.Clamp(TimeSpanToPts(time), firstFrameTimestamp, Math.Max(firstFrameTimestamp, maxPts - 1));
             // 带 B 帧的 TS 在首帧 PTS 处 seek 也可能越过首个 GOP，需允许向片头之前预读。
-            Seek(target == firstFrameTimestamp ? target - Math.Max(1, keyFrameGap * 2) : target,
-                AVSEEK_FLAG.Backward);
+            if (target == firstFrameTimestamp)
+                Seek(target - Math.Max(1, keyFrameGap * 2), AVSEEK_FLAG.Backward);
+            else
+                SeekBeforeAcrossGap(target, cancellationToken);
             return true;
         }, cancellationToken), cancellationToken);
 
@@ -958,15 +960,22 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         var steps = Math.Abs(count);
         var distance = Math.Max(1, keyFrameGap) * (steps + 1);
         long? selected = null;
+        // 锚点之前紧挨着时间戳跳变时，按时间往前退只会落在跳变的空白里：改从跳变之前的关键包向前预读。
+        (long Pts, long Position)? gapKey = null;
+        var gapDistance = 0L;
         var scanMode = isSearchScan;
         try
         {
             isSearchScan = true;
             for (var attempt = 0; attempt < 8; attempt++)
             {
-                var start = Math.Max(firstFrameTimestamp, anchorPts - distance);
-                Seek(start == firstFrameTimestamp ? start - Math.Max(1, keyFrameGap * 2) : start,
-                    AVSEEK_FLAG.Backward);
+                var start = Math.Max(firstFrameTimestamp, gapKey is { } gap ? gap.Pts - gapDistance : anchorPts - distance);
+                if (start == firstFrameTimestamp)
+                    Seek(start - Math.Max(1, keyFrameGap * 2), AVSEEK_FLAG.Backward);
+                else if (gapKey is { } key && gapDistance == 0)
+                    SeekToKeyPacket(key);
+                else
+                    Seek(start, AVSEEK_FLAG.Backward);
                 var preceding = new SortedSet<long>();
                 var reachedAnchor = false;
                 long? lastPts = null;
@@ -1006,6 +1015,20 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 {
                     selected = preceding.Count > 0 ? preceding.Min : anchorPts;
                     break;
+                }
+                if (gapKey is not null)
+                {
+                    // 跳变之前的关键帧还不够：从跳变之前继续向前加倍；预读预算用完时按实际间隔重新估算，与下面相同。
+                    gapDistance = !reachedAnchor
+                        ? Math.Max(1, observedGap > 0 ? observedGap : keyFrameGap) * (steps + 1)
+                        : gapDistance == 0 ? Math.Max(1, keyFrameGap) * (steps + 1) : gapDistance * 2;
+                    continue;
+                }
+                // 扫描到了锚点，之前的关键帧却不够：起点可能落在时间戳跳变的空白里，扫描实际从跳变之后开始。
+                if (reachedAnchor && FindKeyPacketBeforeGap(start, token) is { } found)
+                {
+                    gapKey = found;
+                    continue;
                 }
                 distance = reachedAnchor ? distance * 2
                     : Math.Max(1, observedGap > 0 ? observedGap : keyFrameGap) * (steps + 2);
@@ -1169,7 +1192,13 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
             throw new Exception("Decode Failed!");
 
         var retryStep = backward ? keyFrameGap : keyFrameGap / 2;
-        Seek(lastSeekPts - retryStep, backward ? AVSEEK_FLAG.Backward : 0);
+        var retryPts = lastSeekPts - retryStep;
+        // 向前跳的目标落在时间戳跳变的空白里时，按时间重试只会一直落回跳变之后，直到报解码失败：
+        // 改为定位到跳变之前的最后一个关键帧，即不晚于目标的关键帧。
+        if (backward && FindKeyPacketBeforeGap(retryPts, cancellationToken) is { } beforeGap)
+            SeekToKeyPacket(beforeGap);
+        else
+            Seek(retryPts, backward ? AVSEEK_FLAG.Backward : 0);
         return DecodeNextFrame(
             backward ? -1 : 1,
             anchorPts,
