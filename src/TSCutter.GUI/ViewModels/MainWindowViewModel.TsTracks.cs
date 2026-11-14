@@ -99,7 +99,19 @@ public partial class MainWindowViewModel
     private async Task ConfigureTsTracksAsync()
     {
         var video = _videoInstance!;
-        var dolbyE = CurrentDolbyEPlan?.Tracks.Select(track => track.Pid).ToHashSet() ?? [];
+        var plan = CurrentAudioRebuildPlan;
+        var dolbyE = plan?.Tracks.Select(track => track.Pid).ToHashSet() ?? [];
+        // 多轨合并：新音轨跟随前置来源输出（取消勾选它就不合并）；替换来源时其他来源已并入新音轨，不能单独勾选。
+        // 同一 PID 可能属于多个节目、各有合并设置：标注取第一个。
+        var mergeAnchors = new Dictionary<int, Models.Media.ChannelMergeSettings>();
+        var mergedSources = new Dictionary<int, Models.Media.ChannelMergeSettings>();
+        foreach (var merge in plan?.Merges ?? [])
+        {
+            mergeAnchors.TryAdd(merge.AnchorPid, merge);
+            if (!merge.KeepOriginal)
+                foreach (var pid in merge.SourcePids.Skip(1))
+                    mergedSources.TryAdd(pid, merge);
+        }
         var tracks = TsTracksInScope.ToArray();
         // 多个节目时按节目分组；同一 PID 只列在它所属的第一个节目下。
         var grouped = tracks.GroupBy(track => track.Programs.Count > 0 ? track.Programs[0] : (int?)null)
@@ -110,14 +122,22 @@ public partial class MainWindowViewModel
             var header = grouped.Length > 1 ? ProgramTitle(group.Key) : "";
             foreach (var track in group)
             {
+                var strings = LocalizationManager.Instance;
+                var tag = dolbyE.Contains(track.Pid) ? " · " + strings.String_Export_Tag_DolbyE
+                    : mergeAnchors.TryGetValue(track.Pid, out var anchor)
+                        ? " · " + string.Format(anchor.KeepOriginal ? strings.String_ChannelMerge_TrackTagAnchorKeep
+                            : strings.String_ChannelMerge_TrackTagAnchor, string.Join(" + ", anchor.SourcePids.Select(pid => $"0x{pid:X4}")))
+                        : mergedSources.TryGetValue(track.Pid, out var merged)
+                            ? " · " + string.Format(strings.String_ChannelMerge_TrackTagSource, $"0x{merged.AnchorPid:X4}")
+                            : "";
+                var mergedAway = mergedSources.ContainsKey(track.Pid);
                 choices.Add(new RemuxExportTrackChoice
                 {
                     Index = track.Pid,
-                    Description = track.Description +
-                                  (dolbyE.Contains(track.Pid) ? " · " + LocalizationManager.Instance.String_Export_Tag_DolbyE : ""),
-                    CanChange = track.Pid != video.VideoPid,
+                    Description = track.Description + tag,
+                    CanChange = track.Pid != video.VideoPid && !mergedAway,
                     GroupHeader = header,
-                    IsSelected = track.Pid == video.VideoPid || !_excludedTsPids.Contains(track.Pid),
+                    IsSelected = track.Pid == video.VideoPid || mergedAway || !_excludedTsPids.Contains(track.Pid),
                     AudioStreamIndex = track.Track.Type == AVMediaType.AVMEDIA_TYPE_AUDIO ? track.Track.Index : -1
                 });
                 header = "";
@@ -133,7 +153,8 @@ public partial class MainWindowViewModel
         // 范围之外（其他节目）的选择保持不变。
         var scope = tracks.Select(track => track.Pid).ToHashSet();
         _excludedTsPids.RemoveWhere(scope.Contains);
-        _excludedTsPids.UnionWith(dialog.Tracks.Where(track => !track.IsSelected).Select(track => track.Index));
+        _excludedTsPids.UnionWith(dialog.Tracks.Where(track => !track.IsSelected && !mergedSources.ContainsKey(track.Index))
+            .Select(track => track.Index));
         if (!before.SequenceEqual(CurrentExcludedPids ?? []))
             InvalidateClipExports();
         NotifyTsTracksChanged();

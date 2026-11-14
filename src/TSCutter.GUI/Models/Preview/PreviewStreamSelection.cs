@@ -12,12 +12,19 @@ public sealed record PreviewVideoTrackOption(PreviewStreamSelection Selection, s
 
 /// <param name="dolbyEProgram">杜比 E 轨按声道组展开后的声道组序号（从 1 开始）；普通音轨为 null。</param>
 /// <param name="dolbyELayout">杜比 E 声道组的声道布局文字，如“5.1”。</param>
+/// <summary>多轨合并试听的一个来源：音轨 PID 与左右是否互换（按前置、中置与低音、环绕的顺序）。</summary>
+public sealed record PreviewChannelMergeSource(int Pid, bool Swap);
+
 public sealed class PreviewAudioTrackOption(PreviewStreamSelection selection, string label, bool canDecode = true,
-    int? dolbyEProgram = null, string? dolbyELayout = null) : ObservableObject
+    int? dolbyEProgram = null, string? dolbyELayout = null, IReadOnlyList<PreviewChannelMergeSource>? channelMerge = null)
+    : ObservableObject
 {
+    /// <summary>所选音轨；多轨合并试听时为前置来源（时间以它为准）。</summary>
     public PreviewStreamSelection Selection { get; } = selection;
     public bool CanDecode { get; } = canDecode;
     public int? DolbyEProgram { get; } = dolbyEProgram;
+    /// <summary>多轨合并试听：三条来源合成 5.1 后下混播放；普通音轨为 null。</summary>
+    public IReadOnlyList<PreviewChannelMergeSource>? ChannelMerge { get; } = channelMerge;
     private string Label => DolbyEProgram is { } program
         ? $"{label} · {string.Format(LocalizationManager.Instance.String_DolbyE_TrackProgram, program, dolbyELayout)}"
         : label;

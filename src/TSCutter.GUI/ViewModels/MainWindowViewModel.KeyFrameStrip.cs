@@ -24,7 +24,7 @@ public partial class MainWindowViewModel
         KeyFrameStripWaveform.SetSource(ShowKeyFrameStrip && ShowAudioWaveform && IsVideoInitialized
             && _videoInstance is { Inited: true } video && SelectedPreviewAudioTrack is { CanDecode: true } track
             ? new AudioWaveformSource(VideoPath, video.Disc, video.TsSyncOffset, _activePreviewSelection,
-                track.Selection, video.TimelineOriginSeconds, track.DolbyEProgram)
+                track.Selection, video.TimelineOriginSeconds, track.DolbyEProgram, track.ChannelMerge)
             : null);
         RequestStripWaveform();
     }

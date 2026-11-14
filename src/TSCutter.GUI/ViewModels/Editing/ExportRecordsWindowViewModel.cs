@@ -60,6 +60,8 @@ public sealed class ExportRecordView
             tags.Add(string.Format(strings.String_Export_Tag_AudioDelay, audioDelayMs.ToString("+0;-0;0")));
         if (modifiers.HasFlag(ExportModifiers.DolbyETranscoded))
             tags.Add(strings.String_Export_Tag_DolbyE);
+        if (modifiers.HasFlag(ExportModifiers.ChannelsMerged))
+            tags.Add(strings.String_Export_Tag_ChannelMerge);
         return tags;
     }
 

@@ -31,7 +31,7 @@ public partial class MainWindowViewModel
             {
                 var outputs = string.Join(", ", settings.Outputs.Where(output => output.Enabled).Select(output =>
                     string.Format(LocalizationManager.Instance.String_DolbyE_ProgramItem, output.Program,
-                        DolbyECodecInfo.Name(output.Codec))));
+                        AudioOutputCodecInfo.Name(output.Codec))));
                 var text = string.Format(settings.KeepOriginal
                     ? LocalizationManager.Instance.String_DolbyE_SummaryKeep
                     : LocalizationManager.Instance.String_DolbyE_SummaryReplace, outputs);
@@ -41,10 +41,10 @@ public partial class MainWindowViewModel
         }
     }
 
-    /// <summary>导出任务使用的计划快照；没有需要转码的轨道时为 null。</summary>
-    private DolbyEExportPlan? CurrentDolbyEPlan => HasDolbyETracks
-        ? DolbyEExportPlan.Create(_dolbyESettings.Values.Where(settings => DolbyETracks.ContainsKey(settings.Pid)))
-        : null;
+    /// <summary>当前文件中仍然存在的杜比 E 轨的设置；导出计划见 <see cref="CurrentAudioRebuildPlan"/>。</summary>
+    private IEnumerable<DolbyETrackSettings> ActiveDolbyESettings => HasDolbyETracks
+        ? _dolbyESettings.Values.Where(settings => DolbyETracks.ContainsKey(settings.Pid))
+        : [];
 
     private bool CanConfigureDolbyE => CanEditVideo && HasDolbyETracks;
 
@@ -96,8 +96,8 @@ public partial class MainWindowViewModel
         if (dialog.DialogResult != true || !ReferenceEquals(video, _videoInstance))
             return;
         var updated = dialog.Result.ToDictionary(settings => settings.Pid);
-        var before = DolbyEExportPlan.Create(_dolbyESettings.Values);
-        var after = DolbyEExportPlan.Create(updated.Values);
+        var before = AudioRebuildPlan.Create(_dolbyESettings.Values);
+        var after = AudioRebuildPlan.Create(updated.Values);
         _dolbyESettings = updated;
         // 导出结果取决于转码计划；计划有变化时已导出的片段需要重新导出。
         if (!PlansEqual(before, after))
@@ -105,11 +105,6 @@ public partial class MainWindowViewModel
         NotifyDolbyEChanged();
     }
 
-    private static bool PlansEqual(DolbyEExportPlan? left, DolbyEExportPlan? right) =>
-        Serialize(left) == Serialize(right);
-
-    private static string Serialize(DolbyEExportPlan? plan) => plan is null ? "" : string.Join("|",
-        plan.Tracks.Select(track => $"{track.Pid}:{track.KeepOriginal}:" + string.Join(";", track.Outputs
-            .Where(output => output.Enabled)
-            .Select(output => $"{output.Program},{output.Codec},{output.Layout},{output.BitrateKbps},{output.Language}"))));
+    private static bool PlansEqual(AudioRebuildPlan? left, AudioRebuildPlan? right) =>
+        AudioRebuildPlan.Signature(left) == AudioRebuildPlan.Signature(right);
 }

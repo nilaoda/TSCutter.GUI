@@ -46,10 +46,7 @@ internal readonly record struct DolbyEProgramLevel(int Number, string Layout, do
 /// </summary>
 internal static class SilentTrackDetector
 {
-    public const int Windows = 12;
-    public const double WindowSeconds = 1.5;
-    // 复用时音频与同一时刻的视频在文件中的位置可能错开约一秒，每段多读一些。
-    private const double MarginSeconds = 1.5;
+    private const int Windows = AudioSampleWindows.Count;
     private const int MaxFailures = 64;
 
     /// <summary>检测 streamIndices 中的各音轨；progress 报告已完成的比例（0–1）。</summary>
@@ -75,7 +72,7 @@ internal static class SilentTrackDetector
             }
             var decodable = tracks.Where(track => track.Decoder is not null || track.DolbyE is not null).ToList();
             if (decodable.Count > 0)
-                Sample(input, decodable, progress, token);
+                Sample(input, decodable, AudioSampleWindows.ByteSeekSize(input, path, disc), progress, token);
             progress?.Report(1);
             return tracks.Select(Result).ToList();
         }
@@ -102,22 +99,20 @@ internal static class SilentTrackDetector
             track.Decoder is not null && (track.Decoded || track.Failures == 0), track.Peak);
     }
 
-    private static void Sample(FormatContext input, List<Track> tracks, IProgress<double>? progress,
+    private static void Sample(FormatContext input, List<Track> tracks, long bytes, IProgress<double>? progress,
         CancellationToken token)
     {
         var video = input.Streams.FirstOrDefault(stream =>
             stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_VIDEO && !stream.IsAttachedPicture);
-        // 按视频流定位（与预览相同）；没有视频时按第一条音轨。
+        // 按时间定位时以视频流为准（与预览相同）；没有视频时按第一条音轨。
         var clock = video.IsValid ? video : tracks[0].Stream;
-        var (start, duration) = Range(input, clock);
+        var windows = new AudioSampleWindows(input, clock, bytes);
         var byIndex = tracks.ToDictionary(track => track.Stream.Index);
         using var frame = new Frame();
         for (var window = 0; window < Windows; window++)
         {
             token.ThrowIfCancellationRequested();
-            var from = start + duration * (window + 0.5) / Windows - WindowSeconds / 2;
-            var to = from + WindowSeconds;
-            input.SeekFrame(Ticks(Math.Max(start, from - MarginSeconds), clock.TimeBase), clock.Index);
+            windows.Seek(window);
             foreach (var track in tracks)
             {
                 track.Decoder?.FlushBuffers();
@@ -127,15 +122,13 @@ internal static class SilentTrackDetector
             {
                 token.ThrowIfCancellationRequested();
                 var known = byIndex.TryGetValue(packet.StreamIndex, out var track);
-                if (packet.Pts != FF.AV_NOPTS_VALUE)
-                {
-                    var timeBase = known ? track!.Stream.TimeBase : packet.StreamIndex == clock.Index ? clock.TimeBase : default;
-                    if (timeBase.den != 0 && Seconds(packet.Pts, timeBase) > to + MarginSeconds)
-                        break;
-                    if (known && Seconds(packet.Pts, timeBase) < from)
-                        continue;
-                }
-                if (!known)
+                var timeBase = known ? track!.Stream.TimeBase : packet.StreamIndex == clock.Index ? clock.TimeBase : default;
+                double? time = packet.Pts != FF.AV_NOPTS_VALUE && timeBase.den != 0
+                    ? AudioSampleWindows.Seconds(packet.Pts, timeBase) : null;
+                windows.Observe(time);
+                if (windows.IsDone(time))
+                    break;
+                if (!known || !windows.HasRange || time < windows.From)
                     continue;
                 // 杜比 E：按帧头的声道组配置分别记录各声道组的峰值（损坏的突发由解码器跳过）。
                 track!.DolbyE?.Decode(packet, (decoded, header) => track.Accumulate(decoded, header));
@@ -159,22 +152,6 @@ internal static class SilentTrackDetector
             progress?.Report((window + 1) / (double)Windows);
         }
     }
-
-    /// <summary>可抽样的时间范围（秒）：流的起点与时长，缺失时取文件的。</summary>
-    private static unsafe (double Start, double Duration) Range(FormatContext input, MediaStream clock)
-    {
-        AVFormatContext* raw = input;
-        var start = clock.StartTime != FF.AV_NOPTS_VALUE ? Seconds(clock.StartTime, clock.TimeBase)
-            : raw->start_time != FF.AV_NOPTS_VALUE ? raw->start_time / 1_000_000.0 : 0;
-        var duration = clock.Duration > 0 ? Seconds(clock.Duration, clock.TimeBase)
-            : raw->duration > 0 ? raw->duration / 1_000_000.0 : WindowSeconds * Windows;
-        return (start, Math.Max(duration, WindowSeconds));
-    }
-
-    private static double Seconds(long value, AVRational timeBase) => value * (double)timeBase.num / timeBase.den;
-
-    private static long Ticks(double seconds, AVRational timeBase) =>
-        (long)Math.Floor(seconds * timeBase.den / timeBase.num);
 
     /// <summary>一个解码画面中各声道采样绝对值的最大值（满刻度为 1）。</summary>
     private static unsafe double Peak(Frame decoded)

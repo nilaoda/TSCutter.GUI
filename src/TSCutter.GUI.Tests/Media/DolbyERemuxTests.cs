@@ -1,6 +1,7 @@
 using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.Models.Media;
 using TSCutter.GUI.Player.Audio;
+using TSCutter.GUI.Services.Editing.AudioRebuild;
 using TSCutter.GUI.Services.Editing.DolbyE;
 using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.Utils.Media.DolbyE;
@@ -45,7 +46,7 @@ public sealed class DolbyERemuxTests
                 track = Assert.Single(DolbyEProbe.ProbeCore(probe, CancellationToken.None).Values);
             }
             var output = Path.Combine(directory, "out.ts");
-            var plan = new DolbyEExportPlan
+            var plan = new AudioRebuildPlan
             {
                 Tracks =
                 [
@@ -54,17 +55,17 @@ public sealed class DolbyERemuxTests
                         Pid = track.Pid, ProgramConfig = track.Header.ProgramConfig, Transcode = true, KeepOriginal = keepOriginal,
                         Outputs = track.Programs.SelectMany(program => new[]
                         {
-                            new DolbyEOutput { Program = program.Number, Codec = DolbyECodec.Ac3, BitrateKbps = program.ChannelCount > 2 ? 448 : 192, Language = "eng" },
-                            new DolbyEOutput { Program = program.Number, Codec = DolbyECodec.Aac, Layout = DolbyELayout.Stereo, BitrateKbps = 192, Language = "eng" },
-                            new DolbyEOutput { Program = program.Number, Codec = DolbyECodec.Eac3, BitrateKbps = program.ChannelCount > 2 ? 448 : 192 },
-                            new DolbyEOutput { Program = program.Number, Codec = DolbyECodec.Pcm },
-                            new DolbyEOutput { Program = program.Number, Codec = DolbyECodec.Flac }
+                            new DolbyEOutput { Program = program.Number, Codec = AudioOutputCodec.Ac3, BitrateKbps = program.ChannelCount > 2 ? 448 : 192, Language = "eng" },
+                            new DolbyEOutput { Program = program.Number, Codec = AudioOutputCodec.Aac, Layout = AudioOutputLayout.Stereo, BitrateKbps = 192, Language = "eng" },
+                            new DolbyEOutput { Program = program.Number, Codec = AudioOutputCodec.Eac3, BitrateKbps = program.ChannelCount > 2 ? 448 : 192 },
+                            new DolbyEOutput { Program = program.Number, Codec = AudioOutputCodec.Pcm },
+                            new DolbyEOutput { Program = program.Number, Codec = AudioOutputCodec.Flac }
                         }).ToList()
                     }
                 ]
             };
             // 像导出服务一样写入输出流：分块大小不定，包会跨越分块。
-            var setup = new DolbyERemuxSetup(plan, input, output, null);
+            var setup = new AudioRebuildSetup(plan, input, output, null);
             TsOutputFile.Current = setup;
             try
             {

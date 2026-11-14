@@ -60,6 +60,9 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
     private int videoStreamIndex = -1;
     private MediaStream? audioStream;
     private int audioStreamIndex = -1;
+    // 多轨合并试听：其余两条来源的流序号，它们的包与所选音轨一起送给音频解码。
+    private IReadOnlyList<(MediaStream Stream, bool Swap)>? audioMergeSources;
+    private bool[] audioMergeIndices = [];
     private AVRational timeBase;
     private long firstPts;
     private long targetPts;
@@ -125,6 +128,9 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
     /// <summary>当前节目内解析出的音频流；无声频文件为 null。</summary>
     public MediaStream? AudioStream => audioStream;
 
+    /// <summary>多轨合并试听的三条来源（前置在前）；不是合并试听或来源不全时为 null。</summary>
+    public IReadOnlyList<(MediaStream Stream, bool Swap)>? AudioMergeSources => audioMergeSources;
+
     /// <summary>当前是否使用硬件解码（运行期回退后为 false）。</summary>
     public bool IsHardwareDecoding { get; private set; }
 
@@ -184,6 +190,29 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
             .Cast<MediaStream?>()
             .FirstOrDefault();
     }
+
+    /// <summary>多轨合并试听：在所选音轨的节目中找到三条来源；找不到任何一条时退回只播放所选音轨。</summary>
+    private void ResolveAudioMergeSources()
+    {
+        audioMergeSources = null;
+        audioMergeIndices = [];
+        if (options.AudioChannelMerge is not { Count: 3 } merge || options.AudioSelection is not { } selection || audioStream is null)
+            return;
+        var sources = new List<(MediaStream, bool)>();
+        foreach (var source in merge)
+        {
+            if (PreviewStreamUtil.ResolveAudio(formatContext!, selection with { StreamId = source.Pid }) is not { } stream)
+                return;
+            sources.Add((stream, source.Swap));
+        }
+        audioMergeSources = sources;
+        audioMergeIndices = new bool[sources.Max(source => source.Item1.Index) + 1];
+        foreach (var (stream, _) in sources)
+            audioMergeIndices[stream.Index] = true;
+    }
+
+    private bool IsAudioPacket(int streamIndex) => streamIndex == audioStreamIndex ||
+                                                   (uint)streamIndex < (uint)audioMergeIndices.Length && audioMergeIndices[streamIndex];
 
     /// <summary>帧的方形显示像素尺寸与是否需要采样宽高比校正。</summary>
     public (Avalonia.PixelSize PixelSize, bool RequiresCorrection) GetDisplayGeometry(Frame frame)
@@ -378,6 +407,7 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
             throw new InvalidOperationException("视频流缺少有效时间基，无法建立播放时间轴。");
         audioStream = ResolveAudioStream();
         audioStreamIndex = audioStream?.Index ?? -1;
+        ResolveAudioMergeSources();
         // 时间线原点来自导航预览（首关键帧包 PTS），播放与导航显示同一条时间轴。
         firstPts = (long)Math.Round(options.TimelineOriginSeconds * timeBase.den / (double)timeBase.num);
         keyFrameGapPts = Math.Max(1, (long)Math.Round(
@@ -738,12 +768,12 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
                         throw;
                     }
                 }
-                else if (!audioTailRead && audioPipeline is { } audio && packet.StreamIndex == audioStreamIndex)
+                else if (!audioTailRead && audioPipeline is { } audio && IsAudioPacket(packet.StreamIndex))
                 {
                     try
                     {
                         await audio.EnqueuePacketAsync(packet, token).ConfigureAwait(false);
-                        if (AudioEndSeconds is { } end && packet.Pts != FF.AV_NOPTS_VALUE &&
+                        if (AudioEndSeconds is { } end && packet.StreamIndex == audioStreamIndex && packet.Pts != FF.AV_NOPTS_VALUE &&
                             packet.Pts * (double)audioStream!.Value.TimeBase.num / audioStream.Value.TimeBase.den
                                 - options.TimelineOriginSeconds >= end)
                         {

@@ -79,6 +79,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     public IReadOnlyList<PreviewSubtitleTrackOption> PreviewSubtitleTracks { get; private set; } = [];
     internal IReadOnlyList<PreviewAudioTrackOption> PreviewAudioTracks { get; private set; } = [];
     /// <summary>按 PID 识别出的杜比 E 轨（只识别可按字节剪辑的 TS）。</summary>
+    /// <summary>可以多轨合并为 5.1 的节目（TS 原包导出时）。</summary>
+    internal IReadOnlyList<Utils.Media.ChannelMergeProgramInfo> ChannelMergePrograms { get; private set; } = [];
     internal IReadOnlyDictionary<int, Utils.Media.DolbyE.DolbyETrackInfo> DolbyETracks { get; private set; } =
         new Dictionary<int, Utils.Media.DolbyE.DolbyETrackInfo>();
     internal int AudioTrackCount => inFc.Streams.Count(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO);
@@ -273,7 +275,10 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         StreamSelection = PreviewStreamUtil.GetSelection(inFc, inVideoStream, streamSelection);
         PreviewSubtitleTracks = PreviewStreamUtil.CreateSubtitleOptions(inFc, StreamSelection);
         if (CanBinaryClip)
+        {
             DolbyETracks = Utils.Media.DolbyE.DolbyEProbe.Probe(inFc, videoPath, TsSyncOffset, cancellationToken);
+            ChannelMergePrograms = Utils.Media.ChannelMergeProbe.Probe(inFc);
+        }
         PreviewAudioTracks = PreviewStreamUtil.CreateAudioOptions(inFc, StreamSelection, DolbyETracks);
         if (inVideoStream.Codecpar?.CodecId is null)
         {

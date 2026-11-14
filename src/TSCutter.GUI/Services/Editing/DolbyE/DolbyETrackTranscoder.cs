@@ -1,50 +1,45 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.FFmpeg;
+using TSCutter.GUI.Services.Editing.AudioRebuild;
 using TSCutter.GUI.Utils.Media.DolbyE;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 
 namespace TSCutter.GUI.Services.Editing.DolbyE;
 
 /// <summary>
-/// 一条杜比 E 轨的转码：逐个送入 302M 的 PES 负载（90 kHz、已展开回绕的 PTS），解码后交给各路输出。
-/// 每个编码帧按时间戳归入“槽位”：PTS 不晚于它的最近一个杜比 E PES 的序号，写出时放在该 PES 的位置。
+/// 一条杜比 E 轨的转码：逐个送入 302M 的 PES 负载，解码后按各路输出的声道组取出声道交给输出链。
+/// 杜比 E 轨自身就是锚定 PID，编码帧放在 PTS 不晚于它的最近一个杜比 E PES 的位置。
 /// </summary>
-internal sealed unsafe class DolbyETrackTranscoder : IDisposable
+internal sealed unsafe class DolbyETrackTranscoder : IAudioRebuildTranscoder
 {
     private static readonly AVRational TimeBase90k = new() { num = 1, den = 90_000 };
-    private const int RingSize = 128;
 
     private readonly DolbyEDecoder decoder;
-    private readonly IReadOnlyList<DolbyEOutputChain> chains;
+    // 各路输出与它所取的声道组；声道组帧每次送入后释放引用。
+    private readonly IReadOnlyList<(AudioOutputChain Chain, int Program, Frame ProgramFrame)> outputs;
     private readonly Packet input = new();
-    private readonly (int Index, long Pts)[] ring = new (int, long)[RingSize];
-    private int ringCount;
-    private int ringNext;
+    private readonly AnchorSlotMap slots = new();
     private long expectedPts = FF.AV_NOPTS_VALUE;
-    private int currentIndex;
-    private Action<DolbyEEncodedUnit, int>? sink;
+    private Action<EncodedAudioUnit, int>? sink;
 
-    public DolbyETrackTranscoder(IReadOnlyList<DolbyEOutputChain> chains)
+    public DolbyETrackTranscoder(IReadOnlyList<(AudioOutputChain Chain, int Program)> outputs)
     {
-        this.chains = chains;
+        this.outputs = outputs.Select(output => (output.Chain, output.Program, new Frame())).ToArray();
         decoder = DolbyEDecoder.TryCreate(null, TimeBase90k)
                   ?? throw new InvalidOperationException("Dolby E decoder unavailable.");
     }
 
-    /// <summary>成功解码的杜比 E 帧数。</summary>
     public int DecodedFrames { get; private set; }
 
-    public void Feed(ReadOnlySpan<byte> payload, long pts90k, int pesIndex, Action<DolbyEEncodedUnit, int> emit)
+    public int ProcessedAnchorIndex { get; private set; } = -1;
+
+    public void Feed(int pid, ReadOnlySpan<byte> payload, long pts90k, int pesIndex, Action<EncodedAudioUnit, int> emit)
     {
-        currentIndex = pesIndex;
-        if (pts90k != FF.AV_NOPTS_VALUE)
-        {
-            ring[ringNext] = (pesIndex, pts90k);
-            ringNext = (ringNext + 1) % RingSize;
-            ringCount = Math.Min(ringCount + 1, RingSize);
-        }
+        slots.Add(pesIndex, pts90k);
+        ProcessedAnchorIndex = pesIndex;
         AVPacket* raw = input;
         FF.av_packet_unref(raw);
         if (payload.Length == 0 || FF.av_new_packet(raw, payload.Length) < 0)
@@ -63,14 +58,20 @@ internal sealed unsafe class DolbyETrackTranscoder : IDisposable
         }
     }
 
-    public void Finish(Action<DolbyEEncodedUnit, int> emit)
+    public void Skip(int pid, int pesIndex)
+    {
+        slots.Touch(pesIndex);
+        ProcessedAnchorIndex = pesIndex;
+    }
+
+    public void Finish(Action<EncodedAudioUnit, int> emit)
     {
         sink = emit;
         try
         {
             decoder.Decode(null, OnFrame);
-            foreach (var chain in chains)
-                chain.Finish(unit => emit(unit, SlotFor(unit.Pts90k)));
+            foreach (var (chain, _, _) in outputs)
+                chain.Finish(unit => emit(unit, slots.SlotFor(unit.Pts90k)));
         }
         finally
         {
@@ -90,39 +91,23 @@ internal sealed unsafe class DolbyETrackTranscoder : IDisposable
         expectedPts = pts + duration;
         DecodedFrames++;
         var emit = sink!;
-        foreach (var chain in chains)
+        // 声道组在这一帧中不存在时按帧长补静音。
+        var silentSamples = (int)Math.Round(1792.0 * AudioOutputChain.OutputRate / Math.Max(1, header.SampleRate));
+        foreach (var (chain, program, programFrame) in outputs)
         {
-            var program = DolbyEDecoder.TryExtractProgram(frame, header, chain.Output.Program, chain.ProgramFrame)
-                ? chain.ProgramFrame : null;
-            chain.Push(program, header, pts, restart, unit => emit(unit, SlotFor(unit.Pts90k)));
-            chain.ProgramFrame.Unref();
+            var source = DolbyEDecoder.TryExtractProgram(frame, header, program, programFrame) ? programFrame : null;
+            chain.Push(source, silentSamples, pts, restart, unit => emit(unit, slots.SlotFor(unit.Pts90k)));
+            programFrame.Unref();
         }
-    }
-
-    private int SlotFor(long pts)
-    {
-        if (ringCount == 0)
-            return currentIndex;
-        var oldest = int.MaxValue;
-        var best = -1;
-        var bestPts = long.MinValue;
-        for (var i = 0; i < ringCount; i++)
-        {
-            var (index, entryPts) = ring[i];
-            oldest = Math.Min(oldest, index);
-            if (entryPts <= pts && (entryPts > bestPts || entryPts == bestPts && index > best))
-            {
-                bestPts = entryPts;
-                best = index;
-            }
-        }
-        return best >= 0 ? best : oldest;
     }
 
     public void Dispose()
     {
-        foreach (var chain in chains)
+        foreach (var (chain, _, programFrame) in outputs)
+        {
             chain.Dispose();
+            programFrame.Dispose();
+        }
         decoder.Dispose();
         input.Dispose();
     }

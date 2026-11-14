@@ -33,7 +33,9 @@ public enum ExportModifiers
     /// <summary>删去了未选的轨道，节目表随之改写。</summary>
     TracksSelected = 8,
     /// <summary>转码了杜比 E 音轨。</summary>
-    DolbyETranscoded = 16
+    DolbyETranscoded = 16,
+    /// <summary>把多条立体声音轨合并成了一条 5.1。</summary>
+    ChannelsMerged = 32
 }
 
 public enum TsExportCheckState

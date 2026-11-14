@@ -643,7 +643,7 @@
                                                          IsIndeterminate="True" IsVisible="{Binding IsSubtitleLoading}"
                                                          ToolTip.Tip="{DynamicResource String.SubtitlePreview.Loading}" />
                                         </Grid>
-                                        <Grid Grid.Column="4" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
+                                        <Grid Grid.Column="4" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto,Auto" ColumnSpacing="6">
                                             <TextBlock VerticalAlignment="Center" IsVisible="{Binding HasPreviewAudioTracks}"
                                                        Text="{DynamicResource String.PreviewTrack.AudioLabel}" />
                                             <TextBlock Grid.ColumnSpan="2" VerticalAlignment="Center" IsVisible="{Binding !HasPreviewAudioTracks}"
@@ -673,8 +673,22 @@
                                                     <TextBlock MaxWidth="320" TextWrapping="Wrap" Text="{Binding DolbyEButtonTip}" />
                                                 </ToolTip.Tip>
                                             </Button>
+                                            <!-- 多轨合并：当前节目有三条以上同采样率的立体声音轨时显示，设置导出时合并为 5.1；设置后带一个圆点。 -->
+                                            <Button Grid.Column="3" MinHeight="28" Padding="8,0" VerticalAlignment="Center"
+                                                    IsVisible="{Binding HasChannelMergeCandidates}"
+                                                    Command="{Binding ConfigureChannelMergeCommand}">
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <TextBlock VerticalAlignment="Center" Text="{DynamicResource String.ChannelMerge.Button}" />
+                                                    <Ellipse Width="7" Height="7" VerticalAlignment="Center"
+                                                             IsVisible="{Binding IsChannelMergeConfigured}"
+                                                             Fill="{DynamicResource {x:Static commonControls:SystemColors.HighlightBrushKey}}" />
+                                                </StackPanel>
+                                                <ToolTip.Tip>
+                                                    <TextBlock MaxWidth="320" TextWrapping="Wrap" Text="{Binding ChannelMergeButtonTip}" />
+                                                </ToolTip.Tip>
+                                            </Button>
                                             <!-- 音频延迟：勾选后生效，正数让声音推后；导出时只改写音轨时间戳。 -->
-                                            <CheckBox Grid.Column="3" VerticalAlignment="Center" MinWidth="0"
+                                            <CheckBox Grid.Column="4" VerticalAlignment="Center" MinWidth="0"
                                                       IsVisible="{Binding HasPreviewAudioTracks}"
                                                       IsEnabled="{Binding IsVideoInitialized}"
                                                       IsChecked="{Binding AudioDelayEnabled, Mode=TwoWay}"
@@ -684,7 +698,7 @@
                                                                Text="{DynamicResource String.AudioDelay.Tip}" />
                                                 </ToolTip.Tip>
                                             </CheckBox>
-                                            <NumericUpDown Grid.Column="4" Width="80" MinHeight="28" VerticalAlignment="Center"
+                                            <NumericUpDown Grid.Column="5" Width="80" MinHeight="28" VerticalAlignment="Center"
                                                            IsVisible="{Binding HasPreviewAudioTracks}"
                                                            IsEnabled="{Binding AudioDelayEnabled}"
                                                            Value="{Binding AudioDelayMs, Mode=TwoWay}"
@@ -702,7 +716,7 @@
                                                     </ContextMenu>
                                                 </NumericUpDown.ContextMenu>
                                             </NumericUpDown>
-                                            <TextBlock Grid.Column="5" VerticalAlignment="Center"
+                                            <TextBlock Grid.Column="6" VerticalAlignment="Center"
                                                        IsVisible="{Binding HasPreviewAudioTracks}"
                                                        Text="{DynamicResource String.AudioDelay.Unit}" />
                                         </Grid>

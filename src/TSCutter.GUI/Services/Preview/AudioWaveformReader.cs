@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading;
 using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.Extensions;
@@ -14,7 +16,8 @@ namespace TSCutter.GUI.Services.Preview;
 
 /// <summary>导航条波形的来源：与播放相同的输入、视频与所选音轨，以及时间轴起点。</summary>
 internal sealed record AudioWaveformSource(string Path, DiscInput? Disc, long TsSyncOffset,
-    PreviewStreamSelection? Video, PreviewStreamSelection Audio, double TimelineOriginSeconds, int? DolbyEProgram = null);
+    PreviewStreamSelection? Video, PreviewStreamSelection Audio, double TimelineOriginSeconds, int? DolbyEProgram = null,
+    IReadOnlyList<PreviewChannelMergeSource>? ChannelMerge = null);
 
 /// <summary>
 /// 读取导航条波形：按时间轴整秒读取所选音轨，解码后按毫秒记录峰值（各声道绝对值的最大值）。
@@ -33,13 +36,15 @@ internal sealed class AudioWaveformReader : IDisposable
     private readonly MediaStream audio;
     private readonly CodecContext? decoder;
     private readonly DolbyEProgramDecoder? dolbyE;
+    private readonly ChannelMergePreviewDecoder? merge;
     private readonly Frame frame = new();
     private AudioResampler resampler = new();
     private readonly double origin;
 
     private AudioWaveformReader(AudioWaveformSource source, FormatContext input, MediaStream video, MediaStream audio,
-        CodecContext? decoder, DolbyEProgramDecoder? dolbyE)
+        CodecContext? decoder, DolbyEProgramDecoder? dolbyE, ChannelMergePreviewDecoder? merge = null)
     {
+        this.merge = merge;
         Source = source;
         this.input = input;
         this.video = video;
@@ -69,6 +74,26 @@ internal sealed class AudioWaveformReader : IDisposable
             {
                 input.Dispose();
                 return null;
+            }
+            // 多轨合并试听：画三条来源合成后的波形。
+            if (source.ChannelMerge is { Count: 3 } sources)
+            {
+                var streams = new List<(MediaStream, bool)>();
+                foreach (var item in sources)
+                {
+                    if (PreviewStreamUtil.ResolveAudio(input, source.Audio with { StreamId = item.Pid }) is not { } stream)
+                    {
+                        input.Dispose();
+                        return null;
+                    }
+                    streams.Add((stream, item.Swap));
+                }
+                if (ChannelMergePreviewDecoder.TryCreate(streams) is not { } merge)
+                {
+                    input.Dispose();
+                    return null;
+                }
+                return new AudioWaveformReader(source, input, video, streams[0].Item1, null, null, merge);
             }
             // 杜比 E 只画所选声道组的波形。
             if (source.DolbyEProgram is { } program)
@@ -121,6 +146,7 @@ internal sealed class AudioWaveformReader : IDisposable
             video.Index);
         decoder?.FlushBuffers();
         dolbyE?.Flush();
+        merge?.Flush();
         resampler.Dispose();
         resampler = new AudioResampler();
         var stopAt = endSecond + MarginSeconds;
@@ -135,7 +161,12 @@ internal sealed class AudioWaveformReader : IDisposable
                 continue;
             }
             if (packet.StreamIndex != audio.Index)
+            {
+                // 合并的其他来源只送去解码，读取范围以前置来源为准。
+                if (merge is not null && merge.IsSource(packet.StreamIndex))
+                    DecodeIgnoringInvalid(packet, seconds, firstSecond, ref invalid);
                 continue;
+            }
             if (packet.Pts != FF.AV_NOPTS_VALUE && Seconds(packet.Pts, audio.TimeBase) > stopAt)
                 break;
             try
@@ -152,13 +183,34 @@ internal sealed class AudioWaveformReader : IDisposable
                 EmitUntil(Seconds(packet.Pts, audio.TimeBase) - MarginSeconds);
         }
         cancellationToken.ThrowIfCancellationRequested();
+        // 合并：读取结束后不再等待其他来源，剩下的帧全部合并。
+        merge?.Decode(null, decoded => Accumulate(decoded, seconds, firstSecond));
         EmitUntil(double.PositiveInfinity);
     }
 
     private double Seconds(long pts, AVRational timeBase) => pts * (double)timeBase.num / timeBase.den - origin;
 
+    private void DecodeIgnoringInvalid(Packet packet, float[][] seconds, int firstSecond, ref int invalid)
+    {
+        try
+        {
+            Decode(packet, seconds, firstSecond);
+            invalid = 0;
+        }
+        catch (FFmpegException exception) when (exception.ErrorCode == FF.AVERROR_INVALIDDATA
+                                                && ++invalid < MaxInvalidPackets)
+        {
+            // 定位可能落在音频 PES 中间；丢弃无法解码的残包。
+        }
+    }
+
     private void Decode(Packet packet, float[][] seconds, int firstSecond)
     {
+        if (merge is not null)
+        {
+            merge.Decode(packet, decoded => Accumulate(decoded, seconds, firstSecond));
+            return;
+        }
         if (dolbyE is not null)
         {
             dolbyE.Decode(packet, decoded => Accumulate(decoded, seconds, firstSecond));
@@ -203,6 +255,7 @@ internal sealed class AudioWaveformReader : IDisposable
         resampler.Dispose();
         decoder?.Dispose();
         dolbyE?.Dispose();
+        merge?.Dispose();
         input.Dispose();
     }
 }

@@ -78,9 +78,9 @@ public static partial class CommonUtil
                 throw new EndOfStreamException();
             // 提供检测会话时，成功写出的字节交给检测器，不在导出后重读输出文件。
             await using Stream destinationStream = checkSession is null
-                ? TSCutter.GUI.Services.Editing.DolbyE.TsOutputFile.Create(destinationFile, FileMode.Create, FileAccess.Write, FileShare.Read, 4096, FileOptions.None)
+                ? TSCutter.GUI.Services.Editing.AudioRebuild.TsOutputFile.Create(destinationFile, FileMode.Create, FileAccess.Write, FileShare.Read, 4096, FileOptions.None)
                 : new TsDetectingWriteStream(
-                    TSCutter.GUI.Services.Editing.DolbyE.TsOutputFile.Create(destinationFile, FileMode.Create, FileAccess.Write, FileShare.Read, 4096, FileOptions.None), checkSession);
+                    TSCutter.GUI.Services.Editing.AudioRebuild.TsOutputFile.Create(destinationFile, FileMode.Create, FileAccess.Write, FileShare.Read, 4096, FileOptions.None), checkSession);
 
             sourceStream.Seek(start, SeekOrigin.Begin);
 

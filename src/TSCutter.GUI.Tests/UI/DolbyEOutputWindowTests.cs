@@ -40,13 +40,13 @@ public sealed class DolbyEOutputWindowTests
                 Assert.False(track.ToSettings().HasWork);
                 track.Transcode = true;
                 // 默认按声道组各一行 AC3：5.1 为 448 kbps，立体声 192 kbps。
-                Assert.Equal(2, track.Rows.Count);
-                Assert.Equal([448, 192], track.Rows.Select(row => row.SelectedBitrate!.Value));
-                track.AddRowCommand.Execute(null);
-                var added = track.Rows[^1];
-                added.SelectedCodec = added.Codecs.Single(choice => choice.Value == DolbyECodec.Flac);
+                Assert.Equal(2, track.Outputs.Rows.Count);
+                Assert.Equal([448, 192], track.Outputs.Rows.Select(row => row.SelectedBitrate!.Value));
+                track.Outputs.AddRowCommand.Execute(null);
+                var added = track.Outputs.Rows[^1];
+                added.SelectedCodec = added.Codecs.Single(choice => choice.Value == AudioOutputCodec.Flac);
                 Assert.True(added.IsLossless);
-                Assert.True(track.ShowFlacHint);
+                Assert.True(track.Outputs.ShowFlacHint);
 
                 var window = new DolbyEOutputWindow { DataContext = viewModel };
                 try
@@ -58,7 +58,7 @@ public sealed class DolbyEOutputWindowTests
                     Assert.Contains(summary, texts);
                     Assert.Contains(texts, text => text.StartsWith(flacHint, StringComparison.Ordinal));
                     Assert.Equal(3, window.GetVisualDescendants().OfType<ComboBox>()
-                        .Count(box => box.IsEffectivelyVisible && box.ItemsSource is IReadOnlyList<DolbyEChoice<DolbyECodec>>));
+                        .Count(box => box.IsEffectivelyVisible && box.ItemsSource is IReadOnlyList<AudioChoice<AudioOutputCodec>>));
 
                     // 改回不处理：输出设置保留，只是不生效。
                     track.IsKeepAsIs = true;

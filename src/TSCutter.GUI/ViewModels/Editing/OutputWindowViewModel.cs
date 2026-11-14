@@ -25,7 +25,7 @@ public record BatchTask(string SourcePath, string DestinationPath, long StartPos
     RemuxExportSettings? RemuxSettings = null, double StartSeconds = 0, double? EndSeconds = null,
     FrameAccurateExportSettings? FrameAccurate = null, long StartPts = 0, long? EndPts = null,
     string? StartSignature = null, string? EndSignature = null, int AudioDelayMs = 0, int? AudioDelayProgramId = null,
-    DolbyEExportPlan? DolbyE = null, IReadOnlyList<int>? ExcludedPids = null);
+    AudioRebuildPlan? AudioRebuild = null, IReadOnlyList<int>? ExcludedPids = null);
 
 public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
@@ -81,8 +81,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     public int AudioDelayMs { get; set; }
     /// <summary>音频延迟作用的节目号（所编辑的节目）；null 表示全部音轨。</summary>
     public int? AudioDelayProgramId { get; set; }
-    /// <summary>单个导出、合并与删除模式导出的杜比 E 转码计划；批量任务的计划在各自的 <see cref="BatchTask"/> 中。</summary>
-    public DolbyEExportPlan? DolbyE { get; set; }
+    /// <summary>单个导出、合并与删除模式导出的音轨重建计划；批量任务的计划在各自的 <see cref="BatchTask"/> 中。</summary>
+    public AudioRebuildPlan? AudioRebuild { get; set; }
     /// <summary>单个导出、合并与删除模式导出时不输出的 TS 轨道（PID）；批量任务的选择在各自的 <see cref="BatchTask"/> 中。</summary>
     public IReadOnlyList<int>? ExcludedPids { get; set; }
     public long StartPts { get; set; }
@@ -266,7 +266,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 CurrentFileName = Path.GetFileName(frameAccurate.OutputPath);
                 SetExportClipInfo(frameAccurate.Segments.Count, _frameAccurateRangeSummary);
                 await ExportWithRebuildAsync(frameAccurate.Segments[0].SourcePath, frameAccurate.OutputPath,
-                    checkApplicable ? DolbyE : null, checkApplicable ? ExcludedPids : null, session,
+                    checkApplicable ? AudioRebuild : null, checkApplicable ? ExcludedPids : null, session,
                     (_, check) => ExportFrameAccurateAsync(frameAccurate, ++_copyGeneration, check));
                 await CompleteCheckAsync(session);
                 Percent = 100;
@@ -341,7 +341,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             CurrentFileName = Path.GetFileName(request.OutputPath);
             SetExportClipInfo(request.Ranges.Count, FormatRangeList(
                 request.Ranges.Select(item => (item.StartTimeSeconds, (double?)item.EndTimeSeconds))));
-            await ExportWithRebuildAsync(request.SourcePath, request.OutputPath, DolbyE, ExcludedPids, mergeSession,
+            await ExportWithRebuildAsync(request.SourcePath, request.OutputPath, AudioRebuild, ExcludedPids, mergeSession,
                 (_, check) => ExportTsAsync(request, ++_copyGeneration, supplementOutput, check)).ConfigureAwait(true);
             await CompleteCheckAsync(mergeSession);
             Percent = 100;
@@ -455,7 +455,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _lastUpdateTime = _startTime;
             await CopyClipAsync(new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId,
                 RemuxSettings, StartSeconds, EndSeconds, FrameAccurate, StartPts, EndPts, StartSignature, EndSignature,
-                AudioDelayMs, AudioDelayProgramId, DolbyE, ExcludedPids));
+                AudioDelayMs, AudioDelayProgramId, AudioRebuild, ExcludedPids));
             Percent = 100;
             RemainingSeconds = 0;
             DialogResult = true;
@@ -497,15 +497,15 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     public bool IsRawByteRange { get; set; }
 
-    // 当前任务在重组时实际做过的改动（杜比 E 转码、删去未选轨道），登记导出记录时使用。
+    // 当前任务在重组时实际做过的改动（杜比 E 转码、多轨合并、删去未选轨道），登记导出记录时使用。
     private ExportModifiers _rebuildModifiers;
 
     /// <summary>
-    /// 有杜比 E 转码计划或轨道选择时，导出服务打开的输出文件换成重组流，写出时一遍完成转码、删去未选轨道与重组；
+    /// 有音轨重建计划（杜比 E 转码、多轨合并）或轨道选择时，导出服务打开的输出文件换成重组流，写出时一遍完成转码、删去未选轨道与重组；
     /// 导出检测由重组流接收最终字节，因此不再交给导出服务。导出成功后提交独立的 FLAC 文件；失败时删除不完整的输出。
     /// 两者都没有时直接导出。
     /// </summary>
-    private async Task ExportWithRebuildAsync(string sourcePath, string outputPath, DolbyEExportPlan? plan,
+    private async Task ExportWithRebuildAsync(string sourcePath, string outputPath, AudioRebuildPlan? plan,
         IReadOnlyList<int>? excludedPids, ExportTsCheckSession? session, Func<string, ExportTsCheckSession?, Task> export)
     {
         _rebuildModifiers = ExportModifiers.None;
@@ -515,24 +515,26 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             await export(outputPath, session);
             return;
         }
-        var setup = new Services.Editing.DolbyE.DolbyERemuxSetup(plan, sourcePath, outputPath, session, excludedPids);
-        Services.Editing.DolbyE.TsOutputFile.Current = setup;
+        var setup = new Services.Editing.AudioRebuild.AudioRebuildSetup(plan, sourcePath, outputPath, session, excludedPids);
+        Services.Editing.AudioRebuild.TsOutputFile.Current = setup;
         try
         {
             await export(outputPath, null);
             // 没有经过重组流的导出路径（例如由封装器写出的输出）不支持转码；
             // 这类路径（智能剪辑由复用器写出时）已按轨道选择建立输出流，不需要再删去轨道。
             var failure = setup.Error ?? (setup.StreamCount == 0 && transcode
-                ? new NotSupportedException("This export path does not support Dolby E transcoding.") : null);
+                ? new NotSupportedException("This export path does not support audio rebuilding.") : null);
             if (failure is not null)
             {
                 TryDeleteOutput(outputPath);
-                throw new InvalidOperationException(string.Format(LocalizationManager.Instance.String_DolbyE_Failed,
+                throw new InvalidOperationException(string.Format(LocalizationManager.Instance.String_AudioOutput_Failed,
                     failure.Message), failure);
             }
             setup.Commit();
-            if (setup.Changed)
+            if (setup.DolbyETranscoded)
                 _rebuildModifiers |= ExportModifiers.DolbyETranscoded;
+            if (setup.ChannelsMerged)
+                _rebuildModifiers |= ExportModifiers.ChannelsMerged;
             if (setup.TracksRemoved || setup.StreamCount == 0 && excludedPids is { Count: > 0 })
                 _rebuildModifiers |= ExportModifiers.TracksSelected;
         }
@@ -543,7 +545,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         }
         finally
         {
-            Services.Editing.DolbyE.TsOutputFile.Current = null;
+            Services.Editing.AudioRebuild.TsOutputFile.Current = null;
         }
     }
 
@@ -581,7 +583,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         var rebuild = producesTs && !IsRawByteRange;
         try
         {
-            await ExportWithRebuildAsync(task.SourcePath, task.DestinationPath, rebuild ? task.DolbyE : null,
+            await ExportWithRebuildAsync(task.SourcePath, task.DestinationPath, rebuild ? task.AudioRebuild : null,
                 rebuild ? task.ExcludedPids : null, session, (_, check) => CopyClipCoreAsync(task, check, addTables));
             await CompleteCheckAsync(session);
             RegisterOutcome(task.DestinationPath, true, session, kind, checkApplicable, stopwatch.Elapsed, modifiers, delay);

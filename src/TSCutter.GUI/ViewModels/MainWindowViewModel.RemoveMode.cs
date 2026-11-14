@@ -183,7 +183,7 @@ public partial class MainWindowViewModel
                                 .Select(ClipStateSnapshot.Create).SequenceEqual(boundaries);
 
         var output = _dialogService.CreateViewModel<OutputWindowViewModel>();
-        output.DolbyE = CurrentDolbyEPlan;
+        output.AudioRebuild = CurrentAudioRebuildPlan;
         output.ExcludedPids = CurrentExcludedPids;
         ConfigureMergeExportTask(output, snapshot, string.Empty);
         if (!await ConfirmGradualRefreshExportAsync()) return;
