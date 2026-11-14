@@ -121,7 +121,42 @@ public sealed class H264SpliceTests
     }
 
     /// <summary>
-    /// 不能安全丢弃的前导参考画面明确报出不支持，不静默改写：场画面、出现在保留画面之后、MMCO 取消 I 帧（保留画面）。
+    /// 场编码的同样结构（常见于 1080i 广播）：I 顶场 + P 底场之后，紧跟作参考的前导 B 场对（两场共用一个 frame_num）
+    /// 与非参考 B 场。B 场对不复制，两场只让编号前移一次；P 场对的参考列表修改按场的 picNum 找到目标并以新编号重写。
+    /// </summary>
+    [Fact]
+    public void RenumbersFieldsAfterDroppedLeadingReferenceFieldPair()
+    {
+        var sets = new H264Splice.ParameterSets();
+        var sps = Nal(0x67, Sps);
+        var pps = Nal(0x68, Pps);
+        sets.Add(sps);
+        sets.Add(pps);
+        var rewriter = new H264Splice.CopyRewriter(sets);
+        Rewrite(rewriter, true, [sps, pps, Nal(0x61, Slice(7, 10, bottom: false, poc: 24))]);
+        Rewrite(rewriter, false, [Nal(0x41, Slice(5, 10, bottom: true, poc: 25, l0: 1, modification: [(0, 0)]))]);
+        // 前导：作参考的 B 场对（底场的 MMCO 取消 I 帧之前的场，新码流中本就不存在）与非参考 B 场。
+        Skip(rewriter, Nal(0x21, Slice(6, 11, bottom: false, poc: 20, l0: 1, l1: 1, reference: true)));
+        Skip(rewriter, Nal(0x21, Slice(6, 11, bottom: true, poc: 21, l0: 1, l1: 1, reference: true, mmco: [(1, 4)])));
+        Skip(rewriter, Nal(0x01, Slice(6, 12, bottom: false, poc: 18, l0: 1, l1: 1)));
+        Skip(rewriter, Nal(0x01, Slice(6, 12, bottom: true, poc: 19, l0: 1, l1: 1)));
+        // P 顶场（原 CurrPicNum 5）：差值 4 指向 I 顶场，再差值 1 指向 I 底场。
+        var top = Rewrite(rewriter, false, [Nal(0x41, Slice(5, 12, bottom: false, poc: 32, modification: [(0, 3), (0, 0)]))]);
+        // P 底场：差值 4 指向 I 底场，再加 3 指向本帧顶场。
+        var bottom = Rewrite(rewriter, false, [Nal(0x41, Slice(5, 12, bottom: true, poc: 33, modification: [(0, 3), (1, 2)]))]);
+        var next = Rewrite(rewriter, false, [Nal(0x21, Slice(6, 13, bottom: false, poc: 28, l0: 1, l1: 1, reference: true))]);
+
+        var header = Parse(top, sets, out _, out var modifications);
+        Assert.Equal(1, header.FrameNum);
+        Assert.Equal([(0, 1), (0, 0)], modifications);
+        header = Parse(bottom, sets, out _, out modifications);
+        Assert.Equal(1, header.FrameNum);
+        Assert.Equal([(0, 1), (1, 0)], modifications);
+        Assert.Equal(2, Parse(next, sets, out _, out _).FrameNum);
+    }
+
+    /// <summary>
+    /// 不能安全丢弃的前导参考画面明确报出不支持，不静默改写：MMCO 取消 I 帧（帧画面与场画面）、出现在保留画面之后。
     /// </summary>
     [Fact]
     public void RejectsLeadingReferencesThatCannotBeRenumbered()
@@ -131,10 +166,12 @@ public sealed class H264SpliceTests
         var pps = Nal(0x68, Pps);
         sets.Add(sps);
         sets.Add(pps);
+        // 前导参考顶场（CurrPicNum 3）差值 2 指向 I 顶场。
         var fields = new H264Splice.CopyRewriter(sets);
-        Rewrite(fields, true, [sps, pps, Nal(0x61, Slice(7, 10, bottom: false, poc: 24, field: false))]);
-        Assert.Throws<InvalidDataException>(() =>
-            Skip(fields, Nal(0x21, Slice(6, 11, bottom: false, poc: 20, l0: 1, l1: 1, reference: true))));
+        Rewrite(fields, true, [sps, pps, Nal(0x61, Slice(7, 10, bottom: false, poc: 24))]);
+        Rewrite(fields, false, [Nal(0x41, Slice(5, 10, bottom: true, poc: 25, l0: 1, modification: [(0, 0)]))]);
+        Assert.Throws<InvalidDataException>(() => Skip(fields, Nal(0x21, Slice(6, 11, bottom: false, poc: 20, l0: 1, l1: 1,
+            reference: true, mmco: [(1, 1)]))));
 
         var unmarking = new H264Splice.CopyRewriter(sets);
         Rewrite(unmarking, true, [sps, pps, Nal(0x61, Slice(7, 10, bottom: false, poc: 24, field: false))]);

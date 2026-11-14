@@ -701,6 +701,8 @@ internal static class H264Splice
         private int skipped;
         // 已处理 I 帧之后的保留画面：前导参考画面只能紧跟 I 帧（及其第二场），否则编号无法整体前移。
         private bool pastLeading;
+        // 刚丢弃的前导参考场（原 frame_num、是否底场），用于识别同一帧的第二场。
+        private (int FrameNum, bool Bottom)? leadingField;
         private List<Mmco>? pictureMarking;
 
         public bool Active { get; private set; } = true;
@@ -759,8 +761,9 @@ internal static class H264Splice
         /// <summary>
         /// 记录衔接点 I 帧之后不复制的前导画面（显示早于 I 帧，由头段重新编码）。非参考画面不影响编号；
         /// 参考画面在新码流中不存在：其 frame_num 不再占位，指向它的参考项按缺失处理。
-        /// 支持的前提（否则抛出 <see cref="InvalidDataException"/>）：紧跟 I 帧、早于任何保留画面，为帧画面，
-        /// frame_num 与上一参考画面连续；带 MMCO 时只能取消新码流中本就不存在的画面（I 帧之前或已丢弃的前导画面），
+        /// 支持的前提（否则抛出 <see cref="InvalidDataException"/>）：紧跟 I 帧、早于任何保留画面，
+        /// frame_num 与上一参考画面连续（参考场对的两场共用一个 frame_num，第二场紧跟第一场）；
+        /// 带 MMCO 时只能取消新码流中本就不存在的画面（I 帧之前或已丢弃的前导画面），
         /// 这样丢掉该画面连同其 MMCO 后，保留画面的参考帧状态不变。
         /// </summary>
         public void SkipLeading(ReadOnlySpan<byte> data, int lengthSize)
@@ -788,22 +791,37 @@ internal static class H264Splice
                     if (!TryParseSlice(rbsp.AsSpan(0, length), nal[0], sets, mmco, out var header))
                         throw new InvalidDataException("Unsupported H.264 slice header.");
                     if (header.NalRefIdc == 0)
+                    {
+                        leadingField = null;
                         return;
+                    }
                     if (pastLeading)
                         throw new InvalidDataException("Leading reference picture after a kept picture.");
-                    if (header.Field)
-                        throw new InvalidDataException("Leading reference fields are not supported at a splice.");
                     var max = header.Sps.MaxFrameNum;
                     var original = ((header.FrameNum - offset) % max + max) % max;
-                    if (original != skipped + 1)
+                    // 参考场对的第二场：紧跟刚丢弃的第一场，frame_num 相同、场性相反，不再占用新的编号。
+                    var secondField = header.Field && leadingField is { } first && first.FrameNum == header.FrameNum &&
+                                      first.Bottom != header.Bottom;
+                    leadingField = header.Field && !secondField ? (header.FrameNum, header.Bottom) : null;
+                    if (original != (secondField ? skipped : skipped + 1))
                         throw new InvalidDataException("Gap in frame_num among the leading pictures.");
                     // 原编号 0 是 I 帧，其余较小的编号是已丢弃的前导画面，负数是 I 帧之前的画面。
-                    if (header.Adaptive && mmco.Exists(op => op.Op != 1 || original - (op.A + 1) == 0))
+                    if (header.Adaptive && mmco.Exists(op => op.Op != 1 || UnmarkTarget(header, original, op.A) == 0))
                         throw new InvalidDataException("Memory management in a leading picture affects kept pictures.");
-                    skipped++;
+                    if (!secondField)
+                        skipped++;
                 }
                 finally { ArrayPool<byte>.Shared.Return(rbsp); }
             }
+        }
+
+        /// <summary>MMCO1 取消的画面所属帧的原编号（相对 I 帧）：帧画面为 picNum，场画面由 picNum 换算出所属帧。</summary>
+        private static int UnmarkTarget(in SliceHeader h, int original, int difference)
+        {
+            if (!h.Field)
+                return original - (difference + 1);
+            var picNum = 2 * original + 1 - (difference + 1);
+            return (picNum & 1) != 0 ? (picNum - 1) >> 1 : picNum >> 1;
         }
 
         private void ProcessSlice(ReadOnlySpan<byte> nal, bool convertToIdr, int idrPicId, Span<byte> output, ref int position)
@@ -850,6 +868,7 @@ internal static class H264Splice
                 pictureOriginal = 0;
                 skipped = 0;
                 pastLeading = false;
+                leadingField = null;
                 references.Clear();
                 references.Add(new ReferenceFrame(0, 0, !h.Field || !h.Bottom, !h.Field || h.Bottom));
                 return;
