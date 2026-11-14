@@ -155,7 +155,7 @@ internal sealed class FrameAccurateTsOutput : IDisposable
                 filter.WriteInitialTables();
                 return;
             }
-            output = new FileStream(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.SequentialScan);
+            output = TSCutter.GUI.Services.Editing.DolbyE.TsOutputFile.Create(outputPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 1, FileOptions.SequentialScan);
         }
         catch
         {

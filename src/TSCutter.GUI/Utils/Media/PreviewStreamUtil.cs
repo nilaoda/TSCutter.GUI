@@ -76,21 +76,30 @@ internal static class PreviewStreamUtil
             }).ToArray();
     }
 
+    /// <param name="dolbyE">按 PID 识别出的杜比 E 轨；这些轨按声道组展开为多条，每条播放一个声道组。</param>
     public static IReadOnlyList<PreviewAudioTrackOption> CreateAudioOptions(FormatContext context,
-        PreviewStreamSelection? video)
+        PreviewStreamSelection? video, IReadOnlyDictionary<int, DolbyE.DolbyETrackInfo>? dolbyE = null)
     {
         var program = video?.ProgramId is { } id ? context.Programs.Where(p => p.Id == id).ToArray() : [];
         return context.Streams.Where(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO &&
                 (program.Length == 0 || program[0].ContainsStream(stream.Index)))
-            .Select(stream =>
+            .SelectMany(stream =>
             {
                 stream.Metadata.TryGetValue("language", out var language);
                 stream.Metadata.TryGetValue("title", out var title);
                 var identifier = context.InputFormat?.Name == "mpegts" ? $"PID 0x{stream.Id:X4}" : $"#{stream.Index + 1}";
+                var selection = new PreviewStreamSelection(stream.Index, stream.Id, video?.ProgramId);
+                if (dolbyE is not null && dolbyE.TryGetValue(stream.Id, out var track))
+                {
+                    var prefix = string.Join(" · ", new[] { identifier, title, language }
+                        .Where(text => !string.IsNullOrWhiteSpace(text)));
+                    return track.Programs.Select(item => new PreviewAudioTrackOption(selection, prefix,
+                        dolbyEProgram: item.Number, dolbyELayout: item.LayoutName));
+                }
                 var details = new[] { identifier, title, language, stream.Codecpar!.CodecName.ToUpperInvariant() };
-                return new PreviewAudioTrackOption(new(stream.Index, stream.Id, video?.ProgramId),
+                return [new PreviewAudioTrackOption(selection,
                     string.Join(" · ", details.Where(text => !string.IsNullOrWhiteSpace(text))),
-                    TSCutter.GUI.Player.Audio.AudioPlaybackPipeline.CanDecode(stream));
+                    TSCutter.GUI.Player.Audio.AudioPlaybackPipeline.CanDecode(stream))];
             }).ToArray();
     }
 

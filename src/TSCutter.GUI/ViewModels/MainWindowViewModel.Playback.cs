@@ -64,6 +64,7 @@ public partial class MainWindowViewModel
             OnPropertyChanged(nameof(ShowPreviewTrackSelector));
         }
         finally { updatingPreviewAudio = false; }
+        ResetDolbyESettings();
         UpdateStripWaveformSource();
     }
 
@@ -378,6 +379,7 @@ public partial class MainWindowViewModel
                     MinimumPrerollSeconds = instance.RecoveryPrerollSeconds,
                     Mpeg2RefreshPoints = instance.UsesMpeg2RefreshPoints,
                     StreamSelection = instance.StreamSelection, AudioSelection = SelectedPreviewAudioTrack?.Selection,
+                    AudioDolbyEProgram = SelectedPreviewAudioTrack?.DolbyEProgram,
                     TsSyncOffset = instance.TsSyncOffset,
                     EnableSdrToneMapping = EnableSdrToneMapping, Volume = EffectivePreviewVolume,
                     PreferHardwareDecoding = preferHardwareDecodingForPreview,

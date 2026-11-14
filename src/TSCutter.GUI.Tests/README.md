@@ -110,6 +110,7 @@ The default synthetic tests do not depend on the following environment variables
 | `TSCUTTER_AV3A_TEST_SAMPLE` | Optional Audio Vivid MP4 for AV3A export checks |
 | `TSCUTTER_SUBTITLE_REAL_SAMPLE` | Optional MP4 with exactly one subtitle track and an active subtitle at 2.5 seconds |
 | `TSCUTTER_DVD_TEST_SAMPLE` | Optional real DVD-Video ISO or folder; the recommended title should be long enough to mark keyframes at 35% and 65% of its duration with about four seconds before each, for checks that DVD exports cut at the keyframes seen in the preview |
+| `TSCUTTER_DOLBY_E_SAMPLES` | Optional directory of TS files that each carry one Dolby E track in SMPTE 302M, for detection, per-channel-group decoding and TS rebuild checks (the rebuild check cuts the first 24 MB of each file and injects transport errors) |
 
 Real media are not downloaded, generated, or checked in. If an override is unset, only the corresponding real-media tests are skipped; synthetic and ordinary tests remain available.
 Keyframe tests use the shared `keyframes` directory without a separate sample directory variable.

@@ -113,9 +113,9 @@ internal sealed class TsClipMergeService
             // 提供检测会话时用检测型流包装最终输出；补入的节目表前缀与全部数据块都会经过检测。
             await using var output = programOutput is null
                 ? checkSession is null
-                    ? (Stream)new FileStream(outputPath, FileMode.Create, FileAccess.Write, FileShare.None,
+                    ? (Stream)TSCutter.GUI.Services.Editing.DolbyE.TsOutputFile.Create(outputPath, FileMode.Create, FileAccess.Write, FileShare.None,
                         buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan)
-                    : new TsDetectingWriteStream(new FileStream(outputPath, FileMode.Create, FileAccess.Write,
+                    : new TsDetectingWriteStream(TSCutter.GUI.Services.Editing.DolbyE.TsOutputFile.Create(outputPath, FileMode.Create, FileAccess.Write,
                         FileShare.None, buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan), checkSession)
                 : null;
             outputCreated = true;

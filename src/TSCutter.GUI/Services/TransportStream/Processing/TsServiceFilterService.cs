@@ -296,7 +296,7 @@ public sealed class TsServiceFilterService
             try
             {
                 // CreateNew 与界面预检查共同避免静默覆盖；即使检查后文件才出现也会安全失败。
-                stream = new FileStream(
+                stream = TSCutter.GUI.Services.Editing.DolbyE.TsOutputFile.Create(
                     output.OutputPath, overwrite ? FileMode.Create : FileMode.CreateNew, FileAccess.Write, FileShare.None,
                     OutputBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
             }

@@ -10,11 +10,18 @@ public sealed record PreviewStreamSelection(int StreamIndex, int StreamId, int? 
 
 public sealed record PreviewVideoTrackOption(PreviewStreamSelection Selection, string DisplayText);
 
-public sealed class PreviewAudioTrackOption(PreviewStreamSelection selection, string label, bool canDecode = true) : ObservableObject
+/// <param name="dolbyEProgram">杜比 E 轨按声道组展开后的声道组序号（从 1 开始）；普通音轨为 null。</param>
+/// <param name="dolbyELayout">杜比 E 声道组的声道布局文字，如“5.1”。</param>
+public sealed class PreviewAudioTrackOption(PreviewStreamSelection selection, string label, bool canDecode = true,
+    int? dolbyEProgram = null, string? dolbyELayout = null) : ObservableObject
 {
     public PreviewStreamSelection Selection { get; } = selection;
     public bool CanDecode { get; } = canDecode;
-    public string DisplayText => CanDecode ? label : $"{label} · {LocalizationManager.Instance.String_Playback_AudioTrackUnsupported}";
+    public int? DolbyEProgram { get; } = dolbyEProgram;
+    private string Label => DolbyEProgram is { } program
+        ? $"{label} · {string.Format(LocalizationManager.Instance.String_DolbyE_TrackProgram, program, dolbyELayout)}"
+        : label;
+    public string DisplayText => CanDecode ? Label : $"{Label} · {LocalizationManager.Instance.String_Playback_AudioTrackUnsupported}";
     public void RefreshLocalizedText() => OnPropertyChanged(nameof(DisplayText));
 }
 

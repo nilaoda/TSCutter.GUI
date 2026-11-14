@@ -183,6 +183,7 @@ public partial class MainWindowViewModel
                                 .Select(ClipStateSnapshot.Create).SequenceEqual(boundaries);
 
         var output = _dialogService.CreateViewModel<OutputWindowViewModel>();
+        output.DolbyE = CurrentDolbyEPlan;
         ConfigureMergeExportTask(output, snapshot, string.Empty);
         if (!await ConfirmGradualRefreshExportAsync()) return;
         if (!await PrepareProgramTableExportAsync(output, removed.Select(GetProgramTableClipLabel).ToArray(), IsCurrent))

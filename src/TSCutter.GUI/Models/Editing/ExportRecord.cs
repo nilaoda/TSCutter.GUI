@@ -44,7 +44,7 @@ public enum TsExportCheckFailure
 /// 一次导出任务的结果索引；RecordId 为空表示本次导出未成功或未登记。Elapsed 为该任务的导出用时，Kind 为导出类型。
 /// </summary>
 public sealed record ExportTaskOutcome(long? RecordId, string OutputPath, bool Success, TimeSpan Elapsed = default,
-    ExportKind? Kind = null);
+    ExportKind? Kind = null, bool DolbyETranscoded = false);
 
 /// <summary>按检测类型保存的有界分类统计。</summary>
 public sealed record ExportCheckCategory(TsCheckEventType Type, long Count);
@@ -59,6 +59,8 @@ public sealed class ExportRecord
     public DateTime Timestamp { get; init; }
     public string OutputPath { get; init; } = "";
     public ExportKind Kind { get; init; }
+    /// <summary>导出时转码了杜比 E 音轨（导出类型之外的标记）。</summary>
+    public bool DolbyETranscoded { get; init; }
     public long FileSize { get; init; }
     public TimeSpan Elapsed { get; init; }
     /// <summary>本次导出包含的片段数量；合并导出为片段数，单段导出为 1。</summary>

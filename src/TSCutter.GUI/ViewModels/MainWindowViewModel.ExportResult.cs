@@ -36,6 +36,7 @@ public partial class MainWindowViewModel
             Success = success,
             Record = record,
             Kind = outcome?.Kind,
+            DolbyETranscoded = outcome?.DolbyETranscoded ?? false,
             Elapsed = outcome?.Elapsed ?? record?.Elapsed ?? TimeSpan.Zero,
             ExtraTags = extraTags,
             ContentText = contentText,

@@ -35,6 +35,8 @@ public partial class ExportQueueItem : ObservableObject
     public int AudioDelayMs { get; init; }
     /// <summary>音频延迟作用的节目号（所编辑的节目）；null 表示全部音轨。</summary>
     public int? AudioDelayProgramId { get; init; }
+    /// <summary>杜比 E 转码计划（加入队列时的快照）；不转码时为 null。</summary>
+    public Media.DolbyEExportPlan? DolbyE { get; init; }
 
     public string SourceFilePath { get; init; } = "";
 
