@@ -39,7 +39,7 @@ Ranges to remove are shown in red on the timeline, the frame strip and the clip 
 
 In keyframe cut mode both ends fall on keyframes, so an open-GOP source may lose a few leading pictures at a removal start; smart cut mode removes exact frames.
 
-Clips cannot be saved, queued or exported separately in remove mode. The mode is saved with projects (project version 6, which older versions cannot open). Disc sources support keyframe cutting only.
+Clips cannot be saved, queued or exported separately in remove mode. The mode is saved with projects (project version 6, which older versions cannot open).
 
 ## Smart cut mode
 
