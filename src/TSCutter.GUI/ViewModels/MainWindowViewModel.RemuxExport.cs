@@ -1,11 +1,14 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
 using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.Models.Editing;
+using TSCutter.GUI.Models.Preview;
+using TSCutter.GUI.Services.Media;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.ViewModels.Editing;
 
@@ -47,8 +50,10 @@ public partial class MainWindowViewModel
             CanChange = track.Index != settings.ReferenceVideoIndex,
             IsTextSubtitle = track.Type == AVMediaType.AVMEDIA_TYPE_SUBTITLE &&
                 track.Codec is not ("hdmv_pgs_subtitle" or "dvd_subtitle"),
-            IsSelected = settings.StreamIndices.Contains(track.Index)
+            IsSelected = settings.StreamIndices.Contains(track.Index),
+            AudioStreamIndex = track.Type == AVMediaType.AVMEDIA_TYPE_AUDIO ? track.Index : -1
         }), video.Disc is null && video.ClipExtension == "mkv");
+        dialog.EnableSilenceDetection(AnalyzeAudioTracks(video, VideoPath));
         await _dialogService.ShowDialogAsync(this, dialog);
         if (dialog.DialogResult != true || !ReferenceEquals(video, _videoInstance)) return;
         var updated = dialog.Apply(settings);
@@ -83,6 +88,11 @@ public partial class MainWindowViewModel
         }
         return merged;
     }
+
+    /// <summary>静音检测：与预览相同地打开当前视频（文件或光盘），在后台抽样解码所选音轨。</summary>
+    private static Func<IReadOnlyCollection<int>, IProgress<double>, CancellationToken, Task<IReadOnlyList<AudioTrackLevel>>>
+        AnalyzeAudioTracks(VideoInstance video, string path) => (indices, progress, token) => Task.Run(() =>
+            SilentTrackDetector.Analyze(path, video.Disc, video.TsSyncOffset, indices, progress, token), token);
 
     public bool HasRemuxQueue => ExportQueue.Any(item => item.RemuxSettings is not null);
 

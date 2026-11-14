@@ -1729,4 +1729,18 @@
     <x:String x:Key="String.TsTracks.FrameAccurateHint">智能剪辑只输出预览视频所在节目的音视频和字幕。</x:String>
     <x:String x:Key="String.TsTracks.SummaryAll">输出全部 {0} 条轨道</x:String>
     <x:String x:Key="String.TsTracks.Summary">输出 {0}/{1} 条轨道 · 改写节目表</x:String>
+    <x:String x:Key="String.SilenceDetect.Button">检测静音轨道</x:String>
+    <x:String x:Key="String.SilenceDetect.Tip">在全片均匀抽取 12 段（每段 1.5 秒）解码各音轨，&#10;峰值低于 −60 dBFS 的音轨视为静音并取消勾选，&#10;需要时可以再勾上；&#10;杜比 E 按声道组分别检测，全部静音才取消勾选。&#10;只在片中某一段才有声音的音轨可能被误判。</x:String>
+    <x:String x:Key="String.SilenceDetect.Running">正在检测… {0}%</x:String>
+    <x:String x:Key="String.SilenceDetect.Found">{0} 条音轨静音，已取消勾选 {1} 条。</x:String>
+    <x:String x:Key="String.SilenceDetect.NoneFound">没有发现静音的音轨。</x:String>
+    <x:String x:Key="String.SilenceDetect.Failed">检测失败：{0}</x:String>
+    <x:String x:Key="String.SilenceDetect.Silent">静音（峰值 {0} dBFS）</x:String>
+    <x:String x:Key="String.SilenceDetect.SilentEmpty">静音（没有声音）</x:String>
+    <x:String x:Key="String.SilenceDetect.Peak">峰值 {0} dBFS</x:String>
+    <x:String x:Key="String.SilenceDetect.Undecodable">无法检测（无法解码）</x:String>
+    <x:String x:Key="String.SilenceDetect.DolbyE">杜比 E：{0}</x:String>
+    <x:String x:Key="String.SilenceDetect.DolbyEGroup">声道组 {0}（{1}）{2}</x:String>
+    <x:String x:Key="String.SilenceDetect.GroupPeak">峰值 {0} dBFS</x:String>
+    <x:String x:Key="String.SilenceDetect.SilentShort">静音</x:String>
 </ResourceDictionary>
