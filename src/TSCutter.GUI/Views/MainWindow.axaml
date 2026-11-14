@@ -238,6 +238,8 @@
                                   Command="{Binding OpenDiscFolderCommand}" />
                         <MenuItem Header="{DynamicResource String.Project.Open}"
                                   Command="{Binding OpenProjectCommand}" />
+                        <!-- 条目由窗口代码按最近打开列表生成 -->
+                        <MenuItem x:Name="RecentMenu" Header="{DynamicResource String.Recent.Menu}" />
                         <MenuItem Header="{DynamicResource String.Project.Save}"
                                   Command="{Binding SaveProjectCommand}" />
                         <MenuItem Header="{DynamicResource String.Project.SaveAs}"
@@ -757,6 +759,14 @@
                                                        HorizontalAlignment="Center" VerticalAlignment="Center" />
                                         </ScrollViewer>
                                     </Border>
+                                    <!-- 未打开文件时在黑色预览区显示打开提示，不拦截拖放；最近打开的文件在“文件”菜单中。 -->
+                                    <StackPanel Grid.Row="1" IsVisible="{Binding ShowRecentStartPage}" IsHitTestVisible="False"
+                                                HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="6" Margin="16">
+                                        <TextBlock Text="{DynamicResource String.Recent.StartHint}" Foreground="#E8EAED" FontSize="14"
+                                                   HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+                                        <TextBlock Text="{Binding StartShortcutHint}" Foreground="#9AA0A6"
+                                                   HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap" />
+                                    </StackPanel>
                                 </Grid>
                             </ClassicBorderDecorator>
                             <GridSplitter Grid.Column="1" Width="3" />
@@ -772,22 +782,7 @@
                                                 </TextBlock>
                                             </TabItem.Header>
                                             <DockPanel>
-                                                <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,0" IsVisible="{Binding IsRemuxExport}">
-                                                    <TextBlock Text="{DynamicResource String.RemuxExport.Notice}" TextWrapping="Wrap" FontSize="11" />
-                                                    <Button Content="{DynamicResource String.RemuxExport.Options}" Command="{Binding RemuxExportOptionsCommand}" />
-                                                </StackPanel>
-                                                <!-- TS 原包导出：显示输出几条轨道，删去了轨道时按钮带一个圆点。 -->
-                                                <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,0" IsVisible="{Binding IsTsTrackExport}">
-                                                    <TextBlock Text="{Binding TsTrackSummary}" TextWrapping="Wrap" FontSize="11" />
-                                                    <Button Command="{Binding RemuxExportOptionsCommand}">
-                                                        <StackPanel Orientation="Horizontal" Spacing="4">
-                                                            <TextBlock VerticalAlignment="Center" Text="{DynamicResource String.RemuxExport.Options}" />
-                                                            <Ellipse Width="7" Height="7" VerticalAlignment="Center"
-                                                                     IsVisible="{Binding HasTsTrackSelection}"
-                                                                     Fill="{DynamicResource {x:Static commonControls:SystemColors.HighlightBrushKey}}" />
-                                                        </StackPanel>
-                                                    </Button>
-                                                </StackPanel>
+                                                <!-- 底部按钮先停靠，始终贴底，与导出队列页的按钮同一高度；导出设置排在按钮上方。 -->
                                                 <Grid DockPanel.Dock="Bottom"
                                                       ColumnDefinitions="*,*"
                                                       ColumnSpacing="4"
@@ -804,6 +799,22 @@
                                                         <TextBlock Text="{DynamicResource String.ExportAll}" />
                                                     </Button>
                                                 </Grid>
+                                                <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,4" IsVisible="{Binding IsRemuxExport}">
+                                                    <TextBlock Text="{DynamicResource String.RemuxExport.Notice}" TextWrapping="Wrap" FontSize="11" />
+                                                    <Button Content="{DynamicResource String.RemuxExport.Options}" Command="{Binding RemuxExportOptionsCommand}" />
+                                                </StackPanel>
+                                                <!-- TS 原包导出：显示输出几条轨道，删去了轨道时按钮带一个圆点。 -->
+                                                <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,4" IsVisible="{Binding IsTsTrackExport}">
+                                                    <TextBlock Text="{Binding TsTrackSummary}" TextWrapping="Wrap" FontSize="11" />
+                                                    <Button Command="{Binding RemuxExportOptionsCommand}">
+                                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                                            <TextBlock VerticalAlignment="Center" Text="{DynamicResource String.RemuxExport.Options}" />
+                                                            <Ellipse Width="7" Height="7" VerticalAlignment="Center"
+                                                                     IsVisible="{Binding HasTsTrackSelection}"
+                                                                     Fill="{DynamicResource {x:Static commonControls:SystemColors.HighlightBrushKey}}" />
+                                                        </StackPanel>
+                                                    </Button>
+                                                </StackPanel>
                                                 <Grid>
                                                     <!-- Empty state -->
                                                     <TextBlock Text="{DynamicResource String.Clips.Empty}"
@@ -996,10 +1007,6 @@
                                                 </StackPanel>
                                             </TabItem.Header>
                                             <DockPanel>
-                                                <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,0" IsVisible="{Binding HasRemuxQueue}">
-                                                    <TextBlock Text="{DynamicResource String.RemuxExport.Notice}" TextWrapping="Wrap"
-                                                               FontSize="11" />
-                                                </StackPanel>
                                                 <!-- 底部按钮 -->
                                                 <Grid DockPanel.Dock="Bottom"
                                                       ColumnDefinitions="*,*"
@@ -1018,13 +1025,17 @@
                                                             Command="{Binding BatchExportQueueCommand}"
                                                             Classes="accent">
                                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                                            <Image Classes="theme-icon" Height="16" Source="{DynamicResource Icon.save}" />
+                                                            <Image Classes="theme-icon" Height="16" Margin="0,-1" Source="{DynamicResource Icon.save}" />
                                                             <TextBlock VerticalAlignment="Center"
                                                                        Text="{DynamicResource String.BatchExportQueue}"
                                                                        Margin="4,0,0,0" />
                                                         </StackPanel>
                                                     </Button>
                                                 </Grid>
+                                                <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,4" IsVisible="{Binding HasRemuxQueue}">
+                                                    <TextBlock Text="{DynamicResource String.RemuxExport.Notice}" TextWrapping="Wrap"
+                                                               FontSize="11" />
+                                                </StackPanel>
                                                 <Grid>
                                                     <!-- Empty state -->
                                                     <TextBlock Text="{DynamicResource String.QueueEmpty}"

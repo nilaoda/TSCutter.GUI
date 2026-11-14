@@ -492,6 +492,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     [RelayCommand]
     private async Task ProcessCommandLineAsync()
     {
+        _ = RefreshRecentItemsAsync();
         var args = Environment.GetCommandLineArgs();
         if (args.Length > 1 && File.Exists(args[1]))
         {
@@ -1373,7 +1374,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(WindowTitle), nameof(IsPreviewOnly),
         nameof(HasCurrentFile), nameof(CanUseCurrentFile), nameof(CanUseCurrentFileTools),
-        nameof(IsToolsOnly), nameof(ToolsOnlyMessage), nameof(StatusInfoText))]
+        nameof(IsToolsOnly), nameof(ToolsOnlyMessage), nameof(StatusInfoText), nameof(ShowRecentStartPage))]
     public partial string VideoPath { get; set; }
 
     private Bitmap? decodedBitmap;
@@ -1650,6 +1651,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         await RestoreProjectAsync(project);
         SetProjectPath(projectPath);
         MarkProjectCheckpoint();
+        RecordRecentProject(projectPath, project.Clips.Count);
         if (sourceLocations.Count > 0)
         {
             _savedProjectState = null;
@@ -1783,6 +1785,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             }
             SetProjectPath(path);
             _savedProjectState = savedState;
+            RecordRecentProject(path, project.Clips.Count);
             return true;
         }
         catch (Exception exception)
@@ -1907,13 +1910,16 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         _discInput = null;
         _discTitleInfo = null;
         VideoPath = path;
-        if (await LoadVideoAsync() && ExportQueue.Count == 0)
+        if (!await LoadVideoAsync())
+            return;
+        if (ExportQueue.Count == 0)
             MarkProjectCheckpoint();
+        RecordRecentItem(new RecentItem { Kind = RecentItemKind.Video, Path = path });
     }
 
     // 光盘镜像和目录先经 libbluray/libdvdread 枚举标题，
     // 用户选择标题后再打开预览。光盘来源与标题选择不写入工程文件。
-    private async Task OpenDiscAsync(string sourcePath)
+    private async Task OpenDiscAsync(string sourcePath, RecentItem? previous = null)
     {
         if (_isLoadingVideo)
             return;
@@ -1933,7 +1939,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             }, caption: LocalizationManager.Instance.String_Disc_Scanning);
             cancellation.Token.ThrowIfCancellationRequested();
             var dialog = _dialogService.CreateViewModel<ViewModels.Discs.DiscTitleSelectionViewModel>();
-            dialog.Initialize(scan.Inputs[scan.RecommendedIndex].SourcePath, scan);
+            dialog.Initialize(scan.Inputs[scan.RecommendedIndex].SourcePath, scan,
+                previous?.DiscTitle is { } title ? (previous.DiscInputPath, title) : null);
             await _dialogService.ShowDialogAsync(this, dialog);
             cancellation.Token.ThrowIfCancellationRequested();
             if (dialog.DialogResult == true)
@@ -1961,7 +1968,12 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         _discInput = selectedInput;
         _discTitleInfo = selectedTitle;
         VideoPath = selectedInput.SourcePath;
-        await LoadVideoAsync();
+        if (await LoadVideoAsync())
+            RecordRecentItem(new RecentItem
+            {
+                Kind = RecentItemKind.Disc, Path = sourcePath, DiscKind = selectedInput.Kind,
+                DiscInputPath = selectedInput.SourcePath, DiscTitle = selectedInput.TitleNumber
+            });
 
         async Task<DiscScanResult> ScanAsync(CancellationToken token)
         {
@@ -2157,6 +2169,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         var dialogViewModel = _dialogService.CreateViewModel<SettingsWindowViewModel>();
         dialogViewModel.SelectedTabIndex = tabIndex;
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        // 设置中可能关闭了记录、清空了列表或切换了语言。
+        await RefreshRecentItemsAsync();
     }
 
     public async Task SeekToTimeAsync(TimeSpan timeSpan)
@@ -2887,6 +2901,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         NotifyPreviewTrackChoicesChanged();
         OnPropertyChanged(nameof(IsVideoInitialized));
+        OnPropertyChanged(nameof(ShowRecentStartPage));
+        OpenRecentItemCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsKeyFrameStripVisible));
         OnPropertyChanged(nameof(CanTogglePreviewOptions));
         OnPropertyChanged(nameof(CanToggleHardwareDecoding));

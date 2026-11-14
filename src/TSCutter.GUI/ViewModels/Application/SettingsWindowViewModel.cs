@@ -40,6 +40,12 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     [ObservableProperty]
     private bool _autoCheckForUpdates;
     [ObservableProperty]
+    private bool _rememberRecentItems;
+    // “清除列表”立即生效，不等待确定或应用。
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ClearRecentItemsCommand))]
+    private bool _hasRecentItems;
+    [ObservableProperty]
     private bool _showImageNavigator;
     [ObservableProperty]
     private bool _showKeyFrameStrip;
@@ -184,6 +190,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
             ? _configService.CurrentConfig.ClipOutputTemplate : Utils.Editing.ClipOutputNaming.DefaultTemplate;
         AutoDetectLanguage = _configService.CurrentConfig.AutoDetectLanguage;
         AutoCheckForUpdates = _configService.CurrentConfig.AutoCheckForUpdates;
+        RememberRecentItems = _configService.CurrentConfig.RememberRecentItems;
+        HasRecentItems = _configService.CurrentConfig.RecentItems.Count > 0;
         ShowImageNavigator = _configService.CurrentConfig.ShowImageNavigator;
         ShowKeyFrameStrip = _configService.CurrentConfig.ShowKeyFrameStrip;
         ShowAudioWaveform = _configService.CurrentConfig.ShowAudioWaveform;
@@ -300,6 +308,14 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         ShiftWheelStepTexts = ShiftWheelStepValues.Select(value => ShortcutCatalog.UnitCountText(_strings, value)).ToArray();
     }
 
+    [RelayCommand(CanExecute = nameof(HasRecentItems))]
+    private void ClearRecentItems()
+    {
+        _configService.CurrentConfig.RecentItems = [];
+        _configService.Save();
+        HasRecentItems = false;
+    }
+
     [RelayCommand(CanExecute = nameof(IsOutputTemplateValid))]
     private void Apply()
     {
@@ -332,6 +348,13 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         // 更新配置
         _configService.CurrentConfig.AutoDetectLanguage = AutoDetectLanguage;
         _configService.CurrentConfig.AutoCheckForUpdates = AutoCheckForUpdates;
+        // 关闭记录时同时清空已有的列表。
+        _configService.CurrentConfig.RememberRecentItems = RememberRecentItems;
+        if (!RememberRecentItems)
+        {
+            _configService.CurrentConfig.RecentItems = [];
+            HasRecentItems = false;
+        }
         _configService.CurrentConfig.ShowImageNavigator = ShowImageNavigator;
         _configService.CurrentConfig.ShowAudioWaveform = ShowAudioWaveform;
         // 先改大小再改显示：同时打开预览条并改大小时只按新尺寸解码一次。
