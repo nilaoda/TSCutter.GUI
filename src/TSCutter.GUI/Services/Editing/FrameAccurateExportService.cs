@@ -1093,7 +1093,7 @@ internal sealed unsafe class FrameAccurateExportService
                 }
                 catch (InvalidDataException)
                 {
-                    // 改写不支持该结构（例如作参考的前导场、前导画面带 MMCO）：结论是不能在此衔接，不是解码错误。
+                    // 改写不支持该结构（例如前导画面带影响保留画面的 MMCO）：结论是不能在此衔接，不是解码错误。
                     return null;
                 }
             }
@@ -1488,6 +1488,9 @@ internal sealed unsafe class FrameAccurateExportService
             FFmpegException.Check(FF.avcodec_parameters_copy(stream->codecpar, source->codecpar));
             stream->codecpar->codec_tag = 0;
             RemuxCodecTag.FillChannelLayout(stream->codecpar);
+            // SMPTE 302M 固定为 48 kHz；AES3 头与 PES 长度不符时探测得不到采样率，复用器写文件头会拒绝。
+            if (stream->codecpar->codec_id == AVCodecID.AV_CODEC_ID_S302M && stream->codecpar->sample_rate <= 0)
+                stream->codecpar->sample_rate = 48000;
             stream->time_base = source->time_base;
             stream->avg_frame_rate = source->avg_frame_rate;
             stream->sample_aspect_ratio = source->sample_aspect_ratio;

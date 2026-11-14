@@ -442,6 +442,113 @@ public sealed class FrameAccurateExportTests
     }
 
     /// <summary>
+    /// SMPTE 302M 音轨的 AES3 头声明的长度与 PES 不符（部分广播源如此）时，解码器解析不了头，探测不到采样率；
+    /// 302M 固定为 48 kHz，帧精确导出仍能写出 TS 并保留该音轨。
+    /// </summary>
+    [NativeMediaFact("frameaccurate")]
+    public async Task Keeps302mTrackWithoutProbedSampleRate()
+    {
+        var source = Temporary("302m.ts");
+        var output = Temporary("302m-cut.ts");
+        try
+        {
+            Write302mTransportStream(Fixture("h264.ts"), source);
+            var settings = Settings(source);
+            using (var input = FormatContext.OpenInputUrl(source))
+            {
+                input.LoadStreamInfo();
+                var audio = Assert.Single(input.Streams, stream => stream.Codecpar?.CodecId == AVCodecID.AV_CODEC_ID_S302M);
+                Assert.Equal(0, audio.Codecpar!.SampleRate);
+                Assert.Contains(audio.Index, settings.StreamIndices);
+            }
+            var frames = Decode(source, out _);
+            await new FrameAccurateExportService().ExportAsync(new FrameAccurateExportRequest(output,
+                [new FrameAccurateExportSegment(source, frames[40].Pts, frames[200].Pts, settings)]));
+            Assert.Equal(Enumerable.Range(40, 161), DecodeNumbers(output));
+            using var result = FormatContext.OpenInputUrl(output);
+            result.LoadStreamInfo();
+            var kept = Assert.Single(result.Streams, stream => stream.Codecpar?.CodecId == AVCodecID.AV_CODEC_ID_S302M);
+            Assert.Contains(result.ReadPackets(), packet => packet.StreamIndex == kept.Index);
+        }
+        finally
+        {
+            File.Delete(source);
+            File.Delete(output);
+        }
+    }
+
+    /// <summary>
+    /// 复制样本的视频，另加一条 20 位 302M 音轨：每 40 ms 一个 PES，AES3 头声明的长度与实际负载不符。
+    /// </summary>
+    private static unsafe void Write302mTransportStream(string source, string target)
+    {
+        // 头：声明的负载长度比实际多一个声道对、双声道、通道标识 0、20 位；样本全为 0。
+        const int samples = 1920;
+        var payload = new byte[4 + samples * 6];
+        var header = ((uint)(samples * 6 + 6) << 16) | (1u << 4);
+        payload[0] = (byte)(header >> 24);
+        payload[1] = (byte)(header >> 16);
+        payload[2] = (byte)(header >> 8);
+        payload[3] = (byte)header;
+
+        using var input = FormatContext.OpenInputUrl(source);
+        input.LoadStreamInfo();
+        AVStream* video = input.GetVideoStream();
+        // 源与输出都是 TS，时间基同为 90 kHz，时间戳原样使用。
+        Assert.Equal(90000, video->time_base.den / video->time_base.num);
+        AVFormatContext* output = null;
+        FFmpegException.Check(FF.avformat_alloc_output_context2(&output, null, "mpegts", target));
+        try
+        {
+            var videoOut = FF.avformat_new_stream(output, null);
+            FFmpegException.Check(FF.avcodec_parameters_copy(videoOut->codecpar, video->codecpar));
+            videoOut->codecpar->codec_tag = 0;
+            videoOut->time_base = video->time_base;
+            var audioOut = FF.avformat_new_stream(output, null);
+            audioOut->codecpar->codec_type = AVMediaType.AVMEDIA_TYPE_AUDIO;
+            audioOut->codecpar->codec_id = AVCodecID.AV_CODEC_ID_S302M;
+            audioOut->codecpar->sample_rate = 48000;
+            audioOut->codecpar->bits_per_raw_sample = 20;
+            FF.av_channel_layout_default(&audioOut->codecpar->ch_layout, 2);
+            audioOut->time_base = new AVRational { num = 1, den = 90000 };
+            FFmpegException.Check(FF.avio_open2(&output->pb, target, 2, null, null));
+            FFmpegException.Check(FF.avformat_write_header(output, null));
+            long? audioPts = null;
+            long videoEnd = 0;
+            foreach (var packet in input.ReadPackets())
+            {
+                AVPacket* p = packet;
+                if (p->stream_index != video->index)
+                    continue;
+                audioPts ??= p->pts;
+                videoEnd = Math.Max(videoEnd, p->pts);
+                p->stream_index = videoOut->index;
+                p->pos = -1;
+                FFmpegException.Check(FF.av_interleaved_write_frame(output, p));
+                // 音频按 90 kHz 的显示时间跟随视频写入，交错由复用器整理。
+                while (audioPts <= videoEnd)
+                {
+                    using var audio = new Packet();
+                    AVPacket* a = audio;
+                    FFmpegException.Check(FF.av_new_packet(a, payload.Length));
+                    payload.CopyTo(new Span<byte>(a->data, payload.Length));
+                    a->pts = a->dts = audioPts.Value;
+                    a->duration = 3600;
+                    a->stream_index = audioOut->index;
+                    FFmpegException.Check(FF.av_interleaved_write_frame(output, a));
+                    audioPts += 3600;
+                }
+            }
+            FFmpegException.Check(FF.av_write_trailer(output));
+        }
+        finally
+        {
+            FF.avio_closep(&output->pb);
+            FF.avformat_free_context(output);
+        }
+    }
+
+    /// <summary>
     /// 把杜比视界 MP4 转为 TS（视频与音频，时间戳换算到 TS 的时间基），并在每个 PMT 的 HEVC 项后补上
     /// DOVI_video_stream_descriptor（标签 0xB0，内容取自样本的配置记录），重算 CRC。
     /// </summary>
