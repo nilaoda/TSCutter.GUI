@@ -5,10 +5,10 @@ using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.FFmpeg;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 
-namespace TSCutter.GUI.Services.Editing.DolbyE;
+namespace TSCutter.GUI.Services.Editing.AudioRebuild;
 
 /// <summary>
-/// FLAC 不能放进 TS，转码结果另存为独立的 .flac 文件：48 kHz、24 位，结束时由封装器写回总长度与校验。
+/// FLAC 不能放进 TS，重建的音轨另存为独立的 .flac 文件：48 kHz、24 位，结束时由封装器写回总长度与校验。
 /// </summary>
 internal sealed unsafe class FlacSideFileWriter : IDisposable
 {
@@ -37,11 +37,11 @@ internal sealed unsafe class FlacSideFileWriter : IDisposable
                 throw new OutOfMemoryException();
             encoder->sample_fmt = AVSampleFormat.AV_SAMPLE_FMT_S32;
             encoder->bits_per_raw_sample = 24;
-            encoder->sample_rate = DolbyEOutputChain.OutputRate;
+            encoder->sample_rate = AudioOutputChain.OutputRate;
             encoder->ch_layout.order = AVChannelOrder.AV_CHANNEL_ORDER_NATIVE;
             encoder->ch_layout.nb_channels = channels;
             encoder->ch_layout.u.mask = mask;
-            encoder->time_base = new AVRational { num = 1, den = DolbyEOutputChain.OutputRate };
+            encoder->time_base = new AVRational { num = 1, den = AudioOutputChain.OutputRate };
             FFmpegException.Check(FF.avcodec_open2(encoder, codec, null));
 
             AVFormatContext* context = null;
@@ -90,7 +90,7 @@ internal sealed unsafe class FlacSideFileWriter : IDisposable
         AVFrame* raw = frame;
         raw->format = (int)AVSampleFormat.AV_SAMPLE_FMT_S32;
         raw->nb_samples = samples;
-        raw->sample_rate = DolbyEOutputChain.OutputRate;
+        raw->sample_rate = AudioOutputChain.OutputRate;
         raw->ch_layout = encoder->ch_layout;
         FFmpegException.Check(FF.av_frame_get_buffer(raw, 0));
         var data = (int*)raw->data[0];

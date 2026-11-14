@@ -1,4 +1,4 @@
-using TSCutter.GUI.Services.Editing.DolbyE;
+using TSCutter.GUI.Services.Editing.AudioRebuild;
 using TSCutter.GUI.Utils.TransportStream.Packets;
 using Xunit;
 
@@ -55,7 +55,7 @@ public sealed class TsTrackRemovalTests
         Assert.Equal(PacketsOf(input, VideoPid), PacketsOf(output, VideoPid));
     }
 
-    private static (byte[] Output, DolbyERemuxSetup Setup) Rebuild(byte[] input, int[] excluded)
+    private static (byte[] Output, AudioRebuildSetup Setup) Rebuild(byte[] input, int[] excluded)
     {
         var directory = Path.Combine(Path.GetTempPath(), $"tscutter-tracks-{Guid.NewGuid():N}");
         Directory.CreateDirectory(directory);
@@ -64,7 +64,7 @@ public sealed class TsTrackRemovalTests
             var source = Path.Combine(directory, "input.ts");
             var target = Path.Combine(directory, "output.ts");
             File.WriteAllBytes(source, input);
-            var setup = new DolbyERemuxSetup(null, source, target, null, excluded);
+            var setup = new AudioRebuildSetup(null, source, target, null, excluded);
             TsOutputFile.Current = setup;
             try
             {

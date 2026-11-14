@@ -74,6 +74,7 @@ public partial class App : Application
         SplatRegistrations.Register<ClipDetailsViewModel>();
         SplatRegistrations.Register<RemuxExportOptionsViewModel>();
         SplatRegistrations.Register<TSCutter.GUI.ViewModels.Media.DolbyEOutputWindowViewModel>();
+        SplatRegistrations.Register<TSCutter.GUI.ViewModels.Media.ChannelMergeWindowViewModel>();
         SplatRegistrations.Register<DiscTitleSelectionViewModel>();
         // --- 注册单例服务 ---
         var localizationService = new LocalizationService();

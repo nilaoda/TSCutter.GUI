@@ -65,6 +65,7 @@ public partial class MainWindowViewModel
         }
         finally { updatingPreviewAudio = false; }
         ResetDolbyESettings();
+        ResetChannelMergeSettings();
         ResetTsTrackSelection();
         UpdateStripWaveformSource();
     }
@@ -84,6 +85,12 @@ public partial class MainWindowViewModel
             finally { updatingPreviewAudio = false; }
             return;
         }
+        RestartPreviewAudio();
+    }
+
+    /// <summary>预览音轨改变后：更新波形，正在播放时从当前位置以新音轨重新开始。</summary>
+    private void RestartPreviewAudio()
+    {
         UpdateStripWaveformSource();
         var resume = IsPlaybackActive;
         var end = playbackSession?.EndSeconds;
@@ -381,6 +388,7 @@ public partial class MainWindowViewModel
                     Mpeg2RefreshPoints = instance.UsesMpeg2RefreshPoints,
                     StreamSelection = instance.StreamSelection, AudioSelection = SelectedPreviewAudioTrack?.Selection,
                     AudioDolbyEProgram = SelectedPreviewAudioTrack?.DolbyEProgram,
+                    AudioChannelMerge = SelectedPreviewAudioTrack?.ChannelMerge,
                     TsSyncOffset = instance.TsSyncOffset,
                     EnableSdrToneMapping = EnableSdrToneMapping, Volume = EffectivePreviewVolume,
                     PreferHardwareDecoding = preferHardwareDecodingForPreview,

@@ -142,6 +142,19 @@ def main():
            "-map", "0:v", "-map", "1:a", "-map", "2:a", "-map", "3:a", "-map", "4:a", "-map", "5:a", "-t", 30,
            "-c:v", "libx264", "-preset", "ultrafast", "-g", 25, "-c:a", "mp2", "-c:a:2", "ac3", "-c:a:3", "aac",
            root / "silent-tracks.ts")
+    # 多轨合并：三条 MP2 立体声分别承载 L/R、C/LFE、Ls/Rs，每个声道一个不同频率的正弦。正弦带缓慢起伏的包络和少量噪声
+    # （峰均比约 2.5，不算测试音）；LFE 只有 50 Hz；环绕音轨晚 80 ms 开始。
+    def voice(frequency, amplitude, seed, phase):
+        return (f"{amplitude}*sin(2*PI*{frequency}*t)*(0.25+0.75*pow(sin(2*PI*0.7*t+{phase})\\,4))"
+                f"+0.05*(random({seed})-0.5)")
+    ffmpeg("-f", "lavfi", "-i", "color=c=black:s=128x72:r=25:d=20",
+           "-f", "lavfi", "-i", f"aevalsrc={voice(440, 0.3, 0, 1)}|{voice(550, 0.3, 1, 2)}:s=48000:d=20",
+           "-f", "lavfi", "-i", f"aevalsrc={voice(660, 0.3, 0, 3)}|0.3*sin(2*PI*50*t):s=48000:d=20",
+           "-itsoffset", "0.08",
+           "-f", "lavfi", "-i", f"aevalsrc={voice(770, 0.15, 0, 4)}|{voice(880, 0.15, 1, 5)}:s=48000:d=20",
+           "-map", "0:v", "-map", "1:a", "-map", "2:a", "-map", "3:a", "-t", 20,
+           "-c:v", "libx264", "-preset", "ultrafast", "-g", 25, "-c:a", "mp2", "-b:a", "256k",
+           root / "channel-merge.ts")
     manifest.write_text(json.dumps({"formatVersion": 1}, indent=2) + "\n", encoding="utf-8")
     print(root)
 

@@ -1,7 +1,7 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:TSCutter.GUI.ViewModels.Media"
-        xmlns:models="using:TSCutter.GUI.Models.Media"
+        xmlns:media="using:TSCutter.GUI.Views.Media"
         x:Class="TSCutter.GUI.Views.Media.DolbyEOutputWindow"
         x:DataType="vm:DolbyEOutputWindowViewModel"
         Width="740" SizeToContent="Height" CanResize="False"
@@ -53,71 +53,9 @@
                             </CheckBox>
                         </StackPanel>
 
-                        <StackPanel Spacing="6" IsEnabled="{Binding Transcode}">
-                            <Grid ColumnDefinitions="*,Auto">
-                                <TextBlock Text="{DynamicResource String.DolbyE.Outputs}" FontWeight="Bold"
-                                           VerticalAlignment="Center" />
-                                <Button Grid.Column="1" MinWidth="80" Command="{Binding AddRowCommand}"
-                                        Content="{DynamicResource String.DolbyE.AddOutput}" />
-                            </Grid>
-                            <Border BorderThickness="1" BorderBrush="{DynamicResource ThemeBorderMidBrush}">
-                                <StackPanel>
-                                    <Grid ColumnDefinitions="30,160,92,170,112,64,*" Margin="4,4,4,2">
-                                        <TextBlock Grid.Column="1" Text="{DynamicResource String.DolbyE.Column.Program}" Opacity="0.75" />
-                                        <TextBlock Grid.Column="2" Text="{DynamicResource String.DolbyE.Column.Codec}" Opacity="0.75" />
-                                        <TextBlock Grid.Column="3" Text="{DynamicResource String.DolbyE.Column.Channels}" Opacity="0.75" />
-                                        <TextBlock Grid.Column="4" Text="{DynamicResource String.DolbyE.Column.Bitrate}" Opacity="0.75" />
-                                        <TextBlock Grid.Column="5" Text="{DynamicResource String.DolbyE.Column.Language}" Opacity="0.75" />
-                                    </Grid>
-                                    <ScrollViewer MaxHeight="210" HorizontalScrollBarVisibility="Disabled"
-                                                  VerticalScrollBarVisibility="Auto">
-                                        <ItemsControl ItemsSource="{Binding Rows}">
-                                            <ItemsControl.ItemTemplate>
-                                                <DataTemplate x:DataType="vm:DolbyEOutputRow">
-                                                    <Grid ColumnDefinitions="30,160,92,170,112,64,*" Margin="4,2">
-                                                        <CheckBox IsChecked="{Binding Enabled, Mode=TwoWay}" MinWidth="0"
-                                                                  VerticalAlignment="Center" />
-                                                        <ComboBox Grid.Column="1" Margin="0,0,6,0" MinHeight="26" HorizontalAlignment="Stretch"
-                                                                  IsEnabled="{Binding Enabled}"
-                                                                  ItemsSource="{Binding Programs}"
-                                                                  SelectedItem="{Binding SelectedProgram, Mode=TwoWay}" />
-                                                        <ComboBox Grid.Column="2" Margin="0,0,6,0" MinHeight="26" HorizontalAlignment="Stretch"
-                                                                  IsEnabled="{Binding Enabled}"
-                                                                  ItemsSource="{Binding Codecs}"
-                                                                  SelectedItem="{Binding SelectedCodec, Mode=TwoWay}" />
-                                                        <ComboBox Grid.Column="3" Margin="0,0,6,0" MinHeight="26" HorizontalAlignment="Stretch"
-                                                                  IsEnabled="{Binding Enabled}"
-                                                                  ItemsSource="{Binding Layouts}"
-                                                                  SelectedItem="{Binding SelectedLayout, Mode=TwoWay}" />
-                                                        <ComboBox Grid.Column="4" Margin="0,0,6,0" MinHeight="26" HorizontalAlignment="Stretch"
-                                                                  IsEnabled="{Binding Enabled}" IsVisible="{Binding !IsLossless}"
-                                                                  ItemsSource="{Binding Bitrates}"
-                                                                  SelectedItem="{Binding SelectedBitrate, Mode=TwoWay}" />
-                                                        <TextBlock Grid.Column="4" VerticalAlignment="Center" Opacity="0.7"
-                                                                   IsVisible="{Binding IsLossless}"
-                                                                   Text="{DynamicResource String.DolbyE.Lossless}" />
-                                                        <TextBox Grid.Column="5" Margin="0,0,6,0" MinHeight="26" MaxLength="3"
-                                                                 IsEnabled="{Binding Enabled}"
-                                                                 Text="{Binding Language, Mode=TwoWay}" />
-                                                        <Button Grid.Column="6" HorizontalAlignment="Left" MinWidth="0" Padding="8,2"
-                                                                Content="✕" Command="{Binding RemoveCommand}"
-                                                                ToolTip.Tip="{DynamicResource String.DolbyE.RemoveOutput}" />
-                                                    </Grid>
-                                                </DataTemplate>
-                                            </ItemsControl.ItemTemplate>
-                                        </ItemsControl>
-                                    </ScrollViewer>
-                                </StackPanel>
-                            </Border>
-                            <TextBlock IsVisible="{Binding ShowNoOutputHint}" TextWrapping="Wrap"
-                                       Text="{DynamicResource String.DolbyE.NoOutputHint}" />
-                            <TextBlock IsVisible="{Binding ShowFlacHint}" TextWrapping="Wrap"
-                                       Text="{DynamicResource String.DolbyE.FlacTsHint}" />
-                            <TextBlock IsVisible="{Binding ShowPcmHint}" TextWrapping="Wrap"
-                                       Text="{DynamicResource String.DolbyE.PcmHint}" />
-                            <TextBlock IsVisible="{Binding ShowAc3Hint}" TextWrapping="Wrap"
-                                       Text="{DynamicResource String.DolbyE.Ac3LimitHint}" />
-                            <TextBlock TextWrapping="Wrap" Opacity="0.7"
+                        <StackPanel Spacing="6">
+                            <media:AudioOutputListView DataContext="{Binding Outputs}" />
+                            <TextBlock TextWrapping="Wrap" Opacity="0.7" IsEnabled="{Binding Transcode}"
                                        Text="{DynamicResource String.DolbyE.ConfigChangeHint}" />
                         </StackPanel>
 
@@ -131,7 +69,7 @@
         </ContentControl>
 
         <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
-            <Button MinWidth="80" Command="{Binding ResetCommand}" Content="{DynamicResource String.DolbyE.Reset}" />
+            <Button MinWidth="80" Command="{Binding ResetCommand}" Content="{DynamicResource String.AudioOutput.Reset}" />
             <Button Grid.Column="2" MinWidth="80" IsDefault="True" Command="{Binding ConfirmCommand}"
                     Content="{DynamicResource String.Ok}" />
             <Button Grid.Column="3" MinWidth="80" IsCancel="True" Command="{Binding CancelCommand}"

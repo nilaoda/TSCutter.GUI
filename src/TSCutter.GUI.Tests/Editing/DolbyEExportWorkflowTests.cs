@@ -41,14 +41,24 @@ public sealed class DolbyEExportWorkflowTests
                 pts.Sort();
                 (startPts, endPts) = (pts[pts.Count / 4 + 3], pts[pts.Count * 3 / 4]);
             }
-            var plan = new DolbyEExportPlan
+            var plan = new AudioRebuildPlan
             {
                 Tracks =
                 [
                     new DolbyETrackSettings
                     {
                         Pid = 0x1FFE, ProgramConfig = 0, Transcode = true,
-                        Outputs = [new DolbyEOutput { Program = 1, Codec = DolbyECodec.Ac3, BitrateKbps = 448 }]
+                        Outputs = [new DolbyEOutput { Program = 1, Codec = AudioOutputCodec.Ac3, BitrateKbps = 448 }]
+                    }
+                ],
+                // 多轨合并同样经过重组流；来源不在节目表里时原样写出。
+                Merges =
+                [
+                    new ChannelMergeSettings
+                    {
+                        ProgramId = 1, Merge = true,
+                        Sources = [new ChannelMergeSource { Pid = 0x1FF0 }, new ChannelMergeSource { Pid = 0x1FF1 }, new ChannelMergeSource { Pid = 0x1FF2 }],
+                        Outputs = [new AudioOutput { Codec = AudioOutputCodec.Ac3, BitrateKbps = 448 }]
                     }
                 ]
             };
@@ -60,11 +70,11 @@ public sealed class DolbyEExportWorkflowTests
                 var output = new OutputWindowViewModel();
                 output.SetBatchTasks(
                 [
-                    new(source, copy, 0, length, DolbyE: plan),
+                    new(source, copy, 0, length, AudioRebuild: plan),
                     new(source, smart, 0, -1, FrameAccurate: new FrameAccurateExportSettings
                     {
                         Container = "ts", VideoIndex = videoIndex, StreamIndices = indices
-                    }, StartPts: startPts, EndPts: endPts, DolbyE: plan)
+                    }, StartPts: startPts, EndPts: endPts, AudioRebuild: plan)
                 ]);
                 output.ConfirmProgramTableWarningAsync = (_, _) => Task.FromResult(TsProgramTableExportChoice.Original);
                 await output.OutputCommand.ExecuteAsync(null);
@@ -76,6 +86,51 @@ public sealed class DolbyEExportWorkflowTests
             Assert.Equal(File.ReadAllBytes(source).AsSpan(0, (int)length).ToArray(), File.ReadAllBytes(copy));
             Assert.True(new FileInfo(smart).Length > 0);
             Assert.Equal(["copy.ts", "smart.ts"], Directory.GetFiles(directory).Select(Path.GetFileName).Order());
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    /// <summary>批量复制任务带多轨合并计划：输出加入合并的 5.1，导出结果标记“合并 5.1”。</summary>
+    [NativeMediaFact("remux")]
+    public async Task CopyTaskMergesTracksAndMarksTheOutcome()
+    {
+        var source = Path.Combine(NativeTestEnvironment.FixtureDirectory("remux"), "channel-merge.ts");
+        var directory = Path.Combine(Path.GetTempPath(), $"tscutter-merge-export-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var plan = new AudioRebuildPlan
+            {
+                Merges =
+                [
+                    new ChannelMergeSettings
+                    {
+                        ProgramId = 1, Merge = true,
+                        Sources = [new ChannelMergeSource { Pid = 0x101 }, new ChannelMergeSource { Pid = 0x102 }, new ChannelMergeSource { Pid = 0x103 }],
+                        Outputs = [new AudioOutput { Codec = AudioOutputCodec.Ac3, BitrateKbps = 448 }]
+                    }
+                ]
+            };
+            var length = new FileInfo(source).Length / 188 * 188;
+            var copy = Path.Combine(directory, "copy.ts");
+            await RunAsync(async () =>
+            {
+                var output = new OutputWindowViewModel();
+                output.SetBatchTasks([new(source, copy, 0, length, AudioRebuild: plan)]);
+                output.ConfirmProgramTableWarningAsync = (_, _) => Task.FromResult(TsProgramTableExportChoice.Original);
+                await output.OutputCommand.ExecuteAsync(null);
+                Assert.Null(output.Exception);
+                Assert.Equal(ExportModifiers.ChannelsMerged, Assert.Single(output.Outcomes).Modifiers);
+            });
+            using var reopened = InterruptibleInputFormatContext.Open(copy, static () => false);
+            reopened.LoadStreamInfo();
+            var audio = Assert.Single(reopened.Streams, stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO);
+            Assert.Equal(0x101, audio.Id);
+            Assert.Equal(AVCodecID.AV_CODEC_ID_AC3, audio.Codecpar!.CodecId);
+            Assert.Equal(6, audio.Codecpar.ChLayout.nb_channels);
         }
         finally
         {

@@ -1,0 +1,170 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TSCutter.GUI.ViewModels.Media"
+        xmlns:media="using:TSCutter.GUI.Views.Media"
+        x:Class="TSCutter.GUI.Views.Media.ChannelMergeWindow"
+        x:DataType="vm:ChannelMergeWindowViewModel"
+        Width="740" SizeToContent="Height" CanResize="False"
+        CanMinimize="False" CanMaximize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" Title="{DynamicResource String.ChannelMerge.Title}">
+    <Window.Styles>
+        <!-- 分析结果的小标签：电平淡显，符合预期与需要注意的分别着色。 -->
+        <Style Selector="Border.chip">
+            <Setter Property="CornerRadius" Value="3" />
+            <Setter Property="Padding" Value="6,1" />
+            <Setter Property="Margin" Value="0,0,4,2" />
+        </Style>
+        <Style Selector="Border.chip.warning">
+            <Setter Property="Background" Value="{DynamicResource AppStatusWarningBackgroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.chipText">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Opacity" Value="0.8" />
+        </Style>
+        <Style Selector="TextBlock.chipText.good">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusSuccessForegroundBrush}" />
+        </Style>
+        <Style Selector="TextBlock.chipText.warning">
+            <Setter Property="Opacity" Value="1" />
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusWarningForegroundBrush}" />
+        </Style>
+    </Window.Styles>
+    <StackPanel Margin="16" Spacing="14">
+        <Border BorderThickness="1" CornerRadius="3" Padding="10,6"
+                BorderBrush="{DynamicResource ThemeBorderMidBrush}">
+            <StackPanel Spacing="2">
+                <TextBlock Text="{Binding ProgramText}" FontWeight="Bold" />
+                <TextBlock Text="{Binding SummaryText}" />
+                <TextBlock Text="{DynamicResource String.ChannelMerge.Hint}" Opacity="0.7"
+                           TextWrapping="Wrap" Margin="0,4,0,0" />
+            </StackPanel>
+        </Border>
+
+        <StackPanel Spacing="6">
+            <TextBlock Text="{DynamicResource String.ChannelMerge.Handling}" FontWeight="Bold" />
+            <RadioButton GroupName="ChannelMergeHandling" IsChecked="{Binding IsKeep, Mode=TwoWay}"
+                         Content="{DynamicResource String.ChannelMerge.Handling.Keep}" />
+            <RadioButton GroupName="ChannelMergeHandling" IsChecked="{Binding Merge, Mode=TwoWay}"
+                         Content="{DynamicResource String.ChannelMerge.Handling.Merge}" />
+            <CheckBox Margin="24,0,0,0" IsEnabled="{Binding Merge}"
+                      IsChecked="{Binding KeepOriginal, Mode=TwoWay}"
+                      Content="{DynamicResource String.ChannelMerge.KeepOriginal}">
+                <ToolTip.Tip>
+                    <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                               Text="{DynamicResource String.ChannelMerge.KeepOriginalTip}" />
+                </ToolTip.Tip>
+            </CheckBox>
+        </StackPanel>
+
+        <StackPanel Spacing="6" IsEnabled="{Binding Merge}">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Text="{DynamicResource String.ChannelMerge.Mapping}" FontWeight="Bold" />
+                <TextBlock Grid.Column="1" Text="{DynamicResource String.ChannelMerge.MappingOrder}" Opacity="0.7" />
+            </Grid>
+            <Border BorderThickness="1" BorderBrush="{DynamicResource ThemeBorderMidBrush}">
+                <StackPanel>
+                    <Grid ColumnDefinitions="110,*,104,250" ColumnSpacing="8" Margin="8,4,8,2">
+                        <TextBlock Text="{DynamicResource String.ChannelMerge.Column.Target}" Opacity="0.75" />
+                        <TextBlock Grid.Column="1" Text="{DynamicResource String.ChannelMerge.Column.Source}" Opacity="0.75" />
+                        <TextBlock Grid.Column="3" Text="{DynamicResource String.ChannelMerge.Column.Analysis}" Opacity="0.75" />
+                    </Grid>
+                    <ItemsControl ItemsSource="{Binding Slots}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:ChannelMergeSlotEditor">
+                                <Grid ColumnDefinitions="110,*,104,250" ColumnSpacing="8" Margin="8,4">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                        <TextBlock Text="{Binding AssignmentText}" FontSize="12" Opacity="0.7" />
+                                    </StackPanel>
+                                    <ComboBox Grid.Column="1" MinHeight="28" HorizontalAlignment="Stretch" VerticalAlignment="Center"
+                                              ItemsSource="{Binding Tracks}"
+                                              SelectedItem="{Binding SelectedTrack, Mode=TwoWay}" />
+                                    <Button Grid.Column="2" MinHeight="28" VerticalAlignment="Center" HorizontalAlignment="Stretch"
+                                            Command="{Binding ToggleSwapCommand}"
+                                            Content="{DynamicResource String.ChannelMerge.Swap}">
+                                        <ToolTip.Tip>
+                                            <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                                       Text="{DynamicResource String.ChannelMerge.SwapTip}" />
+                                        </ToolTip.Tip>
+                                    </Button>
+                                    <ItemsControl Grid.Column="3" VerticalAlignment="Center" ItemsSource="{Binding Chips}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <WrapPanel />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate x:DataType="vm:ChannelMergeChip">
+                                                <Border Classes="chip" Classes.warning="{Binding IsWarning}">
+                                                    <TextBlock Classes="chipText" Classes.good="{Binding IsGood}"
+                                                               Classes.warning="{Binding IsWarning}" Text="{Binding Text}" />
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+            <TextBlock IsVisible="{Binding HasDuplicateSlots}" TextWrapping="Wrap"
+                       Foreground="{DynamicResource AppStatusWarningForegroundBrush}"
+                       Text="{DynamicResource String.ChannelMerge.DuplicateSlots}" />
+            <TextBlock TextWrapping="Wrap" Opacity="0.7" Text="{DynamicResource String.ChannelMerge.TimingHint}" />
+            <Grid ColumnDefinitions="Auto,*" ColumnSpacing="10">
+                <Button MinWidth="80" Command="{Binding AnalyzeCommand}" IsEnabled="{Binding CanAnalyze}"
+                        Content="{DynamicResource String.ChannelMerge.Analyze}">
+                    <ToolTip.Tip>
+                        <TextBlock MaxWidth="320" TextWrapping="Wrap" Text="{DynamicResource String.ChannelMerge.AnalyzeTip}" />
+                    </ToolTip.Tip>
+                </Button>
+                <TextBlock Grid.Column="1" VerticalAlignment="Center" TextWrapping="Wrap" Opacity="0.7"
+                           Text="{Binding AnalysisStatus}" />
+            </Grid>
+            <Border IsVisible="{Binding ShowVerdictGood}" BorderThickness="1" CornerRadius="3" Padding="10,6"
+                    BorderBrush="{DynamicResource AppStatusSuccessForegroundBrush}">
+                <StackPanel>
+                    <TextBlock Text="{Binding VerdictTitle}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource AppStatusSuccessForegroundBrush}" />
+                    <TextBlock Text="{Binding VerdictText}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+            <Border IsVisible="{Binding ShowVerdictSuggest}" BorderThickness="1" CornerRadius="3" Padding="10,6"
+                    BorderBrush="{DynamicResource ThemeBorderMidBrush}">
+                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                    <StackPanel>
+                        <TextBlock Text="{Binding VerdictTitle}" FontWeight="SemiBold" />
+                        <TextBlock Text="{Binding VerdictText}" TextWrapping="Wrap" />
+                    </StackPanel>
+                    <Button Grid.Column="1" VerticalAlignment="Center" MinWidth="80"
+                            Command="{Binding ApplySuggestionCommand}"
+                            Content="{DynamicResource String.ChannelMerge.Apply}" />
+                </Grid>
+            </Border>
+            <Border IsVisible="{Binding ShowVerdictWarning}" CornerRadius="3" Padding="10,6"
+                    Background="{DynamicResource AppStatusWarningBackgroundBrush}">
+                <StackPanel>
+                    <TextBlock Text="{Binding VerdictTitle}" FontWeight="SemiBold"
+                               Foreground="{DynamicResource AppStatusWarningForegroundBrush}" />
+                    <TextBlock Text="{Binding VerdictText}" TextWrapping="Wrap" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+
+        <StackPanel Spacing="6">
+            <media:AudioOutputListView DataContext="{Binding Outputs}" />
+            <TextBlock TextWrapping="Wrap" Opacity="0.7" IsEnabled="{Binding Merge}"
+                       Text="{DynamicResource String.ChannelMerge.LossHint}" />
+        </StackPanel>
+
+        <Grid ColumnDefinitions="Auto,*,Auto,Auto" ColumnSpacing="8">
+            <Button MinWidth="80" Command="{Binding ResetCommand}" Content="{DynamicResource String.AudioOutput.Reset}" />
+            <Button Grid.Column="2" MinWidth="80" IsDefault="True" Command="{Binding ConfirmCommand}"
+                    IsEnabled="{Binding CanConfirm}" Content="{DynamicResource String.Ok}" />
+            <Button Grid.Column="3" MinWidth="80" IsCancel="True" Command="{Binding CancelCommand}"
+                    Content="{DynamicResource String.Cancel}" />
+        </Grid>
+    </StackPanel>
+</Window>

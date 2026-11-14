@@ -3,30 +3,40 @@ using System.Collections.Generic;
 using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Models.Media;
-using TSCutter.GUI.Utils.Media.DolbyE;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 
-namespace TSCutter.GUI.Services.Editing.DolbyE;
+namespace TSCutter.GUI.Services.Editing.AudioRebuild;
 
 /// <summary>一个编码后的音频帧；时间戳为 90 kHz、未回绕。</summary>
-internal sealed record DolbyEEncodedUnit(int OutputIndex, byte[] Data, long Pts90k);
+internal sealed record EncodedAudioUnit(int OutputIndex, byte[] Data, long Pts90k);
 
 /// <summary>
-/// 一路输出：从解码帧中取出声道组、重采样到 48 kHz 并转换声道，再编码。时间戳按样本计数推算：
+/// 送入输出链的来源声道布局：声道数与 FFmpeg 原生顺序的布局掩码。<paramref name="IsSurround51"/> 表示 L R C LFE Ls Rs，
+/// AAC 按 ADTS 声道配置改用后环绕布局。
+/// </summary>
+internal readonly record struct AudioSourceLayout(int ChannelCount, ulong Mask, bool IsSurround51)
+{
+    /// <summary>5.1（L R C LFE Ls Rs，侧环绕）。</summary>
+    public static AudioSourceLayout Surround51 => new(6, 0x60F, true);
+}
+
+/// <summary>
+/// 一路重建输出（杜比 E 声道组、多轨合并结果）：把来源的解码帧重采样到 48 kHz 并转换声道，再编码。时间戳按样本计数推算：
 /// 一段连续的输入（run）从首帧的时间戳开始，第 n 个 48 kHz 样本的时间为起点 + n / 48000 秒。
 /// 输入不连续时结束本段（冲出编码器）并重新开始，输出保留同样的间隙，不补静音。
 /// FLAC 另存为独立文件，没有时间戳：间隙补静音、重叠部分丢弃，使文件与视频起点保持同步。
 /// </summary>
-internal sealed unsafe class DolbyEOutputChain : IDisposable
+internal sealed unsafe class AudioOutputChain : IDisposable
 {
     public const int OutputRate = 48_000;
     private const int PcmFrameSamples = 1920;
+    // 独立 FLAC 文件中最多补这么长的静音；更大的时间差视为时间戳跳变。
+    private const long MaxFlacGap = OutputRate * 600L;
 
-    private readonly DolbyEOutput output;
+    private readonly AudioOutput output;
     private readonly int outputIndex;
     private readonly int channels;
     private readonly ulong mask;
-    private readonly Frame programFrame = new();
     private readonly FlacSideFileWriter? flac;
     private SwrContext* swr;
     private ulong swrMask;
@@ -44,62 +54,59 @@ internal sealed unsafe class DolbyEOutputChain : IDisposable
     private long samplesEncoded;
     private int pcmFraming;
 
-    public DolbyEOutputChain(DolbyEOutput output, int outputIndex, DolbyEProgram program, string? flacPath)
+    public AudioOutputChain(AudioOutput output, int outputIndex, AudioSourceLayout source, string? flacPath)
     {
         this.output = output;
         this.outputIndex = outputIndex;
-        channels = DolbyECodecInfo.OutputChannels(output.Codec, output.Layout, program.ChannelCount);
-        mask = OutputMask(output, program, channels);
+        channels = AudioOutputCodecInfo.OutputChannels(output.Codec, output.Layout, source.ChannelCount);
+        mask = OutputMask(output, source, channels);
         fifo = new List<float>[channels];
         for (var i = 0; i < channels; i++)
             fifo[i] = [];
-        if (output.Codec == DolbyECodec.Flac)
+        if (output.Codec == AudioOutputCodec.Flac)
             flac = new FlacSideFileWriter(flacPath ?? throw new ArgumentNullException(nameof(flacPath)), channels, mask);
     }
 
-    public DolbyEOutput Output => output;
+    public AudioOutput Output => output;
 
-    /// <summary>取出本路声道组所用的帧，由调用方在每次送入后释放引用。</summary>
-    internal Frame ProgramFrame => programFrame;
-
-    private static ulong OutputMask(DolbyEOutput output, DolbyEProgram program, int channels)
+    private static ulong OutputMask(AudioOutput output, AudioSourceLayout source, int channels)
     {
-        if (channels == program.ChannelCount && output.Layout == DolbyELayout.Original)
+        if (channels == source.ChannelCount && output.Layout == AudioOutputLayout.Original)
         {
             // AAC 按 ADTS 声道配置写入：5.1 为 C L R Ls Rs LFE，用 FFmpeg 的 5.1（后环绕）布局。
-            if (output.Codec == DolbyECodec.Aac && program.Kind == DolbyEProgramKind.Surround51)
+            if (output.Codec == AudioOutputCodec.Aac && source.IsSurround51)
                 return 0x3F;
-            return program.Mask;
+            return source.Mask;
         }
         return channels switch
         {
             1 => 0x4,
             2 => 0x3,
-            _ => output.Codec == DolbyECodec.Aac ? 0x3FUL : 0x60FUL
+            _ => output.Codec == AudioOutputCodec.Aac ? 0x3FUL : 0x60FUL
         };
     }
 
     /// <summary>
-    /// 送入一帧（声道组在这一帧中不存在时为 null，输出等长的静音）。<paramref name="restart"/> 表示时间不连续：
-    /// 先结束上一段再从 <paramref name="pts90k"/> 重新开始。
+    /// 送入一帧。来源在这一帧中不存在时 <paramref name="source"/> 为 null，按 <paramref name="silentSamples"/>
+    /// （48 kHz 样本数）输出等长的静音。<paramref name="restart"/> 表示时间不连续：先结束上一段再从 <paramref name="pts90k"/> 重新开始。
     /// </summary>
-    public void Push(Frame? source, DolbyEFrameHeader header, long pts90k, bool restart, Action<DolbyEEncodedUnit> emit)
+    public void Push(Frame? source, int silentSamples, long pts90k, bool restart, Action<EncodedAudioUnit> emit)
     {
         if (flac is not null)
         {
-            PushFlac(source, header, pts90k);
+            PushFlac(source, silentSamples, pts90k);
             return;
         }
         if (restart && running)
             EndRun(emit);
         if (!running)
             StartRun(pts90k);
-        Append(source, header);
+        Append(source, silentSamples);
         Encode(emit, final: false);
     }
 
     /// <summary>结束：冲出重采样与编码器中剩余的数据。</summary>
-    public void Finish(Action<DolbyEEncodedUnit> emit)
+    public void Finish(Action<EncodedAudioUnit> emit)
     {
         if (flac is not null)
         {
@@ -116,7 +123,7 @@ internal sealed unsafe class DolbyEOutputChain : IDisposable
             EndRun(emit);
     }
 
-    private void PushFlac(Frame? source, DolbyEFrameHeader header, long pts90k)
+    private void PushFlac(Frame? source, int silentSamples, long pts90k)
     {
         var start48 = Rescale90kTo48k(pts90k);
         if (!running)
@@ -128,17 +135,20 @@ internal sealed unsafe class DolbyEOutputChain : IDisposable
         else
         {
             // 独立文件没有时间戳：缺失的时段补静音，重叠的部分丢弃。重采样器中尚未输出的样本也算已写入。
+            // 相差超过上限的是时间戳跳变（拼接的文件，或被当作回绕的跳变），不是缺失：接着写，时间以新位置为准。
             var pending = swr == null ? 0 : FF.swr_get_delay(swr, OutputRate);
             var gap = start48 - (runStart48 + samplesQueued + pending);
-            if (gap > OutputRate / 100)
+            if (Math.Abs(gap) > MaxFlacGap)
+                runStart48 += gap;
+            else if (gap > OutputRate / 100)
             {
                 FlushResampler();
-                AppendSilence((int)Math.Min(gap - pending, OutputRate * 600L));
+                AppendSilence((int)(gap - pending));
             }
             else if (gap < -OutputRate / 100)
                 return;
         }
-        Append(source, header);
+        Append(source, silentSamples);
         var count = fifo[0].Count;
         flac!.Write(fifo, count);
         samplesQueued += count;
@@ -151,11 +161,11 @@ internal sealed unsafe class DolbyEOutputChain : IDisposable
         runStart48 = Rescale90kTo48k(pts90k);
         samplesQueued = samplesEncoded = 0;
         ClearFifo();
-        if (output.Codec != DolbyECodec.Pcm)
+        if (output.Codec != AudioOutputCodec.Pcm)
             OpenEncoder();
     }
 
-    private void EndRun(Action<DolbyEEncodedUnit> emit)
+    private void EndRun(Action<EncodedAudioUnit> emit)
     {
         FlushResampler();
         Encode(emit, final: true);
@@ -170,14 +180,13 @@ internal sealed unsafe class DolbyEOutputChain : IDisposable
         running = false;
     }
 
-    private void Append(Frame? source, DolbyEFrameHeader header)
+    private void Append(Frame? source, int silentSamples)
     {
         if (source is null)
         {
-            // 声道组缺失：按该帧的时长补静音，保持后续时间连续。
-            var samples = (int)Math.Round(1792.0 * OutputRate / Math.Max(1, header.SampleRate));
+            // 来源缺失：按该帧的时长补静音，保持后续时间连续。
             FlushResampler();
-            AppendSilence(samples);
+            AppendSilence(silentSamples);
             return;
         }
         AVFrame* input = source;
@@ -273,8 +282,8 @@ internal sealed unsafe class DolbyEOutputChain : IDisposable
     {
         var name = output.Codec switch
         {
-            DolbyECodec.Ac3 => "ac3",
-            DolbyECodec.Eac3 => "eac3",
+            AudioOutputCodec.Ac3 => "ac3",
+            AudioOutputCodec.Eac3 => "eac3",
             _ => "aac"
         };
         var codec = FF.avcodec_find_encoder_by_name(name);
@@ -299,16 +308,16 @@ internal sealed unsafe class DolbyEOutputChain : IDisposable
         encoder = context;
     }
 
-    private void Encode(Action<DolbyEEncodedUnit> emit, bool final)
+    private void Encode(Action<EncodedAudioUnit> emit, bool final)
     {
-        var frameSize = output.Codec == DolbyECodec.Pcm ? PcmFrameSamples : Math.Max(1, encoder->frame_size);
+        var frameSize = output.Codec == AudioOutputCodec.Pcm ? PcmFrameSamples : Math.Max(1, encoder->frame_size);
         while (fifo[0].Count >= frameSize || final && fifo[0].Count > 0)
         {
             var available = Math.Min(frameSize, fifo[0].Count);
-            if (output.Codec == DolbyECodec.Pcm)
+            if (output.Codec == AudioOutputCodec.Pcm)
             {
                 var pts = runStart48 + samplesEncoded;
-                emit(new DolbyEEncodedUnit(outputIndex, PackS302m(available), Rescale48kTo90k(pts)));
+                emit(new EncodedAudioUnit(outputIndex, PackS302m(available), Rescale48kTo90k(pts)));
             }
             else
                 SendFrame(available, frameSize, emit);
@@ -318,7 +327,7 @@ internal sealed unsafe class DolbyEOutputChain : IDisposable
         }
     }
 
-    private void SendFrame(int available, int frameSize, Action<DolbyEEncodedUnit> emit)
+    private void SendFrame(int available, int frameSize, Action<EncodedAudioUnit> emit)
     {
         encoderFrame.Unref();
         AVFrame* raw = encoderFrame;
@@ -341,7 +350,7 @@ internal sealed unsafe class DolbyEOutputChain : IDisposable
         Receive(emit);
     }
 
-    private void Drain(Action<DolbyEEncodedUnit> emit)
+    private void Drain(Action<EncodedAudioUnit> emit)
     {
         var result = FF.avcodec_send_frame(encoder, null);
         if (result < 0 && result != FF.AVERROR_EOF)
@@ -349,7 +358,7 @@ internal sealed unsafe class DolbyEOutputChain : IDisposable
         Receive(emit);
     }
 
-    private void Receive(Action<DolbyEEncodedUnit> emit)
+    private void Receive(Action<EncodedAudioUnit> emit)
     {
         AVPacket* raw = packet;
         while (true)
@@ -361,9 +370,9 @@ internal sealed unsafe class DolbyEOutputChain : IDisposable
             try
             {
                 var data = new ReadOnlySpan<byte>(raw->data, raw->size);
-                var payload = output.Codec == DolbyECodec.Aac ? WithAdtsHeader(data, channels) : data.ToArray();
+                var payload = output.Codec == AudioOutputCodec.Aac ? WithAdtsHeader(data, channels) : data.ToArray();
                 var pts = raw->pts != FF.AV_NOPTS_VALUE ? raw->pts : runStart48 + samplesEncoded;
-                emit(new DolbyEEncodedUnit(outputIndex, payload, Rescale48kTo90k(pts)));
+                emit(new EncodedAudioUnit(outputIndex, payload, Rescale48kTo90k(pts)));
             }
             finally
             {
@@ -453,7 +462,6 @@ internal sealed unsafe class DolbyEOutputChain : IDisposable
         }
         packet.Dispose();
         encoderFrame.Dispose();
-        programFrame.Dispose();
         flac?.Dispose();
     }
 }

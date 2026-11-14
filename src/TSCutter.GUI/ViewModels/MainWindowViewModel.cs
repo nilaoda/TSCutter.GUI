@@ -132,6 +132,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         foreach (var audio in PreviewAudioTracks)
             audio.RefreshLocalizedText();
         OnPropertyChanged(nameof(DolbyEButtonTip));
+        OnPropertyChanged(nameof(ChannelMergeButtonTip));
         foreach (var clip in Clips)
             clip.RefreshLocalizedText();
         foreach (var item in ExportQueue)
@@ -1199,7 +1200,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
         // 节目表提示先于保存对话框；确认时尚未选路径，先用空路径准备同一份任务。
         var output = _dialogService.CreateViewModel<OutputWindowViewModel>();
-        output.DolbyE = CurrentDolbyEPlan;
+        output.AudioRebuild = CurrentAudioRebuildPlan;
         output.ExcludedPids = CurrentExcludedPids;
         ConfigureMergeExportTask(output, snapshot, string.Empty);
         if (!await ConfirmGradualRefreshExportAsync()) return;
@@ -1820,6 +1821,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         AudioDelayMs = AudioDelayMs,
         AudioDelayEnabled = AudioDelayEnabled,
         DolbyE = CaptureDolbyESettings(),
+        ChannelMerge = CaptureChannelMergeSettings(),
         ExcludedTsPids = CaptureTsTrackSelection(),
         Clips = Clips.Select(clip => new ProjectClip
         {
@@ -1849,7 +1851,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             ProgramId = item.ProgramId,
             AudioDelayMs = item.AudioDelayMs,
             AudioDelayProgramId = item.AudioDelayProgramId,
-            DolbyE = item.DolbyE?.Snapshot(),
+            AudioRebuild = item.AudioRebuild?.Snapshot(),
             ExcludedPids = item.ExcludedPids?.ToList(),
             RemuxSettings = item.RemuxSettings?.Snapshot(),
             FrameAccurate = item.FrameAccurate?.Snapshot(),
@@ -2014,6 +2016,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             project.AudioDelayEnabled ? AudioDelay.Clamp(project.AudioDelayMs) : 0);
         RestoreAudioDelay(AudioDelay.Clamp(project.AudioDelayMs), project.AudioDelayEnabled);
         RestoreDolbyESettings(project.DolbyE);
+        RestoreChannelMergeSettings(project.ChannelMerge);
         RestoreTsTrackSelection(project.ExcludedTsPids);
         ExportQueue.Clear();
         foreach (var saved in project.Queue)
@@ -2026,7 +2029,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 ProgramId = saved.ProgramId,
                 AudioDelayMs = AudioDelay.Clamp(saved.AudioDelayMs),
                 AudioDelayProgramId = saved.AudioDelayProgramId,
-                DolbyE = saved.DolbyE?.Snapshot(),
+                AudioRebuild = saved.AudioRebuild?.Snapshot(),
                 ExcludedPids = saved.ExcludedPids is { Count: > 0 } excluded ? excluded.ToArray() : null,
                 RemuxSettings = WithAudioDelay(saved.RemuxSettings?.Snapshot(), AudioDelay.Clamp(saved.AudioDelayMs)),
                 FrameAccurate = WithAudioDelay(saved.FrameAccurate?.Snapshot(), AudioDelay.Clamp(saved.AudioDelayMs)),
@@ -2912,6 +2915,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         EditClipDetailsCommand.NotifyCanExecuteChanged();
         RemuxExportOptionsCommand.NotifyCanExecuteChanged();
         ConfigureDolbyECommand.NotifyCanExecuteChanged();
+        ConfigureChannelMergeCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsRemuxExport));
         OnPropertyChanged(nameof(IsTsTrackExport));
         OnPropertyChanged(nameof(ShowsExportSettings));
@@ -2958,7 +2962,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         dialogViewModel.RemuxSettings = CurrentRemuxSettings?.Snapshot();
         dialogViewModel.AudioDelayMs = EffectiveAudioDelayMs;
         dialogViewModel.AudioDelayProgramId = AudioDelayProgramId;
-        dialogViewModel.DolbyE = CurrentDolbyEPlan;
+        dialogViewModel.AudioRebuild = CurrentAudioRebuildPlan;
         dialogViewModel.ExcludedPids = CurrentExcludedPids;
         if (UsesFrameAccurateCut)
         {
@@ -3030,7 +3034,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             var task = new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition, SelectedOutputProgramId,
                 CurrentRemuxSettings?.Snapshot(), clip.StartTime, clip.EndPosition < 0 ? null : clip.EndTime,
                 StartSignature: clip.StartSignature, EndSignature: clip.EndPosition < 0 ? null : clip.EndSignature,
-                AudioDelayMs: EffectiveAudioDelayMs, AudioDelayProgramId: AudioDelayProgramId, DolbyE: CurrentDolbyEPlan);
+                AudioDelayMs: EffectiveAudioDelayMs, AudioDelayProgramId: AudioDelayProgramId, AudioRebuild: CurrentAudioRebuildPlan);
             if (UsesFrameAccurateCut)
             {
                 var (settings, startPts, endPts) = CreateFrameAccurateTask(clip);
@@ -3242,7 +3246,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             ProgramId = frameAccurate is null ? programId : null,
             AudioDelayMs = EffectiveAudioDelayMs,
             AudioDelayProgramId = AudioDelayProgramId,
-            DolbyE = CurrentDolbyEPlan,
+            AudioRebuild = CurrentAudioRebuildPlan,
             ExcludedPids = CurrentExcludedPids,
             RemuxSettings = frameAccurate is null ? CurrentRemuxSettings?.Snapshot() : null,
             OutputFilePath = outputPath,
@@ -3302,7 +3306,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             new BatchTask(item.SourceFilePath, item.OutputFilePath, item.StartPosition, item.EndPosition, item.ProgramId,
                 item.RemuxSettings?.Snapshot(), item.StartTimeSeconds, item.EndPosition < 0 ? null : item.EndTimeSeconds,
                 item.FrameAccurate?.Snapshot(), item.StartPts, item.EndPts, item.StartSignature, item.EndSignature,
-                item.AudioDelayMs, item.AudioDelayProgramId, item.DolbyE?.Snapshot(), item.ExcludedPids)
+                item.AudioDelayMs, item.AudioDelayProgramId, item.AudioRebuild?.Snapshot(), item.ExcludedPids)
         ).ToList();
 
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();

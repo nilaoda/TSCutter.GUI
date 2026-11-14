@@ -7,35 +7,48 @@ using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models.Media;
 using TSCutter.GUI.Services.TransportStream.Analysis;
-using TSCutter.GUI.Utils.Media.DolbyE;
 using TSCutter.GUI.Utils.TransportStream.Packets;
 
-namespace TSCutter.GUI.Services.Editing.DolbyE;
+namespace TSCutter.GUI.Services.Editing.AudioRebuild;
 
 /// <summary>
-/// 一次导出的 TS 重组设置与结果：转码杜比 E 轨、删去未选的轨道。导出成功后提交独立的 FLAC 文件，失败时丢弃。
+/// 一次导出的 TS 重组设置与结果：重建音轨（杜比 E 转码、多轨合并）、删去未选的轨道。导出成功后提交独立的 FLAC 文件，失败时丢弃。
 /// </summary>
-internal sealed class DolbyERemuxSetup(DolbyEExportPlan? plan, string sourcePath, string outputPath, ExportTsCheckSession? session,
+internal sealed class AudioRebuildSetup(AudioRebuildPlan? plan, string sourcePath, string outputPath, ExportTsCheckSession? session,
     IReadOnlyCollection<int>? excludedPids = null)
 {
-    public DolbyEExportPlan Plan { get; } = plan ?? new DolbyEExportPlan();
+    public AudioRebuildPlan Plan { get; } = plan ?? new AudioRebuildPlan();
     /// <summary>不输出的轨道（PID）：这些包从输出中删去，节目表中的对应条目一并去掉。</summary>
     public IReadOnlySet<int> ExcludedPids { get; } = new HashSet<int>(excludedPids ?? []);
     /// <summary>实际删去了未选轨道的包或节目表条目。</summary>
     public bool TracksRemoved { get; internal set; }
-    /// <summary>导出的源文件：开头的节目表决定杜比 E 轨所在的节目与可用的 PID。</summary>
+    /// <summary>导出的源文件：开头的节目表决定来源音轨所在的节目与可用的 PID。</summary>
     public string SourcePath { get; } = sourcePath;
     /// <summary>最终输出路径：独立 FLAC 文件按它命名（导出服务可能先写临时文件）。</summary>
     public string OutputPath { get; } = outputPath;
     public ExportTsCheckSession? Session { get; } = session;
     /// <summary>经工厂打开的输出流个数；为 0 说明这条导出路径没有经过重组。</summary>
     public int StreamCount { get; internal set; }
-    /// <summary>节目表中找到了杜比 E 轨并加入了新音轨。</summary>
+    /// <summary>节目表中找到了来源音轨并加入了新音轨。</summary>
     public bool Changed { get; internal set; }
+    /// <summary>加入了杜比 E 转码的新音轨。</summary>
+    public bool DolbyETranscoded { get; internal set; }
+    /// <summary>加入了多轨合并的新音轨。</summary>
+    public bool ChannelsMerged { get; internal set; }
     public int DecodedFrames { get; internal set; }
     /// <summary>写出结束时（释放输出流时）发生的错误。</summary>
     public Exception? Error { get; internal set; }
     internal List<(string Temporary, string Final)> SideFiles { get; } = [];
+
+    /// <summary>
+    /// 计划中要重建的音轨（按未选的轨道筛选），各种重建方式各自生成；替换来源的合并在新音轨未选时把来源一并加入
+    /// <paramref name="excludedPids"/>。
+    /// </summary>
+    internal List<AudioRebuildTrack> Tracks(HashSet<int> excludedPids) =>
+    [
+        .. DolbyE.DolbyERebuild.Tracks(Plan, excludedPids),
+        .. ChannelMerge.ChannelMergeRebuild.Tracks(Plan, excludedPids)
+    ];
 
     /// <summary>导出成功：把独立 FLAC 文件改成正式文件名。</summary>
     public IReadOnlyList<string> Commit()
@@ -54,21 +67,39 @@ internal sealed class DolbyERemuxSetup(DolbyEExportPlan? plan, string sourcePath
     public void Abort()
     {
         foreach (var (temporary, _) in SideFiles)
-            DolbyETsRemuxStream.TryDelete(temporary);
+            AudioRebuildTsStream.TryDelete(temporary);
         SideFiles.Clear();
     }
 }
 
+/// <summary>一路重建输出：编码设置、来源声道布局与独立 FLAC 文件名的后缀（加在输出文件名之后）。</summary>
+internal sealed record AudioRebuildOutput(AudioOutput Output, AudioSourceLayout Source, string FlacSuffix);
+
+/// <summary>来源音轨在节目表中的条目：流类型与描述符，转码器据此选择解码器。</summary>
+internal sealed record AudioRebuildSource(int Pid, int StreamType, byte[] Descriptors);
+
 /// <summary>
-/// TS 导出服务打开输出文件的入口。没有杜比 E 转码时返回普通文件流，参数与原来完全相同；
-/// 导出窗口设置了转码计划或轨道选择时返回重组流，导出服务的写出代码不变。
+/// 一条要重建的音轨：来源 PID（第一个为锚定 PID，新音轨的包放在它的 PES 位置上）、是否保留来源、
+/// 新音轨在节目表中排在锚定来源之前还是之后，以及各路输出。转码器在输出链建好后创建。
+/// </summary>
+internal sealed record AudioRebuildTrack(int[] SourcePids, bool KeepOriginal, bool NewEntriesFirst,
+    IReadOnlyList<AudioRebuildOutput> Outputs,
+    Func<IReadOnlyList<AudioOutputChain>, IReadOnlyList<AudioRebuildSource>, IAudioRebuildTranscoder> CreateTranscoder,
+    Action<AudioRebuildSetup> MarkChanged)
+{
+    public int AnchorPid => SourcePids[0];
+}
+
+/// <summary>
+/// TS 导出服务打开输出文件的入口。没有音轨重建与轨道选择时返回普通文件流，参数与原来完全相同；
+/// 导出窗口设置了重建计划或轨道选择时返回重组流，导出服务的写出代码不变。
 /// </summary>
 internal static class TsOutputFile
 {
-    private static readonly AsyncLocal<DolbyERemuxSetup?> CurrentSetup = new();
+    private static readonly AsyncLocal<AudioRebuildSetup?> CurrentSetup = new();
 
     /// <summary>当前异步流程中的重组设置；在导出窗口中设置，随调用传到导出服务。</summary>
-    public static DolbyERemuxSetup? Current
+    public static AudioRebuildSetup? Current
     {
         get => CurrentSetup.Value;
         set => CurrentSetup.Value = value;
@@ -80,31 +111,32 @@ internal static class TsOutputFile
         if (CurrentSetup.Value is not { } setup)
             return new FileStream(path, mode, access, share, bufferSize, options);
         if (setup.StreamCount++ > 0)
-            throw new InvalidOperationException("Dolby E rebuilding supports a single output stream per export.");
-        return new DolbyETsRemuxStream(path, mode, access, share, bufferSize, options, setup);
+            throw new InvalidOperationException("Audio rebuilding supports a single output stream per export.");
+        return new AudioRebuildTsStream(path, mode, access, share, bufferSize, options, setup);
     }
 }
 
 /// <summary>
-/// 写出时重组杜比 E 音轨的输出流：导出服务写入的 TS 字节逐包处理，除下面几类包外全部原样写出，
-/// 保留原有的传输错误（CC 跳号、TEI、重复包、时间戳与 PCR 跳变）：
+/// 写出时重建音轨的输出流。每条重建音轨由一个或几个来源 PID 解码、编码而成（杜比 E 转码：杜比 E 轨本身；
+/// 多轨合并：三条立体声音轨），第一个来源为锚定 PID，新音轨的包放在锚定 PID 的 PES 位置上。
+/// 导出服务写入的 TS 字节逐包处理，除下面几类包外全部原样写出，保留原有的传输错误（CC 跳号、TEI、重复包、时间戳与 PCR 跳变）：
 /// <list type="bullet">
-/// <item>含杜比 E 轨的 PMT：只换负载，保留各包包头（含 TEI 与 CC）和适配字段；新节目表变长时在后面补包、变短时去掉多余的包，
+/// <item>含来源音轨的 PMT：只换负载，保留各包包头（含 TEI 与 CC）和适配字段；新节目表变长时在后面补包、变短时去掉多余的包，
 /// 该 PID 之后的 CC 按偏移接续，原有的跳号不变。CRC 错误、结构不完整的 PMT 原样保留。</item>
-/// <item>杜比 E 包：保留原轨时原样复制；替换时由新音轨的包依次占用它们的位置，多余的位置删去，
+/// <item>来源包：保留原轨时原样复制；替换时由新音轨的包依次占用它们的位置，多余的位置删去，
 /// 载有 PCR 的包改为只含适配字段的包，PCR 原样保留。</item>
-/// <item>新音轨：每个编码帧一个 PES，放在与其时间对应的杜比 E PES 之前；新 PID 的 CC 从 0 连续。</item>
+/// <item>新音轨：每个编码帧一个 PES，放在与其时间对应的锚定 PES 之前；新 PID 的 CC 从 0 连续。</item>
 /// <item>未选的轨道：包全部删去，PMT 中的条目一并去掉；若它承载节目的 PCR，带 PCR 的包改为只含适配字段的包。</item>
 /// </list>
-/// 杜比 E 包写入时即解码、编码。新音轨要比对应的杜比 E 帧提前放入，因此输出暂存到解码领先若干个杜比 E 帧后再写出，
-/// 暂存量有上限。损坏或缺失的杜比 E 帧在新音轨中表现为同样的间隙。检测会话收到的是最终写出的字节。
+/// 来源包写入时即解码、编码。新音轨要比对应的来源帧提前放入，因此输出暂存到解码领先若干个锚定 PES 后再写出，
+/// 暂存量有上限。损坏或缺失的来源帧在新音轨中表现为同样的间隙。检测会话收到的是最终写出的字节。
 /// </summary>
-internal sealed class DolbyETsRemuxStream : FileStream
+internal sealed class AudioRebuildTsStream : FileStream
 {
     private const int PrescanBytes = 64 << 20;
-    // 写出某个杜比 E PES 前，解码至少要领先这么多个 PES，确保编码器延迟内的帧都已产生。
+    // 写出某个锚定 PES 前，解码至少要领先这么多个 PES，确保编码器延迟内的帧都已产生。
     private const int LookaheadPes = 8;
-    // 暂存超过这个量（杜比 E 长时间中断）时不再等待解码，按已有的编码帧写出。
+    // 暂存超过这个量（来源长时间中断）时不再等待解码，按已有的编码帧写出。
     private const int MaxHeldBytes = 64 << 20;
     private const int PacketBodySize = TsUtil.TsPacketSize;
 
@@ -123,28 +155,33 @@ internal sealed class DolbyETsRemuxStream : FileStream
 
     private sealed class Track
     {
-        public required int Pid { get; init; }
-        public required int ProgramConfig { get; init; }
+        public required int[] SourcePids { get; init; }
+        public int AnchorPid => SourcePids[0];
         public required bool KeepOriginal { get; init; }
-        public required bool IsPcrPid { get; init; }
-        public required List<DolbyEOutputChain> Chains { get; init; }
+        /// <summary>新音轨在节目表中排在锚定来源之前（播放器默认选它）；否则排在之后。</summary>
+        public required bool NewEntriesFirst { get; init; }
+        /// <summary>承载节目 PCR 的来源 PID。</summary>
+        public required HashSet<int> PcrPids { get; init; }
+        public required List<AudioOutputChain> Chains { get; init; }
         // 按输出序号（Chains 下标）对应的 TS 输出；FLAC 独立文件没有。
         public required Dictionary<int, OutputStream> Streams { get; init; }
         public required List<(string Temporary, string Final)> SideFiles { get; init; }
-        public DolbyETrackTranscoder? Transcoder { get; set; }
-        // 解码端状态。
-        public PesAssembler Assembler { get; } = new();
-        public Queue<(DolbyEEncodedUnit Unit, int Slot)> Units { get; } = new();
-        public int ProcessedIndex = -1;
-        // 写出端状态。
+        public required Action<AudioRebuildSetup> MarkChanged { get; init; }
+        public IAudioRebuildTranscoder? Transcoder { get; set; }
+        // 解码端状态：各来源 PID 的 PES 组装。
+        public Dictionary<int, PesAssembler> Assemblers { get; } = [];
+        public Queue<(EncodedAudioUnit Unit, int Slot)> Units { get; } = new();
+        public int ProcessedIndex => Transcoder?.ProcessedAnchorIndex ?? -1;
+        // 写出端状态：锚定 PES 计数、各来源 PID 的上一个包（判断重复包）。
         public int PesIndex = -1;
-        public byte[]? LastPacket;
+        public Dictionary<int, byte[]> LastPackets { get; } = [];
         public Queue<byte[]> Pending { get; } = new();
     }
 
-    private readonly DolbyERemuxSetup setup;
+    private readonly AudioRebuildSetup setup;
     private TsPacketLayout layout;
     private List<Track> tracks = [];
+    // 来源 PID（含锚定 PID）到所属重建音轨。
     private Dictionary<int, Track> byPid = [];
     private PmtRewriter? pmt;
     private PacketWriter? writer;
@@ -164,8 +201,8 @@ internal sealed class DolbyETsRemuxStream : FileStream
     private int heldHead;
     private int heldCount;
 
-    internal DolbyETsRemuxStream(string path, FileMode mode, FileAccess access, FileShare share, int bufferSize,
-        FileOptions options, DolbyERemuxSetup setup) : base(path, mode, access, share, bufferSize, options)
+    internal AudioRebuildTsStream(string path, FileMode mode, FileAccess access, FileShare share, int bufferSize,
+        FileOptions options, AudioRebuildSetup setup) : base(path, mode, access, share, bufferSize, options)
     {
         this.setup = setup;
     }
@@ -242,8 +279,9 @@ internal sealed class DolbyETsRemuxStream : FileStream
             {
                 foreach (var track in tracks)
                 {
-                    if (track.Assembler.Index >= 0)
-                        Deliver(track);
+                    foreach (var pid in track.SourcePids)
+                        if (track.Assemblers[pid].Index >= 0)
+                            Deliver(track, pid);
                     track.Transcoder!.Finish((unit, slot) => track.Units.Enqueue((unit, slot)));
                     setup.DecodedFrames += track.Transcoder.DecodedFrames;
                 }
@@ -262,6 +300,8 @@ internal sealed class DolbyETsRemuxStream : FileStream
                 // 与其他导出路径一样只交给系统缓存，不强制落盘。
                 base.Flush(false);
                 setup.Changed = tracks.Count > 0;
+                foreach (var track in tracks)
+                    track.MarkChanged(setup);
             }
         }
         catch (Exception exception)
@@ -365,7 +405,7 @@ internal sealed class DolbyETsRemuxStream : FileStream
     }
 
     /// <summary>
-    /// 首次写入时读取源文件开头的节目表，为每条要转码的杜比 E 轨准备输出；既没有要转码的轨道、也没有要删去的轨道时原样写出。
+    /// 首次写入时读取源文件开头的节目表，为每条要重建的音轨准备输出；既没有要重建的音轨、也没有要删去的轨道时原样写出。
     /// </summary>
     private void Initialize()
     {
@@ -374,29 +414,37 @@ internal sealed class DolbyETsRemuxStream : FileStream
         {
             layout = TsPacketLayout.Detect(setup.SourcePath);
             layout.RequireSupported();
-            // 未选的杜比 E 轨整条删去，不再转码。
-            var work = setup.Plan.Tracks.Where(track => track.HasWork && !setup.ExcludedPids.Contains(track.Pid)).ToArray();
+            var excludedPids = new HashSet<int>(setup.ExcludedPids);
+            var work = setup.Tracks(excludedPids);
             // 只删轨道时不分配新 PID，读到全部节目表即可停止预扫描。
-            var programs = Prescan(setup.SourcePath, layout, CancellationToken.None, work.Length > 0, out var usedPids,
+            var programs = Prescan(setup.SourcePath, layout, CancellationToken.None, work.Count > 0, out var usedPids,
                 out var pmtPids);
             pcrPids.UnionWith(programs.Values.Select(program => program.PcrPid));
-            foreach (var pid in setup.ExcludedPids.Where(pid => pid is >= 0 and < 0x2000))
+            foreach (var pid in excludedPids.Where(pid => pid is >= 0 and < 0x2000))
                 excluded[pid] = true;
             var atsc = programs.Values.Any(program => program.Streams.Any(stream => stream.StreamType is 0x81 or 0x87));
-            foreach (var settings in work)
+            var claimed = new HashSet<int>();
+            foreach (var spec in work)
             {
-                var containing = programs.Values.Where(program => program.Streams.Any(stream => stream.Pid == settings.Pid)).ToArray();
-                if (containing.Length == 0)
+                // 全部来源要在同一个节目中（分属不同节目的不合并）；一个 PID 只能属于一条重建音轨。
+                var containing = programs.Values.Where(program =>
+                    spec.SourcePids.All(pid => program.Streams.Any(stream => stream.Pid == pid))).ToArray();
+                if (containing.Length == 0 || spec.SourcePids.Any(claimed.Contains))
                     continue;
-                var track = CreateTrack(settings, containing, usedPids, atsc, setup.OutputPath, work.Length > 1);
+                var track = CreateTrack(spec, containing, usedPids, atsc, setup.OutputPath, work.Count > 1);
                 tracks.Add(track);
+                claimed.UnionWith(spec.SourcePids);
                 setup.SideFiles.AddRange(track.SideFiles);
-                track.Transcoder = new DolbyETrackTranscoder(track.Chains);
+                var sources = spec.SourcePids.Select(pid => containing.SelectMany(program => program.Streams)
+                    .First(stream => stream.Pid == pid)).Select(stream => new AudioRebuildSource(stream.Pid, stream.StreamType, stream.Info))
+                    .ToArray();
+                track.Transcoder = spec.CreateTranscoder(track.Chains, sources);
             }
-            if (tracks.Count == 0 && setup.ExcludedPids.Count == 0)
+            if (tracks.Count == 0 && excludedPids.Count == 0)
                 return;
-            byPid = tracks.ToDictionary(track => track.Pid);
-            pmt = new PmtRewriter(tracks, setup.ExcludedPids, pcrPids, layout, pmtPids, () => setup.TracksRemoved = true);
+            byPid = tracks.SelectMany(track => track.SourcePids.Select(pid => (pid, track)))
+                .ToDictionary(pair => pair.pid, pair => pair.track);
+            pmt = new PmtRewriter(byPid, excludedPids, pcrPids, layout, pmtPids, () => setup.TracksRemoved = true);
             writer = new PacketWriter(EmitBlock, layout);
             partial = new byte[layout.PacketSize];
             // 只删轨道时逐包直接写出，不需要暂存。
@@ -415,22 +463,23 @@ internal sealed class DolbyETsRemuxStream : FileStream
 
     private void Process(ReadOnlySpan<byte> packet)
     {
-        // 没有要转码的杜比 E 轨时不必等待解码，直接写出。
+        // 没有要重建的音轨时不必等待解码，直接写出。
         if (tracks.Count == 0)
         {
             WritePacket(packet);
             return;
         }
         var body = layout.GetPacketBody(packet);
-        if (body[0] == TsUtil.TsSyncByte && byPid.TryGetValue(((body[1] & 0x1F) << 8) | body[2], out var track))
+        var pid = ((body[1] & 0x1F) << 8) | body[2];
+        if (body[0] == TsUtil.TsSyncByte && byPid.TryGetValue(pid, out var track))
         {
-            var assembler = track.Assembler;
+            var assembler = track.Assemblers[pid];
             if (!assembler.IsDuplicate(body))
             {
                 if ((body[1] & 0x40) != 0 && TryGetPayloadOffset(body, out _))
                 {
                     if (assembler.Index >= 0)
-                        Deliver(track);
+                        Deliver(track, pid);
                     assembler.Start();
                 }
                 assembler.Append(body);
@@ -440,12 +489,13 @@ internal sealed class DolbyETsRemuxStream : FileStream
         Drain();
     }
 
-    private static void Deliver(Track track)
+    private static void Deliver(Track track, int pid)
     {
-        var assembler = track.Assembler;
+        var assembler = track.Assemblers[pid];
         if (assembler.TryGetPayload(out var payload, out var pts))
-            track.Transcoder!.Feed(payload, pts, assembler.Index, (unit, slot) => track.Units.Enqueue((unit, slot)));
-        track.ProcessedIndex = assembler.Index;
+            track.Transcoder!.Feed(pid, payload, pts, assembler.Index, (unit, slot) => track.Units.Enqueue((unit, slot)));
+        else
+            track.Transcoder!.Skip(pid, assembler.Index);
     }
 
     private void Hold(ReadOnlySpan<byte> packet)
@@ -465,7 +515,7 @@ internal sealed class DolbyETsRemuxStream : FileStream
         heldCount++;
     }
 
-    // ---- 写出端：按顺序处理暂存的包，遇到还没解码到的杜比 E PES 起点就停下 ----
+    // ---- 写出端：按顺序处理暂存的包，遇到还没解码到的锚定 PES 起点就停下 ----
 
     private void Drain()
     {
@@ -482,12 +532,13 @@ internal sealed class DolbyETsRemuxStream : FileStream
         }
     }
 
-    /// <summary>杜比 E PES 起点要等解码领先到所需的位置；其他包随时可以写出。</summary>
+    /// <summary>锚定 PES 起点要等解码领先到所需的位置；其他包随时可以写出。</summary>
     private bool Ready(ReadOnlySpan<byte> packet)
     {
         var body = layout.GetPacketBody(packet);
-        if (body[0] != TsUtil.TsSyncByte || !byPid.TryGetValue(((body[1] & 0x1F) << 8) | body[2], out var track) ||
-            (body[1] & 0x40) == 0 || !TryGetPayloadOffset(body, out _) || IsDuplicate(track, body))
+        var pid = ((body[1] & 0x1F) << 8) | body[2];
+        if (body[0] != TsUtil.TsSyncByte || !byPid.TryGetValue(pid, out var track) || pid != track.AnchorPid ||
+            (body[1] & 0x40) == 0 || !TryGetPayloadOffset(body, out _) || IsDuplicate(track, pid, body))
             return true;
         return track.ProcessedIndex >= track.PesIndex + 1 + Ahead(track) + LookaheadPes;
     }
@@ -509,27 +560,31 @@ internal sealed class DolbyETsRemuxStream : FileStream
                 writer!.WriteAdaptationOnly(packet, layout);
         }
         else if (byPid.TryGetValue(pid, out var track))
-            WriteDolbyEPacket(track, packet);
+            WriteSourcePacket(track, pid, packet);
         else if (pmt!.Handles(pid, body))
             pmt.Push(pid, packet, writer!);
         else
             writer!.WriteRaw(packet);
     }
 
-    // 原轨 PES 有时只比 PTS 早十几毫秒到达。新包提前一个 PES 放入：保留原轨时插在 PES 起点之前；
+    // 来源 PES 有时只比 PTS 早十几毫秒到达。新包提前一个 PES 放入：保留原轨时插在 PES 起点之前；
     // 替换时新包分散在原包位置上，后面的包到得较晚，再提前一个 PES，保证每个新包都在其 PTS 之前到达。
     private static int Ahead(Track track) => track.KeepOriginal ? 1 : 2;
 
-    private static bool IsDuplicate(Track track, ReadOnlySpan<byte> body) =>
-        track.LastPacket is not null && (body[3] & 0x10) != 0 && body.SequenceEqual(track.LastPacket);
+    private static bool IsDuplicate(Track track, int pid, ReadOnlySpan<byte> body) =>
+        track.LastPackets.TryGetValue(pid, out var last) && (body[3] & 0x10) != 0 && body.SequenceEqual(last);
 
-    private void WriteDolbyEPacket(Track track, ReadOnlySpan<byte> packet)
+    /// <summary>
+    /// 来源音轨的包：锚定 PID 的 PES 起点处放入到期的新包。保留原轨时原样写出；替换时新包依次占用各来源包的位置。
+    /// </summary>
+    private void WriteSourcePacket(Track track, int pid, ReadOnlySpan<byte> packet)
     {
         var body = layout.GetPacketBody(packet);
-        var duplicate = IsDuplicate(track, body);
-        track.LastPacket ??= new byte[PacketBodySize];
-        body.CopyTo(track.LastPacket);
-        if (!duplicate && (body[1] & 0x40) != 0 && TryGetPayloadOffset(body, out _))
+        var duplicate = IsDuplicate(track, pid, body);
+        if (!track.LastPackets.TryGetValue(pid, out var last))
+            track.LastPackets[pid] = last = new byte[PacketBodySize];
+        body.CopyTo(last);
+        if (pid == track.AnchorPid && !duplicate && (body[1] & 0x40) != 0 && TryGetPayloadOffset(body, out _))
         {
             track.PesIndex++;
             // 上一个 PES 位置没用完的新包先补在这里，再取本 PES 时段的编码帧。
@@ -544,7 +599,7 @@ internal sealed class DolbyETsRemuxStream : FileStream
             return;
         }
         // 替换：PCR 原样保留在只含适配字段的包中；其余位置由新包占用，没有新包时删去。
-        if (track.IsPcrPid && HasPcr(body))
+        if (track.PcrPids.Contains(pid) && HasPcr(body))
         {
             writer!.WriteAdaptationOnly(packet, layout);
             return;
@@ -573,51 +628,52 @@ internal sealed class DolbyETsRemuxStream : FileStream
         }
     }
 
-    private static Track CreateTrack(DolbyETrackSettings settings, IReadOnlyList<PmtInfo> containing, HashSet<int> usedPids,
+    private static Track CreateTrack(AudioRebuildTrack spec, IReadOnlyList<PmtInfo> containing, HashSet<int> usedPids,
         bool atsc, string outputPath, bool multipleTracks)
     {
-        var isPcr = containing.Any(program => program.PcrPid == settings.Pid);
-        var chains = new List<DolbyEOutputChain>();
+        var pcr = spec.SourcePids.Where(pid => containing.Any(program => program.PcrPid == pid)).ToHashSet();
+        var chains = new List<AudioOutputChain>();
         var streams = new Dictionary<int, OutputStream>();
         var sideFiles = new List<(string, string)>();
-        var reuseOriginalPid = !settings.KeepOriginal && !isPcr;
+        var reuseOriginalPid = !spec.KeepOriginal && !pcr.Contains(spec.AnchorPid);
         var baseName = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(outputPath))!,
-            Path.GetFileNameWithoutExtension(outputPath)) + (multipleTracks ? $".pid{settings.Pid:X4}" : "");
+            Path.GetFileNameWithoutExtension(outputPath)) + (multipleTracks ? $".pid{spec.AnchorPid:X4}" : "");
         var flacNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         try
         {
-            foreach (var output in settings.Outputs.Where(output => output.Enabled))
+            foreach (var (output, source, flacSuffix) in spec.Outputs)
             {
-                // 输出声道按设置时读到的声道组配置确定；片中配置变化时由重采样转换到这个布局。
-                var program = ProgramTemplate(settings.ProgramConfig, output.Program);
                 string? flacPath = null;
-                if (output.Codec == DolbyECodec.Flac)
+                if (output.Codec == AudioOutputCodec.Flac)
                 {
-                    var name = $"{baseName}.P{output.Program}.flac";
+                    var name = $"{baseName}{flacSuffix}.flac";
                     for (var n = 2; !flacNames.Add(name); n++)
-                        name = $"{baseName}.P{output.Program}-{n}.flac";
+                        name = $"{baseName}{flacSuffix}-{n}.flac";
                     flacPath = Path.Combine(Path.GetDirectoryName(name)!, $".tscutter-{Guid.NewGuid():N}.flac.tmp");
                     sideFiles.Add((flacPath, name));
                 }
                 var index = chains.Count;
-                chains.Add(new DolbyEOutputChain(output, index, program, flacPath));
+                chains.Add(new AudioOutputChain(output, index, source, flacPath));
                 if (flacPath is not null)
                     continue;
                 int pid;
                 if (reuseOriginalPid)
                 {
-                    pid = settings.Pid;
+                    pid = spec.AnchorPid;
                     reuseOriginalPid = false;
                 }
                 else
-                    pid = AllocatePid(usedPids, settings.Pid);
+                    pid = AllocatePid(usedPids, spec.AnchorPid);
                 streams[index] = CreateStream(output, pid, atsc);
             }
-            return new Track
+            var track = new Track
             {
-                Pid = settings.Pid, ProgramConfig = settings.ProgramConfig, KeepOriginal = settings.KeepOriginal, IsPcrPid = isPcr,
-                Chains = chains, Streams = streams, SideFiles = sideFiles
+                SourcePids = spec.SourcePids, KeepOriginal = spec.KeepOriginal, NewEntriesFirst = spec.NewEntriesFirst,
+                PcrPids = pcr, Chains = chains, Streams = streams, SideFiles = sideFiles, MarkChanged = spec.MarkChanged
             };
+            foreach (var pid in spec.SourcePids)
+                track.Assemblers[pid] = new PesAssembler();
+            return track;
         }
         catch
         {
@@ -627,30 +683,22 @@ internal sealed class DolbyETsRemuxStream : FileStream
         }
     }
 
-    private static DolbyEProgram ProgramTemplate(int programConfig, int number)
-    {
-        var programs = DolbyEConfiguration.GetPrograms(programConfig);
-        return number >= 1 && number <= programs.Count
-            ? programs[number - 1]
-            : new DolbyEProgram(number, 1, DolbyEProgramKind.Stereo);
-    }
-
-    private static OutputStream CreateStream(DolbyEOutput output, int pid, bool atsc)
+    private static OutputStream CreateStream(AudioOutput output, int pid, bool atsc)
     {
         var descriptors = new List<byte>();
         int streamType;
         byte streamId = 0xBD;
         switch (output.Codec)
         {
-            case DolbyECodec.Ac3:
+            case AudioOutputCodec.Ac3:
                 streamType = atsc ? 0x81 : 0x06;
                 descriptors.AddRange(atsc ? [0x05, 4, (byte)'A', (byte)'C', (byte)'-', (byte)'3'] : [0x6A, 1, 0x00]);
                 break;
-            case DolbyECodec.Eac3:
+            case AudioOutputCodec.Eac3:
                 streamType = atsc ? 0x87 : 0x06;
                 descriptors.AddRange(atsc ? [0x05, 4, (byte)'E', (byte)'A', (byte)'C', (byte)'3'] : [0x7A, 1, 0x00]);
                 break;
-            case DolbyECodec.Aac:
+            case AudioOutputCodec.Aac:
                 streamType = 0x0F;
                 streamId = 0xC0;
                 break;
@@ -675,7 +723,7 @@ internal sealed class DolbyETsRemuxStream : FileStream
                 return pid;
         if (TsPidAllocator.TryTakeNext(used, out var next))
             return next;
-        throw new InvalidOperationException("No free PID is available for the transcoded audio.");
+        throw new InvalidOperationException("No free PID is available for the rebuilt audio.");
     }
 
     // ---- 预扫描：读取开头的 PAT/PMT 与已使用的 PID ----
@@ -782,11 +830,14 @@ internal sealed class DolbyETsRemuxStream : FileStream
         return offset == end ? new PmtInfo(programNumber, pcrPid, streams) : null;
     }
 
-    /// <summary>按设置改写 PMT 的流列表；既不含杜比 E 轨、也不含未选轨道的节目返回 null（原样保留）。</summary>
-    private static byte[]? RewritePmt(ReadOnlySpan<byte> section, PmtInfo info, IReadOnlyList<Track> tracks,
+    /// <summary>
+    /// 按设置改写 PMT 的流列表：新音轨写在锚定来源的位置（之前或之后），替换时去掉各来源的条目。
+    /// 既不含来源音轨、也不含未选轨道的节目返回 null（原样保留）。
+    /// </summary>
+    private static byte[]? RewritePmt(ReadOnlySpan<byte> section, PmtInfo info, IReadOnlyDictionary<int, Track> byPid,
         IReadOnlySet<int> excluded)
     {
-        if (!info.Streams.Any(stream => excluded.Contains(stream.Pid) || tracks.Any(track => track.Pid == stream.Pid)))
+        if (!info.Streams.Any(stream => excluded.Contains(stream.Pid) || byPid.ContainsKey(stream.Pid)))
             return null;
         var infoLength = ((section[10] & 0x0F) << 8) | section[11];
         var result = new List<byte>(section[..(12 + infoLength)].ToArray());
@@ -794,13 +845,18 @@ internal sealed class DolbyETsRemuxStream : FileStream
         {
             if (excluded.Contains(entry.Pid))
                 continue;
-            var track = tracks.FirstOrDefault(item => item.Pid == entry.Pid);
-            if (track is null || track.KeepOriginal)
+            if (!byPid.TryGetValue(entry.Pid, out var track))
+            {
                 AppendEntry(result, entry.StreamType, entry.Pid, entry.Info);
-            if (track is null)
                 continue;
-            foreach (var stream in track.Streams.OrderBy(pair => pair.Key).Select(pair => pair.Value))
-                AppendEntry(result, stream.StreamType, stream.Pid, stream.Descriptors);
+            }
+            var anchor = entry.Pid == track.AnchorPid;
+            if (anchor && track.NewEntriesFirst)
+                AppendNewEntries(result, track);
+            if (track.KeepOriginal)
+                AppendEntry(result, entry.StreamType, entry.Pid, entry.Info);
+            if (anchor && !track.NewEntriesFirst)
+                AppendNewEntries(result, track);
         }
         var sectionLength = result.Count + 4 - 3;
         if (sectionLength > 1021)
@@ -811,6 +867,12 @@ internal sealed class DolbyETsRemuxStream : FileStream
         var bytes = result.ToArray();
         TsPsiSectionBuilder.WriteCrc(bytes);
         return bytes;
+    }
+
+    private static void AppendNewEntries(List<byte> section, Track track)
+    {
+        foreach (var stream in track.Streams.OrderBy(pair => pair.Key).Select(pair => pair.Value))
+            AppendEntry(section, stream.StreamType, stream.Pid, stream.Descriptors);
     }
 
     private static void AppendEntry(List<byte> section, int type, int pid, byte[] info)
@@ -893,7 +955,7 @@ internal sealed class DolbyETsRemuxStream : FileStream
     }
 
     /// <summary>一个编码帧打包为一个 PES（只带 PTS），切成 TS 包，最后一包用适配字段填充。</summary>
-    private static IEnumerable<byte[]> Packetize(OutputStream stream, DolbyEEncodedUnit unit)
+    private static IEnumerable<byte[]> Packetize(OutputStream stream, EncodedAudioUnit unit)
     {
         var pesLength = 3 + 5 + unit.Data.Length;
         var pes = new byte[6 + pesLength];
@@ -1050,10 +1112,10 @@ internal sealed class DolbyETsRemuxStream : FileStream
     }
 
     /// <summary>
-    /// 改写含杜比 E 轨或未选轨道的 PMT：在 PMT PID 上缓存一个完整段的包，完整且 CRC 正确时按原包位置写入新段，
+    /// 改写含来源音轨或未选轨道的 PMT：在 PMT PID 上缓存一个完整段的包，完整且 CRC 正确时按原包位置写入新段，
     /// 否则原样写出。PMT PID 由 PAT 确定，写出时随 PAT 更新；完整的 PMT 同时更新各节目的 PCR PID。
     /// </summary>
-    private sealed class PmtRewriter(IReadOnlyList<Track> tracks, IReadOnlySet<int> excluded, HashSet<int> pcrPids,
+    private sealed class PmtRewriter(IReadOnlyDictionary<int, Track> byPid, IReadOnlySet<int> excluded, HashSet<int> pcrPids,
         TsPacketLayout layout, IEnumerable<int> knownPmtPids, Action onRemoved)
     {
         private readonly Dictionary<int, State> states = [];
@@ -1164,7 +1226,7 @@ internal sealed class DolbyETsRemuxStream : FileStream
             if (tail.All(value => value == 0xFF) && TsPsiSectionBuilder.HasValidCrc(section) && ParsePmt(section) is { } info)
             {
                 pcrPids.Add(info.PcrPid);
-                rewritten = RewritePmt(section, info, tracks, excluded);
+                rewritten = RewritePmt(section, info, byPid, excluded);
                 if (rewritten is not null && info.Streams.Any(stream => excluded.Contains(stream.Pid)))
                     onRemoved();
             }

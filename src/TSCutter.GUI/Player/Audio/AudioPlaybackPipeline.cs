@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -60,6 +61,9 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
     // 杜比 E 轨只播放所选声道组；此时不使用普通解码器。
     private readonly int? dolbyEProgram;
     private DolbyEProgramDecoder? dolbyE;
+    // 多轨合并试听：三条来源合成 5.1 后由重采样下混；此时也不使用普通解码器。
+    private readonly IReadOnlyList<(MediaStream Stream, bool Swap)>? channelMerge;
+    private ChannelMergePreviewDecoder? merge;
     private AudioResampler resampler = new();
     private Frame? reusableFrame;
     private Task? runTask;
@@ -71,10 +75,12 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
     private int disposed;
 
     private AudioPlaybackPipeline(IAudioOutput device, MediaStream audioStream,
-        double startSeconds, double? endSeconds, double originSeconds, int? dolbyEProgram)
+        double startSeconds, double? endSeconds, double originSeconds, int? dolbyEProgram,
+        IReadOnlyList<(MediaStream Stream, bool Swap)>? channelMerge)
     {
         this.device = device;
         this.dolbyEProgram = dolbyEProgram;
+        this.channelMerge = channelMerge;
         this.audioStream = audioStream;
         this.startSeconds = startSeconds;
         this.originSeconds = originSeconds;
@@ -103,14 +109,16 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
 
     public static async Task<AudioPlaybackPipeline?> TryCreateAsync(MediaStream audioStream,
         double startSeconds, double? endSeconds, double originSeconds,
-        Func<IAudioOutput?>? deviceFactory = null, int? dolbyEProgram = null)
+        Func<IAudioOutput?>? deviceFactory = null, int? dolbyEProgram = null,
+        IReadOnlyList<(MediaStream Stream, bool Swap)>? channelMerge = null)
     {
         var device = deviceFactory is null
             ? AudioOutputDevice.TryCreate(AudioOutputFormat.SampleRate, AudioOutputFormat.Channels, RingCapacityFrames)
             : deviceFactory();
         if (device is null)
             return null;
-        var pipeline = new AudioPlaybackPipeline(device, audioStream, startSeconds, endSeconds, originSeconds, dolbyEProgram);
+        var pipeline = new AudioPlaybackPipeline(device, audioStream, startSeconds, endSeconds, originSeconds, dolbyEProgram,
+            channelMerge);
         try
         {
             await Task.Run(pipeline.OpenDecoder).ConfigureAwait(false);
@@ -125,6 +133,12 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
 
     private void OpenDecoder()
     {
+        if (channelMerge is { } sources)
+        {
+            merge = ChannelMergePreviewDecoder.TryCreate(sources)
+                ?? throw new VideoDecoderUnavailableException("channel merge");
+            return;
+        }
         if (dolbyEProgram is { } program)
         {
             dolbyE = DolbyEProgramDecoder.TryCreate(audioStream, program)
@@ -223,6 +237,7 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
         cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
         decoder?.FlushBuffers();
         dolbyE?.Flush();
+        merge?.Flush();
         resampler.Dispose();
         resampler = new();
         reusableFrame?.Unref();
@@ -318,6 +333,12 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
 
     private bool DecodeAndWrite(Packet? packet, Frame destination, CancellationToken token)
     {
+        if (merge is not null)
+        {
+            var reached = false;
+            merge.Decode(packet, frame => reached = reached || WriteFrame(frame, token));
+            return reached;
+        }
         if (dolbyE is not null)
         {
             var reached = false;
@@ -422,6 +443,7 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
         device.Dispose();
         decoder?.Dispose();
         dolbyE?.Dispose();
+        merge?.Dispose();
         reusableFrame?.Dispose();
         resampler.Dispose();
         cancellation.Dispose();

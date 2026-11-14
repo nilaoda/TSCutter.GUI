@@ -34,6 +34,8 @@ public sealed record PlaybackOptions
     public PreviewStreamSelection? AudioSelection { get; init; }
     /// <summary>所选音轨是杜比 E 时播放的声道组序号（从 1 开始）；null 表示普通音轨。</summary>
     public int? AudioDolbyEProgram { get; init; }
+    /// <summary>多轨合并试听的三条来源（前置在前）；null 表示只播放所选音轨。</summary>
+    public System.Collections.Generic.IReadOnlyList<PreviewChannelMergeSource>? AudioChannelMerge { get; init; }
     /// <summary>TS 同步字节偏移（损坏前缀跳过），与导航预览一致；-1 表示不偏移。</summary>
     public long TsSyncOffset { get; init; } = -1;
     /// <summary>呈现位图的最大宽高（按预览区域换算），0 表示原始尺寸。</summary>
