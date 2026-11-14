@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -19,6 +20,7 @@ public class AppConfig : ObservableObject
     private bool _preferHardwareDecoding = IsHardwareDecodingSupported;
     private bool _showTimelineSegments = true;
     private InputPreferences _input = new();
+    private List<RecentItem> _recentItems = [];
 
     // 系统当前是否处于深色模式
     [JsonIgnore]
@@ -97,6 +99,13 @@ public class AppConfig : ObservableObject
     public string? HardwareDecodingDevice { get; set; }
     public string? FFmpegRootPath { get; set; }
     public ThumbnailSheetPreferences ThumbnailSheetPreferences { get; set; } = new();
+    // 最近打开的视频、光盘和工程；关闭记录时同时清空。
+    public bool RememberRecentItems { get; set; } = true;
+    public List<RecentItem> RecentItems
+    {
+        get => _recentItems;
+        set => _recentItems = RecentItemList.Normalize(value);
+    }
     // 鼠标滚轮行为；整体替换以便界面通过属性通知同步，读入时把取值改回允许的范围。
     public InputPreferences Input
     {

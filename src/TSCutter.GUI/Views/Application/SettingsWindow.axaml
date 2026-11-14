@@ -87,6 +87,17 @@
                         </StackPanel>
                         <CheckBox IsChecked="{Binding AutoCheckForUpdates}"
                                   Content="{DynamicResource String.Settings.AutoCheckForUpdates}" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <CheckBox IsChecked="{Binding RememberRecentItems}" VerticalAlignment="Center"
+                                      Content="{DynamicResource String.Settings.RememberRecentItems}">
+                                <ToolTip.Tip>
+                                    <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                               Text="{DynamicResource String.Settings.RememberRecentItemsTip}" />
+                                </ToolTip.Tip>
+                            </CheckBox>
+                            <Button Content="{DynamicResource String.Recent.Clear}"
+                                    Command="{Binding ClearRecentItemsCommand}" />
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

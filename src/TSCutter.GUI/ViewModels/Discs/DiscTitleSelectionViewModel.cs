@@ -5,6 +5,7 @@ using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
+using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Services.Discs;
 using TSCutter.GUI.Utils;
@@ -50,7 +51,8 @@ public partial class DiscTitleSelectionViewModel : ViewModelBase, IModalDialogVi
 
     partial void OnSelectedRowChanged(DiscTitleRow? value) => ConfirmCommand.NotifyCanExecuteChanged();
 
-    internal void Initialize(string sourcePath, DiscScanResult scan)
+    /// <param name="previous">从最近打开列表重新打开时上次选择的标题；找到时预先选中，找不到时仍选推荐标题。</param>
+    internal void Initialize(string sourcePath, DiscScanResult scan, (string? InputPath, int Title)? previous = null)
     {
         var kindText = scan.Kind == DiscKind.BluRay
             ? LocalizationManager.Instance.String_Disc_KindBluRay
@@ -69,9 +71,21 @@ public partial class DiscTitleSelectionViewModel : ViewModelBase, IModalDialogVi
                 DescribeDetails(title),
                 title.Recommended));
         }
-        SelectedRow = Titles.FirstOrDefault(row => row.Recommended) ?? Titles.FirstOrDefault();
+        SelectedRow = FindPrevious(previous)
+                      ?? Titles.FirstOrDefault(row => row.Recommended) ?? Titles.FirstOrDefault();
         OnPropertyChanged(nameof(Titles));
         OnPropertyChanged(nameof(Heading));
+    }
+
+    private DiscTitleRow? FindPrevious((string? InputPath, int Title)? previous)
+    {
+        if (previous is not { } wanted)
+            return null;
+        var matches = Titles.Where(row => row.Title.Number == wanted.Title).ToList();
+        // 文件夹中有多张光盘时同一标题号可能重复，按读取路径区分；只有一个同号标题时直接选中。
+        return matches.FirstOrDefault(row => wanted.InputPath is not null &&
+                                             RecentItemList.SamePath(row.Input.SourcePath, wanted.InputPath))
+               ?? (matches.Count == 1 ? matches[0] : null);
     }
 
     private static string DescribeNumber(DiscKind kind, int number) => kind == DiscKind.BluRay

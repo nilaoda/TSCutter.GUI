@@ -1807,4 +1807,18 @@
     <x:String x:Key="String.SilenceDetect.DolbyEGroup">group {0} ({1}) {2}</x:String>
     <x:String x:Key="String.SilenceDetect.GroupPeak">peak {0} dBFS</x:String>
     <x:String x:Key="String.SilenceDetect.SilentShort">silent</x:String>
+    <x:String x:Key="String.Recent.Menu">Open _Recent</x:String>
+    <x:String x:Key="String.Recent.Empty">No recent items</x:String>
+    <x:String x:Key="String.Recent.Clear">Clear List</x:String>
+    <x:String x:Key="String.Recent.StartHint">Drop a video, disc image or project here</x:String>
+    <x:String x:Key="String.Recent.StartShortcut">or press {0} to open a video</x:String>
+    <x:String x:Key="String.Recent.KindDisc">Disc</x:String>
+    <x:String x:Key="String.Recent.Missing">File not found</x:String>
+    <x:String x:Key="String.Recent.MissingConfirm">"{0}" can't be found. It may have been moved or deleted, or its drive isn't connected.&#10;&#10;Remove it from the recent list?</x:String>
+    <x:String x:Key="String.Recent.ClipCount">Clips: {0}</x:String>
+    <x:String x:Key="String.Recent.DiscTitle">Title {0}</x:String>
+    <x:String x:Key="String.Recent.Today">Today {0}</x:String>
+    <x:String x:Key="String.Recent.Yesterday">Yesterday {0}</x:String>
+    <x:String x:Key="String.Settings.RememberRecentItems">Remember recently opened files</x:String>
+    <x:String x:Key="String.Settings.RememberRecentItemsTip">Lists recently opened videos, discs and projects in File → Open Recent.&#10;Turning this off also clears the list.</x:String>
 </ResourceDictionary>

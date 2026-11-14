@@ -1807,4 +1807,18 @@
     <x:String x:Key="String.SilenceDetect.DolbyEGroup">聲道組 {0}（{1}）{2}</x:String>
     <x:String x:Key="String.SilenceDetect.GroupPeak">峰值 {0} dBFS</x:String>
     <x:String x:Key="String.SilenceDetect.SilentShort">靜音</x:String>
+    <x:String x:Key="String.Recent.Menu">最近開啟(_R)</x:String>
+    <x:String x:Key="String.Recent.Empty">沒有最近開啟的項目</x:String>
+    <x:String x:Key="String.Recent.Clear">清除清單</x:String>
+    <x:String x:Key="String.Recent.StartHint">把影片、光碟映像或專案拖到這裡</x:String>
+    <x:String x:Key="String.Recent.StartShortcut">或按 {0} 開啟影片</x:String>
+    <x:String x:Key="String.Recent.KindDisc">光碟</x:String>
+    <x:String x:Key="String.Recent.Missing">找不到檔案</x:String>
+    <x:String x:Key="String.Recent.MissingConfirm">找不到「{0}」，可能已被移動或刪除，或所在的磁碟未連接。&#10;&#10;要從最近開啟清單中移除嗎？</x:String>
+    <x:String x:Key="String.Recent.ClipCount">{0} 個片段</x:String>
+    <x:String x:Key="String.Recent.DiscTitle">標題 {0}</x:String>
+    <x:String x:Key="String.Recent.Today">今天 {0}</x:String>
+    <x:String x:Key="String.Recent.Yesterday">昨天 {0}</x:String>
+    <x:String x:Key="String.Settings.RememberRecentItems">記住最近開啟的檔案</x:String>
+    <x:String x:Key="String.Settings.RememberRecentItemsTip">在「檔案 → 最近開啟」中列出最近開啟的影片、光碟和專案。&#10;關閉後會同時清空清單。</x:String>
 </ResourceDictionary>

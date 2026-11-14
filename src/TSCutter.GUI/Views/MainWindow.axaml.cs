@@ -16,6 +16,7 @@ using TSCutter.GUI.Themes;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
+using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Preview;
 
@@ -131,6 +132,7 @@ public partial class MainWindow : ClassicWindow
         if (_boundViewModel is { } previous)
         {
             previous.Clips.CollectionChanged -= OnClipsCollectionChanged;
+            previous.RecentItems.CollectionChanged -= OnRecentItemsChanged;
             previous.PropertyChanged -= FullScreenViewModelChanged;
             previous.PropertyChanged -= CutModeViewModelChanged;
             if (previous.PlaybackTargetSizeProvider == GetPlaybackTargetSize)
@@ -143,10 +145,48 @@ public partial class MainWindow : ClassicWindow
         vm.PlaybackTargetSizeProvider = GetPlaybackTargetSize;
         vm.UpdatePlaybackPresentationSize();
         vm.Clips.CollectionChanged += OnClipsCollectionChanged;
+        vm.RecentItems.CollectionChanged += OnRecentItemsChanged;
         vm.PropertyChanged += FullScreenViewModelChanged;
         vm.PropertyChanged += CutModeViewModelChanged;
         SyncCutModeButton();
         SyncKeyFrameStripCapacity();
+        RebuildRecentMenu();
+    }
+
+    private void OnRecentItemsChanged(object? sender, NotifyCollectionChangedEventArgs e) => RebuildRecentMenu();
+
+    // 子菜单条目随列表重建（切换语言后列表也会重建）；macOS 原生菜单跟随 Items 的变化同步。
+    // 列表为空时保留一个不可用的提示项，菜单仍显示为子菜单。
+    private void RebuildRecentMenu()
+    {
+        var vm = _boundViewModel;
+        RecentMenu.Items.Clear();
+        if (vm is null || vm.RecentItems.Count == 0)
+        {
+            RecentMenu.Items.Add(new MenuItem
+            {
+                Header = LocalizationManager.Instance.String_Recent_Empty,
+                IsEnabled = false
+            });
+            return;
+        }
+        foreach (var row in vm.RecentItems)
+        {
+            var item = new MenuItem
+            {
+                Header = row.MenuHeader,
+                Command = vm.OpenRecentItemCommand,
+                CommandParameter = row
+            };
+            ToolTip.SetTip(item, row.ToolTip);
+            RecentMenu.Items.Add(item);
+        }
+        RecentMenu.Items.Add(new Separator());
+        RecentMenu.Items.Add(new MenuItem
+        {
+            Header = LocalizationManager.Instance.String_Recent_Clear,
+            Command = vm.ClearRecentItemsCommand
+        });
     }
 
     private void CutModeViewModelChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
