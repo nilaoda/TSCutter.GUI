@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models.TransportStream.Analysis;
@@ -112,6 +113,7 @@ public sealed class TsTimelineRepairService
         var buffer = ArrayPool<byte>.Shared.Rent(readBufferSize + PacketSize);
         var pcrStates = new Dictionary<int, OutputPcrState>();
         var streamSegments = BuildStreamSegmentMap(analysis);
+        var lastTimestamps = new Dictionary<int, long>();
         long bytesProcessed = 0;
         long packetIndex = 0;
         long rewrittenPcrCount = 0;
@@ -177,7 +179,7 @@ public sealed class TsTimelineRepairService
 
                     // TEI 包的 payload 已被发送端标记为不可靠；即使字节形状恰好像 PES，也不能改写其中的时间戳。
                     if (!transportError && synchronizePtsDts && streamSegments.TryGetValue(pid, out var segments))
-                        rewrittenTimestampCount += PatchPacketTimestamps(packet, packetIndex, segments);
+                        rewrittenTimestampCount += PatchPacketTimestamps(packet, packetIndex, pid, segments, lastTimestamps);
                 }
 
                 await output.WriteAsync(buffer.AsMemory(0, completeBytes), cancellationToken).ConfigureAwait(false);
@@ -251,6 +253,7 @@ public sealed class TsTimelineRepairService
         private readonly List<TsTimelineCorrectionSegment> _segments;
         private readonly Dictionary<int, List<TsTimelineCorrectionSegment>> _streamSegments;
         private readonly Dictionary<int, OutputPcrState> _pcrStates = [];
+        private readonly Dictionary<int, long> _lastTimestamps = [];
 
         public OutputPacketRewriter(
             TsTimelineRepairAnalysis analysis,
@@ -325,7 +328,7 @@ public sealed class TsTimelineRepairService
             }
 
             if (applyTimestampCorrection && _streamSegments.TryGetValue(pid, out var segments))
-                RewrittenTimestampCount += PatchPacketTimestamps(packet, packetIndex, segments);
+                RewrittenTimestampCount += PatchPacketTimestamps(packet, packetIndex, pid, segments, _lastTimestamps);
         }
     }
 
@@ -873,10 +876,19 @@ public sealed class TsTimelineRepairService
         return result;
     }
 
+    // PES 在文件中的位置可能与 PCR 跳变点错开：音频通常比同一时刻的视频晚复用，跳变点之后还会出现几个
+    // 跳变前的音频 PES（反之亦然）。只按包位置决定修正量会把它们改到另一条时间线上。跳变点附近、修正量
+    // 超过 1 秒时，按该 PID 上一个时间戳判断这个 PES 属于跳变前还是跳变后，选择与之衔接的修正量。
+    private const long BoundaryWindowPackets = 16_384;
+    private const long BoundaryMinimumCorrection90k = 90_000;
+    private const long TimestampWrap = 1L << 33;
+
     private static int PatchPacketTimestamps(
         Span<byte> packet,
         long packetIndex,
-        List<TsTimelineCorrectionSegment> segments)
+        int pid,
+        List<TsTimelineCorrectionSegment> segments,
+        Dictionary<int, long> lastTimestamps)
     {
         // 先确认当前包确实携带 PTS/DTS，再计算异常区段修正量，避免普通负载包
         // 在高码率文件中反复遍历时间轴方案。
@@ -887,8 +899,63 @@ public sealed class TsTimelineRepairService
         }
 
         var correction = FindTimestampCorrection(segments, packetIndex);
+        // 有 DTS 时按 DTS 衔接（视频的 PTS 随重排序前后跳动）。每个 PES 只查一次字典。
+        var raw = TsTimestampFieldCodec.ReadPesTimestamp(packet.Slice(dtsOffset >= 0 ? dtsOffset : ptsOffset, 5));
+        ref var previous = ref CollectionsMarshal.GetValueRefOrAddDefault(lastTimestamps, pid, out var known);
+        if (known)
+            correction = ChooseBoundaryCorrection(segments, packetIndex, raw, previous, correction);
+        previous = Modulo(raw + correction);
         return TsTimestampFieldCodec.RewritePesTimestamps(
             packet, correction, ptsOffset, dtsOffset);
+    }
+
+    /// <summary>
+    /// 跳变点附近的 PES：比较“加上该区段修正量”与“不加”两种结果，哪一种与同一 PID 上一个时间戳衔接得明显更好就用哪一种。
+    /// 远离所有边界的 PES 只做边界距离判断，不分配内存。
+    /// </summary>
+    private static long ChooseBoundaryCorrection(
+        List<TsTimelineCorrectionSegment> segments,
+        long packetIndex,
+        long raw,
+        long previous,
+        long correction)
+    {
+        var best = correction;
+        var bestDistance = -1L;
+        foreach (var segment in segments)
+        {
+            for (var side = 0; side < 2; side++)
+            {
+                var boundary = side == 0 ? segment.StartPacket : segment.EndPacketExclusive;
+                if (boundary == long.MaxValue || Math.Abs(packetIndex - boundary) > BoundaryWindowPackets)
+                    continue;
+                // 区段在边界内侧的修正量：包在区段内时去掉它，在区段外时加上它。
+                var inside = packetIndex >= segment.StartPacket && packetIndex < segment.EndPacketExclusive;
+                var edge = side == 0 ? segment.StartPacket : segment.EndPacketExclusive - 1;
+                var value = segment.GetCorrection90k(inside ? packetIndex : edge);
+                if (Math.Abs(value) < BoundaryMinimumCorrection90k)
+                    continue;
+                if (bestDistance < 0)
+                    bestDistance = Distance(raw + correction, previous);
+                var alternative = inside ? correction - value : correction + value;
+                var distance = Distance(raw + alternative, previous);
+                if (distance < bestDistance && bestDistance - distance > Math.Abs(value) / 2)
+                {
+                    best = alternative;
+                    bestDistance = distance;
+                }
+            }
+        }
+        return best;
+    }
+
+    private static long Modulo(long timestamp) => (timestamp % TimestampWrap + TimestampWrap) % TimestampWrap;
+
+    /// <summary>两个 33 位时间戳之间的最短距离（考虑回绕）。</summary>
+    private static long Distance(long a, long b)
+    {
+        var difference = Modulo(a - b);
+        return Math.Min(difference, TimestampWrap - difference);
     }
 
     private static long FindTimestampCorrection(List<TsTimelineCorrectionSegment> segments, long packetIndex)
