@@ -71,7 +71,7 @@ public sealed class DolbyEExportWorkflowTests
                 Assert.Null(output.Exception);
                 Assert.Equal([0, 1], output.CompletedTaskIndices);
                 // 轨道不在节目表里，没有实际转码，导出结果不标记杜比 E 转码。
-                Assert.All(output.Outcomes, outcome => Assert.False(outcome.DolbyETranscoded));
+                Assert.All(output.Outcomes, outcome => Assert.Equal(ExportModifiers.None, outcome.Modifiers));
             });
             Assert.Equal(File.ReadAllBytes(source).AsSpan(0, (int)length).ToArray(), File.ReadAllBytes(copy));
             Assert.True(new FileInfo(smart).Length > 0);

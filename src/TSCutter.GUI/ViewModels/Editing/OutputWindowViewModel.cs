@@ -25,7 +25,7 @@ public record BatchTask(string SourcePath, string DestinationPath, long StartPos
     RemuxExportSettings? RemuxSettings = null, double StartSeconds = 0, double? EndSeconds = null,
     FrameAccurateExportSettings? FrameAccurate = null, long StartPts = 0, long? EndPts = null,
     string? StartSignature = null, string? EndSignature = null, int AudioDelayMs = 0, int? AudioDelayProgramId = null,
-    DolbyEExportPlan? DolbyE = null);
+    DolbyEExportPlan? DolbyE = null, IReadOnlyList<int>? ExcludedPids = null);
 
 public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
@@ -83,6 +83,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     public int? AudioDelayProgramId { get; set; }
     /// <summary>单个导出、合并与删除模式导出的杜比 E 转码计划；批量任务的计划在各自的 <see cref="BatchTask"/> 中。</summary>
     public DolbyEExportPlan? DolbyE { get; set; }
+    /// <summary>单个导出、合并与删除模式导出时不输出的 TS 轨道（PID）；批量任务的选择在各自的 <see cref="BatchTask"/> 中。</summary>
+    public IReadOnlyList<int>? ExcludedPids { get; set; }
     public long StartPts { get; set; }
     public long? EndPts { get; set; }
     /// <summary>单个 DVD 片段的起止画面签名（关键帧剪辑为切点关键帧，智能剪辑为附近关键帧与偏移）；其他来源为 null。</summary>
@@ -119,11 +121,18 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     }
 
     private ExportTaskOutcome RegisterOutcome(string outputPath, bool success, ExportTsCheckSession? session,
-        ExportKind kind, bool checkApplicable, TimeSpan elapsed)
+        ExportKind kind, bool checkApplicable, TimeSpan elapsed, ExportModifiers modifiers = ExportModifiers.None,
+        int audioDelayMs = 0)
     {
-        // 转码标记只属于本次任务，取出后立即清零，避免带到后续任务。
-        var dolbyETranscoded = success && _dolbyETranscoded;
-        _dolbyETranscoded = false;
+        // 重组标记只属于本次任务，取出后立即清零，避免带到后续任务。
+        if (success)
+            modifiers |= _rebuildModifiers;
+        _rebuildModifiers = ExportModifiers.None;
+        if ((modifiers & ExportModifiers.AudioDelay) == 0)
+            audioDelayMs = 0;
+        // 有任何改动的单段 TS 不再是字节复制。
+        if (kind == ExportKind.TsCopy && modifiers != ExportModifiers.None)
+            kind = ExportKind.TsPacket;
         long? recordId = null;
         if (success && !IsRawByteRange && App.ExportRecordRegistry is { } registry)
         {
@@ -149,7 +158,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 Timestamp = DateTime.Now,
                 OutputPath = outputPath,
                 Kind = kind,
-                DolbyETranscoded = dolbyETranscoded,
+                Modifiers = modifiers,
+                AudioDelayMs = audioDelayMs,
                 FileSize = fileLength,
                 Elapsed = elapsed,
                 ClipCount = _exportClipCount,
@@ -168,7 +178,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             };
             recordId = registry.Register(record).Id;
         }
-        var outcome = new ExportTaskOutcome(recordId, outputPath, success, elapsed, kind, dolbyETranscoded);
+        var outcome = new ExportTaskOutcome(recordId, outputPath, success, elapsed, kind, modifiers, audioDelayMs);
         Outcomes.Add(outcome);
         return outcome;
     }
@@ -250,18 +260,20 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             var checkApplicable = frameAccurate.Segments[0].Settings.Container is "ts" or "m2ts";
             var session = CreateCheckSession(frameAccurate.OutputPath, checkApplicable);
             var stopwatch = Stopwatch.StartNew();
+            var delay = frameAccurate.Segments[0].Settings.AudioDelayMs;
             try
             {
                 CurrentFileName = Path.GetFileName(frameAccurate.OutputPath);
                 SetExportClipInfo(frameAccurate.Segments.Count, _frameAccurateRangeSummary);
-                await ExportWithDolbyEAsync(frameAccurate.Segments[0].SourcePath, frameAccurate.OutputPath,
-                    checkApplicable ? DolbyE : null, session,
+                await ExportWithRebuildAsync(frameAccurate.Segments[0].SourcePath, frameAccurate.OutputPath,
+                    checkApplicable ? DolbyE : null, checkApplicable ? ExcludedPids : null, session,
                     (_, check) => ExportFrameAccurateAsync(frameAccurate, ++_copyGeneration, check));
                 await CompleteCheckAsync(session);
                 Percent = 100;
                 RemainingSeconds = 0;
                 DialogResult = true;
-                RegisterOutcome(frameAccurate.OutputPath, true, session, ExportKind.FrameAccurate, checkApplicable, stopwatch.Elapsed);
+                RegisterOutcome(frameAccurate.OutputPath, true, session, ExportKind.FrameAccurate, checkApplicable, stopwatch.Elapsed,
+                    DelayModifier(delay), delay);
             }
             catch (OperationCanceledException)
             {
@@ -295,7 +307,9 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 Percent = 100;
                 RemainingSeconds = 0;
                 DialogResult = true;
-                RegisterOutcome(media.OutputPath, true, session, ContainerKind(container), checkApplicable, stopwatch.Elapsed);
+                var delay = media.Segments[0].Settings.AudioDelayMs;
+                RegisterOutcome(media.OutputPath, true, session, ContainerKind(container), checkApplicable, stopwatch.Elapsed,
+                    DelayModifier(delay), delay);
             }
             catch (OperationCanceledException)
             {
@@ -318,26 +332,29 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             return;
         var mergeSession = CreateCheckSession(request.OutputPath, checkApplicable: true);
         var mergeStopwatch = Stopwatch.StartNew();
+        var mergeDelay = (int)Math.Round(request.AudioOffset90k / 90.0);
+        var mergeModifiers = DelayModifier(mergeDelay) |
+                             (request.ProgramId is null ? ExportModifiers.None : ExportModifiers.ProgramOnly) |
+                             (supplementOutput ? ExportModifiers.TablesSupplemented : ExportModifiers.None);
         try
         {
             CurrentFileName = Path.GetFileName(request.OutputPath);
             SetExportClipInfo(request.Ranges.Count, FormatRangeList(
                 request.Ranges.Select(item => (item.StartTimeSeconds, (double?)item.EndTimeSeconds))));
-            await ExportWithDolbyEAsync(request.SourcePath, request.OutputPath, DolbyE, mergeSession,
+            await ExportWithRebuildAsync(request.SourcePath, request.OutputPath, DolbyE, ExcludedPids, mergeSession,
                 (_, check) => ExportTsAsync(request, ++_copyGeneration, supplementOutput, check)).ConfigureAwait(true);
             await CompleteCheckAsync(mergeSession);
             Percent = 100;
             RemainingSeconds = 0;
             DialogResult = true;
-            RegisterOutcome(request.OutputPath, true, mergeSession,
-                request.ProgramId is null ? ExportKind.TsMerge : ExportKind.TsProgramOnly, true, mergeStopwatch.Elapsed);
+            RegisterOutcome(request.OutputPath, true, mergeSession, ExportKind.TsMerge, true, mergeStopwatch.Elapsed,
+                mergeModifiers, mergeDelay);
             RequestClose?.Invoke();
         }
         catch (OperationCanceledException)
         {
             mergeSession?.Abort();
-            RegisterOutcome(request.OutputPath, false, mergeSession,
-                request.ProgramId is null ? ExportKind.TsMerge : ExportKind.TsProgramOnly, true, mergeStopwatch.Elapsed);
+            RegisterOutcome(request.OutputPath, false, mergeSession, ExportKind.TsMerge, true, mergeStopwatch.Elapsed);
             Console.WriteLine("TS clip merge was canceled.");
             DialogResult = false;
             RequestClose?.Invoke();
@@ -345,13 +362,15 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         catch (Exception exception)
         {
             mergeSession?.Abort();
-            RegisterOutcome(request.OutputPath, false, mergeSession,
-                request.ProgramId is null ? ExportKind.TsMerge : ExportKind.TsProgramOnly, true, mergeStopwatch.Elapsed);
+            RegisterOutcome(request.OutputPath, false, mergeSession, ExportKind.TsMerge, true, mergeStopwatch.Elapsed);
             Exception = exception;
             DialogResult = false;
             RequestClose?.Invoke();
         }
     }
+
+    private static ExportModifiers DelayModifier(int delayMs) =>
+        delayMs != 0 ? ExportModifiers.AudioDelay : ExportModifiers.None;
 
     private static ExportKind ContainerKind(string container) => container switch
     {
@@ -436,7 +455,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _lastUpdateTime = _startTime;
             await CopyClipAsync(new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId,
                 RemuxSettings, StartSeconds, EndSeconds, FrameAccurate, StartPts, EndPts, StartSignature, EndSignature,
-                AudioDelayMs, AudioDelayProgramId, DolbyE));
+                AudioDelayMs, AudioDelayProgramId, DolbyE, ExcludedPids));
             Percent = 100;
             RemainingSeconds = 0;
             DialogResult = true;
@@ -478,29 +497,32 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     public bool IsRawByteRange { get; set; }
 
-    // 当前任务是否实际转码了杜比 E，登记导出记录时使用。
-    private bool _dolbyETranscoded;
+    // 当前任务在重组时实际做过的改动（杜比 E 转码、删去未选轨道），登记导出记录时使用。
+    private ExportModifiers _rebuildModifiers;
 
     /// <summary>
-    /// 有杜比 E 转码计划时，导出服务打开的输出文件换成重组流，写出时一遍完成转码与重组；导出检测由重组流接收最终字节，
-    /// 因此不再交给导出服务。导出成功后提交独立的 FLAC 文件；失败时删除不完整的输出。没有计划时直接导出。
+    /// 有杜比 E 转码计划或轨道选择时，导出服务打开的输出文件换成重组流，写出时一遍完成转码、删去未选轨道与重组；
+    /// 导出检测由重组流接收最终字节，因此不再交给导出服务。导出成功后提交独立的 FLAC 文件；失败时删除不完整的输出。
+    /// 两者都没有时直接导出。
     /// </summary>
-    private async Task ExportWithDolbyEAsync(string sourcePath, string outputPath, DolbyEExportPlan? plan,
-        ExportTsCheckSession? session, Func<string, ExportTsCheckSession?, Task> export)
+    private async Task ExportWithRebuildAsync(string sourcePath, string outputPath, DolbyEExportPlan? plan,
+        IReadOnlyList<int>? excludedPids, ExportTsCheckSession? session, Func<string, ExportTsCheckSession?, Task> export)
     {
-        _dolbyETranscoded = false;
-        if (plan is not { HasWork: true })
+        _rebuildModifiers = ExportModifiers.None;
+        var transcode = plan is { HasWork: true };
+        if (!transcode && excludedPids is not { Count: > 0 })
         {
             await export(outputPath, session);
             return;
         }
-        var setup = new Services.Editing.DolbyE.DolbyERemuxSetup(plan, sourcePath, outputPath, session);
+        var setup = new Services.Editing.DolbyE.DolbyERemuxSetup(plan, sourcePath, outputPath, session, excludedPids);
         Services.Editing.DolbyE.TsOutputFile.Current = setup;
         try
         {
             await export(outputPath, null);
-            // 没有经过重组流的导出路径（例如由封装器写出的输出）不支持转码。
-            var failure = setup.Error ?? (setup.StreamCount == 0
+            // 没有经过重组流的导出路径（例如由封装器写出的输出）不支持转码；
+            // 这类路径（智能剪辑由复用器写出时）已按轨道选择建立输出流，不需要再删去轨道。
+            var failure = setup.Error ?? (setup.StreamCount == 0 && transcode
                 ? new NotSupportedException("This export path does not support Dolby E transcoding.") : null);
             if (failure is not null)
             {
@@ -509,7 +531,10 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                     failure.Message), failure);
             }
             setup.Commit();
-            _dolbyETranscoded = setup.Changed;
+            if (setup.Changed)
+                _rebuildModifiers |= ExportModifiers.DolbyETranscoded;
+            if (setup.TracksRemoved || setup.StreamCount == 0 && excludedPids is { Count: > 0 })
+                _rebuildModifiers |= ExportModifiers.TracksSelected;
         }
         catch
         {
@@ -538,21 +563,28 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private async Task CopyClipAsync(BatchTask task)
     {
         var (kind, checkApplicable) = ResolveTaskKind(task);
-        if (AddsProgramTablesTo(task.DestinationPath))
-            (kind, checkApplicable) = (ExportKind.TsProgramTablesSupplement, true);
-        else if (task.ProgramId is not null)
-            (kind, checkApplicable) = (ExportKind.TsProgramOnly, true);
+        var addTables = AddsProgramTablesTo(task.DestinationPath);
+        var delay = task.FrameAccurate?.AudioDelayMs ?? task.RemuxSettings?.AudioDelayMs ??
+            (IsRawByteRange ? 0 : task.AudioDelayMs);
+        var modifiers = DelayModifier(delay);
+        if (kind == ExportKind.TsCopy)
+        {
+            if (addTables)
+                modifiers |= ExportModifiers.TablesSupplemented;
+            if (task.ProgramId is not null)
+                modifiers |= ExportModifiers.ProgramOnly;
+        }
         var session = CreateCheckSession(task.DestinationPath, checkApplicable);
         SetExportClipInfo(1, FormatRange(task.StartSeconds, task.EndSeconds));
         var stopwatch = Stopwatch.StartNew();
-        var addTables = AddsProgramTablesTo(task.DestinationPath);
         var producesTs = task.RemuxSettings is null && task.FrameAccurate?.Container is null or "ts" or "m2ts";
+        var rebuild = producesTs && !IsRawByteRange;
         try
         {
-            await ExportWithDolbyEAsync(task.SourcePath, task.DestinationPath, producesTs && !IsRawByteRange ? task.DolbyE : null,
-                session, (_, check) => CopyClipCoreAsync(task, check, addTables));
+            await ExportWithRebuildAsync(task.SourcePath, task.DestinationPath, rebuild ? task.DolbyE : null,
+                rebuild ? task.ExcludedPids : null, session, (_, check) => CopyClipCoreAsync(task, check, addTables));
             await CompleteCheckAsync(session);
-            RegisterOutcome(task.DestinationPath, true, session, kind, checkApplicable, stopwatch.Elapsed);
+            RegisterOutcome(task.DestinationPath, true, session, kind, checkApplicable, stopwatch.Elapsed, modifiers, delay);
         }
         catch
         {

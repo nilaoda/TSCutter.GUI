@@ -13,7 +13,11 @@ Files with multiple programs, video tracks, or embedded subtitles show selectors
 
 For multi-program TS, “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks. Projects using newer editing features require a compatible app version.
 
-In keyframe mode, an ordinary single-clip TS/M2TS export copies the original bytes when all programs are retained and program tables are not patched. Merged and remuxed exports adjust some structures or timestamps and are not byte-for-byte copies.
+In keyframe mode, an ordinary single-clip TS/M2TS export copies the original bytes when all programs and tracks are retained, program tables are not patched and no audio delay is set. Merged and remuxed exports adjust some structures or timestamps and are not byte-for-byte copies.
+
+For TS/M2TS files, Export settings below the clip list lets you uncheck tracks you don't need (the current video can't be unchecked). Unchecked tracks are removed from the output and dropped from the program tables; all other packets are copied unchanged. The selection is saved with the project and the export queue, and applies to keyframe cuts and Smart cut.
+
+Export records and the result window label each export by what was actually done: only an untouched copy is called “TS byte copy”; a single clip with any change is called “TS packet export”, with tags for current program only, program tables added, tracks selected, audio delay and Dolby E transcoding.
 
 After saving a clip, merging clips or exporting in remove mode, a result window shows the output location, size, elapsed time and average speed, the clip content, the Smart cut re-encoding share and the TS check result, with buttons to open the file, show it in its folder or copy a summary. Failed exports show the error in the same window; cancelled exports show nothing and remove the unfinished file. After choosing “Don't show again” or turning the option off in Settings, successful exports no longer open the window, while failures still do. The export queue and other batch exports do not use this window; see Export records for their results.
 

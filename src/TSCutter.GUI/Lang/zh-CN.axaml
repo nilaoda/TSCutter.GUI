@@ -381,8 +381,7 @@
     <x:String x:Key="String.Export_Check_Category_Tail">文件末尾有残余数据</x:String>
     <x:String x:Key="String.Export_Check_Category_Other">其他异常</x:String>
     <x:String x:Key="String.Export_Kind_TsCopy">TS 字节复制</x:String>
-    <x:String x:Key="String.Export_Kind_TsProgramOnly">TS（仅当前节目）</x:String>
-    <x:String x:Key="String.Export_Kind_TsProgramTablesSupplement">TS（补充节目表）</x:String>
+    <x:String x:Key="String.Export_Kind_TsPacket">TS 原包导出</x:String>
     <x:String x:Key="String.Export_Kind_TsMerge">TS 合并</x:String>
     <x:String x:Key="String.Export_Kind_M2tsRemux">M2TS 重封装</x:String>
     <x:String x:Key="String.Export_Kind_Mp4Remux">MP4 重封装</x:String>
@@ -1717,6 +1716,16 @@
     <x:String x:Key="String.DolbyE.Failed">杜比 E 转码失败：{0}</x:String>
     <x:String x:Key="String.DolbyE.Config.71Screen">7.1（屏幕声道）</x:String>
     <x:String x:Key="String.DolbyE.GroupsHint">杜比 E 在一条音轨里打包了多个声道组（例如 5.1 主混音和立体声），转码后每个声道组成为一条独立音轨。</x:String>
-    <x:String x:Key="String.Export_Kind_TsDolbyE">TS（杜比 E 转码）</x:String>
     <x:String x:Key="String.Export_Tag_DolbyE">杜比 E 转码</x:String>
+    <x:String x:Key="String.Export_Tag_ProgramOnly">仅当前节目</x:String>
+    <x:String x:Key="String.Export_Tag_TablesSupplemented">补充节目表</x:String>
+    <x:String x:Key="String.Export_Tag_TracksSelected">已选轨道</x:String>
+    <x:String x:Key="String.Export_Tag_AudioDelay">音频延迟 {0} ms</x:String>
+    <!-- TS 导出的轨道选择 -->
+    <x:String x:Key="String.TsTracks.SameAsSource">与源文件相同（{0}）</x:String>
+    <x:String x:Key="String.TsTracks.TrackHint">按 PID 排序 · 当前视频必选</x:String>
+    <x:String x:Key="String.TsTracks.Notice">全部保留时按原样复制。取消勾选的轨道从输出中删除，节目表中的对应条目一并去掉，其余数据包原样复制。</x:String>
+    <x:String x:Key="String.TsTracks.FrameAccurateHint">智能剪辑只输出预览视频所在节目的音视频和字幕。</x:String>
+    <x:String x:Key="String.TsTracks.SummaryAll">输出全部 {0} 条轨道</x:String>
+    <x:String x:Key="String.TsTracks.Summary">输出 {0}/{1} 条轨道 · 改写节目表</x:String>
 </ResourceDictionary>

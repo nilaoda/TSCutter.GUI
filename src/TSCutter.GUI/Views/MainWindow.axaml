@@ -255,7 +255,7 @@
                         <MenuItem Header="{DynamicResource String.MergeClips.Menu}"
                                   Command="{Binding MergeSelectedClipsCommand}" />
                         <MenuItem Header="{DynamicResource String.RemuxExport.Options}"
-                                  IsVisible="{Binding IsRemuxExport}" Command="{Binding RemuxExportOptionsCommand}" />
+                                  IsVisible="{Binding ShowsExportSettings}" Command="{Binding RemuxExportOptionsCommand}" />
                         <MenuItem Header="{DynamicResource String.Menu.ExportQueue}"
                                   Command="{Binding BatchExportQueueCommand}" />
                         <MenuItem Header="{DynamicResource String.Menu.ExportRecords}"
@@ -761,6 +761,18 @@
                                                 <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,0" IsVisible="{Binding IsRemuxExport}">
                                                     <TextBlock Text="{DynamicResource String.RemuxExport.Notice}" TextWrapping="Wrap" FontSize="11" />
                                                     <Button Content="{DynamicResource String.RemuxExport.Options}" Command="{Binding RemuxExportOptionsCommand}" />
+                                                </StackPanel>
+                                                <!-- TS 原包导出：显示输出几条轨道，删去了轨道时按钮带一个圆点。 -->
+                                                <StackPanel DockPanel.Dock="Bottom" Spacing="4" Margin="0,4,0,0" IsVisible="{Binding IsTsTrackExport}">
+                                                    <TextBlock Text="{Binding TsTrackSummary}" TextWrapping="Wrap" FontSize="11" />
+                                                    <Button Command="{Binding RemuxExportOptionsCommand}">
+                                                        <StackPanel Orientation="Horizontal" Spacing="4">
+                                                            <TextBlock VerticalAlignment="Center" Text="{DynamicResource String.RemuxExport.Options}" />
+                                                            <Ellipse Width="7" Height="7" VerticalAlignment="Center"
+                                                                     IsVisible="{Binding HasTsTrackSelection}"
+                                                                     Fill="{DynamicResource {x:Static commonControls:SystemColors.HighlightBrushKey}}" />
+                                                        </StackPanel>
+                                                    </Button>
                                                 </StackPanel>
                                                 <Grid DockPanel.Dock="Bottom"
                                                       ColumnDefinitions="*,*"

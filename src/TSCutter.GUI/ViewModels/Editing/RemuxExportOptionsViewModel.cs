@@ -15,6 +15,9 @@ public partial class RemuxExportTrackChoice : ObservableObject
     public string Description { get; init; } = "";
     public bool CanChange { get; init; } = true;
     public bool IsTextSubtitle { get; init; }
+    /// <summary>分组标题（TS 多节目时的节目名），只在每组第一条轨道上；没有分组时为空。</summary>
+    public string GroupHeader { get; init; } = "";
+    public bool HasGroupHeader => GroupHeader.Length > 0;
     [ObservableProperty] private bool _isSelected;
 }
 
@@ -22,6 +25,12 @@ public partial class RemuxExportOptionsViewModel : ViewModelBase, IModalDialogVi
 {
     public IReadOnlyList<string> Containers { get; private set; } = ["mp4", "mkv"];
     public bool IsVobOutput => Container == "vob";
+    /// <summary>TS 原包导出：封装与源文件相同，只能选择轨道（<see cref="RemuxExportTrackChoice.Index"/> 为 PID）。</summary>
+    public bool IsTsOutput { get; private set; }
+    public bool IsRemuxOutput => !IsTsOutput;
+    public string TsContainerText { get; private set; } = "";
+    /// <summary>当前为智能剪辑：只输出预览视频所在节目的音视频和字幕。</summary>
+    public bool ShowsFrameAccurateHint { get; private set; }
     partial void OnContainerChanged(string value) => OnPropertyChanged(nameof(IsVobOutput));
     [ObservableProperty] private string _container = "mp4";
     [ObservableProperty] private bool _fastSubtitleSeek = true;
@@ -50,6 +59,16 @@ public partial class RemuxExportOptionsViewModel : ViewModelBase, IModalDialogVi
         }
         OnPropertyChanged(nameof(CanUseFastSubtitleSeek));
     }
+
+    internal void InitializeTs(string container, IEnumerable<RemuxExportTrackChoice> tracks, bool frameAccurate)
+    {
+        IsTsOutput = true;
+        TsContainerText = string.Format(Utils.Application.LocalizationManager.Instance.String_TsTracks_SameAsSource,
+            container.ToUpperInvariant());
+        ShowsFrameAccurateHint = frameAccurate;
+        Tracks.AddRange(tracks);
+    }
+
     public bool? DialogResult { get; private set; }
     public event Action? RequestClose;
 

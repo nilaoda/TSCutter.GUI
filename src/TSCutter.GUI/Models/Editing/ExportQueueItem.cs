@@ -37,6 +37,8 @@ public partial class ExportQueueItem : ObservableObject
     public int? AudioDelayProgramId { get; init; }
     /// <summary>杜比 E 转码计划（加入队列时的快照）；不转码时为 null。</summary>
     public Media.DolbyEExportPlan? DolbyE { get; init; }
+    /// <summary>TS 导出时不输出的轨道（PID，加入队列时的快照）；全部保留时为 null。</summary>
+    public System.Collections.Generic.IReadOnlyList<int>? ExcludedPids { get; init; }
 
     public string SourceFilePath { get; init; } = "";
 

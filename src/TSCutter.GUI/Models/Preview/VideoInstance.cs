@@ -99,6 +99,10 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         : CanRemuxClip ? inFc.InputFormat!.Name.Split(',').Contains("mov") ? "mp4" : "mkv"
         : PacketLayout.Extension;
     internal IReadOnlyList<RemuxExportTrack> ExportTracks { get; private set; } = [];
+    /// <summary>可按字节剪辑的 TS 中可选的轨道（按 PID，节目表中列出的基本流）；其他来源为空。</summary>
+    internal IReadOnlyList<TsExportTrack> TsExportTracks { get; private set; } = [];
+    /// <summary>预览视频的 PID（TS 中为流 ID）；导出时这条轨道不能取消。</summary>
+    internal int VideoPid => inVideoStream.Id;
     internal RemuxExportSettings CreateExportSettings() => new()
     {
         Container = ClipExtension, ReferenceVideoIndex = videoStreamIndex,
@@ -254,6 +258,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         CanBinaryClip = isMpegTs && tsProbe.IsSupportedTransportStream;
         CanRemuxClip = Disc is not null || Services.Editing.RemuxExportService.IsSupportedInput(inFc.InputFormat?.Name);
         if (CanRemuxClip) ExportTracks = Services.Editing.RemuxExportService.DescribeTracks(inFc);
+        else if (CanBinaryClip) TsExportTracks = DescribeTsTracks();
         PacketLayout = tsProbe.Layout;
         if (isMpegTs)
             PacketLayout.RequireSupported();
@@ -1554,6 +1559,18 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
 
     /// <summary>可读取 EPG 的录制：文件形式的 TS（光盘标题与其他封装没有 EIT）。</summary>
     internal bool CanReadEpg => Disc is null && !AudioMode && inFc.InputFormat?.Name == "mpegts";
+
+    /// <summary>TS 的可选轨道：节目中列出的每个 PID 一条（同一 PID 出现在多个节目中时只列一次），按 PID 排序。</summary>
+    private IReadOnlyList<TsExportTrack> DescribeTsTracks()
+    {
+        var described = Services.Editing.RemuxExportService.DescribeTracks(inFc);
+        return inFc.Streams
+            .Select(stream => new TsExportTrack(stream.Id, described[stream.Index],
+                inFc.Programs.Where(program => program.ContainsStream(stream.Index)).Select(program => program.Id).ToArray()))
+            .Where(track => track.Pid is > 0 and < 0x1FFF)
+            .GroupBy(track => track.Pid).Select(group => group.First())
+            .OrderBy(track => track.Pid).ToArray();
+    }
 
     /// <summary>EPG 读取所需的视频 PID 与其所属节目的 service_id（PMT 的节目号）。</summary>
     internal (int VideoPid, int? ServiceId) GetEpgStreamInfo() =>

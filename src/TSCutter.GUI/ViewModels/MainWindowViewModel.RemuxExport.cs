@@ -27,11 +27,17 @@ public partial class MainWindowViewModel
     private string ExportFileFilterName => CurrentRemuxSettings?.Container is "vob" or "m2ts"
         ? LocalizationManager.Instance.String_Disc_ExportFiles
         : IsRemuxExport ? LocalizationManager.Instance.String_RemuxExport_Files : LocalizationManager.Instance.String_TsFiles;
-    private bool CanConfigureRemuxExport => CanEditVideo && IsRemuxExport;
+    private bool CanConfigureRemuxExport => CanEditVideo && (IsRemuxExport || IsTsTrackExport);
 
     [RelayCommand(CanExecute = nameof(CanConfigureRemuxExport))]
     private async Task RemuxExportOptionsAsync()
     {
+        // TS 原包导出只能选择轨道，封装格式与源文件相同。
+        if (!IsRemuxExport)
+        {
+            await ConfigureTsTracksAsync();
+            return;
+        }
         var video = _videoInstance;
         var settings = CurrentRemuxSettings!.Snapshot();
         var dialog = _dialogService.CreateViewModel<RemuxExportOptionsViewModel>();

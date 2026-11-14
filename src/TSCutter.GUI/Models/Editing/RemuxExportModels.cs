@@ -48,25 +48,31 @@ internal sealed record RemuxExportRequest(string OutputPath, IReadOnlyList<Remux
 internal readonly record struct RemuxExportProgress(double Percent, double BytesPerSecond, double RemainingSeconds);
 internal sealed record RemuxExportTrack(int Index, string Codec, AVMediaType Type, string Language, string Title, int Disposition)
 {
-    public string Description
+    public string Description => Describe($"#{Index}");
+
+    /// <summary>轨道说明，以 <paramref name="head"/>（流序号或 PID）开头。</summary>
+    public string Describe(string head)
     {
-        get
+        var strings = LocalizationManager.Instance;
+        var kind = Type switch
         {
-            var strings = LocalizationManager.Instance;
-            var kind = Type switch
-            {
-                AVMediaType.AVMEDIA_TYPE_VIDEO when (Disposition & 1024) != 0 => strings.String_RemuxExport_Cover,
-                AVMediaType.AVMEDIA_TYPE_VIDEO => strings.String_TsRemux_Role_Video,
-                AVMediaType.AVMEDIA_TYPE_AUDIO => strings.String_TsRemux_Role_Audio,
-                AVMediaType.AVMEDIA_TYPE_SUBTITLE => strings.String_TsRemux_Role_Subtitle,
-                AVMediaType.AVMEDIA_TYPE_ATTACHMENT => strings.String_RemuxExport_Attachment,
-                _ => strings.String_RemuxExport_Data
-            };
-            return $"#{Index} · {kind} · {Codec} {Language} {Title}".TrimEnd() +
-                ((Disposition & 1) != 0 ? " · " + strings.String_RemuxExport_Default : "") +
-                ((Disposition & 64) != 0 ? " · " + strings.String_RemuxExport_Forced : "");
-        }
+            AVMediaType.AVMEDIA_TYPE_VIDEO when (Disposition & 1024) != 0 => strings.String_RemuxExport_Cover,
+            AVMediaType.AVMEDIA_TYPE_VIDEO => strings.String_TsRemux_Role_Video,
+            AVMediaType.AVMEDIA_TYPE_AUDIO => strings.String_TsRemux_Role_Audio,
+            AVMediaType.AVMEDIA_TYPE_SUBTITLE => strings.String_TsRemux_Role_Subtitle,
+            AVMediaType.AVMEDIA_TYPE_ATTACHMENT => strings.String_RemuxExport_Attachment,
+            _ => strings.String_RemuxExport_Data
+        };
+        return $"{head} · {kind} · {Codec} {Language} {Title}".TrimEnd() +
+            ((Disposition & 1) != 0 ? " · " + strings.String_RemuxExport_Default : "") +
+            ((Disposition & 64) != 0 ? " · " + strings.String_RemuxExport_Forced : "");
     }
+}
+
+/// <summary>TS 源中可选的一条轨道：PMT 中的基本流及其所属节目（节目号）。</summary>
+internal sealed record TsExportTrack(int Pid, RemuxExportTrack Track, IReadOnlyList<int> Programs)
+{
+    public string Description => Track.Describe($"PID 0x{Pid:X4}");
 }
 
 internal enum RemuxExportError

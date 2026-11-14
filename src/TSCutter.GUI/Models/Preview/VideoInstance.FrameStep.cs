@@ -106,8 +106,12 @@ public partial class VideoInstance
     /// <summary>时间轴原点（首个可显示画面）的 PTS；片段从文件开头开始时以此为起点。</summary>
     internal long FirstFramePts => firstFrameTimestamp;
 
-    /// <summary>帧精确导出的轨道：MP4/MKV 沿用封装导出的轨道选择；TS 取预览视频所在节目的音视频和字幕。</summary>
-    internal FrameAccurateExportSettings CreateFrameAccurateSettings(RemuxExportSettings? remux)
+    /// <summary>
+    /// 帧精确导出的轨道：MP4/MKV 沿用封装导出的轨道选择；TS 取预览视频所在节目的音视频和字幕，
+    /// 去掉 <paramref name="excludedPids"/> 中未选的轨道（预览视频除外）。
+    /// </summary>
+    internal FrameAccurateExportSettings CreateFrameAccurateSettings(RemuxExportSettings? remux,
+        IReadOnlyCollection<int>? excludedPids = null)
     {
         var container = remux?.Container ?? PacketLayout.Extension;
         var owner = inFc.Programs.Where(program => program.ContainsStream(videoStreamIndex)).Take(1).ToArray();
@@ -125,7 +129,7 @@ public partial class VideoInstance
                 FrameAccurateExportService.IsDiscSubtitle(Disc, container, stream.Codecpar.CodecId),
             AVMediaType.AVMEDIA_TYPE_ATTACHMENT => container == "mkv",
             _ => false
-        }).Select(stream => stream.Index).ToList();
+        } && (remux is not null || excludedPids?.Contains(stream.Id) != true)).Select(stream => stream.Index).ToList();
         if (!indices.Contains(videoStreamIndex))
             indices.Insert(0, videoStreamIndex);
         return new FrameAccurateExportSettings
