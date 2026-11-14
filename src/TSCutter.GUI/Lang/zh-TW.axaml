@@ -1552,9 +1552,9 @@
     <x:String x:Key="String.CutMode.FrameAccurateOff">智慧剪輯：已關閉，目前為關鍵影格剪輯。&#10;依關鍵影格選擇範圍，無需重新編碼。&#10;開啟後可逐影格選擇範圍，僅重新編碼切點附近的部分。</x:String>
     <x:String x:Key="String.CutMode.Unavailable">無法使用智慧剪輯：{0}</x:String>
     <x:String x:Key="String.CutMode.FallbackKeyFrame">目前改用關鍵影格剪輯；&#10;開啟支援的視訊時會自動恢復智慧剪輯。</x:String>
-    <x:String x:Key="String.CutMode.Reason.Codec">目前僅支援以下視訊：&#10;H.264（Baseline、Main、High 或 High 4:2:2 設定檔）&#10;HEVC（Main、Main 10 或 4:2:2 設定檔）&#10;MPEG-2（Main 或 Simple 設定檔）&#10;AV1（Main 設定檔）和 VP9（Profile 0 或 2）</x:String>
+    <x:String x:Key="String.CutMode.Reason.Codec">目前僅支援以下視訊：&#10;H.264（Baseline、Main、High 或 High 4:2:2 設定檔）&#10;HEVC（Main、Main 10 或 4:2:2 設定檔）&#10;MPEG-2（Main、Simple 或 4:2:2 設定檔）&#10;AV1（Main 設定檔）和 VP9（Profile 0 或 2）</x:String>
     <x:String x:Key="String.CutMode.Reason.Interlaced">暫不支援交錯式視訊。</x:String>
-    <x:String x:Key="String.CutMode.Reason.PixelFormat">目前僅支援 4:2:0 視訊&#10;（8 位元；HEVC、AV1 與 VP9 也支援 10 位元），&#10;以及 8 位元或 10 位元的 H.264、HEVC 4:2:2 視訊。</x:String>
+    <x:String x:Key="String.CutMode.Reason.PixelFormat">目前僅支援 4:2:0 視訊&#10;（8 位元；HEVC、AV1 與 VP9 也支援 10 位元），&#10;以及 4:2:2 視訊（8 位元或 10 位元的 H.264、HEVC，&#10;8 位元的 MPEG-2）。</x:String>
     <x:String x:Key="String.CutMode.Reason.DynamicHdr">重新編碼的畫面無法保留&#10;逐影格動態 HDR 中繼資料（如 HDR10+）。</x:String>
     <x:String x:Key="String.CutMode.Reason.Pulldown">重新編碼的畫面無法保留軟性下拉（重複圖場）。</x:String>
     <x:String x:Key="String.CutMode.Reason.DolbyVision">目前僅支援單層杜比視界 Profile 5 和 8.1，&#10;此視訊的杜比視界格式暫不支援。</x:String>
@@ -1562,7 +1562,8 @@
     <x:String x:Key="String.CutMode.Reason.MultipleVideo">選擇了多個視訊軌道。</x:String>
     <x:String x:Key="String.CutMode.Reason.Encoder">FFmpeg 執行庫中沒有能按此視訊的編碼格式&#10;和像素格式重新編碼的編碼器。</x:String>
     <x:String x:Key="String.CutMode.Reason.Container">不支援此檔案格式。</x:String>
-    <x:String x:Key="String.CutMode.Reason.GradualRefresh">此視訊沒有可獨立解碼的關鍵影格（逐行刷新編碼），&#10;重新編碼部分無法與直接複製部分無縫銜接。</x:String>
+    <x:String x:Key="String.CutMode.Reason.GradualRefresh">此視訊沒有可獨立解碼的關鍵影格（逐行刷新編碼），&#10;且重新編碼部分無法沿用它的編碼設定。</x:String>
+    <x:String x:Key="String.CutMode.GradualRefreshNote">此視訊沒有完整的關鍵影格（逐行刷新編碼）：&#10;每段重新編碼的開頭之後幾秒內，&#10;直接複製的畫面與原片略有差異，之後完全一致。</x:String>
     <x:String x:Key="String.Export.GradualRefreshWarning">此視訊沒有完整的關鍵影格（逐行刷新編碼）。匯出檔案開頭幾秒的畫面可能花屏，需要播放一段時間才會完整，這是片源的編碼方式所致。是否繼續匯出？</x:String>
     <x:String x:Key="String.CutMode.SwitchBlocked">片段 {0} 是在智慧剪輯模式下標記的，起訖點可能不在關鍵影格上。請先刪除或重新標記這些片段，再切換到關鍵影格剪輯。</x:String>
     <x:String x:Key="String.Navigate.PreviousFrame">上一影格（,）</x:String>

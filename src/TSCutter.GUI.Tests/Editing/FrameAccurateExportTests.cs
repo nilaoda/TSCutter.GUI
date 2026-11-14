@@ -864,6 +864,457 @@ public sealed class FrameAccurateExportTests
         finally { File.Delete(merged); }
     }
 
+    /// <summary>
+    /// MPEG-2 4:2:2 档次（广播制作与交换常用）：隔行下场优先的 Main 级别与逐行的 High 级别，均为开放 GOP。
+    /// 重编码段的序列扩展沿用源的档次与级别（带转义位的 4:2:2 标识），像素格式不变；帧号连续、严格模式解码无错误，
+    /// 复制区切片与源一致，隔行素材保持场序。
+    /// </summary>
+    [NativeMediaTheory("frameaccurate")]
+    [InlineData("mpeg2-422.ts", 20, 160)]
+    [InlineData("mpeg2-422.ts", 7, 44)]
+    [InlineData("mpeg2-422-hl.ts", 17, 80)]
+    public async Task SplicesMpeg2Profile422(string name, int start, int end)
+    {
+        var source = Fixture(name);
+        var frames = DecodeFrames(source);
+        var output = Temporary(name);
+        try
+        {
+            Assert.Equal(FrameAccurateSupport.Supported, CheckSupport(source, Settings(source)));
+            var service = new FrameAccurateExportService();
+            await service.ExportAsync(new FrameAccurateExportRequest(output,
+                [new FrameAccurateExportSegment(source, frames[start], frames[end], Settings(source))]));
+            var report = Assert.Single(service.Reports);
+            Assert.True(report.CopiedPackets > 0);
+            Assert.True(frames[start] < report.CopyStartPts);
+            Assert.Equal(Enumerable.Range(start, end - start + 1), Decode(output, out var errors).Select(frame => frame.Number));
+            Assert.Equal(0, errors);
+            // 输出开头是重编码段：它的序列扩展与源一致（Main 级别 0x85、High 级别 0x82）。
+            var profileLevel = Mpeg2ProfileLevel(source);
+            Assert.Equal(name.Contains("hl", StringComparison.Ordinal) ? 0x82 : 0x85, profileLevel);
+            Assert.Equal(profileLevel, Mpeg2ProfileLevel(output));
+            Assert.Equal(StreamFormat(source), StreamFormat(output));
+            Assert.Equal(AVPixelFormat.AV_PIX_FMT_YUV422P, StreamFormat(output).Format);
+            AssertSlicesCopied(source, output, report.CopyStartPts!.Value, report.CopyEndPts);
+            AssertTimestamps(output, audioTolerance: 1152 / 48000.0);
+            if (!name.Contains("hl", StringComparison.Ordinal))
+                AssertFieldFlags(output, FieldFlags(source).Single());
+        }
+        finally { File.Delete(output); }
+    }
+
+    /// <summary>第一个视频包中序列扩展的档次与级别字节（含转义位）。</summary>
+    private static unsafe int Mpeg2ProfileLevel(string path)
+    {
+        using var input = FormatContext.OpenInputUrl(path);
+        input.LoadStreamInfo();
+        AVStream* stream = input.GetVideoStream();
+        foreach (var packet in input.ReadPackets())
+        {
+            AVPacket* p = packet;
+            if (p->stream_index != stream->index)
+                continue;
+            var data = new ReadOnlySpan<byte>(p->data, p->size);
+            for (var i = 0; i + 5 < data.Length; i++)
+            {
+                if (data[i] == 0 && data[i + 1] == 0 && data[i + 2] == 1 && data[i + 3] == 0xB5 && data[i + 4] >> 4 == 1)
+                    return (data[i + 4] & 0x0F) << 4 | data[i + 5] >> 4;
+            }
+            throw new InvalidDataException("第一个视频包没有序列扩展。");
+        }
+        throw new InvalidDataException("没有视频包。");
+    }
+
+    /// <summary>
+    /// 逐行刷新（只有 P 画面上的恢复点，没有 I 帧与 IDR）：以恢复点为复制起点，头段从起点之前 12 秒的恢复点解码后重新编码。
+    /// H.264 头段改写到源参数集上并以 IDR 开始，复制区切片的 frame_num 与 POC 接续头段（逐行素材为 CABAC、8x8 变换、
+    /// POC 类型 2、frame_num 只有 5 位会回绕；隔行素材为 MBAFF、CAVLC、POC 类型 0、带 pic_struct）；
+    /// MPEG-2 头段的序列头与源一致，复制起点不结束序列（源声明 low_delay）。
+    /// 输出严格解码无错、帧号与源相同；复制区的画面在一个刷新周期（25 帧）后与源连续解码逐帧相同，之前也接近源；
+    /// 复制区的切片除编号外与源相同。导出前的时间戳检查不报错。
+    /// </summary>
+    [NativeMediaTheory("frameaccurate")]
+    [InlineData("gradual-refresh.ts", 340, 520)]
+    [InlineData("gradual-refresh-mbaff.ts", 333, 470)]
+    [InlineData("mpeg2-refresh-numbered.ts", 330, 520)]
+    public async Task SplicesGradualRefreshAtRecoveryPoints(string name, int start, int end)
+    {
+        var source = Fixture(name);
+        var frames = Decode(source, out _, explode: false);
+        var output = Temporary(name);
+        try
+        {
+            Assert.Equal(FrameAccurateSupport.Supported, CheckSupport(source, Settings(source)));
+            var request = new FrameAccurateExportRequest(output,
+                [new FrameAccurateExportSegment(source, frames[start].Pts, frames[end].Pts, Settings(source))]);
+            // 导出前的时间戳检查（界面在选择保存位置之前调用）同样以恢复点为随机访问点，不因找不到 I 帧而报错。
+            var service = new FrameAccurateExportService();
+            Assert.False(await service.NeedsTimestampNormalizationAsync(request, default));
+            await service.ExportAsync(request);
+            var report = Assert.Single(service.Reports);
+            Assert.True(report.CopiedPackets > 0);
+            var copyIndex = frames.FindIndex(frame => frame.Pts == report.CopyStartPts) - start;
+            Assert.InRange(copyIndex, 1, 25);
+            var expected = frames.Skip(start).Take(end - start + 1).Select(frame => frame.Number).ToList();
+            Assert.Equal(expected, Decode(output, out var errors).Select(frame => frame.Number));
+            Assert.Equal(0, errors);
+            Assert.Equal(expected, Decode(output, out errors, fresh: true).Select(frame => frame.Number));
+            Assert.Equal(0, errors);
+            // MPEG-2 素材是随机噪声（编码器在 VBV 限制下无法高画质重编码），只核对刷新周期之后逐帧相同。
+            AssertRefreshPictures(source, output, frames[start].Pts, copyIndex, 25,
+                name.StartsWith("mpeg2", StringComparison.Ordinal) ? double.NegativeInfinity : 30);
+            if (name.StartsWith("mpeg2", StringComparison.Ordinal))
+            {
+                AssertSlicesCopied(source, output, report.CopyStartPts!.Value, report.CopyEndPts);
+                AssertMpeg2SingleSequence(source, output);
+                AssertTimestamps(output, audioTolerance: 1152 / 48000.0);
+            }
+            else
+            {
+                AssertRenumberedSlices(source, output, report.CopyStartPts!.Value, report.CopyEndPts, copyIndex);
+                AssertTimestamps(output);
+            }
+            if (name.Contains("mbaff", StringComparison.Ordinal))
+                AssertFieldFlags(output, FieldFlags(source).Single());
+        }
+        finally { File.Delete(output); }
+    }
+
+    /// <summary>
+    /// 逐行刷新的规划：起点恰在恢复点上时头段至少要有一个画面，复制从下一个恢复点开始；
+    /// 起止之间没有足够远的恢复点时整段重新编码；多片段合并（含保留到文件末尾）帧号连续、严格解码无错。
+    /// </summary>
+    [NativeMediaTheory("frameaccurate")]
+    [InlineData("gradual-refresh.ts")]
+    [InlineData("mpeg2-refresh-numbered.ts")]
+    public async Task PlansGradualRefreshSplices(string name)
+    {
+        var source = Fixture(name);
+        var frames = Decode(source, out _, explode: false);
+        var refresh = RecoveryPoints(source);
+        var settings = Settings(source);
+        // 恢复点在预滚之后的第一个与第二个。
+        var first = frames.FindIndex(frame => frame.Pts == refresh.First(pts => pts > frames[320].Pts));
+        var second = frames.FindIndex(frame => frame.Pts == refresh.First(pts => pts > frames[first].Pts));
+        var output = Temporary(name);
+        try
+        {
+            var service = new FrameAccurateExportService();
+            await service.ExportAsync(new FrameAccurateExportRequest(output,
+                [new FrameAccurateExportSegment(source, frames[first].Pts, frames[first + 60].Pts, settings)]));
+            Assert.Equal(frames[second].Pts, Assert.Single(service.Reports).CopyStartPts);
+            Assert.Equal(frames.Skip(first).Take(61).Select(frame => frame.Number), DecodeNumbers(output));
+
+            service = new FrameAccurateExportService();
+            await service.ExportAsync(new FrameAccurateExportRequest(output,
+                [new FrameAccurateExportSegment(source, frames[first + 2].Pts, frames[second - 1].Pts, settings)]));
+            Assert.Equal(0, Assert.Single(service.Reports).CopiedPackets);
+            Assert.Equal(frames.Skip(first + 2).Take(second - first - 2).Select(frame => frame.Number), DecodeNumbers(output));
+
+            service = new FrameAccurateExportService();
+            await service.ExportAsync(new FrameAccurateExportRequest(output,
+            [
+                new FrameAccurateExportSegment(source, frames[first + 5].Pts, frames[first + 70].Pts, settings),
+                new FrameAccurateExportSegment(source, frames[first + 100].Pts, null, settings.Snapshot())
+            ]));
+            Assert.All(service.Reports, segment => Assert.True(segment.CopiedPackets > 0));
+            Assert.Equal(frames.Skip(first + 5).Take(66).Concat(frames.Skip(first + 100)).Select(frame => frame.Number),
+                DecodeNumbers(output));
+        }
+        finally { File.Delete(output); }
+    }
+
+    /// <summary>
+    /// 可选的真实逐行刷新素材（环境变量给出完整路径）：广播 H.264（场编码、3 个参考帧、POC 类型 0、带 HRD 与 pic_struct、
+    /// 有 MMCO、恢复点间隔不规则）与 MPEG-2 4:2:2（场编码、low_delay、自定义量化矩阵）。在文件开头、中部与末尾附近各剪切 10 秒（短素材按时长收拢位置）：
+    /// 确有复制区，画面数与源相同，头段与复制区画面接近源连续解码的结果，复制区在 8 秒内与之完全一致。
+    /// </summary>
+    [NativeRuntimeFact("TSCUTTER_GRADUAL_REFRESH_H264_SAMPLE")]
+    public Task SplicesRealH264GradualRefresh() =>
+        SpliceRealGradualRefresh(Environment.GetEnvironmentVariable("TSCUTTER_GRADUAL_REFRESH_H264_SAMPLE")!, "h264");
+
+    [NativeRuntimeFact("TSCUTTER_GRADUAL_REFRESH_MPEG2_SAMPLE")]
+    public Task SplicesRealMpeg2GradualRefresh() =>
+        SpliceRealGradualRefresh(Environment.GetEnvironmentVariable("TSCUTTER_GRADUAL_REFRESH_MPEG2_SAMPLE")!, "mpeg2");
+
+    /// <summary>
+    /// 设置 TSCUTTER_FRAME_ACCURATE_KEEP_DIR 时保留各位置的输出（gradual-refresh-h264-1.ts 等），并写出逐帧对比
+    /// （gradual-refresh-h264-1.csv：PTS、头段或复制区、与源连续解码的 PSNR、是否完全相同），供外部工具检查。
+    /// 参考画面从剪切起点之前 20 秒定位后连续解码（超过刷新周期，起点之后的画面完整）。
+    /// </summary>
+    private static async Task SpliceRealGradualRefresh(string source, string kind)
+    {
+        var settings = Settings(source);
+        long first, duration;
+        unsafe
+        {
+            using var input = FormatContext.OpenInputUrl(source);
+            input.LoadStreamInfo();
+            AVStream* stream = input.GetVideoStream();
+            first = stream->start_time;
+            duration = stream->duration > 0 ? stream->duration
+                : (long)(((AVFormatContext*)input)->duration / 1_000_000.0 * 90000);
+        }
+        const long second = 90000;
+        // 开头（预滚之后）、中部与末尾附近；短素材收进 [13 秒, 末尾前 10.5 秒]，相距不足 2 秒的位置合并。
+        var targets = new List<long>();
+        foreach (var offset in new[] { 20 * second, duration * 45 / 100, duration - 20 * second })
+        {
+            var clamped = Math.Min(Math.Max(offset, 13 * second), duration - 21 * second / 2);
+            if (clamped >= 13 * second && targets.All(existing => Math.Abs(existing - clamped) >= 2 * second))
+                targets.Add(clamped);
+        }
+        Assert.NotEmpty(targets);
+        for (var index = 0; index < targets.Count; index++)
+        {
+            var target = first + targets[index];
+            var reference = DecodePictures(source, target, target + 10 * second, seek: target - 20 * second);
+            var pts = reference.Keys.Order().ToList();
+            var (start, end) = (pts[0], pts[^1]);
+            var output = Temporary(source);
+            try
+            {
+                var service = new FrameAccurateExportService();
+                await service.ExportAsync(new FrameAccurateExportRequest(output,
+                    [new FrameAccurateExportSegment(source, start, end, settings)]));
+                var report = Assert.Single(service.Reports);
+                var keep = Environment.GetEnvironmentVariable("TSCUTTER_FRAME_ACCURATE_KEEP_DIR");
+                if (keep is { Length: > 0 })
+                    File.Copy(output, Path.Combine(keep, $"gradual-refresh-{kind}-{index + 1}.ts"), overwrite: true);
+                Assert.True(report.CopiedPackets > 0);
+                var actual = DecodePictures(output, long.MinValue, long.MaxValue);
+                Assert.Equal(pts, actual.Keys.Order());
+                var copyStart = report.CopyStartPts!.Value;
+                if (keep is { Length: > 0 })
+                    File.WriteAllLines(Path.Combine(keep, $"gradual-refresh-{kind}-{index + 1}.csv"), actual.OrderBy(pair => pair.Key)
+                        .Select(pair => FormattableString.Invariant(
+                            $"{pair.Key},{(pair.Key >= copyStart ? "copy" : "head")},{Psnr(reference[pair.Key].Samples, pair.Value.Samples):F2},{reference[pair.Key].Hash == pair.Value.Hash}")));
+                Assert.All(actual, pair => Assert.True(Psnr(reference[pair.Key].Samples, pair.Value.Samples) > 30,
+                    $"{pair.Key}: {Psnr(reference[pair.Key].Samples, pair.Value.Samples):F1} dB"));
+                var copied = actual.Where(pair => pair.Key >= copyStart).OrderBy(pair => pair.Key).ToList();
+                var identical = copied.FindIndex(pair => pair.Key >= copyStart + 8 * second);
+                Assert.True(identical >= 0);
+                Assert.All(copied.Skip(identical), pair => Assert.Equal(reference[pair.Key].Hash, pair.Value.Hash));
+            }
+            finally { File.Delete(output); }
+        }
+    }
+
+    /// <summary>
+    /// 头段与复制区的画面与源连续解码的结果比较（按输出中的序号对齐 from 起的源画面）：头段接近源；
+    /// 复制区开头接近源（PSNR 高于 minimumPsnr），经过 period 个画面后逐帧相同。
+    /// </summary>
+    private static void AssertRefreshPictures(string source, string output, long from, int copyIndex, int period,
+        double minimumPsnr)
+    {
+        var reference = DecodePictures(source, from, long.MaxValue).OrderBy(pair => pair.Key).Select(pair => pair.Value).ToList();
+        var actual = DecodePictures(output, long.MinValue, long.MaxValue).OrderBy(pair => pair.Key).Select(pair => pair.Value).ToList();
+        Assert.True(reference.Count >= actual.Count);
+        for (var i = 0; i < actual.Count; i++)
+        {
+            if (i >= copyIndex + period)
+                Assert.True(reference[i].Hash == actual[i].Hash, $"picture {i} differs after the refresh period");
+            else
+            {
+                var psnr = Psnr(reference[i].Samples, actual[i].Samples);
+                Assert.True(psnr > minimumPsnr, $"picture {i}: {psnr:F1} dB");
+            }
+        }
+    }
+
+    /// <summary>
+    /// 按 PTS 解码画面：亮度平面的哈希与亮度样本（高清画面每 4 个像素取一个，PSNR 用）；只保留 [from, to] 内的画面，
+    /// seconds 不为空时只读开头这么长的视频；seek 不为空时先定位到该时间，读到 to 之后一秒为止。
+    /// </summary>
+    private static unsafe Dictionary<long, (ulong Hash, ushort[] Samples)> DecodePictures(string path, long from, long to,
+        int? seconds = null, long? seek = null)
+    {
+        using var input = FormatContext.OpenInputUrl(path);
+        input.LoadStreamInfo();
+        AVStream* stream = input.GetVideoStream();
+        if (seek is { } position)
+            input.SeekFrame(position, stream->index);
+        using var decoder = new CodecContext(Codec.FindDecoderById(stream->codecpar->codec_id));
+        decoder.FillParameters(new CodecParameters(stream->codecpar));
+        decoder.PacketTimeBase = stream->time_base;
+        FFmpegException.Check(FF.avcodec_open2(decoder, FF.avcodec_find_decoder(stream->codecpar->codec_id), null));
+        var result = new Dictionary<long, (ulong, ushort[])>();
+        var step = stream->codecpar->width >= 1280 ? 4 : 1;
+        long first = long.MinValue;
+        using var frame = new Frame();
+        void Receive()
+        {
+            while (FF.avcodec_receive_frame(decoder, frame) >= 0)
+            {
+                AVFrame* raw = frame;
+                if (raw->pts >= from && raw->pts <= to)
+                {
+                    var hash = 14695981039346656037UL;
+                    var samples = new List<ushort>();
+                    for (var y = 0; y < raw->height; y++)
+                    {
+                        var row = raw->data[0] + y * raw->linesize[0];
+                        for (var x = 0; x < raw->width; x++)
+                        {
+                            hash = (hash ^ row[x]) * 1099511628211UL;
+                            if (y % step == 0 && x % step == 0)
+                                samples.Add((ushort)(row[x] << 2));
+                        }
+                    }
+                    result[raw->pts] = (hash, samples.ToArray());
+                }
+                frame.Unref();
+            }
+        }
+        foreach (var packet in input.ReadPackets())
+        {
+            if (packet.StreamIndex != stream->index)
+                continue;
+            if (first == long.MinValue)
+                first = packet.Pts;
+            if (seconds is { } limit && packet.Pts - first > limit * (long)stream->time_base.den / stream->time_base.num)
+                break;
+            if (seek is not null && to != long.MaxValue && packet.Pts > to + stream->time_base.den / stream->time_base.num)
+                break;
+            FF.avcodec_send_packet(decoder, packet);
+            Receive();
+        }
+        FF.avcodec_send_packet(decoder, null);
+        Receive();
+        return result;
+    }
+
+    /// <summary>逐行刷新的恢复点（H.264 首个切片为 P 的关键包，MPEG-2 带序列头的 P 帧）的 PTS。</summary>
+    private static unsafe List<long> RecoveryPoints(string path)
+    {
+        using var input = FormatContext.OpenInputUrl(path);
+        input.LoadStreamInfo();
+        AVStream* stream = input.GetVideoStream();
+        var codec = stream->codecpar->codec_id;
+        var result = new List<long>();
+        foreach (var packet in input.ReadPackets())
+        {
+            AVPacket* raw = packet;
+            if (raw->stream_index == stream->index && (codec == AVCodecID.AV_CODEC_ID_MPEG2VIDEO || (raw->flags & 1) != 0) &&
+                KeyFrameTypeReader.Read(new ReadOnlySpan<byte>(raw->data, raw->size), codec) == KeyFrameTypeReader.RecoveryPoint)
+                result.Add(raw->pts);
+        }
+        return result;
+    }
+
+    /// <summary>
+    /// H.264 逐行刷新衔接的码流：输出以源参数集与 IDR 开始（同一个编码视频序列，没有其他参数集），
+    /// 复制区的切片除 frame_num 与 pic_order_cnt_lsb 外与源逐位相同，首个复制画面的 frame_num 接续头段的画面数。
+    /// </summary>
+    private static unsafe void AssertRenumberedSlices(string source, string output, long copyStart, long? copyEnd, int headPictures)
+    {
+        var sourceSets = new H264Splice.ParameterSets();
+        var expected = new List<byte[]>();
+        using (var input = FormatContext.OpenInputUrl(source))
+        {
+            input.LoadStreamInfo();
+            AVStream* stream = input.GetVideoStream();
+            var copying = false;
+            foreach (var packet in input.ReadPackets())
+            {
+                if (packet.StreamIndex != stream->index)
+                    continue;
+                AVPacket* raw = packet;
+                var data = new ReadOnlySpan<byte>(raw->data, raw->size);
+                foreach (var range in VideoBitstream.SplitNals(data, 0))
+                    sourceSets.Add(data[range]);
+                copying |= raw->pts == copyStart;
+                if (copying && raw->pts == copyEnd)
+                    break;
+                if (copying)
+                    expected.AddRange(Slices(packet, 0, false));
+            }
+        }
+        var outputSets = new H264Splice.ParameterSets();
+        var actual = new List<byte[]>();
+        var types = new List<int>();
+        using (var input = FormatContext.OpenInputUrl(output))
+        {
+            input.LoadStreamInfo();
+            AVStream* stream = input.GetVideoStream();
+            foreach (var packet in input.ReadPackets())
+            {
+                if (packet.StreamIndex != stream->index)
+                    continue;
+                AVPacket* raw = packet;
+                var data = new ReadOnlySpan<byte>(raw->data, raw->size);
+                foreach (var range in VideoBitstream.SplitNals(data, 0))
+                {
+                    types.Add(data[range][0] & 0x1F);
+                    outputSets.Add(data[range]);
+                }
+                actual.AddRange(Slices(packet, 0, false));
+            }
+        }
+        // 输出开头：源参数集之后是 IDR，整个输出中只有这一个 IDR。
+        Assert.Equal(5, types.First(type => type is 1 or 5));
+        Assert.Equal(1, types.Count(type => type == 5));
+        var copied = actual.Skip(actual.Count - expected.Count).ToList();
+        var mmco = new List<H264Splice.Mmco>();
+        for (var i = 0; i < expected.Count; i++)
+        {
+            var (sourceBits, _) = Masked(expected[i], sourceSets);
+            var (outputBits, outputHeader) = Masked(copied[i], outputSets);
+            Assert.True(sourceBits.AsSpan().SequenceEqual(outputBits), $"copied slice {i} differs");
+            if (i == 0)
+                Assert.Equal(headPictures % outputHeader.Sps.MaxFrameNum, outputHeader.FrameNum);
+        }
+
+        (byte[] Bits, H264Splice.SliceHeader Header) Masked(byte[] nal, H264Splice.ParameterSets sets)
+        {
+            var rbsp = new byte[nal.Length];
+            var length = H264Splice.Unescape(nal.AsSpan(1), rbsp);
+            Assert.True(H264Splice.TryParseSlice(rbsp.AsSpan(0, length), nal[0], sets, mmco, out var header));
+            void Clear(int position, int count)
+            {
+                for (var bit = position; bit < position + count; bit++)
+                    rbsp[bit >> 3] &= (byte)~(0x80 >> (bit & 7));
+            }
+            Clear(header.FrameNumBit, header.Sps.Log2MaxFrameNum);
+            if (header.Sps.PocType == 0)
+                Clear(header.PocLsbBit, header.Sps.Log2MaxPocLsb);
+            return (rbsp.AsSpan(0, length).ToArray(), header);
+        }
+    }
+
+    /// <summary>MPEG-2 逐行刷新衔接：输出中没有 sequence_end_code，头段的序列头与序列扩展与源相同（只有量化矩阵可以不同）。</summary>
+    private static unsafe void AssertMpeg2SingleSequence(string source, string output)
+    {
+        VideoBitstream.Mpeg2SequenceUnits? First(string path, out bool sequenceEnd)
+        {
+            using var input = FormatContext.OpenInputUrl(path);
+            input.LoadStreamInfo();
+            AVStream* stream = input.GetVideoStream();
+            VideoBitstream.Mpeg2SequenceUnits? units = null;
+            sequenceEnd = false;
+            foreach (var packet in input.ReadPackets())
+            {
+                if (packet.StreamIndex != stream->index)
+                    continue;
+                AVPacket* raw = packet;
+                var data = new ReadOnlySpan<byte>(raw->data, raw->size);
+                units ??= VideoBitstream.ReadMpeg2Sequence(data);
+                // 文件末尾的结束码属于整个码流，不在衔接处。
+                var end = data.IndexOf((ReadOnlySpan<byte>)[0, 0, 1, 0xB7]);
+                sequenceEnd |= end >= 0 && end + 4 < data.Length;
+            }
+            return units;
+        }
+        var expected = First(source, out _)!;
+        var actual = First(output, out var sequenceEnd)!;
+        Assert.False(sequenceEnd);
+        Assert.Equal(expected.Header.AsSpan(4, 7).ToArray(), actual.Header.AsSpan(4, 7).ToArray());
+        Assert.Equal(expected.Header[11] & 0xFC, actual.Header[11] & 0xFC);
+        // 序列扩展的起始码与 6 字节内容（之后可能是下一起始码的前导零）。
+        Assert.Equal(expected.Extension.AsSpan(0, 10).ToArray(), actual.Extension.AsSpan(0, 10).ToArray());
+        Assert.True(actual.LowDelay);
+    }
+
     [NativeMediaFact("frameaccurate")]
     public async Task KeepsInterlacedFieldOrder()
     {

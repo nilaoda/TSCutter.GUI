@@ -60,10 +60,53 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
         return values == null || new ReadOnlySpan<AVPixelFormat>(values, count).Contains(format);
     }
 
-    /// <summary>按源视频参数打开编码器；源码流参数不在编码器支持范围时抛出。</summary>
+    /// <summary>
+    /// 逐行刷新衔接的 H.264 头段：编码输出要改写到源参数集上，编码器按源 PPS 中影响解码的设置编码。
+    /// </summary>
+    internal sealed record H264RefreshTarget(H264RefreshSplice.SequenceSyntax Sps, H264RefreshSplice.PictureSyntax Pps);
+
+    /// <summary>
+    /// 按源视频参数打开编码器；源码流参数不在编码器支持范围时抛出。
+    /// refresh 不为空时按逐行刷新衔接的要求编码 H.264 头段，并核对编码器的参数集与源在解码上等价
+    /// （x264 的心理视觉优化会改动色度量化偏移，不一致时按差值重新打开一次）。
+    /// </summary>
     /// <param name="sourceBitrate">切点附近原视频的码率（bit/s，0 表示未知），用于限定重编码码率上限。</param>
+    /// <param name="mpeg2Sequence">MPEG-2 源的序列头，low_delay 等按它设置；为空时取流参数中的附加数据。</param>
     public static FrameAccurateVideoEncoder Open(AVStream* stream, int parameterSetId, bool hevc, bool highTier,
-        AVFieldOrder fieldOrder, long sourceBitrate, AVFrame* firstFrame = null)
+        AVFieldOrder fieldOrder, long sourceBitrate, AVFrame* firstFrame = null, H264RefreshTarget? refresh = null,
+        VideoBitstream.Mpeg2SequenceUnits? mpeg2Sequence = null)
+    {
+        if (refresh is null)
+            return OpenCore(stream, parameterSetId, hevc, highTier, fieldOrder, sourceBitrate, firstFrame, null, 0,
+                mpeg2Sequence);
+        var chromaOffset = refresh.Pps.ChromaQpOffset;
+        for (var attempt = 0; ; attempt++)
+        {
+            var encoder = OpenCore(stream, parameterSetId, hevc, highTier, fieldOrder, sourceBitrate, firstFrame, refresh,
+                chromaOffset, mpeg2Sequence);
+            var sps = H264RefreshSplice.ParseSps(encoder.ParameterSets.Find(set => (set[0] & 0x1F) == 7)!);
+            var pps = H264RefreshSplice.ParsePps(encoder.ParameterSets.Find(set => (set[0] & 0x1F) == 8)!);
+            var mismatch = sps is null || pps is null ? "parameter sets"
+                : H264RefreshSplice.Mismatch(refresh.Sps, refresh.Pps, sps, pps);
+            if (mismatch is null)
+            {
+                encoder.RefreshPps = pps;
+                return encoder;
+            }
+            encoder.Dispose();
+            if (attempt > 0 || pps is null || mismatch != "chroma QP offset")
+                throw new FrameAccurateExportException(FrameAccurateExportError.Unsupported, mismatch,
+                    FrameAccurateSupport.GradualRefresh);
+            chromaOffset += refresh.Pps.ChromaQpOffset - pps.ChromaQpOffset;
+        }
+    }
+
+    /// <summary>逐行刷新衔接的头段编码器实际使用的 PPS（切片头改写时换算量化参数）。</summary>
+    public H264RefreshSplice.PictureSyntax? RefreshPps { get; private set; }
+
+    private static FrameAccurateVideoEncoder OpenCore(AVStream* stream, int parameterSetId, bool hevc, bool highTier,
+        AVFieldOrder fieldOrder, long sourceBitrate, AVFrame* firstFrame, H264RefreshTarget? refresh, int chromaOffset,
+        VideoBitstream.Mpeg2SequenceUnits? mpeg2Sequence)
     {
         var codecId = stream->codecpar->codec_id;
         var codec = FF.avcodec_find_encoder_by_name(EncoderName(codecId));
@@ -78,6 +121,12 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
             var source = stream->codecpar;
             context->width = source->width;
             context->height = source->height;
+            // 逐行刷新衔接的 H.264 头段按完整的编码画面（含裁剪区）编码，切片头改写后沿用源 SPS 的裁剪。
+            if (refresh is not null && firstFrame != null)
+            {
+                context->width = firstFrame->width;
+                context->height = firstFrame->height;
+            }
             context->pix_fmt = (AVPixelFormat)source->format;
             context->time_base = stream->time_base;
             context->pkt_timebase = stream->time_base;
@@ -93,7 +142,7 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
             context->max_b_frames = 0;
             var options = context->priv_data;
             if (codecId == AVCodecID.AV_CODEC_ID_MPEG2VIDEO)
-                ConfigureMpeg2(context, source, fieldOrder, sourceBitrate);
+                ConfigureMpeg2(context, source, fieldOrder, sourceBitrate, mpeg2Sequence);
             else if (codecId == AVCodecID.AV_CODEC_ID_AV1)
                 ConfigureAv1(context, options, EncoderName(codecId));
             else if (codecId == AVCodecID.AV_CODEC_ID_VP9)
@@ -107,7 +156,8 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
                 if (hevc)
                     ConfigureHevc(options, source, highTier, firstFrame, RelativeCap(stream, sourceBitrate, 4));
                 else
-                    ConfigureH264(context, options, source, parameterSetId, fieldOrder, RelativeCap(stream, sourceBitrate, 4));
+                    ConfigureH264(context, options, source, parameterSetId, fieldOrder, RelativeCap(stream, sourceBitrate, 4),
+                        refresh, chromaOffset);
             }
             // 杜比视界：x265 由每帧解码出的杜比元数据重新生成 RPU。首帧元数据交给编码器推断配置，
             // 打开后核对推断出的配置与源一致。
@@ -177,14 +227,25 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
     }
 
     private static void ConfigureH264(AVCodecContext* context, void* options, AVCodecParameters* source, int parameterSetId,
-        AVFieldOrder fieldOrder, int? cap)
+        AVFieldOrder fieldOrder, int? cap, H264RefreshTarget? refresh, int chromaOffset)
     {
         context->flags |= FF.AV_CODEC_FLAG_GLOBAL_HEADER;
         if (H264ProfileName(source->profile) is { } profile)
             Set(options, "profile", profile);
         var parameters = $"sps-id={parameterSetId}:bframes=0:keyint=infinite:scenecut=0:repeat-headers=0";
-        // 隔行素材以 MBAFF 帧编码，保持原场序；Baseline 不支持隔行。
-        if (fieldOrder != AVFieldOrder.AV_FIELD_PROGRESSIVE)
+        if (refresh is { } target)
+        {
+            // 逐行刷新衔接的头段沿用源参数集：熵编码、8x8 变换、色度量化偏移、受限帧内预测与源 PPS 一致，
+            // 参考帧数不超过源 SPS（滑动窗口一致），不用加权预测。
+            parameters += string.Create(CultureInfo.InvariantCulture,
+                $":ref={Math.Clamp(target.Sps.MaxNumRefFrames, 1, 16)}:weightp=0:cabac={(target.Pps.Cabac ? 1 : 0)}" +
+                $":8x8dct={(target.Pps.Transform8x8 ? 1 : 0)}:chroma-qp-offset={chromaOffset}");
+            if (target.Pps.ConstrainedIntraPred)
+                parameters += ":constrained-intra=1";
+        }
+        // 隔行素材以 MBAFF 帧编码，保持原场序；Baseline 不支持隔行。逐行刷新衔接时只有源本身是 MBAFF 才用
+        // （源是场编码而不用 MBAFF 时，帧画面按逐行方式编码，解码方式与源 SPS 一致）。
+        if (fieldOrder != AVFieldOrder.AV_FIELD_PROGRESSIVE && (refresh is null || refresh.Sps.Mbaff))
         {
             if (source->profile is 66 or 578)
                 throw new FrameAccurateExportException(FrameAccurateExportError.Unsupported, "", FrameAccurateSupport.Interlaced);
@@ -321,8 +382,13 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
     /// 级别未知时退回原码流声明的 VBV 参数。
     /// </summary>
     private static void ConfigureMpeg2(AVCodecContext* context, AVCodecParameters* source, AVFieldOrder fieldOrder,
-        long sourceBitrate)
+        long sourceBitrate, VideoBitstream.Mpeg2SequenceUnits? sequence)
     {
+        // 源声明 low_delay（没有 B 帧）时重编码段同样声明，解码器在重编码段与复制区之间按同一方式输出画面。
+        sequence ??= source->extradata == null ? null
+            : VideoBitstream.ReadMpeg2Sequence(new ReadOnlySpan<byte>(source->extradata, source->extradata_size));
+        if (sequence?.LowDelay == true)
+            context->flags |= AV_CODEC_FLAG_LOW_DELAY;
         var rate = context->framerate;
         context->time_base = new AVRational { num = rate.den, den = rate.num };
         // mpeg2video 的 GOP 上限为 600 帧；超过时插入新的闭合 GOP。
@@ -342,7 +408,7 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
                 (maxRate, buffer) = (cpb->max_bitrate, cpb->buffer_size);
             }
         }
-        if (Mpeg2LevelLimits(source->level) is { } limits)
+        if (Mpeg2LevelLimits(source->profile, source->level) is { } limits)
         {
             context->flags |= AV_CODEC_FLAG_QSCALE;
             context->global_quality = 3 * FF_QP2LAMBDA;
@@ -376,17 +442,35 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
     }
 
     private const int AV_CODEC_FLAG_QSCALE = 1 << 1;
+    private const int AV_CODEC_FLAG_LOW_DELAY = 1 << 19;
     private const int FF_QP2LAMBDA = 118;
 
-    /// <summary>MPEG-2 Main/Simple 档次各级别的最大码率（bit/s）与 VBV 缓冲（bit）；codecpar 的级别 4/6/8/10 为 High/High 1440/Main/Low。</summary>
-    private static (long MaxRate, int Buffer)? Mpeg2LevelLimits(int level) => level switch
-    {
-        4 => (80_000_000, 9_781_248),
-        6 => (60_000_000, 7_340_032),
-        8 => (15_000_000, 1_835_008),
-        10 => (4_000_000, 475_136),
-        _ => null
-    };
+    /// <summary>
+    /// MPEG-2 各档次、级别的最大码率（bit/s）与 VBV 缓冲（bit）。Main/Simple 档次的级别 4/6/8/10 为 High/High 1440/Main/Low；
+    /// 4:2:2 档次只有 High 与 Main 两级（级别 2/5）。
+    /// </summary>
+    private static (long MaxRate, int Buffer)? Mpeg2LevelLimits(int profile, int level) => profile == 0
+        ? level switch
+        {
+            2 => (300_000_000, 47_185_920),
+            5 => (50_000_000, 9_437_184),
+            _ => null
+        }
+        : level switch
+        {
+            4 => (80_000_000, 9_781_248),
+            6 => (60_000_000, 7_340_032),
+            8 => (15_000_000, 1_835_008),
+            10 => (4_000_000, 475_136),
+            _ => null
+        };
+
+    /// <summary>
+    /// 是否为 MPEG-2 4:2:2 档次。档次与级别字节带转义位，解码器去掉转义位后与多视点档次同为 profile 0，
+    /// 只能按级别区分：4:2:2 档次为 2（High）与 5（Main），多视点档次为 10/11/13/14。
+    /// </summary>
+    internal static bool IsMpeg2Profile422(AVCodecParameters* parameters) =>
+        parameters->profile == 0 && parameters->level is 2 or 5;
 
     /// <summary>流参数中的杜比视界配置记录；没有时返回 null。</summary>
     internal static DolbyVisionRecord? DolbyVisionConfiguration(AVCodecParameters* parameters) =>

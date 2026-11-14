@@ -326,6 +326,92 @@ internal static class VideoBitstream
         return false;
     }
 
+    /// <summary>MPEG-2 序列头及其后的序列扩展、序列显示扩展（各含起始码）。</summary>
+    public sealed record Mpeg2SequenceUnits(byte[] Header, byte[]? Extension, byte[]? Display)
+    {
+        /// <summary>序列扩展的 low_delay：码流不含 B 帧，解码器收到画面即输出。</summary>
+        public bool LowDelay => Extension is { Length: >= 10 } extension && (extension[9] & 0x80) != 0;
+    }
+
+    /// <summary>读取包内首个序列头及其扩展；没有序列头时返回 null。</summary>
+    public static Mpeg2SequenceUnits? ReadMpeg2Sequence(ReadOnlySpan<byte> data)
+    {
+        byte[]? header = null, extension = null, display = null;
+        for (var start = FindStartCode(data, 0); start >= 0 && start + 4 < data.Length;)
+        {
+            var next = FindStartCode(data, start + 3);
+            var unit = data[start..(next < 0 ? data.Length : next)];
+            var code = unit[3];
+            if (code == 0xB3)
+                header ??= unit.ToArray();
+            else if (code == 0xB5 && header is not null && unit.Length > 4)
+            {
+                if ((unit[4] >> 4) == 1)
+                    extension ??= unit.ToArray();
+                else if ((unit[4] >> 4) == 2)
+                    display ??= unit.ToArray();
+            }
+            else if (header is not null)
+                break;
+            start = next;
+        }
+        return header is { Length: >= 12 } ? new Mpeg2SequenceUnits(header, extension, display) : null;
+    }
+
+    /// <summary>
+    /// 把编码器输出中的序列头改为与源一致：序列头中量化矩阵之前的字段（尺寸、宽高比、帧率、码率、VBV）、
+    /// 序列扩展与序列显示扩展取源的值，量化矩阵仍是编码器的（同一序列中重复的序列头只允许量化矩阵不同）。
+    /// 用于逐行刷新衔接：复制区的画面参考头段画面，两者必须属于同一个序列。包内没有序列头时返回 null。
+    /// </summary>
+    public static byte[]? AlignMpeg2Sequence(ReadOnlySpan<byte> data, Mpeg2SequenceUnits source)
+    {
+        var start = FindStartCode(data, 0);
+        if (start < 0 || !ReadMpeg2(data).SequenceHeader)
+            return null;
+        var output = new List<byte>(data.Length + 32);
+        output.AddRange(data[..start]);
+        var inSequence = false;
+        while (start >= 0)
+        {
+            var next = FindStartCode(data, start + 3);
+            var unit = data[start..(next < 0 ? data.Length : next)];
+            var code = unit.Length > 3 ? unit[3] : -1;
+            var extensionId = code == 0xB5 && unit.Length > 4 ? unit[4] >> 4 : -1;
+            if (code == 0xB3 && unit.Length >= 12)
+            {
+                // 前 62 位：水平与垂直尺寸、宽高比、帧率、码率、标记位、VBV 缓冲、受限参数标志。
+                var copy = unit.ToArray();
+                for (var bit = 0; bit < 62; bit++)
+                {
+                    var mask = (byte)(0x80 >> (bit & 7));
+                    var index = 4 + (bit >> 3);
+                    copy[index] = (source.Header[index] & mask) != 0 ? (byte)(copy[index] | mask) : (byte)(copy[index] & ~mask);
+                }
+                output.AddRange(copy);
+                inSequence = true;
+            }
+            else if (inSequence && extensionId == 1)
+            {
+                output.AddRange(source.Extension ?? unit.ToArray());
+                // 显示扩展与源一致：源有则写源的，编码器自己的显示扩展去掉。
+                if (source.Display is not null)
+                    output.AddRange(source.Display);
+            }
+            else if (inSequence && extensionId == 2)
+            {
+                // 编码器的显示扩展：已随序列扩展换成源的。
+            }
+            else
+            {
+                if (code is 0xB8 or 0x00)
+                    inSequence = false;
+                output.AddRange(unit);
+            }
+            start = next;
+        }
+        return output.ToArray();
+    }
+
     private static byte[] Unescape(ReadOnlySpan<byte> data)
     {
         // 只需要开头几个字段，限制拷贝长度。

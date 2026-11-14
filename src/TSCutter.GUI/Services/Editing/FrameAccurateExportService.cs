@@ -33,6 +33,11 @@ internal sealed unsafe class FrameAccurateExportService
     // 每段重编码的显示时长上限。超过时拒绝导出，不静默扩大为整段重编码。
     internal const double MaxReencodeSeconds = 60;
     private const double ScanMarginSeconds = 3;
+    /// <summary>
+    /// 逐行刷新码流的解码预滚：从恢复点开始要经过一个刷新周期画面才完整（实测广播源约 4.5 秒），
+    /// 头段从起点之前至少这么远的恢复点开始解码，与预览一致。
+    /// </summary>
+    private const double GradualRefreshPrerollSeconds = Models.Preview.VideoInstance.GradualRefreshPrerollSeconds;
     // 只处理短时解码偏移；更大的异常不能当作普通重排序延迟修正。
     private const double MaximumDtsCorrectionSeconds = 1;
 
@@ -65,7 +70,10 @@ internal sealed unsafe class FrameAccurateExportService
                 List<VideoPacket>? scanned = null;
                 var reachedEof = false;
                 var targets = request.Segments.SelectMany(segment => segment.EndPts is { } end
-                    ? new[] { segment.StartPts, end } : new[] { segment.StartPts }).Distinct().Order();
+                    ? new[] { segment.StartPts, end } : new[] { segment.StartPts }).Distinct().Order().ToList();
+                // 与导出相同：逐行刷新码流以恢复点作随机访问点，否则扫描找不到 I 帧而报错。
+                if (context.Mpeg2 || video->codecpar->codec_id == AVCodecID.AV_CODEC_ID_H264)
+                    context.GradualRefresh = DetectGradualRefresh(context, targets[0], token);
                 foreach (var target in targets)
                 {
                     token.ThrowIfCancellationRequested();
@@ -110,14 +118,14 @@ internal sealed unsafe class FrameAccurateExportService
         var mpeg2 = parameters->codec_id == AVCodecID.AV_CODEC_ID_MPEG2VIDEO;
         var av1 = parameters->codec_id == AVCodecID.AV_CODEC_ID_AV1;
         var vp9 = parameters->codec_id == AVCodecID.AV_CODEC_ID_VP9;
-        // HEVC 仅 Main/Main 10；H.264 仅 Baseline/Main/High/High 4:2:2（不含 Intra 档次）；MPEG-2 仅 Main/Simple（4:2:0）。
+        // HEVC 仅 Main/Main 10；H.264 仅 Baseline/Main/High/High 4:2:2（不含 Intra 档次）；MPEG-2 仅 Main/Simple（4:2:0）与 4:2:2 档次。
         // AV1 仅 Main 档次（8/10 位 4:2:0）；VP9 仅 Profile 0（8 位 4:2:0）与 Profile 2（10 位 4:2:0）。
         // 两者都只在 MP4/MKV 中（每个样本一个画面）。
         if ((av1 || vp9) && container is not ("mp4" or "mkv"))
             return FrameAccurateSupport.Container;
         // HEVC 另支持格式范围扩展（RExt，profile 4）中的 4:2:2 8/10 位，像素格式在下面检查。
         if (hevc ? parameters->profile is not (1 or 2 or 4)
-                : mpeg2 ? parameters->profile is not (4 or 5)
+                : mpeg2 ? parameters->profile is not (4 or 5) && !FrameAccurateVideoEncoder.IsMpeg2Profile422(parameters)
                 : av1 ? parameters->profile != 0
                 : vp9 ? parameters->profile is not (0 or 2)
                 : parameters->codec_id != AVCodecID.AV_CODEC_ID_H264 || FrameAccurateVideoEncoder.H264ProfileName(parameters->profile) is null)
@@ -136,7 +144,7 @@ internal sealed unsafe class FrameAccurateExportService
             return FrameAccurateSupport.Interlaced;
         var format = (AVPixelFormat)parameters->format;
         if (!IsSupportedPixelFormat(format, hevc || av1 || vp9, parameters->codec_id == AVCodecID.AV_CODEC_ID_H264 && parameters->profile == 122,
-                hevc && parameters->profile == 4))
+                hevc && parameters->profile == 4, mpeg2 && FrameAccurateVideoEncoder.IsMpeg2Profile422(parameters)))
             return FrameAccurateSupport.PixelFormat;
         // 编码器须能按原像素格式编码（例如运行库中的 x264 是否带 10 位支持）。
         return FrameAccurateVideoEncoder.SupportsPixelFormat(parameters->codec_id, format)
@@ -146,14 +154,16 @@ internal sealed unsafe class FrameAccurateExportService
     /// <summary>
     /// 可重编码的像素格式：均为 4:2:0 8 位；HEVC、AV1 与 VP9 另支持 4:2:0 10 位；
     /// H.264 High 4:2:2 档次另支持 4:2:2 8 位与 4:2:0/4:2:2 10 位（档次允许的全部格式）；
-    /// HEVC 格式范围扩展只支持 4:2:2 8/10 位（以 Main 4:2:2 10 档次重编码），4:4:4、12 位等不支持。
+    /// HEVC 格式范围扩展只支持 4:2:2 8/10 位（以 Main 4:2:2 10 档次重编码），4:4:4、12 位等不支持；
+    /// MPEG-2 4:2:2 档次另支持 4:2:2 8 位。
     /// </summary>
-    private static bool IsSupportedPixelFormat(AVPixelFormat format, bool tenBit420, bool h264High422, bool hevcRext) => format switch
+    private static bool IsSupportedPixelFormat(AVPixelFormat format, bool tenBit420, bool h264High422, bool hevcRext,
+        bool mpeg2Profile422) => format switch
     {
         AVPixelFormat.AV_PIX_FMT_YUV420P or AVPixelFormat.AV_PIX_FMT_YUVJ420P => !hevcRext,
         AVPixelFormat.AV_PIX_FMT_YUV420P10LE => !hevcRext && (tenBit420 || h264High422),
-        AVPixelFormat.AV_PIX_FMT_YUV422P or AVPixelFormat.AV_PIX_FMT_YUVJ422P or AVPixelFormat.AV_PIX_FMT_YUV422P10LE =>
-            h264High422 || hevcRext,
+        AVPixelFormat.AV_PIX_FMT_YUV422P => h264High422 || hevcRext || mpeg2Profile422,
+        AVPixelFormat.AV_PIX_FMT_YUVJ422P or AVPixelFormat.AV_PIX_FMT_YUV422P10LE => h264High422 || hevcRext,
         _ => false
     };
 
@@ -251,6 +261,13 @@ internal sealed unsafe class FrameAccurateExportService
             FFmpegException.Check(FF.avcodec_open2(decoder, FF.avcodec_find_decoder(video->codecpar->codec_id), null));
             // 规划时用同一解码器验证普通 I 帧能否作为衔接点。
             context.Decoder = decoder;
+            if (context.Mpeg2 || video->codecpar->codec_id == AVCodecID.AV_CODEC_ID_H264)
+                context.GradualRefresh = DetectGradualRefresh(context, segments.Min(segment => segment.StartPts), token);
+            // 逐行刷新的 H.264：解码输出完整的编码画面（不裁掉 SPS 声明的裁剪区）。复制区开头的画面可能从参考画面的
+            // 裁剪区（如 1080 行画面最下面 8 行）预测，头段须按原片的内容编码这些行，否则衔接后最下面一行宏块花屏；
+            // 交给其他编码器的画面另行裁剪。
+            if (context.GradualRefresh && context.Nal && !hevc)
+                ((AVCodecContext*)decoder)->apply_cropping = 0;
             var plans = new List<SegmentPlan>();
             foreach (var segment in segments)
             {
@@ -298,9 +315,29 @@ internal sealed unsafe class FrameAccurateExportService
             // 编码配置固定，先打开一次确认可用并取得参数集，写入容器头；后续每段会话核对参数集一致。
             // 首帧一并交给编码器：TS 中的 HDR10 静态元数据与杜比元数据只在画面里（MP4/MKV 在流参数中），
             // 杜比视界 8.1 缺少 HDR10 元数据时 x265 拒绝打开。
-            using (var probe = FrameAccurateVideoEncoder.Open(video, context.ParameterSetId, hevc, context.HighTier, context.FieldOrder,
-                       context.SourceBitrate, firstFrame))
+            using (var cropped = new Frame())
+            {
+                FFmpegException.Check(FF.av_frame_ref(cropped, firstFrame));
+                Crop(cropped);
+                using var probe = FrameAccurateVideoEncoder.Open(video, context.ParameterSetId, hevc, context.HighTier,
+                    context.FieldOrder, context.SourceBitrate, cropped, mpeg2Sequence: context.Mpeg2Sequence);
                 context.EncodedParameterSets.AddRange(probe.ParameterSets);
+            }
+            // 逐行刷新衔接的 H.264 头段：沿用源参数集，编码器按其要求另行配置；源参数集或编码器不满足时说明原因。
+            if (context.Nal && !hevc && plans.Any(plan => plan.Refresh))
+            {
+                context.RefreshTarget = RefreshTarget(context);
+                context.RefreshPicStruct = H264RefreshSplice.PicStruct(context.RefreshTarget.Sps,
+                    context.FieldOrder != AVFieldOrder.AV_FIELD_PROGRESSIVE, context.FieldOrder == AVFieldOrder.AV_FIELD_TT);
+                var rate = FrameAccurateVideoEncoder.FrameRate(video);
+                var sps = context.RefreshTarget.Sps;
+                if (sps.NumUnitsInTick > 0 && sps.TimeScale > 0 && rate.num > 0)
+                    context.RefreshTicksPerFrame = Math.Max(1, (int)Math.Round(
+                        (double)sps.TimeScale * rate.den / ((double)sps.NumUnitsInTick * rate.num)));
+                using var probe = FrameAccurateVideoEncoder.Open(video, context.ParameterSetId, false, false, context.FieldOrder,
+                    context.SourceBitrate, firstFrame, context.RefreshTarget);
+                context.RefreshEncodedParameterSets.AddRange(probe.ParameterSets);
+            }
             if (video->codecpar->codec_id == AVCodecID.AV_CODEC_ID_H264 &&
                 VideoBitstream.ReadPpsIds(context.EncodedParameterSets[1]).PpsId != context.ParameterSetId)
                 throw new FrameAccurateExportException(FrameAccurateExportError.IncompatibleStream, "pps id");
@@ -627,6 +664,13 @@ internal sealed unsafe class FrameAccurateExportService
         }
     }
 
+    /// <summary>按画面的裁剪信息裁剪（解码器未自行裁剪时）；没有裁剪区时不变。</summary>
+    private static void Crop(AVFrame* frame)
+    {
+        if (frame->crop_top != 0 || frame->crop_bottom != 0 || frame->crop_left != 0 || frame->crop_right != 0)
+            FFmpegException.Check(FF.av_frame_apply_cropping(frame, 1));
+    }
+
     internal static AVFieldOrder FieldOrder(AVFrame* frame) => (frame->flags & AV_FRAME_FLAG_INTERLACED) == 0
         ? AVFieldOrder.AV_FIELD_PROGRESSIVE
         : (frame->flags & AV_FRAME_FLAG_TOP_FIELD_FIRST) != 0 ? AVFieldOrder.AV_FIELD_TT : AVFieldOrder.AV_FIELD_BB;
@@ -675,29 +719,44 @@ internal sealed unsafe class FrameAccurateExportService
         /// H.264 的普通 I 帧（广播常见，可能没有任何 IDR）按开放 GOP 处理，但须先验证（Candidate）：
         /// 规划选用前确认其后画面不参考 I 帧之前的画面，复制时改写为 IDR。
         /// </summary>
-        public (bool RandomAccess, bool Open, bool Candidate) Classify(ReadOnlySpan<byte> data, bool key)
+        public (bool RandomAccess, bool Open, bool Candidate, bool Refresh) Classify(ReadOnlySpan<byte> data, bool key)
         {
+            // 逐行刷新码流：H.264 解复用器按恢复点 SEI 标为关键包、首个切片是 P 的画面，MPEG-2 带序列头的 P 帧
+            // （解复用器不标关键包）。这些画面参考之前的画面，衔接时由头段的重编码画面代替那些画面。
+            if (GradualRefresh && (Mpeg2 || key && !Hevc && !Av1 && !Vp9) &&
+                KeyFrameTypeReader.Read(data, Video->codecpar->codec_id, LengthSize) == KeyFrameTypeReader.RecoveryPoint)
+                return (true, false, false, true);
             if (!key)
-                return (false, false, false);
+                return (false, false, false, false);
             // AV1 显示的关键帧重置全部参考帧，时间单元中没有前导画面，相当于闭合 GOP 的 IDR。
             if (Av1)
-                return (Av1Bitstream.IsKeyFrame(data), false, false);
+                return (Av1Bitstream.IsKeyFrame(data), false, false, false);
             // VP9 关键帧（含超帧中隐藏的关键帧）刷新全部参考帧槽；样本内的隐藏帧在显示帧之前解码，不存在前导画面。
             if (Vp9)
-                return (Vp9Bitstream.IsKeyFrame(data), false, false);
+                return (Vp9Bitstream.IsKeyFrame(data), false, false, false);
             if (Mpeg2)
             {
                 var picture = VideoBitstream.ReadMpeg2(data);
-                return (picture.PictureType == 1, picture.ClosedGop != true, false);
+                return (picture.PictureType == 1, picture.ClosedGop != true, false, false);
             }
             if (IsIdr(data))
-                return (true, false, false);
+                return (true, false, false, false);
             // HEVC 的 CRA/BLA（广播素材常见，全片可能没有 IDR）：此后的普通画面按规范不参考它之前的画面，
             // 只有 RASL 前导画面参考上一 GOP。与 MPEG-2 开放 GOP 相同处理：前导画面丢弃并随片头重新编码，复制时改为 BLA。
             if (Hevc)
-                return VideoBitstream.ContainsOpenIrap(data, LengthSize) ? (true, true, false) : (false, false, false);
-            return H264Splice.IsIntraPicture(data, LengthSize) ? (true, true, true) : (false, false, false);
+                return VideoBitstream.ContainsOpenIrap(data, LengthSize) ? (true, true, false, false) : (false, false, false, false);
+            return H264Splice.IsIntraPicture(data, LengthSize) ? (true, true, true, false) : (false, false, false, false);
         }
+
+        /// <summary>逐行刷新码流（没有 I 帧与 IDR，只有恢复点）：以恢复点作衔接点，见 <see cref="H264RefreshSplice"/>。</summary>
+        public bool GradualRefresh { get; set; }
+        /// <summary>逐行刷新衔接时 H.264 头段沿用的源参数集与头段编码器的配置；MPEG-2 头段沿用的源序列头。</summary>
+        public FrameAccurateVideoEncoder.H264RefreshTarget? RefreshTarget { get; set; }
+        public List<byte[]> RefreshEncodedParameterSets { get; } = [];
+        /// <summary>H.264 头段画面的图像定时 SEI：pic_struct 与每帧的时钟周期数。</summary>
+        public int RefreshPicStruct { get; set; }
+        public int RefreshTicksPerFrame { get; set; } = 1;
+        public VideoBitstream.Mpeg2SequenceUnits? Mpeg2Sequence { get; set; }
 
         /// <summary>
         /// 切点附近原视频码率（bit/s）：各次扫描窗口内视频包字节数除以时长，取最大值。
@@ -739,10 +798,13 @@ internal sealed unsafe class FrameAccurateExportService
     /// 画面的显示时间取第一场；规划中的画面边界、终点与时长都按画面计算。
     /// </summary>
     private readonly record struct VideoPacket(long Pts, long Dts, long Duration, bool RandomAccess, bool Key, bool Open,
-        bool Candidate = false, bool SecondField = false, int Size = 0);
+        bool Candidate = false, bool SecondField = false, int Size = 0, bool Refresh = false);
 
-    /// <summary>衔接点：GroupStart 为该 GOP（含前导画面）最早的显示时间；开放 GOP 的复制只能从 I 帧本身的显示时间开始。</summary>
-    private readonly record struct Splice(long GroupStart, bool Open, long Pts)
+    /// <summary>
+    /// 衔接点：GroupStart 为该 GOP（含前导画面）最早的显示时间；开放 GOP 的复制只能从 I 帧本身的显示时间开始。
+    /// Refresh 为逐行刷新码流的恢复点：复制区开头的画面参考它之前的画面，需要头段代替那些画面。
+    /// </summary>
+    private readonly record struct Splice(long GroupStart, bool Open, long Pts, bool Refresh = false)
     {
         public long CopyDisplayStart => Open ? Pts : GroupStart;
     }
@@ -761,6 +823,8 @@ internal sealed unsafe class FrameAccurateExportService
         public long? TailWarmupPts { get; init; }
         /// <summary>复制起点为场对时其第二场的 PTS：与 I 场一起暂存，头段解码前导画面时同样需要。</summary>
         public long? CopyStartPairPts { get; init; }
+        /// <summary>复制起点是逐行刷新码流的恢复点：头段画面代替复制区开头所参考的画面（H.264 头段改写到源参数集上）。</summary>
+        public bool Refresh { get; init; }
         public bool HasCopy => CopyStartPts is not null;
         public bool HasHead => !HasCopy || CopyDisplayStart > StartPts;
         // 保留到文件末尾时按视频流终点估算，仅用于进度显示。
@@ -777,25 +841,36 @@ internal sealed unsafe class FrameAccurateExportService
         bool reachedEof;
         long copyDisplayStart;
         bool dropLeading;
+        // 逐行刷新码流：解码从起点之前一个预滚时长处开始；以恢复点为复制起点时，头段至少要有源 SPS 允许的参考帧数那么多画面，
+        // 复制区开头参考的画面才都由头段画面代替。
+        var gradual = context.GradualRefresh;
+        var preroll = gradual ? context.Ticks(GradualRefreshPrerollSeconds) : 0;
         // 普通 I 帧在选用时才验证；有候选验证失败时重新扫描，已知不合格的候选不再作为扫描终点，范围随之扩大。
         for (var round = 0; ; round++)
         {
             var rejected = RejectedCount(context);
-            (head, headStartIndex, startIndex, reachedEof) = ScanAround(context, start, start, token);
+            (head, headStartIndex, startIndex, reachedEof) = ScanAround(context, start - preroll, start, token,
+                gradual ? start + MaximumRefreshHeadFrames * FrameDuration(context) : null);
             k0 = -1;
             // 开放 GOP 的 I 帧之前显示的前导画面不能从该 I 帧开始解码，解码起点须不晚于起点显示。
             for (var i = startIndex; i >= headStartIndex; i--)
-                if (head[i].RandomAccess && (!head[i].Open || head[i].Pts <= start) && Usable(context, head[i], token))
+                if (head[i].RandomAccess && (!head[i].Open || head[i].Pts <= start) &&
+                    (!head[i].Refresh || Content(context, head, head[i].Pts, start) >= preroll) && Usable(context, head[i], token))
                 {
                     k0 = i;
                     break;
                 }
+            // 逐行刷新码流开头不足一个预滚时长：从最早的恢复点开始解码（画面与从文件开头播放时相同）。
+            if (k0 < 0 && gradual)
+                k0 = head.FindIndex(headStartIndex, packet => packet.RandomAccess && packet.Refresh && packet.Pts <= start);
             k1 = -1;
             copyDisplayStart = 0;
             dropLeading = false;
+            var minimumHead = gradual ? RefreshHeadFrames(context) : 0;
             if (k0 >= 0)
                 for (var i = k0; i < head.Count; i++)
-                    if (SpliceAt(head, i, reachedEof) is { } splice && splice.CopyDisplayStart >= start && Usable(context, head[i], token))
+                    if (SpliceAt(head, i, reachedEof) is { } splice && splice.CopyDisplayStart >= start &&
+                        (!splice.Refresh || Frames(head, start, splice.Pts) >= minimumHead) && Usable(context, head[i], token))
                     {
                         (k1, copyDisplayStart, dropLeading) = (i, splice.CopyDisplayStart, splice.Open);
                         break;
@@ -815,7 +890,9 @@ internal sealed unsafe class FrameAccurateExportService
             if (end is null && k1 < 0 && !reachedEof || Content(context, head, start, (end ?? head.Max(packet => packet.Pts)) + 1) > limit)
                 throw new FrameAccurateExportException(FrameAccurateExportError.ReencodeTooLong);
             // 范围内有关键帧却不能衔接（开放 GOP 或非 IDR 关键帧）：不把跨 GOP 的范围整体重编码。
-            if (head.Skip(k0 + 1).Any(packet => packet.Key && packet.Pts > start && packet.Pts <= (end ?? long.MaxValue)))
+            // 逐行刷新的恢复点离起点太近（头段画面不够）时同样整体重编码，从预滚处解码即可。
+            if (head.Skip(k0 + 1).Any(packet => packet.Key && !packet.Refresh && packet.Pts > start &&
+                                                packet.Pts <= (end ?? long.MaxValue)))
                 throw new FrameAccurateExportException(FrameAccurateExportError.NoRandomAccessPoint, "open GOP");
             if (endExclusive == long.MinValue)
                 endExclusive = EstimateEnd(context, head, end!.Value);
@@ -824,6 +901,7 @@ internal sealed unsafe class FrameAccurateExportService
         if (Content(context, head, start, copyDisplayStart) > limit)
             throw new FrameAccurateExportException(FrameAccurateExportError.ReencodeTooLong);
         var copyStart = head[k1].Pts;
+        var refresh = head[k1].Refresh;
         // 头段不用 B 帧，DTS = PTS − Δ；Δ 取复制区首个显示时间与复制起点 IDR 解码时间之差，
         // 使头段最后一帧的 DTS 早于复制区首包。
         var headDelta = copyDisplayStart - head[k1].Dts;
@@ -831,7 +909,10 @@ internal sealed unsafe class FrameAccurateExportService
         var firstDts = copyDisplayStart == start ? head[k1].Dts : start - headDelta;
         if (end is not { } endPts)
             return new SegmentPlan(start, null, long.MaxValue, decodeStart, copyStart, copyDisplayStart, null, true, null,
-                0, headDelta, 0, firstDts, head[k1].Dts) { DropLeading = dropLeading, CopyStartPairPts = pairPts };
+                0, headDelta, 0, firstDts, head[k1].Dts)
+            {
+                DropLeading = dropLeading, CopyStartPairPts = pairPts, Refresh = refresh
+            };
 
         // 终点：找到显示起点不晚于终点的最后一个可衔接 IDR；该 GOP 中保留的包若恰为解码顺序前缀，直接复制。
         var tailSeek = Math.Max(copyDisplayStart, endPts);
@@ -892,7 +973,10 @@ internal sealed unsafe class FrameAccurateExportService
                 prefix = false;
         if (prefix)
             return new SegmentPlan(start, end, endExclusive, decodeStart, copyStart, copyDisplayStart, copyEnd,
-                copyEnd is null, null, 0, headDelta, 0, firstDts, head[k1].Dts) { DropLeading = dropLeading, CopyStartPairPts = pairPts };
+                copyEnd is null, null, 0, headDelta, 0, firstDts, head[k1].Dts)
+            {
+                DropLeading = dropLeading, CopyStartPairPts = pairPts, Refresh = refresh
+            };
         if (tail[k2].Pts == copyStart)
         {
             // 唯一可衔接的 IDR 所在 GOP 也需重编码时，没有可复制的完整区间，整个范围重新编码。
@@ -900,14 +984,101 @@ internal sealed unsafe class FrameAccurateExportService
                 throw new FrameAccurateExportException(FrameAccurateExportError.ReencodeTooLong);
             return new SegmentPlan(start, end, endExclusive, head[k0].Pts, null, 0, null, false, null, 0, 0, 0, start);
         }
+        // 从恢复点单独解码的画面不完整；逐行刷新码流只有 P 帧时复制区总能直接复制到终点，带重排序的码流不支持重编码尾段。
+        if (tail[k2].Refresh)
+            throw new FrameAccurateExportException(FrameAccurateExportError.NoRandomAccessPoint, "gradual refresh end");
         if (Content(context, tail, tailDisplayStart, endPts + 1) > limit)
             throw new FrameAccurateExportException(FrameAccurateExportError.ReencodeTooLong);
         // 尾段首帧使用尾段 IDR 的原始 DTS，晚于复制区最后一个包。
         return new SegmentPlan(start, end, endExclusive, decodeStart, copyStart, copyDisplayStart, tail[k2].Pts, false,
             tail[k2].Pts, tailDisplayStart, headDelta, tailDisplayStart - tail[k2].Dts, firstDts, head[k1].Dts)
         {
-            DropLeading = dropLeading, CopyStartPairPts = pairPts, TailWarmupPts = warmup
+            DropLeading = dropLeading, CopyStartPairPts = pairPts, TailWarmupPts = warmup, Refresh = refresh
         };
+    }
+
+    /// <summary>逐行刷新衔接时头段画面数的上限（H.264 参考帧数的上限），扫描时据此确认足够远的衔接点。</summary>
+    private const int MaximumRefreshHeadFrames = 16;
+
+    /// <summary>
+    /// 以恢复点为复制起点时头段至少需要的画面数：H.264 为源 SPS 的参考帧数（滑动窗口中的画面全部由头段画面代替），
+    /// MPEG-2 的 P 帧只参考上一个画面（场画面为上一帧的两个场）。参数集未知时取上限。
+    /// </summary>
+    private static int RefreshHeadFrames(SpliceContext context)
+    {
+        if (context.Mpeg2)
+            return 1;
+        var frames = VideoBitstream.OfType(context.OriginalParameterSets, false, 7)
+            .Select(sps => H264RefreshSplice.ParseSps(sps)?.MaxNumRefFrames ?? MaximumRefreshHeadFrames)
+            .DefaultIfEmpty(MaximumRefreshHeadFrames).Max();
+        return Math.Clamp(frames, 1, MaximumRefreshHeadFrames);
+    }
+
+    /// <summary>显示时间在 [from, to) 内的画面数（场对算一个画面）。</summary>
+    private static int Frames(List<VideoPacket> packets, long from, long to) =>
+        packets.Count(packet => !packet.SecondField && packet.Pts >= from && packet.Pts < to);
+
+    /// <summary>
+    /// 逐行刷新码流的判断：从最早的起点之前一个预滚时长处读取一段视频包（至少覆盖一个预滚时长），
+    /// 其中没有 I 帧或 IDR，却有恢复点（H.264 首个切片为 P 的关键包，MPEG-2 带序列头的 P 帧）。
+    /// </summary>
+    private static bool DetectGradualRefresh(SpliceContext context, long start, CancellationToken token)
+    {
+        var input = context.Input;
+        AVFormatContext* raw = input;
+        var video = context.Video;
+        var discards = new AVDiscard[raw->nb_streams];
+        for (var i = 0; i < raw->nb_streams; i++)
+        {
+            discards[i] = raw->streams[i]->discard;
+            if (i != video->index)
+                raw->streams[i]->discard = AVDiscard.AVDISCARD_ALL;
+        }
+        try
+        {
+            var preroll = context.Ticks(GradualRefreshPrerollSeconds);
+            input.SeekFrame(start - preroll, video->index);
+            var refresh = 0;
+            var frames = 0L;
+            foreach (var packet in input.ReadPackets())
+            {
+                token.ThrowIfCancellationRequested();
+                AVPacket* p = packet;
+                if (p->stream_index != video->index)
+                    continue;
+                var data = new ReadOnlySpan<byte>(p->data, p->size);
+                var key = (p->flags & 1) != 0;
+                if (context.Classify(data, key).RandomAccess)
+                    return false;
+                if ((context.Mpeg2 || key) &&
+                    KeyFrameTypeReader.Read(data, video->codecpar->codec_id, context.LengthSize) == KeyFrameTypeReader.RecoveryPoint)
+                    refresh++;
+                if (++frames * FrameDuration(context) > 2 * preroll)
+                    break;
+            }
+            return refresh > 0;
+        }
+        finally
+        {
+            for (var i = 0; i < discards.Length; i++)
+                raw->streams[i]->discard = discards[i];
+        }
+    }
+
+    /// <summary>逐行刷新衔接的 H.264 头段沿用的源参数集（首个可用的 PPS 及其 SPS）；不能沿用时说明原因。</summary>
+    private static FrameAccurateVideoEncoder.H264RefreshTarget RefreshTarget(SpliceContext context)
+    {
+        var sequences = VideoBitstream.OfType(context.OriginalParameterSets, false, 7)
+            .Select(set => H264RefreshSplice.ParseSps(set)).OfType<H264RefreshSplice.SequenceSyntax>().ToList();
+        foreach (var set in VideoBitstream.OfType(context.OriginalParameterSets, false, 8))
+        {
+            if (H264RefreshSplice.ParsePps(set) is not { } pps || sequences.Find(sps => sps.Id == pps.SpsId) is not { } sps)
+                continue;
+            return H264RefreshSplice.Unsupported(sps, pps) is { } reason
+                ? throw new FrameAccurateExportException(FrameAccurateExportError.Unsupported, reason, FrameAccurateSupport.GradualRefresh)
+                : new FrameAccurateVideoEncoder.H264RefreshTarget(sps, pps);
+        }
+        throw new FrameAccurateExportException(FrameAccurateExportError.IncompatibleStream, "parameter sets");
     }
 
     /// <summary>按扫描窗口（至少半秒）统计视频码率，记录各窗口中的最大值。</summary>
@@ -1103,6 +1274,8 @@ internal sealed unsafe class FrameAccurateExportService
             decoder.ThreadCount = 0;
             // 沿用源流的重排序深度：新解码器从 IDR 开始时按 0 帧延迟输出，会丢掉 I 帧之后先解码、后显示的 B 帧。
             ((AVCodecContext*)decoder)->has_b_frames = context.Video->codecpar->video_delay;
+            // 与对照解码器一致地裁剪（逐行刷新码流的导出解码器输出完整的编码画面），画面哈希才可比较。
+            ((AVCodecContext*)decoder)->apply_cropping = ((AVCodecContext*)context.Decoder!)->apply_cropping;
             FFmpegException.Check(FF.avcodec_open2(decoder, FF.avcodec_find_decoder(AVCodecID.AV_CODEC_ID_H264), null));
             return DecodeHashes(decoder, rewritten, 0, rewritten.Count, lower, upper, token);
         }
@@ -1279,7 +1452,7 @@ internal sealed unsafe class FrameAccurateExportService
         for (var i = index - 1; i >= 0 && !packets[i].RandomAccess; i--)
             if (packets[i].Pts >= display)
                 return null;
-        return new Splice(display, packets[index].Open, packets[index].Pts);
+        return new Splice(display, packets[index].Open, packets[index].Pts, packets[index].Refresh);
     }
 
     /// <summary>
@@ -1296,10 +1469,10 @@ internal sealed unsafe class FrameAccurateExportService
 
     /// <summary>
     /// 从目标之前定位读取视频包元数据，直到目标之后出现已确认闭合的 IDR、文件结束或超过重编码上限。
-    /// 返回列表、首个 IDR 的位置、目标帧位置。
+    /// 返回列表、首个 IDR 的位置、目标帧位置。confirmAfter 为衔接点须晚于的时间（默认为目标本身）。
     /// </summary>
     private (List<VideoPacket> Packets, int FirstIdr, int TargetIndex, bool ReachedEof) ScanAround(
-        SpliceContext context, long seekTarget, long target, CancellationToken token)
+        SpliceContext context, long seekTarget, long target, CancellationToken token, long? confirmAfter = null)
     {
         var input = context.Input;
         AVFormatContext* raw = input;
@@ -1337,7 +1510,9 @@ internal sealed unsafe class FrameAccurateExportService
                     if (p->stream_index != video->index || p->pts == FF.AV_NOPTS_VALUE)
                         continue;
                     var data = new ReadOnlySpan<byte>(p->data, p->size);
-                    var (idr, open, candidate) = context.Classify(data, (p->flags & 1) != 0);
+                    var (idr, open, candidate, refresh) = context.Classify(data, (p->flags & 1) != 0);
+                    if (refresh && context.Mpeg2)
+                        context.Mpeg2Sequence ??= VideoBitstream.ReadMpeg2Sequence(data);
                     if (idr)
                     {
                         // 记录带内参数集；广播 TS 通常只在码流中携带 SPS/PPS。
@@ -1356,10 +1531,10 @@ internal sealed unsafe class FrameAccurateExportService
                         firstField = picture.Field && !secondField ? picture : null;
                     }
                     packets.Add(new VideoPacket(p->pts, p->dts, p->duration, idr, (p->flags & 1) != 0, open, candidate,
-                        secondField, p->size));
+                        secondField, p->size, refresh));
                     if (!secondField && p->pts > target)
                         after++;
-                    if (p->pts > target && Confirmed(context, packets, target) || after * frame > limit)
+                    if (p->pts > target && Confirmed(context, packets, confirmAfter ?? target) || after * frame > limit)
                     {
                         reachedEof = false;
                         break;
@@ -1666,6 +1841,8 @@ internal sealed unsafe class FrameAccurateExportService
         private H264Splice.CopyRewriter? h264Rewriter;
         // 改写出的 IDR 在 1、2 间交替，与 x264 首个 IDR（0）及相邻的改写 IDR 都不同。
         private int idrPicId = 2;
+        // H.264 复制区从逐行刷新的恢复点开始时的重编号状态（接续头段的编号），每个片段重新开始。
+        private H264RefreshSplice.CopyRenumberer? h264Renumberer;
 
         public long LastVideoDts => lastDts[map.VideoOutput];
 
@@ -1677,6 +1854,7 @@ internal sealed unsafe class FrameAccurateExportService
             spliceFirstDts = Rescale(firstSourceDts - sourceStart + offset, context.Video->time_base, timeBase);
             splicePreviousDts = lastDts[map.VideoOutput];
             h264Rewriter = null;
+            h264Renumberer = null;
         }
 
         public long MapTime(long value, AVRational from, int outputIndex)
@@ -1751,8 +1929,13 @@ internal sealed unsafe class FrameAccurateExportService
             lastDts[index] = packet->dts;
         }
 
-        /// <summary>复制源压缩数据，按输出需要转换为 Annex B 并补带内参数集；NAL 与图像数据不变。</summary>
-        public void WriteCopied(AVPacket* source, long sourceDts, bool insertParameterSets, bool closeGop = false)
+        /// <summary>
+        /// 复制源压缩数据，按输出需要转换为 Annex B 并补带内参数集；NAL 与图像数据不变。
+        /// refreshPictures 不小于 0 时，复制起点是逐行刷新的恢复点，前面已写出这么多头段画面：
+        /// MPEG-2 不结束序列（复制的画面参考头段画面），H.264 此后的切片接续头段编号。
+        /// </summary>
+        public void WriteCopied(AVPacket* source, long sourceDts, bool insertParameterSets, bool closeGop = false,
+            int refreshPictures = -1)
         {
             var data = new ReadOnlySpan<byte>(source->data, source->size);
             // VP9 样本（含超帧与隐藏帧）原样写出：关键帧自带画面尺寸、位深与色彩空间，不需要补任何头。
@@ -1774,7 +1957,8 @@ internal sealed unsafe class FrameAccurateExportService
             {
                 byte[]? bytes = null;
                 // 复制区从重编码段之后开始：重编码段的序列头参数不同，先结束上一序列再开始新序列。
-                ReadOnlySpan<byte> restart = insertParameterSets && LastVideoDts != FF.AV_NOPTS_VALUE ? SequenceEndCode : [];
+                ReadOnlySpan<byte> restart = insertParameterSets && refreshPictures < 0 && LastVideoDts != FF.AV_NOPTS_VALUE
+                    ? SequenceEndCode : [];
                 ReadOnlySpan<byte> header = insertParameterSets && !VideoBitstream.ReadMpeg2(data).SequenceHeader
                     ? context.Mpeg2Header : [];
                 if (restart.Length + header.Length > 0)
@@ -1805,6 +1989,13 @@ internal sealed unsafe class FrameAccurateExportService
                 VideoBitstream.ConvertCraToBla(writable, context.LengthSize);
                 WriteAnnexB(source, writable, context.LengthSize, prefix, source->pts, sourceDts, source->duration,
                     source->flags, sampleEntry);
+                return;
+            }
+            if (refreshPictures >= 0)
+                h264Renumberer = new H264RefreshSplice.CopyRenumberer(context.CreateH264Sets(), refreshPictures);
+            if (h264Renumberer is { Active: true } renumberer)
+            {
+                WriteRenumbered(source, renumberer, data, sourceDts);
                 return;
             }
             // H.264 复制区从普通 I 帧开始：该 I 帧改写为 IDR，此后的切片重编号，直到码流自身出现 IDR。
@@ -1882,6 +2073,23 @@ internal sealed unsafe class FrameAccurateExportService
                 }
                 WriteData(source, buffer.AsSpan(0, length), source->pts, sourceDts, source->duration,
                     convertToIdr ? source->flags | 1 : source->flags);
+            }
+            finally { ArrayPool<byte>.Shared.Return(buffer); }
+        }
+
+        private void WriteRenumbered(AVPacket* source, H264RefreshSplice.CopyRenumberer renumberer, ReadOnlySpan<byte> data,
+            long sourceDts)
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(H264Splice.CopyRewriter.OutputBound(data, context.LengthSize, null));
+            try
+            {
+                int length;
+                try { length = renumberer.Rewrite(data, context.LengthSize, buffer); }
+                catch (InvalidDataException exception)
+                {
+                    throw new FrameAccurateExportException(FrameAccurateExportError.IncompatibleStream, exception.Message);
+                }
+                WriteData(source, buffer.AsSpan(0, length), source->pts, sourceDts, source->duration, source->flags);
             }
             finally { ArrayPool<byte>.Shared.Return(buffer); }
         }
@@ -2044,6 +2252,12 @@ internal sealed unsafe class FrameAccurateExportService
         var warming = false;
         long encodeDelta = 0;
         var firstEncodedPacket = true;
+        // 逐行刷新衔接的头段：编码器按源参数集的要求编码，H.264 输出改写到源参数集上（见 H264RefreshSplice）。
+        var refreshEncoding = false;
+        H264RefreshSplice.HeadRewriter? headRewriter = null;
+        // 头段经过的源画面（帧或场对的第一场）：复制区开头参考的画面须都是参考画面且编号连续，才能由头段画面一一代替。
+        var sourcePictures = new List<(int FrameNum, bool Reference)>();
+        H264Splice.PictureInfo? sourceField = null;
         var finishedStreams = new HashSet<int>();
         var otherStreams = settings.StreamIndices.Where(index => index != settings.VideoIndex &&
             (rawInput->streams[index]->disposition & 1024) == 0 &&
@@ -2137,10 +2351,12 @@ internal sealed unsafe class FrameAccurateExportService
                     return;
                 phase = plan.HasHead ? Phase.Head : Phase.Copy;
                 if (phase == Phase.Head)
-                    StartEncoder(plan.HeadDelta);
+                    StartEncoder(plan.HeadDelta, plan.Refresh);
             }
             if (phase == Phase.Head)
             {
+                if (plan.Refresh && context.Nal)
+                    TrackSourcePicture(packet, pts == plan.CopyStartPts);
                 if (plan.HasCopy && pts == plan.CopyStartPts)
                 {
                     if (!plan.DropLeading)
@@ -2212,7 +2428,7 @@ internal sealed unsafe class FrameAccurateExportService
                         return;
                     }
                     phase = Phase.Tail;
-                    StartEncoder(plan.TailDelta);
+                    StartEncoder(plan.TailDelta, false);
                 }
                 else
                 {
@@ -2245,7 +2461,7 @@ internal sealed unsafe class FrameAccurateExportService
         {
             var pts = packet->pts;
             var start = pts == plan.CopyStartPts;
-            var (randomAccess, _, candidate) = context.Classify(new ReadOnlySpan<byte>(packet->data, packet->size), (packet->flags & 1) != 0);
+            var (randomAccess, _, candidate, _) = context.Classify(new ReadOnlySpan<byte>(packet->data, packet->size), (packet->flags & 1) != 0);
             // 普通 I 帧只在作为复制起点（改写为 IDR）时视为随机访问点，其余仍按原样复制。
             randomAccess &= !candidate || start;
             // 定位后缺少 DTS 的包按上一包顺推；复制区首包使用规划时回推得到的 DTS。
@@ -2257,10 +2473,44 @@ internal sealed unsafe class FrameAccurateExportService
             lastVideoEnd = Math.Max(lastVideoEnd, pts + Math.Max(0, packet->duration));
             // H.264 的 TS 输出在每个复制的 IDR 前确保带内参数集；HEVC 在复制区首包前重发原始参数集，
             // 恢复被重编码段带内重新定义的 0 号参数集；MPEG-2 在复制区首包前补原始序列头（量化矩阵等）。
+            // 逐行刷新的复制起点：头段已以源参数集开始，H.264 复制区接续头段的编号，MPEG-2 不结束序列。
+            var refreshStart = start && plan.Refresh;
             var insert = !context.Nal ? start
-                : randomAccess && (writer.InBandParameterSets || context.Hevc && start);
-            writer.WriteCopied(packet, dts, insert, closeGop: start && plan.DropLeading);
+                : randomAccess && !refreshStart && (writer.InBandParameterSets || context.Hevc && start);
+            writer.WriteCopied(packet, dts, insert, closeGop: start && plan.DropLeading,
+                refreshPictures: refreshStart ? context.Nal ? headRewriter!.Pictures : encodedPts.Count : -1);
             copiedPackets++;
+        }
+
+        // 逐行刷新衔接（H.264）：记录头段经过的源画面；到复制起点时核对它之前的参考画面（源 SPS 的参考帧数）
+        // 都作参考且 frame_num 连续，否则复制区开头按相对编号找到的头段画面与原参考画面不对应。
+        void TrackSourcePicture(AVPacket* packet, bool copyStart)
+        {
+            var data = new ReadOnlySpan<byte>(packet->data, packet->size);
+            if (H264Splice.ReadPicture(data, context.LengthSize, context.H264Sets, context.Scratch) is not { } picture)
+                throw new FrameAccurateExportException(FrameAccurateExportError.IncompatibleStream, "slice header");
+            var second = picture.Field && sourceField is { } first && first.FrameNum == picture.FrameNum &&
+                         first.Bottom != picture.Bottom;
+            sourceField = picture.Field && !second ? picture : null;
+            if (second)
+                return;
+            if (!copyStart)
+            {
+                sourcePictures.Add((picture.FrameNum, picture.Reference));
+                if (sourcePictures.Count > MaximumRefreshHeadFrames)
+                    sourcePictures.RemoveAt(0);
+                return;
+            }
+            var sps = context.RefreshTarget!.Sps;
+            var max = 1 << sps.Log2MaxFrameNum;
+            if (sourcePictures.Count < sps.MaxNumRefFrames)
+                throw new FrameAccurateExportException(FrameAccurateExportError.IncompatibleStream, "refresh head");
+            for (var k = 1; k <= sps.MaxNumRefFrames; k++)
+            {
+                var (frameNum, reference) = sourcePictures[^k];
+                if (!reference || frameNum != ((picture.FrameNum - k) % max + max) % max)
+                    throw new FrameAccurateExportException(FrameAccurateExportError.IncompatibleStream, "refresh references");
+            }
         }
 
         // 写出补写的 PGS 显示集合（起点状态或清屏）；sourcePts 为源视频时间基。
@@ -2345,10 +2595,12 @@ internal sealed unsafe class FrameAccurateExportService
         }
 
         // 编码器在收到首帧时打开，HEVC 的 HDR10 静态元数据可能只在画面的 SEI 中。
-        void StartEncoder(long delta)
+        void StartEncoder(long delta, bool refresh)
         {
             encoderActive = true;
             encodeDelta = delta;
+            refreshEncoding = refresh;
+            headRewriter = null;
             firstEncodedPacket = true;
             pendingDurations.Clear();
             encodedPts.Clear();
@@ -2428,12 +2680,24 @@ internal sealed unsafe class FrameAccurateExportService
                 encodedPts.Add(pts);
                 // MPEG-2 编码器只接受标准帧率的时间基，按帧序号送入；输出包按顺序对应源 PTS。
                 raw->pts = context.Mpeg2 ? encodedPts.Count - 1 : pts;
+                // 只有逐行刷新衔接的 H.264 头段按完整的编码画面编码。
+                if (!(refreshEncoding && context.Nal))
+                    Crop(raw);
                 if (encoder is null)
                 {
+                    var target = refreshEncoding && context.Nal ? context.RefreshTarget : null;
                     encoder = FrameAccurateVideoEncoder.Open(video, context.ParameterSetId, context.Hevc, context.HighTier,
-                        context.FieldOrder, context.SourceBitrate, raw);
-                    if (!encoder.ParameterSets.SequenceEqual(context.EncodedParameterSets, ByteArrayComparer.Instance))
+                        context.FieldOrder, context.SourceBitrate, raw, target, context.Mpeg2Sequence);
+                    if (!encoder.ParameterSets.SequenceEqual(target is null ? context.EncodedParameterSets
+                            : context.RefreshEncodedParameterSets, ByteArrayComparer.Instance))
                         throw new FrameAccurateExportException(FrameAccurateExportError.IncompatibleStream, "encoder parameter sets");
+                    if (target is not null)
+                    {
+                        var sets = new H264Splice.ParameterSets();
+                        sets.AddAll(encoder.ParameterSets);
+                        headRewriter = new H264RefreshSplice.HeadRewriter(target.Sps, target.Pps, sets, encoder.RefreshPps!,
+                            context.RefreshPicStruct, context.RefreshTicksPerFrame);
+                    }
                 }
                 encoder.Send(raw, WriteEncoded);
                 encodedFrames++;
@@ -2467,9 +2731,18 @@ internal sealed unsafe class FrameAccurateExportService
                 throw new FrameAccurateExportException(FrameAccurateExportError.EncodeFailed, "unexpected packet");
             var sourcePts = encodedPts[encodedOutput++];
             var data = new ReadOnlySpan<byte>(packet->data, packet->size);
+            // 逐行刷新衔接的头段：H.264 改写到源参数集上（TS 在首个画面前带内写源参数集），
+            // MPEG-2 的序列头改为与源一致（同一序列）。
+            byte[]? transformed = null;
+            if (headRewriter is not null)
+                transformed = RewriteHead(data, firstEncodedPacket && writer.InBandParameterSets ? context.OriginalParameterSets : null);
+            else if (refreshEncoding && context.Mpeg2 && context.Mpeg2Sequence is { } sequence)
+                transformed = VideoBitstream.AlignMpeg2Sequence(data, sequence);
+            if (transformed is not null)
+                data = transformed;
             // H.264 的重编码参数集在全局头中，TS 需带内补到首个 IDR；HEVC 编码器已在码流中输出。
-            List<byte[]>? prefix = writer.InBandParameterSets && firstEncodedPacket && context.Nal && !context.Hevc
-                ? context.EncodedParameterSets : null;
+            List<byte[]>? prefix = headRewriter is null && writer.InBandParameterSets && firstEncodedPacket && context.Nal &&
+                                   !context.Hevc ? context.EncodedParameterSets : null;
             // MPEG-2 重编码段接在已写出的画面之后：先结束上一序列，新序列从编码器输出的序列头开始。
             var restart = context.Mpeg2 && firstEncodedPacket && writer.LastVideoDts != FF.AV_NOPTS_VALUE;
             // HEVC MP4：重编码段首包带内的 VPS/SPS/PPS 作为新的样本描述。
@@ -2495,6 +2768,12 @@ internal sealed unsafe class FrameAccurateExportService
                     data.CopyTo(target[SequenceEndCode.Length..]);
                     raw->flags = packet->flags;
                 }
+                else if (transformed is not null && prefix is null)
+                {
+                    FFmpegException.Check(FF.av_new_packet(raw, transformed.Length));
+                    transformed.CopyTo(new Span<byte>(raw->data, raw->size));
+                    raw->flags = packet->flags;
+                }
                 else if (prefix is null)
                 {
                     FFmpegException.Check(FF.av_packet_ref(raw, packet));
@@ -2516,6 +2795,21 @@ internal sealed unsafe class FrameAccurateExportService
                 throw;
             }
             DrainEncoded();
+        }
+
+        byte[] RewriteHead(ReadOnlySpan<byte> data, IReadOnlyList<byte[]>? parameterSets)
+        {
+            var buffer = ArrayPool<byte>.Shared.Rent(H264RefreshSplice.HeadRewriter.OutputBound(data, parameterSets));
+            try
+            {
+                var length = headRewriter!.Rewrite(data, parameterSets, buffer);
+                return buffer.AsSpan(0, length).ToArray();
+            }
+            catch (InvalidDataException exception)
+            {
+                throw new FrameAccurateExportException(FrameAccurateExportError.IncompatibleStream, exception.Message);
+            }
+            finally { ArrayPool<byte>.Shared.Return(buffer); }
         }
 
         void DrainEncoded()

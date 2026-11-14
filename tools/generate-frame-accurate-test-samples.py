@@ -99,6 +99,13 @@ def main():
     ffmpeg(*inputs(25, 10, "352x288"), "-vf", f"format=yuv420p,{FRAME_NUMBER},setfield=tff", "-c:v", "mpeg2video",
            "-b:v", "4M", "-maxrate", "6M", "-bufsize", "1835k", "-g", 24, "-bf", 3, "-sc_threshold", 1000000000,
            "-flags", "+ilme+ildct", "-c:a", "mp2", "-b:a", "192k", "-output_ts_offset", 30, root / "mpeg2.ts")
+    # MPEG-2 4:2:2 档次（广播制作与交换常用）：隔行下场优先的 Main 级别（标清尺寸），以及逐行的 High 级别（高清尺寸）。
+    ffmpeg(*inputs(25, 8, "352x288"), "-vf", f"format=yuv422p,{FRAME_NUMBER},setfield=bff", "-c:v", "mpeg2video",
+           "-b:v", "8M", "-maxrate", "12M", "-bufsize", "3670k", "-g", 15, "-bf", 2, "-sc_threshold", 1000000000,
+           "-flags", "+ilme+ildct", "-c:a", "mp2", "-b:a", "192k", "-output_ts_offset", 40, root / "mpeg2-422.ts")
+    ffmpeg(*inputs(25, 4, "1280x720"), "-vf", f"format=yuv422p,{FRAME_NUMBER}", "-c:v", "mpeg2video",
+           "-b:v", "12M", "-maxrate", "18M", "-bufsize", "7340k", "-g", 12, "-bf", 2, "-sc_threshold", 1000000000,
+           "-c:a", "mp2", "-b:a", "192k", root / "mpeg2-422-hl.ts")
     # High 4:4:4 Predictive 档次：用于验证不支持的格式在写文件前被拒绝。
     ffmpeg(*inputs(25, 3), *encode("-g", 25, "-pix_fmt", "yuv444p"), root / "h264-444.mp4")
     # High 4:2:2 档次（与常见广播交换素材一致）：8 位逐行 MP4（闭合 GOP）；
@@ -153,7 +160,11 @@ def main():
     without_channel_layout(root / "pcm-layout.mov", root / "pcm-no-layout.mov")
 
     gradual_refresh(ffmpeg, root)
+    # 隔行（MBAFF、上场优先）逐行刷新：POC 类型 0、带 pic_struct，CAVLC、不用 8x8 变换，覆盖头段改写的另一组语法。
+    gradual_refresh(ffmpeg, root, "gradual-refresh-mbaff", "320x192", ["setfield=tff"],
+                    ["-flags", "+ildct+ilme"], ":tff=1:cabac=0:8x8dct=0")
     mpeg2_refresh(ffmpeg, root)
+    mpeg2_refresh_numbered(ffmpeg, root)
 
     for path in sorted(root.iterdir()):
         print(f"{path.name}: {path.stat().st_size} bytes")
@@ -389,16 +400,16 @@ def split_nals(data):
     return nals
 
 
-def gradual_refresh(ffmpeg, root):
+def gradual_refresh(ffmpeg, root, name="gradual-refresh", size="320x180", filters=(), options=(), params=""):
     """逐行刷新（周期帧内刷新）H.264：只有 P 条带的恢复点，没有 IDR 和 I 帧。
 
     去掉开头的 IDR，并把恢复点 SEI 改为声称立即恢复（recovery_frame_cnt=0），与部分卫星转播源相同：
     解复用器把恢复点标为关键帧，单独从这里解码要等刷新扫过整幅画面才完整。
     """
-    raw = root / "gradual-refresh.h264"
-    ffmpeg("-f", "lavfi", "-i", "testsrc2=size=320x180:rate=25:duration=30",
-           "-vf", f"format=yuv420p,{FRAME_NUMBER}", "-c:v", "libx264", "-preset", "veryfast", "-crf", 23,
-           "-bf", 0, "-x264-params", "intra-refresh=1:keyint=25:aud=1", "-f", "h264", raw)
+    raw = root / f"{name}.h264"
+    ffmpeg("-f", "lavfi", "-i", f"testsrc2=size={size}:rate=25:duration=30",
+           "-vf", ",".join(["format=yuv420p", FRAME_NUMBER, *filters]), "-c:v", "libx264", "-preset", "veryfast",
+           "-crf", 23, "-bf", 0, *options, "-x264-params", "intra-refresh=1:keyint=25:aud=1" + params, "-f", "h264", raw)
     nals = split_nals(raw.read_bytes())
     raw.unlink()
     parameter_sets = [nal for nal in nals if nal[0] & 31 in (7, 8)][:2]
@@ -427,7 +438,7 @@ def gradual_refresh(ffmpeg, root):
                 for parameter_set in parameter_sets:
                     output += b"\x00\x00\x00\x01" + parameter_set
     raw.write_bytes(bytes(output))
-    ffmpeg("-f", "h264", "-framerate", 25, "-i", raw, "-c", "copy", "-output_ts_offset", 10, root / "gradual-refresh.ts")
+    ffmpeg("-f", "h264", "-framerate", 25, "-i", raw, "-c", "copy", "-output_ts_offset", 10, root / f"{name}.ts")
     raw.unlink()
 
 
@@ -446,6 +457,19 @@ def mpeg2_refresh(ffmpeg, root):
            "-c:v", "mpeg2video", "-q:v", 31, "-g", 900, "-bf", 0, "-sc_threshold", 1000000000,
            "-f", "mpeg2video", raw)
     data = raw.read_bytes()
+    raw.write_bytes(refresh_units(data, 25))
+    # 裸流没有时间戳，也没有关键帧：生成时间戳，并保留首个关键帧之前的包。
+    ffmpeg("-fflags", "+genpts", "-f", "mpegvideo", "-framerate", 25, "-i", raw,
+           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=20",
+           "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000:duration=4",
+           "-map", 0, "-map", 1, "-map", 2, "-c:v", "copy", "-copyinkf",
+           "-c:a:0", "mp2", "-b:a:0", "192k", "-c:a:1", "s302m", "-ac", 2, "-strict", "-2",
+           "-output_ts_offset", 10, root / "mpeg2-refresh.ts")
+    raw.unlink()
+
+
+def refresh_units(data, interval):
+    """MPEG-2 编码器输出改为逐行刷新的结构：去掉开头的 I 帧，每 interval 个 P 帧前插入原序列头、扩展与 GOP 头。"""
     starts = []
     index = data.find(b"\x00\x00\x01")
     while index >= 0:
@@ -463,18 +487,29 @@ def mpeg2_refresh(ffmpeg, root):
     assert (units[0][5] >> 3) & 7 == 1 and all((unit[5] >> 3) & 7 == 2 for unit in units[1:])
     output = bytearray()
     for number, unit in enumerate(units[1:]):
-        if number % 25 == 0:
+        if number % interval == 0:
             output += header
         output += unit
     output += b"\x00\x00\x01\xb7"
-    raw.write_bytes(bytes(output))
-    # 裸流没有时间戳，也没有关键帧：生成时间戳，并保留首个关键帧之前的包。
+    return bytes(output)
+
+
+def mpeg2_refresh_numbered(ffmpeg, root):
+    """带帧序号的 MPEG-2 逐行刷新素材，用于智能剪辑：结构同 mpeg2_refresh，序列扩展声明 low_delay（与杜比 E 回传源相同）。
+
+    噪声画面的宏块都编成帧内块，顶部的帧序号块大多帧间预测：衔接后它们参考头段重新编码的画面，仍可识别。
+    23 秒（编码器的 GOP 上限为 600 帧），覆盖 12 秒的解码预滚与之后的复制区。
+    """
+    raw = root / "mpeg2-refresh-numbered.m2v"
+    ffmpeg("-f", "lavfi", "-i", "nullsrc=size=256x144:rate=25:duration=23",
+           "-vf", f"format=yuv420p,geq=lum='random(1)*255':cb='random(2)*255':cr='random(3)*255',{FRAME_NUMBER}",
+           "-c:v", "mpeg2video", "-q:v", 31, "-g", 600, "-bf", 0, "-sc_threshold", 1000000000, "-flags", "+low_delay",
+           "-f", "mpeg2video", raw)
+    raw.write_bytes(refresh_units(raw.read_bytes(), 25))
     ffmpeg("-fflags", "+genpts", "-f", "mpegvideo", "-framerate", 25, "-i", raw,
-           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=20",
-           "-f", "lavfi", "-i", "sine=frequency=880:sample_rate=48000:duration=4",
-           "-map", 0, "-map", 1, "-map", 2, "-c:v", "copy", "-copyinkf",
-           "-c:a:0", "mp2", "-b:a:0", "192k", "-c:a:1", "s302m", "-ac", 2, "-strict", "-2",
-           "-output_ts_offset", 10, root / "mpeg2-refresh.ts")
+           "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000:duration=23",
+           "-map", 0, "-map", 1, "-c:v", "copy", "-copyinkf", "-c:a", "mp2", "-b:a", "192k",
+           "-output_ts_offset", 20, root / "mpeg2-refresh-numbered.ts")
     raw.unlink()
 
 

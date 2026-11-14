@@ -77,6 +77,8 @@ public partial class MainWindowViewModel
         : IsFrameAccurateMode
             ? LocalizationManager.Instance.String_CutMode_FrameAccurateOn + Environment.NewLine
               + LocalizationManager.Instance.String_CutMode_FrameAccurateTip
+              + (_videoInstance is { Inited: true, UsesGradualRefresh: true }
+                  ? Environment.NewLine + LocalizationManager.Instance.String_CutMode_GradualRefreshNote : "")
             : LocalizationManager.Instance.String_CutMode_FrameAccurateOff;
 
     // 开关在点击时已自行翻转；延后通知，让界面在点击处理结束后按实际模式恢复显示。
@@ -120,11 +122,12 @@ public partial class MainWindowViewModel
 
     /// <summary>
     /// 逐行刷新码流没有完整关键帧：关键帧剪辑的输出从恢复点开始，开头几秒在任何播放器中都可能花屏。
-    /// 每个打开的文件只提示一次；取消则不导出。
+    /// 智能剪辑的开头由预滚解码后重新编码，不会花屏，不提示。每个打开的文件只提示一次；取消则不导出。
     /// </summary>
     private async Task<bool> ConfirmGradualRefreshExportAsync()
     {
-        if (_videoInstance is not { UsesGradualRefresh: true } video || ReferenceEquals(_gradualRefreshWarnedVideo, video))
+        if (_videoInstance is not { UsesGradualRefresh: true } video || UsesFrameAccurateCut ||
+            ReferenceEquals(_gradualRefreshWarnedVideo, video))
             return true;
         if (!await ShowConfirmAsync(LocalizationManager.Instance.String_Export_GradualRefreshWarning))
             return false;

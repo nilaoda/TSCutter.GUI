@@ -31,6 +31,11 @@ public static unsafe partial class NativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int av_opt_set(void* obj, string name, string value, int searchFlags);
 
+    /// <summary>flags 为 AV_FRAME_CROP_UNALIGNED（1）时允许裁剪后的数据指针不对齐。</summary>
+    [LibraryImport("tscutter.avutil", EntryPoint = "av_frame_apply_cropping")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_frame_apply_cropping(AVFrame* frame, int flags);
+
     [LibraryImport("tscutter.avcodec", EntryPoint = "av_packet_new_side_data")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial byte* av_packet_new_side_data(AVPacket* packet, AVPacketSideDataType type, ulong size);
