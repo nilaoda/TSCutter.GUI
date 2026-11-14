@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Extensions;
 using TSCutter.GUI.Models.Preview;
+using TSCutter.GUI.Utils.Media.DolbyE;
 using TSCutter.GUI.Player.Video;
 using FFmpeg.AutoGen.Abstractions;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
@@ -56,6 +57,9 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
     private int paused;
     private readonly IAudioOutput device;
     private CodecContext? decoder;
+    // 杜比 E 轨只播放所选声道组；此时不使用普通解码器。
+    private readonly int? dolbyEProgram;
+    private DolbyEProgramDecoder? dolbyE;
     private AudioResampler resampler = new();
     private Frame? reusableFrame;
     private Task? runTask;
@@ -67,9 +71,10 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
     private int disposed;
 
     private AudioPlaybackPipeline(IAudioOutput device, MediaStream audioStream,
-        double startSeconds, double? endSeconds, double originSeconds)
+        double startSeconds, double? endSeconds, double originSeconds, int? dolbyEProgram)
     {
         this.device = device;
+        this.dolbyEProgram = dolbyEProgram;
         this.audioStream = audioStream;
         this.startSeconds = startSeconds;
         this.originSeconds = originSeconds;
@@ -98,14 +103,14 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
 
     public static async Task<AudioPlaybackPipeline?> TryCreateAsync(MediaStream audioStream,
         double startSeconds, double? endSeconds, double originSeconds,
-        Func<IAudioOutput?>? deviceFactory = null)
+        Func<IAudioOutput?>? deviceFactory = null, int? dolbyEProgram = null)
     {
         var device = deviceFactory is null
             ? AudioOutputDevice.TryCreate(AudioOutputFormat.SampleRate, AudioOutputFormat.Channels, RingCapacityFrames)
             : deviceFactory();
         if (device is null)
             return null;
-        var pipeline = new AudioPlaybackPipeline(device, audioStream, startSeconds, endSeconds, originSeconds);
+        var pipeline = new AudioPlaybackPipeline(device, audioStream, startSeconds, endSeconds, originSeconds, dolbyEProgram);
         try
         {
             await Task.Run(pipeline.OpenDecoder).ConfigureAwait(false);
@@ -120,6 +125,12 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
 
     private void OpenDecoder()
     {
+        if (dolbyEProgram is { } program)
+        {
+            dolbyE = DolbyEProgramDecoder.TryCreate(audioStream, program)
+                ?? throw new VideoDecoderUnavailableException("dolby_e");
+            return;
+        }
         decoder = TryOpenDecoder(audioStream)
             ?? throw new VideoDecoderUnavailableException(audioStream.Codecpar?.CodecName ?? "unknown");
     }
@@ -210,7 +221,8 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
         consumedOrigin = device.ConsumedFrames;
         cancellation.Dispose();
         cancellation = CancellationTokenSource.CreateLinkedTokenSource(token);
-        decoder!.FlushBuffers();
+        decoder?.FlushBuffers();
+        dolbyE?.Flush();
         resampler.Dispose();
         resampler = new();
         reusableFrame?.Unref();
@@ -304,33 +316,42 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
         }
     }
 
-    private unsafe bool DecodeAndWrite(Packet? packet, Frame destination, CancellationToken token)
+    private bool DecodeAndWrite(Packet? packet, Frame destination, CancellationToken token)
     {
-        foreach (var frame in decoder!.DecodePacket(packet, destination, preserveRemainingOutput: true))
+        if (dolbyE is not null)
         {
-            token.ThrowIfCancellationRequested();
-            var pts = frame.BestEffortTimestamp;
-            if (pts == FF.AV_NOPTS_VALUE)
-                pts = frame.Pts;
-            var delay = resampler.DelaySeconds;
-            if (pts != FF.AV_NOPTS_VALUE)
-            {
-                var seconds = pts * (double)audioStream.TimeBase.num / audioStream.TimeBase.den
-                    - originSeconds - delay;
-                nextDecodedSample = (long)Math.Round((seconds - startSeconds) * SampleRate);
-                hasDecodedTimestamp = true;
-            }
-            else if (!hasDecodedTimestamp)
-            {
-                continue;
-            }
-            var samples = resampler.Convert(frame);
-            var firstSample = nextDecodedSample;
-            nextDecodedSample += samples.Length / AudioOutputFormat.Channels;
-            if (WriteSamples(samples, firstSample, token))
-                return true;
+            var reached = false;
+            dolbyE.Decode(packet, frame => reached = reached || WriteFrame(frame, token));
+            return reached;
         }
+        foreach (var frame in decoder!.DecodePacket(packet, destination, preserveRemainingOutput: true))
+            if (WriteFrame(frame, token))
+                return true;
         return false;
+    }
+
+    private bool WriteFrame(Frame frame, CancellationToken token)
+    {
+        token.ThrowIfCancellationRequested();
+        var pts = frame.BestEffortTimestamp;
+        if (pts == FF.AV_NOPTS_VALUE)
+            pts = frame.Pts;
+        var delay = resampler.DelaySeconds;
+        if (pts != FF.AV_NOPTS_VALUE)
+        {
+            var seconds = pts * (double)audioStream.TimeBase.num / audioStream.TimeBase.den
+                - originSeconds - delay;
+            nextDecodedSample = (long)Math.Round((seconds - startSeconds) * SampleRate);
+            hasDecodedTimestamp = true;
+        }
+        else if (!hasDecodedTimestamp)
+        {
+            return false;
+        }
+        var samples = resampler.Convert(frame);
+        var firstSample = nextDecodedSample;
+        nextDecodedSample += samples.Length / AudioOutputFormat.Channels;
+        return WriteSamples(samples, firstSample, token);
     }
 
     private bool WriteSamples(ReadOnlySpan<float> samples, long firstSample, CancellationToken token)
@@ -400,6 +421,7 @@ internal sealed class AudioPlaybackPipeline : IAsyncDisposable
         device.Stop();
         device.Dispose();
         decoder?.Dispose();
+        dolbyE?.Dispose();
         reusableFrame?.Dispose();
         resampler.Dispose();
         cancellation.Dispose();

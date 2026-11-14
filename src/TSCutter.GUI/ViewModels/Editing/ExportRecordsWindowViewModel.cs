@@ -23,7 +23,7 @@ public sealed class ExportRecordView
     {
         Record = record;
         TimeText = record.Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
-        KindText = FormatKind(record.Kind, strings);
+        KindText = FormatKind(record.Kind, record.DolbyETranscoded, strings);
         FileSizeText = CommonUtil.FormatFileSize(record.FileSize);
         CheckStatusText = BuildCheckStatus(record, strings, out var detail, out var canViewDetails);
         CheckDetailText = detail;
@@ -39,6 +39,12 @@ public sealed class ExportRecordView
     public string CheckDetailText { get; }
     /// <summary>登记时完整结果是否可直接打开；点击时还会重新校验文件状态。</summary>
     public bool CanViewDetails { get; }
+
+    /// <summary>导出类型；转码了杜比 E 时，单段 TS 导出不再称为字节复制，其他类型另加转码标记。</summary>
+    public static string FormatKind(ExportKind kind, bool dolbyETranscoded, LocalizationManager strings) =>
+        !dolbyETranscoded ? FormatKind(kind, strings)
+        : kind == ExportKind.TsCopy ? strings.String_Export_Kind_TsDolbyE
+        : $"{FormatKind(kind, strings)} · {strings.String_Export_Tag_DolbyE}";
 
     public static string FormatKind(ExportKind kind, LocalizationManager strings) => kind switch
     {
@@ -240,7 +246,7 @@ public partial class ExportRecordsWindowViewModel : ViewModelBase, IModalDialogV
         var builder = new StringBuilder(512);
         builder.AppendLine($"{strings.String_Export_Records_Column_File}: {record.FileName}");
         builder.AppendLine($"{strings.String_Export_Records_Column_Path}: {record.OutputPath}");
-        builder.AppendLine($"{strings.String_Export_Records_Column_Kind}: {ExportRecordView.FormatKind(record.Kind, strings)}");
+        builder.AppendLine($"{strings.String_Export_Records_Column_Kind}: {ExportRecordView.FormatKind(record.Kind, record.DolbyETranscoded, strings)}");
         builder.AppendLine($"{strings.String_Export_Records_Column_Size}: {CommonUtil.FormatFileSize(record.FileSize)}");
         builder.AppendLine($"{strings.String_Export_Records_Column_Elapsed}: {record.Elapsed:hh\\:mm\\:ss\\.fff}");
         builder.AppendLine($"{strings.String_Export_Records_Column_Clips}: {record.ClipCount}");

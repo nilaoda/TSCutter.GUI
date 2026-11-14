@@ -78,6 +78,9 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
     public PreviewStreamSelection? StreamSelection { get; private set; }
     public IReadOnlyList<PreviewSubtitleTrackOption> PreviewSubtitleTracks { get; private set; } = [];
     internal IReadOnlyList<PreviewAudioTrackOption> PreviewAudioTracks { get; private set; } = [];
+    /// <summary>按 PID 识别出的杜比 E 轨（只识别可按字节剪辑的 TS）。</summary>
+    internal IReadOnlyDictionary<int, Utils.Media.DolbyE.DolbyETrackInfo> DolbyETracks { get; private set; } =
+        new Dictionary<int, Utils.Media.DolbyE.DolbyETrackInfo>();
     internal int AudioTrackCount => inFc.Streams.Count(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO);
     internal double TimelineOriginSeconds => firstFrameTimestamp * timeBase.num / (double)timeBase.den;
     /// <summary>
@@ -264,7 +267,9 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         inVideoStream = PreviewStreamUtil.ResolveVideo(inFc, streamSelection);
         StreamSelection = PreviewStreamUtil.GetSelection(inFc, inVideoStream, streamSelection);
         PreviewSubtitleTracks = PreviewStreamUtil.CreateSubtitleOptions(inFc, StreamSelection);
-        PreviewAudioTracks = PreviewStreamUtil.CreateAudioOptions(inFc, StreamSelection);
+        if (CanBinaryClip)
+            DolbyETracks = Utils.Media.DolbyE.DolbyEProbe.Probe(inFc, videoPath, TsSyncOffset, cancellationToken);
+        PreviewAudioTracks = PreviewStreamUtil.CreateAudioOptions(inFc, StreamSelection, DolbyETracks);
         if (inVideoStream.Codecpar?.CodecId is null)
         {
             throw new Exception("Read Failed!");

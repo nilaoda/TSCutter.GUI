@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
 using TSCutter.GUI.Models.Editing;
+using TSCutter.GUI.Models.Media;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Services.TransportStream.Analysis;
@@ -23,7 +24,8 @@ namespace TSCutter.GUI.ViewModels.Editing;
 public record BatchTask(string SourcePath, string DestinationPath, long StartPosition, long EndPosition, int? ProgramId = null,
     RemuxExportSettings? RemuxSettings = null, double StartSeconds = 0, double? EndSeconds = null,
     FrameAccurateExportSettings? FrameAccurate = null, long StartPts = 0, long? EndPts = null,
-    string? StartSignature = null, string? EndSignature = null, int AudioDelayMs = 0, int? AudioDelayProgramId = null);
+    string? StartSignature = null, string? EndSignature = null, int AudioDelayMs = 0, int? AudioDelayProgramId = null,
+    DolbyEExportPlan? DolbyE = null);
 
 public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
@@ -79,6 +81,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     public int AudioDelayMs { get; set; }
     /// <summary>音频延迟作用的节目号（所编辑的节目）；null 表示全部音轨。</summary>
     public int? AudioDelayProgramId { get; set; }
+    /// <summary>单个导出、合并与删除模式导出的杜比 E 转码计划；批量任务的计划在各自的 <see cref="BatchTask"/> 中。</summary>
+    public DolbyEExportPlan? DolbyE { get; set; }
     public long StartPts { get; set; }
     public long? EndPts { get; set; }
     /// <summary>单个 DVD 片段的起止画面签名（关键帧剪辑为切点关键帧，智能剪辑为附近关键帧与偏移）；其他来源为 null。</summary>
@@ -117,6 +121,9 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private ExportTaskOutcome RegisterOutcome(string outputPath, bool success, ExportTsCheckSession? session,
         ExportKind kind, bool checkApplicable, TimeSpan elapsed)
     {
+        // 转码标记只属于本次任务，取出后立即清零，避免带到后续任务。
+        var dolbyETranscoded = success && _dolbyETranscoded;
+        _dolbyETranscoded = false;
         long? recordId = null;
         if (success && !IsRawByteRange && App.ExportRecordRegistry is { } registry)
         {
@@ -142,6 +149,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 Timestamp = DateTime.Now,
                 OutputPath = outputPath,
                 Kind = kind,
+                DolbyETranscoded = dolbyETranscoded,
                 FileSize = fileLength,
                 Elapsed = elapsed,
                 ClipCount = _exportClipCount,
@@ -160,7 +168,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             };
             recordId = registry.Register(record).Id;
         }
-        var outcome = new ExportTaskOutcome(recordId, outputPath, success, elapsed, kind);
+        var outcome = new ExportTaskOutcome(recordId, outputPath, success, elapsed, kind, dolbyETranscoded);
         Outcomes.Add(outcome);
         return outcome;
     }
@@ -246,7 +254,9 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             {
                 CurrentFileName = Path.GetFileName(frameAccurate.OutputPath);
                 SetExportClipInfo(frameAccurate.Segments.Count, _frameAccurateRangeSummary);
-                await ExportFrameAccurateAsync(frameAccurate, ++_copyGeneration, session);
+                await ExportWithDolbyEAsync(frameAccurate.Segments[0].SourcePath, frameAccurate.OutputPath,
+                    checkApplicable ? DolbyE : null, session,
+                    (_, check) => ExportFrameAccurateAsync(frameAccurate, ++_copyGeneration, check));
                 await CompleteCheckAsync(session);
                 Percent = 100;
                 RemainingSeconds = 0;
@@ -313,7 +323,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             CurrentFileName = Path.GetFileName(request.OutputPath);
             SetExportClipInfo(request.Ranges.Count, FormatRangeList(
                 request.Ranges.Select(item => (item.StartTimeSeconds, (double?)item.EndTimeSeconds))));
-            await ExportTsAsync(request, ++_copyGeneration, supplementOutput, mergeSession).ConfigureAwait(true);
+            await ExportWithDolbyEAsync(request.SourcePath, request.OutputPath, DolbyE, mergeSession,
+                (_, check) => ExportTsAsync(request, ++_copyGeneration, supplementOutput, check)).ConfigureAwait(true);
             await CompleteCheckAsync(mergeSession);
             Percent = 100;
             RemainingSeconds = 0;
@@ -425,7 +436,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             _lastUpdateTime = _startTime;
             await CopyClipAsync(new BatchTask(SourceFilePath!, OutputPath!, StartPosition, EndPosition, ProgramId,
                 RemuxSettings, StartSeconds, EndSeconds, FrameAccurate, StartPts, EndPts, StartSignature, EndSignature,
-                AudioDelayMs, AudioDelayProgramId));
+                AudioDelayMs, AudioDelayProgramId, DolbyE));
             Percent = 100;
             RemainingSeconds = 0;
             DialogResult = true;
@@ -467,6 +478,63 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     public bool IsRawByteRange { get; set; }
 
+    // 当前任务是否实际转码了杜比 E，登记导出记录时使用。
+    private bool _dolbyETranscoded;
+
+    /// <summary>
+    /// 有杜比 E 转码计划时，导出服务打开的输出文件换成重组流，写出时一遍完成转码与重组；导出检测由重组流接收最终字节，
+    /// 因此不再交给导出服务。导出成功后提交独立的 FLAC 文件；失败时删除不完整的输出。没有计划时直接导出。
+    /// </summary>
+    private async Task ExportWithDolbyEAsync(string sourcePath, string outputPath, DolbyEExportPlan? plan,
+        ExportTsCheckSession? session, Func<string, ExportTsCheckSession?, Task> export)
+    {
+        _dolbyETranscoded = false;
+        if (plan is not { HasWork: true })
+        {
+            await export(outputPath, session);
+            return;
+        }
+        var setup = new Services.Editing.DolbyE.DolbyERemuxSetup(plan, sourcePath, outputPath, session);
+        Services.Editing.DolbyE.TsOutputFile.Current = setup;
+        try
+        {
+            await export(outputPath, null);
+            // 没有经过重组流的导出路径（例如由封装器写出的输出）不支持转码。
+            var failure = setup.Error ?? (setup.StreamCount == 0
+                ? new NotSupportedException("This export path does not support Dolby E transcoding.") : null);
+            if (failure is not null)
+            {
+                TryDeleteOutput(outputPath);
+                throw new InvalidOperationException(string.Format(LocalizationManager.Instance.String_DolbyE_Failed,
+                    failure.Message), failure);
+            }
+            setup.Commit();
+            _dolbyETranscoded = setup.Changed;
+        }
+        catch
+        {
+            setup.Abort();
+            throw;
+        }
+        finally
+        {
+            Services.Editing.DolbyE.TsOutputFile.Current = null;
+        }
+    }
+
+    private static void TryDeleteOutput(string path)
+    {
+        try
+        {
+            if (File.Exists(path))
+                File.Delete(path);
+        }
+        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Incomplete output was not removed: {exception.Message}");
+        }
+    }
+
     private async Task CopyClipAsync(BatchTask task)
     {
         var (kind, checkApplicable) = ResolveTaskKind(task);
@@ -477,9 +545,12 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         var session = CreateCheckSession(task.DestinationPath, checkApplicable);
         SetExportClipInfo(1, FormatRange(task.StartSeconds, task.EndSeconds));
         var stopwatch = Stopwatch.StartNew();
+        var addTables = AddsProgramTablesTo(task.DestinationPath);
+        var producesTs = task.RemuxSettings is null && task.FrameAccurate?.Container is null or "ts" or "m2ts";
         try
         {
-            await CopyClipCoreAsync(task, session);
+            await ExportWithDolbyEAsync(task.SourcePath, task.DestinationPath, producesTs && !IsRawByteRange ? task.DolbyE : null,
+                session, (_, check) => CopyClipCoreAsync(task, check, addTables));
             await CompleteCheckAsync(session);
             RegisterOutcome(task.DestinationPath, true, session, kind, checkApplicable, stopwatch.Elapsed);
         }
@@ -499,7 +570,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             await Task.Run(session.Complete);
     }
 
-    private Task CopyClipCoreAsync(BatchTask task, ExportTsCheckSession? checkSession)
+    private Task CopyClipCoreAsync(BatchTask task, ExportTsCheckSession? checkSession, bool addTables)
     {
         var generation = ++_copyGeneration;
         if (task.FrameAccurate is { } frameAccurate)
@@ -511,7 +582,6 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 [new RemuxExportSegment(task.SourcePath, task.StartSeconds, task.EndSeconds, settings,
                     StartSignature: task.StartSignature, EndSignature: task.EndSignature)]), generation, checkSession);
         // 补节目表或改写音频延迟时逐包处理：仍是原包复制，只改写节目表前缀与音轨时间戳（含只导出当前节目）。
-        var addTables = AddsProgramTablesTo(task.DestinationPath);
         if (addTables || task.AudioDelayMs != 0 && !IsRawByteRange)
             return ExportTsAsync(new TsClipMergeRequest
             {

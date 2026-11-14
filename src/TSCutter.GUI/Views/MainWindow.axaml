@@ -106,7 +106,7 @@
             <InvokeCommandAction Command="{Binding ProcessCommandLineCommand}" />
         </RoutedEventTriggerBehavior>
     </Interaction.Behaviors>
-    
+
     <Window.Styles>
         <Style Selector="ClassicBorderDecorator#DropPanelFrame">
             <Setter Property="BorderThickness" Value="2" />
@@ -178,7 +178,7 @@
             <Style Selector="^:disabled"><Setter Property="Opacity" Value="0.4" /></Style>
         </Style>
     </Window.Styles>
-    
+
     <!-- Don't know why NativeMenuItem's Gesture only works on macOS, so here add KeyBindings -->
     <Window.KeyBindings>
         <KeyBinding Gesture="{OnPlatform Ctrl+O, macOS=⌘+O}" Command="{Binding LoadVideoClickCommand}"/>
@@ -643,7 +643,7 @@
                                                          IsIndeterminate="True" IsVisible="{Binding IsSubtitleLoading}"
                                                          ToolTip.Tip="{DynamicResource String.SubtitlePreview.Loading}" />
                                         </Grid>
-                                        <Grid Grid.Column="4" ColumnDefinitions="Auto,*,Auto,Auto,Auto" ColumnSpacing="6">
+                                        <Grid Grid.Column="4" ColumnDefinitions="Auto,*,Auto,Auto,Auto,Auto" ColumnSpacing="6">
                                             <TextBlock VerticalAlignment="Center" IsVisible="{Binding HasPreviewAudioTracks}"
                                                        Text="{DynamicResource String.PreviewTrack.AudioLabel}" />
                                             <TextBlock Grid.ColumnSpan="2" VerticalAlignment="Center" IsVisible="{Binding !HasPreviewAudioTracks}"
@@ -659,8 +659,22 @@
                                                       PlaceholderText="{DynamicResource String.Playback.AudioTrackUnsupported}"
                                                       ToolTip.Tip="{Binding SelectedPreviewAudioTrack.DisplayText}">
                                             </ComboBox>
+                                            <!-- 杜比 E：只在文件含杜比 E 轨时显示，设置导出时的转码；设置后带一个圆点。 -->
+                                            <Button Grid.Column="2" MinHeight="28" Padding="8,0" VerticalAlignment="Center"
+                                                    IsVisible="{Binding HasDolbyETracks}"
+                                                    Command="{Binding ConfigureDolbyECommand}">
+                                                <StackPanel Orientation="Horizontal" Spacing="4">
+                                                    <TextBlock VerticalAlignment="Center" Text="{DynamicResource String.DolbyE.Button}" />
+                                                    <Ellipse Width="7" Height="7" VerticalAlignment="Center"
+                                                             IsVisible="{Binding IsDolbyEConfigured}"
+                                                             Fill="{DynamicResource {x:Static commonControls:SystemColors.HighlightBrushKey}}" />
+                                                </StackPanel>
+                                                <ToolTip.Tip>
+                                                    <TextBlock MaxWidth="320" TextWrapping="Wrap" Text="{Binding DolbyEButtonTip}" />
+                                                </ToolTip.Tip>
+                                            </Button>
                                             <!-- 音频延迟：勾选后生效，正数让声音推后；导出时只改写音轨时间戳。 -->
-                                            <CheckBox Grid.Column="2" VerticalAlignment="Center" MinWidth="0"
+                                            <CheckBox Grid.Column="3" VerticalAlignment="Center" MinWidth="0"
                                                       IsVisible="{Binding HasPreviewAudioTracks}"
                                                       IsEnabled="{Binding IsVideoInitialized}"
                                                       IsChecked="{Binding AudioDelayEnabled, Mode=TwoWay}"
@@ -670,7 +684,7 @@
                                                                Text="{DynamicResource String.AudioDelay.Tip}" />
                                                 </ToolTip.Tip>
                                             </CheckBox>
-                                            <NumericUpDown Grid.Column="3" Width="80" MinHeight="28" VerticalAlignment="Center"
+                                            <NumericUpDown Grid.Column="4" Width="80" MinHeight="28" VerticalAlignment="Center"
                                                            IsVisible="{Binding HasPreviewAudioTracks}"
                                                            IsEnabled="{Binding AudioDelayEnabled}"
                                                            Value="{Binding AudioDelayMs, Mode=TwoWay}"
@@ -688,7 +702,7 @@
                                                     </ContextMenu>
                                                 </NumericUpDown.ContextMenu>
                                             </NumericUpDown>
-                                            <TextBlock Grid.Column="4" VerticalAlignment="Center"
+                                            <TextBlock Grid.Column="5" VerticalAlignment="Center"
                                                        IsVisible="{Binding HasPreviewAudioTracks}"
                                                        Text="{DynamicResource String.AudioDelay.Unit}" />
                                         </Grid>

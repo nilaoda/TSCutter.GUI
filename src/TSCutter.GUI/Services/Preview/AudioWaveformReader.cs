@@ -7,13 +7,14 @@ using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Player.Audio;
 using TSCutter.GUI.Utils.Media;
+using TSCutter.GUI.Utils.Media.DolbyE;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 
 namespace TSCutter.GUI.Services.Preview;
 
 /// <summary>导航条波形的来源：与播放相同的输入、视频与所选音轨，以及时间轴起点。</summary>
 internal sealed record AudioWaveformSource(string Path, DiscInput? Disc, long TsSyncOffset,
-    PreviewStreamSelection? Video, PreviewStreamSelection Audio, double TimelineOriginSeconds);
+    PreviewStreamSelection? Video, PreviewStreamSelection Audio, double TimelineOriginSeconds, int? DolbyEProgram = null);
 
 /// <summary>
 /// 读取导航条波形：按时间轴整秒读取所选音轨，解码后按毫秒记录峰值（各声道绝对值的最大值）。
@@ -30,19 +31,21 @@ internal sealed class AudioWaveformReader : IDisposable
     private readonly FormatContext input;
     private readonly MediaStream video;
     private readonly MediaStream audio;
-    private readonly CodecContext decoder;
+    private readonly CodecContext? decoder;
+    private readonly DolbyEProgramDecoder? dolbyE;
     private readonly Frame frame = new();
     private AudioResampler resampler = new();
     private readonly double origin;
 
     private AudioWaveformReader(AudioWaveformSource source, FormatContext input, MediaStream video, MediaStream audio,
-        CodecContext decoder)
+        CodecContext? decoder, DolbyEProgramDecoder? dolbyE)
     {
         Source = source;
         this.input = input;
         this.video = video;
         this.audio = audio;
         this.decoder = decoder;
+        this.dolbyE = dolbyE;
         origin = source.TimelineOriginSeconds;
     }
 
@@ -62,13 +65,27 @@ internal sealed class AudioWaveformReader : IDisposable
         {
             input.LoadStreamInfo();
             var video = PreviewStreamUtil.ResolveVideo(input, source.Video);
-            if (PreviewStreamUtil.ResolveAudio(input, source.Audio) is not { } audio
-                || AudioPlaybackPipeline.TryOpenDecoder(audio) is not { } decoder)
+            if (PreviewStreamUtil.ResolveAudio(input, source.Audio) is not { } audio)
             {
                 input.Dispose();
                 return null;
             }
-            return new AudioWaveformReader(source, input, video, audio, decoder);
+            // 杜比 E 只画所选声道组的波形。
+            if (source.DolbyEProgram is { } program)
+            {
+                if (DolbyEProgramDecoder.TryCreate(audio, program) is not { } dolbyE)
+                {
+                    input.Dispose();
+                    return null;
+                }
+                return new AudioWaveformReader(source, input, video, audio, null, dolbyE);
+            }
+            if (AudioPlaybackPipeline.TryOpenDecoder(audio) is not { } decoder)
+            {
+                input.Dispose();
+                return null;
+            }
+            return new AudioWaveformReader(source, input, video, audio, decoder, null);
         }
         catch
         {
@@ -102,7 +119,8 @@ internal sealed class AudioWaveformReader : IDisposable
         var videoBase = video.TimeBase;
         input.SeekFrame((long)Math.Floor((firstSecond - MarginSeconds + origin) * videoBase.den / videoBase.num),
             video.Index);
-        decoder.FlushBuffers();
+        decoder?.FlushBuffers();
+        dolbyE?.Flush();
         resampler.Dispose();
         resampler = new AudioResampler();
         var stopAt = endSecond + MarginSeconds;
@@ -141,33 +159,41 @@ internal sealed class AudioWaveformReader : IDisposable
 
     private void Decode(Packet packet, float[][] seconds, int firstSecond)
     {
-        foreach (var decoded in decoder.DecodePacket(packet, frame, preserveRemainingOutput: true))
+        if (dolbyE is not null)
         {
-            var pts = decoded.BestEffortTimestamp;
-            if (pts == FF.AV_NOPTS_VALUE)
-                pts = decoded.Pts;
-            if (pts == FF.AV_NOPTS_VALUE)
+            dolbyE.Decode(packet, decoded => Accumulate(decoded, seconds, firstSecond));
+            return;
+        }
+        foreach (var decoded in decoder!.DecodePacket(packet, frame, preserveRemainingOutput: true))
+            Accumulate(decoded, seconds, firstSecond);
+    }
+
+    private void Accumulate(Frame decoded, float[][] seconds, int firstSecond)
+    {
+        var pts = decoded.BestEffortTimestamp;
+        if (pts == FF.AV_NOPTS_VALUE)
+            pts = decoded.Pts;
+        if (pts == FF.AV_NOPTS_VALUE)
+            return;
+        // 与播放相同地扣除重采样延迟，使波形与声音输出对齐。
+        var start = Seconds(pts, audio.TimeBase) - resampler.DelaySeconds;
+        var samples = resampler.Convert(decoded);
+        var channels = AudioOutputFormat.Channels;
+        for (var index = 0; index + channels <= samples.Length; index += channels)
+        {
+            var bucket = (long)Math.Floor((start + index / channels / (double)AudioOutputFormat.SampleRate)
+                                          * BucketsPerSecond) - (long)firstSecond * BucketsPerSecond;
+            if (bucket < 0)
                 continue;
-            // 与播放相同地扣除重采样延迟，使波形与声音输出对齐。
-            var start = Seconds(pts, audio.TimeBase) - resampler.DelaySeconds;
-            var samples = resampler.Convert(decoded);
-            var channels = AudioOutputFormat.Channels;
-            for (var index = 0; index + channels <= samples.Length; index += channels)
-            {
-                var bucket = (long)Math.Floor((start + index / channels / (double)AudioOutputFormat.SampleRate)
-                                              * BucketsPerSecond) - (long)firstSecond * BucketsPerSecond;
-                if (bucket < 0)
-                    continue;
-                var second = bucket / BucketsPerSecond;
-                if (second >= seconds.Length)
-                    break;
-                var peak = 0f;
-                for (var channel = 0; channel < channels; channel++)
-                    peak = Math.Max(peak, Math.Abs(samples[index + channel]));
-                ref var slot = ref seconds[second][bucket % BucketsPerSecond];
-                if (float.IsNaN(slot) || peak > slot)
-                    slot = peak;
-            }
+            var second = bucket / BucketsPerSecond;
+            if (second >= seconds.Length)
+                break;
+            var peak = 0f;
+            for (var channel = 0; channel < channels; channel++)
+                peak = Math.Max(peak, Math.Abs(samples[index + channel]));
+            ref var slot = ref seconds[second][bucket % BucketsPerSecond];
+            if (float.IsNaN(slot) || peak > slot)
+                slot = peak;
         }
     }
 
@@ -175,7 +201,8 @@ internal sealed class AudioWaveformReader : IDisposable
     {
         frame.Dispose();
         resampler.Dispose();
-        decoder.Dispose();
+        decoder?.Dispose();
+        dolbyE?.Dispose();
         input.Dispose();
     }
 }
