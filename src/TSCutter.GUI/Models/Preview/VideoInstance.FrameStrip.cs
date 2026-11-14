@@ -150,34 +150,51 @@ public partial class VideoInstance
         // 帧率不均导致跳过后窗口前的画面不足时，改为全部转换重试同一位置。
         var skipBefore = targetPts - frameTicks * (total + 2);
         var distance = Math.Max(1, keyFrameGap);
+        (long Pts, long Position)? beforeGap = null;
+        var gapDistance = 0L;
         for (var attempt = 0; attempt < 6; attempt++, distance *= 2)
         {
-            var start = targetPts - distance - frameTicks * (before + 1);
+            // 起点落在时间戳跳变的空白里时，改从跳变之前的关键包开始，窗口前面的画面取跳变之前的几帧；
+            // 跳变之前的画面仍不够时，从那里继续向前加倍。
+            var start = beforeGap is { } gap ? gap.Pts - gapDistance : targetPts - distance - frameTicks * (before + 1);
+            var keyPacket = gapDistance == 0 ? beforeGap : null;
             var window = TryDecodeFrameWindow(start, targetPts, before, after, skipBefore, maxWidth, maxHeight, token,
-                out var skippedTooMany);
+                out var skippedTooMany, keyPacket);
             if (skippedTooMany)
             {
                 skipBefore = long.MinValue;
-                window = TryDecodeFrameWindow(start, targetPts, before, after, skipBefore, maxWidth, maxHeight, token, out _);
+                window = TryDecodeFrameWindow(start, targetPts, before, after, skipBefore, maxWidth, maxHeight, token, out _,
+                    keyPacket);
             }
             if (window is not null)
                 return window;
+            if (beforeGap is null)
+                beforeGap = FindKeyPacketBeforeGap(start, token);
+            else
+                gapDistance = Math.Max(Math.Max(1, keyFrameGap), gapDistance * 2);
         }
         throw new InvalidOperationException("Unable to decode the frames near the requested position.");
     }
 
     /// <summary>
-    /// 从 start 定位解码一次窗口；定位落在目标之后或前面的画面不足时返回 null，由调用方扩大预读。
+    /// 从 start 定位解码一次窗口（指定 <paramref name="keyPacket"/> 时按字节定位到这个关键包）；
+    /// 定位落在目标之后或前面的画面不足时返回 null，由调用方扩大预读。
     /// 早于 skipBefore 的画面不转换缩略图；因此缺少窗口所需的前面画面时 skippedTooMany 为 true。
     /// 任何异常（含取消）都会释放已取得的画面。
     /// </summary>
     private FrameWindow? TryDecodeFrameWindow(long start, long targetPts, int before, int after, long skipBefore,
-        int maxWidth, int maxHeight, CancellationToken token, out bool skippedTooMany)
+        int maxWidth, int maxHeight, CancellationToken token, out bool skippedTooMany,
+        (long Pts, long Position)? keyPacket = null)
     {
         skippedTooMany = false;
         var fromStart = start <= firstFrameTimestamp;
         // 片头处 TS 带 B 帧时须从首帧之前预读，与关键帧导航相同。
-        Seek(fromStart ? firstFrameTimestamp - Math.Max(1, keyFrameGap * 2) : start, AVSEEK_FLAG.Backward);
+        if (fromStart)
+            Seek(firstFrameTimestamp - Math.Max(1, keyFrameGap * 2), AVSEEK_FLAG.Backward);
+        else if (keyPacket is { } key)
+            SeekToKeyPacket(key);
+        else
+            Seek(start, AVSEEK_FLAG.Backward);
         frameDecoderDrained = false;
         frameCursorPts = null;
         // 片头前面的画面不足时向后多取，片尾后面的画面不足时保留更多前面的画面，使窗口总数一致。

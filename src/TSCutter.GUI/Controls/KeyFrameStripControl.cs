@@ -190,7 +190,7 @@ public sealed class KeyFrameStripControl : Control
             RenderWaveform(context, tiles);
     }
 
-    /// <summary>每张缩略图下方的时间段：从这一帧到下一帧（最后一张沿用前一段的长度）。占位格没有时间段。</summary>
+    /// <summary>每张缩略图下方的时间段，与波形读取的范围一致。占位格没有时间段。</summary>
     private List<(Rect Lane, double Start, double End)> GetWaveformSpans(
         IReadOnlyList<(KeyFrameStripItem Item, Rect Bounds)> tiles)
     {
@@ -204,17 +204,11 @@ public sealed class KeyFrameStripControl : Control
         for (var offset = 0; offset < tiles.Count; offset++)
         {
             var index = first + offset;
-            var (item, bounds) = tiles[offset];
-            if (item.IsPlaceholder || index >= frames.Count)
+            var bounds = tiles[offset].Bounds;
+            if (index >= frames.Count || StripWaveformViewModel.GetSpan(frames, index) is not { } span)
                 continue;
-            var start = item.Timestamp.TotalSeconds;
-            var end = index + 1 < frames.Count && !frames[index + 1].IsPlaceholder
-                ? frames[index + 1].Timestamp.TotalSeconds
-                : index > 0 && !frames[index - 1].IsPlaceholder
-                    ? start + (start - frames[index - 1].Timestamp.TotalSeconds) : start;
             // 波形占满整格（含两侧各 2px 的格间缝隙），相邻两段首尾相接，整条连续显示。
-            if (end > start)
-                spans.Add((new Rect(bounds.X - 2, top, bounds.Width + 4, WaveformLaneHeight), start, end));
+            spans.Add((new Rect(bounds.X - 2, top, bounds.Width + 4, WaveformLaneHeight), span.Start, span.End));
         }
         return spans;
     }

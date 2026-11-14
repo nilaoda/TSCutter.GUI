@@ -35,18 +35,18 @@ public partial class MainWindowViewModel
             RequestStripWaveform();
     }
 
-    // 范围取导航条显示的画面：从第一张到最后一张之后一段，当前位置只决定读取优先级。
+    // 范围取导航条每张画面下方的时间段，与绘制一致；当前位置只决定读取优先级。
+    // 不按首尾连成一段：相邻画面之间有时间戳跳变时，中间的空白不读取。
     private void RequestStripWaveform()
     {
         if (!KeyFrameStripWaveform.IsAvailable)
             return;
-        var items = KeyFrameStrip.Items.Where(item => !item.IsPlaceholder).ToArray();
-        if (items.Length == 0)
-            return;
-        var start = items[0].Timestamp.TotalSeconds;
-        var last = items[^1].Timestamp.TotalSeconds;
-        var end = items.Length > 1 ? last + (last - items[^2].Timestamp.TotalSeconds) : last + 1;
-        KeyFrameStripWaveform.Request(start, end, CurrentTime);
+        var items = KeyFrameStrip.Items;
+        var spans = StripWaveformViewModel.GetSpans(items);
+        if (spans.Count > 0)
+            KeyFrameStripWaveform.Request(spans, CurrentTime);
+        else if (items.FirstOrDefault(item => !item.IsPlaceholder) is { } only)
+            KeyFrameStripWaveform.Request(only.Timestamp.TotalSeconds, only.Timestamp.TotalSeconds + 1, CurrentTime);
     }
 
     public bool IsKeyFrameStripVisible => ShowKeyFrameStrip && IsVideoInitialized;

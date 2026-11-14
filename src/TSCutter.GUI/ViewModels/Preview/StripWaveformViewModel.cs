@@ -20,6 +20,13 @@ public sealed class StripWaveformViewModel : ObservableObject
     // 每秒峰值 4 KB，保留约十分钟的历史缓存；当前可见范围在移出窗口前不淘汰。
     private const int CacheSeconds = 600;
 
+    /// <summary>
+    /// 一格波形最多覆盖的秒数，与缓存的时长相同。相邻两张画面之间隔着时间戳跳变时（例如拼接素材向前跳了几小时），
+    /// 按实际间隔读取会逐秒读完整段空白：数万秒的空数据既占内存，又把界面线程堵满。
+    /// 正常素材的关键帧间隔（包括屏幕录制等很长的 GOP）远小于这个值，显示不受影响。
+    /// </summary>
+    internal const double MaximumSpanSeconds = 600;
+
     private readonly Dictionary<int, float[]> cache = [];
     private readonly LinkedList<int> cacheOrder = [];
     private readonly Dictionary<int, LinkedListNode<int>> cacheNodes = [];
@@ -27,8 +34,8 @@ public sealed class StripWaveformViewModel : ObservableObject
     private bool unsupported;
     private long generation;
     private CancellationTokenSource? active;
-    private (int First, int End) activeRange = (0, 0);
-    private (int First, int End) visibleRange = (0, 0);
+    private HashSet<int> activeSeconds = [];
+    private HashSet<int> visibleSeconds = [];
     private Task worker = Task.CompletedTask;
     private AudioWaveformReader? reader;
 
@@ -64,42 +71,79 @@ public sealed class StripWaveformViewModel : ObservableObject
         cache.Clear();
         cacheOrder.Clear();
         cacheNodes.Clear();
-        visibleRange = (0, 0);
+        visibleSeconds = [];
         OnPropertyChanged(nameof(IsAvailable));
         BumpVersion();
     }
 
-    /// <summary>请求导航条可见的范围；已缓存的秒不再读取，正在读取的范围已覆盖时不重新开始。</summary>
-    internal void Request(double start, double end, double center)
+    /// <summary>
+    /// 第 <paramref name="index"/> 张画面下方的波形时间段：从这一帧到下一帧（最后一张沿用前一段的长度），
+    /// 最长 <see cref="MaximumSpanSeconds"/>。占位格或时间段为空时返回 null。
+    /// </summary>
+    internal static (double Start, double End)? GetSpan(IReadOnlyList<KeyFrameStripItem> frames, int index)
     {
-        if (!IsAvailable || end <= start)
+        var item = frames[index];
+        if (item.IsPlaceholder)
+            return null;
+        var start = item.Timestamp.TotalSeconds;
+        var end = index + 1 < frames.Count && !frames[index + 1].IsPlaceholder
+            ? frames[index + 1].Timestamp.TotalSeconds
+            : index > 0 && !frames[index - 1].IsPlaceholder
+                ? start + (start - frames[index - 1].Timestamp.TotalSeconds) : start;
+        end = Math.Min(end, start + MaximumSpanSeconds);
+        return end > start ? (start, end) : null;
+    }
+
+    /// <summary>导航条所有画面的波形时间段。</summary>
+    internal static IReadOnlyList<(double Start, double End)> GetSpans(IReadOnlyList<KeyFrameStripItem> frames)
+    {
+        var spans = new List<(double Start, double End)>(frames.Count);
+        for (var index = 0; index < frames.Count; index++)
+            if (GetSpan(frames, index) is { } span)
+                spans.Add(span);
+        return spans;
+    }
+
+    /// <summary>请求一段连续的范围；用于只有一段的情况。</summary>
+    internal void Request(double start, double end, double center) => Request([(start, end)], center);
+
+    /// <summary>
+    /// 请求导航条各格的时间段；已缓存的秒不再读取，正在读取的范围已覆盖时不重新开始。
+    /// 只读各段覆盖的秒，段与段之间的空隙（时间戳跳变）不读取。
+    /// </summary>
+    internal void Request(IReadOnlyList<(double Start, double End)> spans, double center)
+    {
+        if (!IsAvailable)
             return;
         // 画面时间换成音频自身的时间：声音推后时，画面上这一刻对应更早的声音。
-        start -= OffsetSeconds;
-        end -= OffsetSeconds;
         center -= OffsetSeconds;
-        start = Math.Max(0, start);
-        if (end <= start)
+        var visible = new HashSet<int>();
+        foreach (var (spanStart, spanEnd) in spans)
+        {
+            var start = Math.Max(0, spanStart - OffsetSeconds);
+            var end = spanEnd - OffsetSeconds;
+            if (!(end > start))
+                continue;
+            for (var second = (int)Math.Floor(start); second < (int)Math.Ceiling(end); second++)
+                visible.Add(second);
+        }
+        if (visible.Count == 0)
             return;
-        var first = (int)Math.Floor(start);
-        var last = (int)Math.Ceiling(end);
-        visibleRange = (first, last);
+        visibleSeconds = visible;
         TrimCache();
-        var missing = Enumerable.Range(first, Math.Max(0, last - first)).Where(second => !cache.ContainsKey(second))
-            .ToArray();
+        var missing = visible.Where(second => !cache.ContainsKey(second)).Order().ToArray();
         if (missing.Length == 0)
         {
             // 新窗口已经全部缓存，停止旧窗口尚未完成的读取。
             Cancel();
             return;
         }
-        if (active is { IsCancellationRequested: false }
-            && missing.All(second => second >= activeRange.First && second < activeRange.End))
+        if (active is { IsCancellationRequested: false } && missing.All(activeSeconds.Contains))
             return;
         Cancel();
         var cancellation = new CancellationTokenSource();
         active = cancellation;
-        activeRange = (missing[0], missing[^1] + 1);
+        activeSeconds = [.. missing];
         var requested = source!;
         var requestGeneration = generation;
         var centerSecond = (int)Math.Floor(center);
@@ -209,12 +253,12 @@ public sealed class StripWaveformViewModel : ObservableObject
 
     private void TrimCache()
     {
-        var limit = Math.Max(CacheSeconds, visibleRange.End - visibleRange.First);
+        var limit = Math.Max(CacheSeconds, visibleSeconds.Count);
         var oldest = cacheOrder.First;
         while (cache.Count > limit && oldest is not null)
         {
             var next = oldest.Next;
-            if (oldest.Value < visibleRange.First || oldest.Value >= visibleRange.End)
+            if (!visibleSeconds.Contains(oldest.Value))
             {
                 cacheOrder.Remove(oldest);
                 cacheNodes.Remove(oldest.Value);
@@ -263,6 +307,6 @@ public sealed class StripWaveformViewModel : ObservableObject
     {
         active?.Cancel();
         active = null;
-        activeRange = (0, 0);
+        activeSeconds = [];
     }
 }
