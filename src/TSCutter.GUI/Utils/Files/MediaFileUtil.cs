@@ -39,7 +39,7 @@ internal static class MediaFileUtil
         return OperatingSystem.IsMacOS() ? canonicalPath.Normalize(NormalizationForm.FormC) : canonicalPath;
     }
 
-    private static string CanonicalDirectory(string path)
+    internal static string CanonicalDirectory(string path)
     {
         var directory = new DirectoryInfo(path);
         var parent = directory.Parent;

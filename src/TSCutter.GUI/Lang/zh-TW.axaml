@@ -1586,6 +1586,13 @@
     <x:String x:Key="String.FrameAccurate.Timestamps.Title">正規化視訊時間戳記</x:String>
     <x:String x:Key="String.FrameAccurate.Timestamps.Warning">偵測到來源視訊的解碼時間戳記異常。&#10;&#10;繼續智慧剪輯將修正時間戳記並重新封裝 TS，原始傳輸封包結構與傳輸錯誤不會原樣保留。視訊主體仍直接複製，只有切點附近重新編碼。</x:String>
     <x:String x:Key="String.FrameAccurate.Timestamps.Continue">正規化並繼續</x:String>
+    <x:String x:Key="String.ExportSpace.Title">磁碟空間不足</x:String>
+    <x:String x:Key="String.ExportSpace.Warning">目標磁碟的剩餘空間可能不足以完成這次匯出。匯出途中空間用盡會導致匯出失敗，建議先釋放空間或改用其他儲存位置。</x:String>
+    <x:String x:Key="String.ExportSpace.Volume">{0}：需要約 {1}，可用 {2}</x:String>
+    <x:String x:Key="String.ExportSpace.VolumeFiles">{0}：{3} 個檔案需要約 {1}，可用 {2}</x:String>
+    <x:String x:Key="String.ExportSpace.Note">所需空間為估算值，已包含預留量。</x:String>
+    <x:String x:Key="String.ExportSpace.Continue">仍要匯出</x:String>
+    <x:String x:Key="String.Export.DiskFull">目標磁碟空間已滿，匯出未完成。請釋放空間或改用其他儲存位置後重試。</x:String>
     <x:String x:Key="String.FrameAccurate.Error.Invalid">匯出工作無效。請檢查輸出檔案副檔名和所選片段。</x:String>
     <x:String x:Key="String.FrameAccurate.Error.FrameNotFound">在檔案中找不到所選的畫面。請重新標記片段邊界。</x:String>
     <x:String x:Key="String.FrameAccurate.Error.NoRandomAccessPoint">切點附近沒有可獨立解碼的關鍵影格，無法安全地重新編碼並銜接邊界（例如開放式 GOP 視訊）。請在同一 GOP 內選擇範圍，或使用關鍵影格剪輯。</x:String>

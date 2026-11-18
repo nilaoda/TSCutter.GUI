@@ -10,6 +10,7 @@ using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Models.TransportStream.Processing;
+using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.ViewModels.Editing;
@@ -72,6 +73,8 @@ public partial class MainWindowViewModel
     private static void ConfigureMergeExportTask(OutputWindowViewModel output, MergeExportSnapshot snapshot, string path)
     {
         // 选好路径后只替换目标位置，保留准备阶段已确认的节目表处理方式。
+        output.MergeSizeSegments = snapshot.TsRequest.Ranges.Select(range => new ExportSizeSegment(range.StartPosition,
+            range.EndPosition, range.StartTimeSeconds, range.EndTimeSeconds)).ToArray();
         if (snapshot.FrameAccurateSegments is { } frameAccurate)
             output.SetFrameAccurateTask(new FrameAccurateExportRequest(path, frameAccurate), string.Join("; ",
                 snapshot.Clips.OrderBy(clip => clip.StartPts).Take(6).Select(clip => $"{clip.StartBoundaryTimeStr} – {clip.EndBoundaryTimeStr}")));

@@ -196,6 +196,7 @@ public partial class MainWindowViewModel
         var outputPath = await ChooseMergedOutputPathAsync(snapshot, IsCurrent, "_cut");
         if (outputPath is null) return;
         ConfigureMergeExportTask(output, snapshot, outputPath);
+        if (!await ConfirmExportSpaceAsync(output, IsCurrent)) return;
         await _dialogService.ShowDialogAsync(this, output);
         await ForgetMissingClipOutputsAsync([outputPath]);
         if (output.Exception is null && output.DialogResult == true)

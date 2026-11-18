@@ -66,6 +66,7 @@ public static partial class CommonUtil
         var buffer = ArrayPool<byte>.Shared.Rent(bufferSize);
         var bytesRead = 0;
         var totalBytesRead = 0L;
+        var outputOpened = false;
 
         try
         {
@@ -82,6 +83,7 @@ public static partial class CommonUtil
                 : new TsDetectingWriteStream(
                     TSCutter.GUI.Services.Editing.AudioRebuild.TsOutputFile.Create(destinationFile, FileMode.Create, FileAccess.Write, FileShare.Read, 4096, FileOptions.None), checkSession);
 
+            outputOpened = true;
             sourceStream.Seek(start, SeekOrigin.Begin);
 
             while (totalBytesRead < totalBytes)
@@ -103,6 +105,16 @@ public static partial class CommonUtil
 
             // Final progress report (100%)
             progress?.Invoke(100, 0);
+        }
+        catch (Exception exception) when (outputOpened && DiskSpaceUtil.IsDiskFull(exception))
+        {
+            // 只清理由本次复制打开并截断的输出，保留尚未打开的旧文件。
+            try { File.Delete(destinationFile); }
+            catch (Exception cleanupError) when (cleanupError is IOException or UnauthorizedAccessException)
+            {
+                Console.Error.WriteLine($"Partial output was not removed: {cleanupError.Message}");
+            }
+            throw;
         }
         finally
         {

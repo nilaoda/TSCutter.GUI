@@ -1225,6 +1225,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         var outputPath = await ChooseMergedOutputPathAsync(snapshot);
         if (outputPath is null) return;
         ConfigureMergeExportTask(output, snapshot, outputPath);
+        if (!await ConfirmExportSpaceAsync(output, () => IsMergeExportCurrent(snapshot))) return;
         await _dialogService.ShowDialogAsync(this, output);
         await ForgetMissingClipOutputsAsync([outputPath]);
 
@@ -1242,6 +1243,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     private static string FormatMergeError(Exception exception)
     {
+        if (DiskSpaceUtil.IsDiskFull(exception))
+            return LocalizationManager.Instance.String_Export_DiskFull;
         if (exception is RemuxExportException remuxException)
             return FormatRemuxExportError(remuxException);
         if (exception is FrameAccurateExportException frameAccurateException)
@@ -3049,6 +3052,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         if (result?.Path is null || !ClipUnchanged()) return;
 
         dialogViewModel.OutputPath = result.Path.LocalPath;
+        if (!await ConfirmExportSpaceAsync(dialogViewModel, ClipUnchanged)) return;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
         await ForgetMissingClipOutputsAsync([dialogViewModel.OutputPath]);
         // 片段在导出期间未被修改时才记录导出结果；结果窗口照常显示本次导出的文件。
@@ -3108,6 +3112,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         if (!await PrepareProgramTableExportAsync(dialogViewModel, selectionUnchanged: SourcesUnchanged)) return;
         if (!await PrepareTimestampNormalizationAsync(dialogViewModel, SourcesUnchanged))
             return;
+        if (!await ConfirmExportSpaceAsync(dialogViewModel, SourcesUnchanged)) return;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
 
         var completedSet = dialogViewModel.CompletedTaskIndices.ToHashSet();
@@ -3359,6 +3364,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 selectionUnchanged: () => ExportQueue.SequenceEqual(submitted))) return;
         if (!await PrepareTimestampNormalizationAsync(dialogViewModel, () => ExportQueue.SequenceEqual(submitted)))
             return;
+        if (!await ConfirmExportSpaceAsync(dialogViewModel, () => ExportQueue.SequenceEqual(submitted))) return;
         await _dialogService.ShowDialogAsync(this, dialogViewModel).ConfigureAwait(true);
 
         await ApplyQueueExportResultsAsync(submitted, dialogViewModel);
