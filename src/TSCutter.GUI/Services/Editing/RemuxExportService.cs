@@ -92,7 +92,16 @@ internal sealed unsafe class RemuxExportService
                         hevc[index] = HevcMp4PacketConverter.Create(stream->codecpar);
                 }
             }
-            if (useCustomAvio)
+            if (first.Segment.Settings.Container == "m2ts" && AudioRebuild.TsOutputFile.CreateProcessedOnly(temporary,
+                    TSCutter.GUI.Utils.TransportStream.Packets.TsPacketLayout.M2tsPacketSize) is { } processed)
+            {
+                // 输出处理（起始时间归零、去除空包）：封装器的输出经处理后再写入文件，检测由处理后的输出流接收。
+                useCustomAvio = true;
+                avioWriter = M2tsAvioWriteContext.Open(processed, checkSession);
+                output->pb = avioWriter.Io;
+                output->flags |= ffmpeg.AVFMT_FLAG_CUSTOM_IO;
+            }
+            else if (useCustomAvio)
             {
                 avioWriter = M2tsAvioWriteContext.Open(temporary, checkSession!);
                 output->pb = avioWriter.Io;
@@ -117,7 +126,9 @@ internal sealed unsafe class RemuxExportService
                 if (first.Segment.Settings.Container == "m2ts")
                 {
                     FFmpegException.Check(FF.av_dict_set(&options, "mpegts_m2ts_mode", "1", 0));
-                    FFmpegException.Check(FF.av_dict_set(&options, "mpegts_copyts", "1", 0));
+                    // 留出解码缓冲，并限制音频 PES 的聚合，避免推迟音频时间戳的写出。
+                    output->max_delay = FrameAccurateExportService.TsMuxerBufferDelay;
+                    FFmpegException.Check(FF.av_dict_set(&options, "pes_payload_size", "0", 0));
                 }
                 FFmpegException.Check(FF.avformat_write_header(output, &options));
             }

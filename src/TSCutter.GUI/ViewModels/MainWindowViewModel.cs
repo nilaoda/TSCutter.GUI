@@ -106,12 +106,22 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         enableSdrToneMapping = configService.CurrentConfig.EnableSdrToneMapping;
         preferHardwareDecodingForPreview = configService.CurrentConfig.PreferHardwareDecoding;
         _exportCurrentProgramOnly = configService.CurrentConfig.ExportCurrentProgramOnly;
-        ExportQueue.CollectionChanged += (_, _) => NotifyQueueChanged();
+        ExportQueue.CollectionChanged += (_, e) =>
+        {
+            var removesNulls = RemovesNullPackets;
+            foreach (var item in e.NewItems?.OfType<ExportQueueItem>() ?? [])
+                item.SizeIsUpperBound = removesNulls && item.IsTsSource;
+            NotifyQueueChanged();
+        };
         // 新增、撤销恢复或从工程载入的片段都按当前模式显示。
         Clips.CollectionChanged += (_, e) =>
         {
+            var upperBound = RawSizeIsUpperBound;
             foreach (var clip in e.NewItems?.OfType<PickedClip>() ?? [])
+            {
                 clip.IsRemoval = IsRemoveMode;
+                clip.SizeIsUpperBound = upperBound;
+            }
         };
         // 沿用上次的删除模式选择；打开工程时再按工程记录的模式恢复。
         ClipMode = configService.CurrentConfig.ClipListMode;
@@ -209,7 +219,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             : UsesFrameAccurateCut
                 ? LocalizationManager.Instance.String_SizePrefix + string.Format(LocalizationManager.Instance.String_SizeApproximate,
                     CommonUtil.FormatFileSize(GetSelectedClipAggregate().Bytes))
-                : LocalizationManager.Instance.String_SizePrefix + CommonUtil.FormatFileSize(GetSelectedClipAggregate().Bytes)
+                : LocalizationManager.Instance.String_SizePrefix + (RawSizeIsUpperBound
+                    ? string.Format(LocalizationManager.Instance.String_SizeUpperBound, CommonUtil.FormatFileSize(GetSelectedClipAggregate().Bytes))
+                    : CommonUtil.FormatFileSize(GetSelectedClipAggregate().Bytes))
         : SelectedClip is { } clip
             ? IsProgramExportFiltered || IsRemuxExport ? clip.ExportSizeStr : clip.EstimatedSizeStr ?? string.Empty
             : string.Empty;
@@ -2072,6 +2084,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 // 只有当前打开的单节目 TS 能判断帧精确任务的大小可预估；其他来源仍导出后确定。
                 SizeIsApproximate = saved.FrameAccurate is not null && CanEstimateFrameAccurateSize &&
                     PathsEqual(saved.Source.Path, VideoPath),
+                IsTsSource = IsTsTrackExport && PathsEqual(saved.Source.Path, VideoPath),
                 EstimatedBytes = Math.Max(0,
                     (saved.EndPosition > 0 ? saved.EndPosition :
                         new FileInfo(saved.Source.Path).Length) - saved.StartPosition)
@@ -2180,7 +2193,14 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         var dialogViewModel = _dialogService.CreateViewModel<SettingsWindowViewModel>();
         dialogViewModel.SelectedTabIndex = tabIndex;
+        var processing = TsOutputProcessing;
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
+        // 起始时间归零、去除空包改变了 TS 输出：已导出的片段需要重新导出。
+        if (TsOutputProcessing != processing)
+        {
+            InvalidateClipExports();
+            NotifyTsTracksChanged(selectionChanged: false);
+        }
         // 设置中可能关闭了记录、清空了列表或切换了语言。
         await RefreshRecentItemsAsync();
     }
@@ -2911,6 +2931,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     private void NotifyVideoCapabilityChanged()
     {
+        SyncSizeUpperBound();
         NotifyPreviewTrackChoicesChanged();
         OnPropertyChanged(nameof(IsVideoInitialized));
         OnPropertyChanged(nameof(ShowRecentStartPage));
@@ -3284,6 +3305,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 (clip.EndPosition > 0 ? clip.EndPosition : clip.InFileInfo.Length)
                 - clip.StartPosition),
             SizeIsApproximate = frameAccurate is not null && CanEstimateFrameAccurateSize,
+            IsTsSource = IsTsTrackExport,
         };
         ExportQueue.Add(item);
     }

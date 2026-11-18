@@ -62,6 +62,10 @@ public sealed class ExportRecordView
             tags.Add(strings.String_Export_Tag_DolbyE);
         if (modifiers.HasFlag(ExportModifiers.ChannelsMerged))
             tags.Add(strings.String_Export_Tag_ChannelMerge);
+        if (modifiers.HasFlag(ExportModifiers.StartTimeZeroed))
+            tags.Add(strings.String_Export_Tag_StartTimeZeroed);
+        if (modifiers.HasFlag(ExportModifiers.NullPacketsRemoved))
+            tags.Add(strings.String_Export_Tag_NullPacketsRemoved);
         return tags;
     }
 

@@ -82,11 +82,41 @@
                 <TextBlock Text="{DynamicResource String.Disc.VobExportNotice}" TextWrapping="Wrap" Opacity="0.7"
                            IsVisible="{Binding IsVobOutput}" />
                 <TextBlock Text="{DynamicResource String.RemuxExport.Notice}" TextWrapping="Wrap" Opacity="0.7" />
+                <!-- 悬停时简要说明两项处理。 -->
+                <TextBlock Text="{Binding RemuxProcessingNotice}" TextWrapping="Wrap" Opacity="0.7"
+                           Background="Transparent" Cursor="Help"
+                           IsVisible="{Binding ShowsRemuxProcessingNotice}">
+                    <ToolTip.Tip>
+                        <TextBlock MaxWidth="320" TextWrapping="Wrap" Text="{DynamicResource String.TsTracks.ProcessingTip}" />
+                    </ToolTip.Tip>
+                </TextBlock>
+                <TextBlock Text="{DynamicResource String.TsTracks.ProcessingAvailable}" TextWrapping="Wrap" Opacity="0.7"
+                           Background="Transparent" Cursor="Help"
+                           IsVisible="{Binding ShowsProcessingAvailableHint}">
+                    <ToolTip.Tip>
+                        <TextBlock MaxWidth="320" TextWrapping="Wrap" Text="{DynamicResource String.TsTracks.ProcessingTip}" />
+                    </ToolTip.Tip>
+                </TextBlock>
             </StackPanel>
             <StackPanel Spacing="6" IsVisible="{Binding IsTsOutput}">
-                <TextBlock Text="{DynamicResource String.TsTracks.Notice}" TextWrapping="Wrap" />
+                <TextBlock Text="{Binding TsTracksNotice}" TextWrapping="Wrap" />
                 <TextBlock Text="{DynamicResource String.TsTracks.FrameAccurateHint}" TextWrapping="Wrap" Opacity="0.7"
                            IsVisible="{Binding ShowsFrameAccurateHint}" />
+                <!-- 开启了起始时间归零或去除空包时说明已开启的处理，都没有开启时提示可在设置中开启；悬停时简要说明两项处理。 -->
+                <TextBlock Text="{Binding TsProcessingNotice}" TextWrapping="Wrap" Opacity="0.7"
+                           Background="Transparent" Cursor="Help"
+                           IsVisible="{Binding HasTsProcessingNotice}">
+                    <ToolTip.Tip>
+                        <TextBlock MaxWidth="320" TextWrapping="Wrap" Text="{DynamicResource String.TsTracks.ProcessingTip}" />
+                    </ToolTip.Tip>
+                </TextBlock>
+                <TextBlock Text="{DynamicResource String.TsTracks.ProcessingAvailable}" TextWrapping="Wrap" Opacity="0.7"
+                           Background="Transparent" Cursor="Help"
+                           IsVisible="{Binding ShowsProcessingAvailableHint}">
+                    <ToolTip.Tip>
+                        <TextBlock MaxWidth="320" TextWrapping="Wrap" Text="{DynamicResource String.TsTracks.ProcessingTip}" />
+                    </ToolTip.Tip>
+                </TextBlock>
             </StackPanel>
         </StackPanel>
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">

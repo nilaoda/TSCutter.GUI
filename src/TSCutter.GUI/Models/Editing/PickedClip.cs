@@ -36,6 +36,10 @@ public partial class PickedClip : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(EstimatedSizeStr), nameof(ExportSizeStr))]
     private bool _isRemoval;
+    /// <summary>TS 输出去除空包时，导出前只能给出大小上限，显示为“≤”。由主窗口按设置同步。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EstimatedSizeStr))]
+    private bool _sizeIsUpperBound;
 
     public bool RequiresRemux { get; init; }
 
@@ -193,7 +197,9 @@ public partial class PickedClip : ObservableObject, IDisposable
                     LocalizationManager.Instance.String_SizeApproximate, CommonUtil.FormatFileSize(SourceRangeBytes))
                 : ExportSizeStr
             : LocalizationManager.Instance.String_SizePrefix
-              + ((MergedOutput is null ? OutputFileSizeStr : null) ?? CommonUtil.FormatFileSize(SourceRangeBytes));
+              + ((MergedOutput is null ? OutputFileSizeStr : null) ?? (SizeIsUpperBound
+                  ? string.Format(LocalizationManager.Instance.String_SizeUpperBound, CommonUtil.FormatFileSize(SourceRangeBytes))
+                  : CommonUtil.FormatFileSize(SourceRangeBytes)));
 
     public bool HasExportStatus => ExportStatus != ClipExportStatus.Pending;
 

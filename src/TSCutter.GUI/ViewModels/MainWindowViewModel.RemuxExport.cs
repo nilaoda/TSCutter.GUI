@@ -52,7 +52,8 @@ public partial class MainWindowViewModel
                 track.Codec is not ("hdmv_pgs_subtitle" or "dvd_subtitle"),
             IsSelected = settings.StreamIndices.Contains(track.Index),
             AudioStreamIndex = track.Type == AVMediaType.AVMEDIA_TYPE_AUDIO ? track.Index : -1
-        }), video.Disc is null && video.ClipExtension == "mkv");
+        }), video.Disc is null && video.ClipExtension == "mkv", TsOutputProcessingNames.Count == 0 ? ""
+            : string.Format(LocalizationManager.Instance.String_RemuxExport_ProcessingNotice, string.Join(" · ", TsOutputProcessingNames)));
         dialog.EnableSilenceDetection(AnalyzeAudioTracks(video, VideoPath));
         await _dialogService.ShowDialogAsync(this, dialog);
         if (dialog.DialogResult != true || !ReferenceEquals(video, _videoInstance)) return;

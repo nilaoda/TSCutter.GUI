@@ -25,7 +25,8 @@ internal sealed unsafe class M2tsAvioWriteContext : IDisposable
 
     private readonly Stream _fileStream;
     private Exception? _writeException;
-    private readonly ExportTsCheckSession _session;
+    // 输出经输出处理时，检测由处理后的输出流接收，这里为 null。
+    private readonly ExportTsCheckSession? _session;
     private readonly WriteCallback _write;
     private readonly SeekCallback _seek;
     private AVIOContext* _io;
@@ -33,7 +34,7 @@ internal sealed unsafe class M2tsAvioWriteContext : IDisposable
     private bool _seekDetected;
     private bool _finished;
 
-    private M2tsAvioWriteContext(Stream stream, ExportTsCheckSession session)
+    private M2tsAvioWriteContext(Stream stream, ExportTsCheckSession? session)
     {
         _fileStream = stream;
         _session = session;
@@ -46,7 +47,7 @@ internal sealed unsafe class M2tsAvioWriteContext : IDisposable
         Open(new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None), session);
 
     // 上下文接管流的所有权；测试也通过此入口覆盖最后一次 flush 的写入失败。
-    internal static M2tsAvioWriteContext Open(Stream stream, ExportTsCheckSession session)
+    internal static M2tsAvioWriteContext Open(Stream stream, ExportTsCheckSession? session)
     {
         var writer = new M2tsAvioWriteContext(stream, session);
         try
@@ -77,7 +78,8 @@ internal sealed unsafe class M2tsAvioWriteContext : IDisposable
                 throw new OutOfMemoryException();
             // AVIO 可能替换其内部缓冲区，释放时以 io->buffer 为准。
             buffer = null;
-            io->seekable = 1;
+            // 不能定位的输出流（输出处理）只接受顺序写出。
+            io->seekable = _fileStream.CanSeek ? 1 : 0;
             _io = io;
         }
         finally
@@ -159,7 +161,7 @@ internal sealed unsafe class M2tsAvioWriteContext : IDisposable
             var data = new ReadOnlySpan<byte>(buffer, size);
             // 文件写入错误以错误码交还封装器；检测器自身异常由会话隔离。
             _fileStream.Write(data);
-            _session.Append(data);
+            _session?.Append(data);
             _position += size;
             return size;
         }
@@ -199,9 +201,10 @@ internal sealed unsafe class M2tsAvioWriteContext : IDisposable
                 // M2TS 顺序写出被回写打断：文件内容仍要保证正确，但覆盖写入
                 // 不能当作追加数据检测，停止喂入并保留原因。
                 _seekDetected = true;
-                _session.MarkSeekDetected();
+                _session?.MarkSeekDetected();
             }
-            _fileStream.Seek(target, SeekOrigin.Begin);
+            if (target != _position)
+                _fileStream.Seek(target, SeekOrigin.Begin);
             _position = target;
             return target;
         }

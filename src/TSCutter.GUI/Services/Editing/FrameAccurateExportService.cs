@@ -40,6 +40,11 @@ internal sealed unsafe class FrameAccurateExportService
     private const double GradualRefreshPrerollSeconds = Models.Preview.VideoInstance.GradualRefreshPrerollSeconds;
     // 只处理短时解码偏移；更大的异常不能当作普通重排序延迟修正。
     private const double MaximumDtsCorrectionSeconds = 1;
+    /// <summary>
+    /// 由 TS 复用器写出时 PCR 领先 DTS 的量（微秒），即解码器的缓冲时间。不设时复用器让 PCR 等于 DTS，
+    /// 个别包晚于自己的解码时间到达，严格的硬件解码器可能丢帧；0.7 秒与常见广播素材的提前量相当。
+    /// </summary>
+    internal const int TsMuxerBufferDelay = 700_000;
 
     private readonly List<FrameAccurateSegmentReport> reports = [];
     internal IReadOnlyList<FrameAccurateSegmentReport> Reports => reports;
@@ -385,6 +390,14 @@ internal sealed unsafe class FrameAccurateExportService
                     throw;
                 }
             }
+            else if (isTsOutput && AudioRebuild.TsOutputFile.CreateProcessedOnly(temporary,
+                         settings.Container == "m2ts" ? TsPacketLayout.M2tsPacketSize : TsUtil.TsPacketSize) is { } processed)
+            {
+                // 输出处理（起始时间归零、去除空包）：封装器的输出经处理后再写入文件，检测由处理后的输出流接收。
+                avioWriter = M2tsAvioWriteContext.Open(processed, checkSession);
+                output->pb = avioWriter.Io;
+                output->flags |= ffmpeg.AVFMT_FLAG_CUSTOM_IO;
+            }
             else if (isTsOutput && checkSession is not null)
             {
                 avioWriter = M2tsAvioWriteContext.Open(temporary, checkSession);
@@ -408,7 +421,16 @@ internal sealed unsafe class FrameAccurateExportService
                     output->strict_std_compliance = -1;
                 if (isTsOutput)
                 {
-                    FFmpegException.Check(FF.av_dict_set(&options, "mpegts_copyts", "1", 0));
+                    // 按传输包写出时复用器只用来建立输出流，时间戳不经它。由复用器写出时留出解码缓冲：
+                    // PCR 比 DTS 提前 max_delay，复用器为此把 PTS/DTS 整体后移。
+                    if (native)
+                        FFmpegException.Check(FF.av_dict_set(&options, "mpegts_copyts", "1", 0));
+                    else
+                    {
+                        output->max_delay = TsMuxerBufferDelay;
+                        // 避免延长解码缓冲时一并增加音频 PES 聚合。
+                        FFmpegException.Check(FF.av_dict_set(&options, "pes_payload_size", "0", 0));
+                    }
                     if (settings.Container == "m2ts")
                         FFmpegException.Check(FF.av_dict_set(&options, "mpegts_m2ts_mode", "1", 0));
                     var program = FindProgram(rawInput, settings.VideoIndex);

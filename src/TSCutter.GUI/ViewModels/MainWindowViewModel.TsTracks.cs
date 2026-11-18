@@ -47,15 +47,34 @@ public partial class MainWindowViewModel
 
     public bool HasTsTrackSelection => CurrentExcludedPids is not null;
 
+    /// <summary>设置中启用的 TS 输出处理（起始时间归零、去除空包），作用于全部 TS 导出。</summary>
+    private static Services.Editing.TsOutputProcessing TsOutputProcessing => OutputWindowViewModel.ResolveOutputProcessing();
+
+    /// <summary>输出处理的名称，按导出记录标签的顺序；没有启用时为空。</summary>
+    private static IReadOnlyList<string> TsOutputProcessingNames
+    {
+        get
+        {
+            var strings = LocalizationManager.Instance;
+            var names = new List<string>();
+            if (TsOutputProcessing.HasFlag(Services.Editing.TsOutputProcessing.ZeroStartTime))
+                names.Add(strings.String_Export_Tag_StartTimeZeroed);
+            if (TsOutputProcessing.HasFlag(Services.Editing.TsOutputProcessing.RemoveNullPackets))
+                names.Add(strings.String_Export_Tag_NullPacketsRemoved);
+            return names;
+        }
+    }
+
     public string TsTrackSummary
     {
         get
         {
             var total = TsTracksInScope.Count();
             var excluded = CurrentExcludedPids?.Count ?? 0;
-            return excluded == 0
+            var summary = excluded == 0
                 ? string.Format(LocalizationManager.Instance.String_TsTracks_SummaryAll, total)
                 : string.Format(LocalizationManager.Instance.String_TsTracks_Summary, total - excluded, total);
+            return string.Join(" · ", TsOutputProcessingNames.Prepend(summary));
         }
     }
 
@@ -84,8 +103,24 @@ public partial class MainWindowViewModel
         ? _excludedTsPids.Order().ToList()
         : null;
 
+    /// <summary>TS 按字节剪辑在输出去除空包时，导出前只能给出大小上限。</summary>
+    private bool RawSizeIsUpperBound => IsTsTrackExport && RemovesNullPackets;
+    private static bool RemovesNullPackets => TsOutputProcessing.HasFlag(Services.Editing.TsOutputProcessing.RemoveNullPackets);
+
+    private void SyncSizeUpperBound()
+    {
+        var upperBound = RawSizeIsUpperBound;
+        foreach (var clip in Clips)
+            clip.SizeIsUpperBound = upperBound;
+        var removesNulls = RemovesNullPackets;
+        foreach (var item in ExportQueue)
+            item.SizeIsUpperBound = removesNulls && item.IsTsSource;
+        OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
+    }
+
     private void NotifyTsTracksChanged(bool selectionChanged = true)
     {
+        SyncSizeUpperBound();
         OnPropertyChanged(nameof(IsTsTrackExport));
         OnPropertyChanged(nameof(ShowsExportSettings));
         OnPropertyChanged(nameof(HasTsTrackSelection));
@@ -144,7 +179,9 @@ public partial class MainWindowViewModel
             }
         }
         var dialog = _dialogService.CreateViewModel<RemuxExportOptionsViewModel>();
-        dialog.InitializeTs(video.ClipExtension, choices, UsesFrameAccurateCut);
+        var processing = TsOutputProcessingNames;
+        dialog.InitializeTs(video.ClipExtension, choices, UsesFrameAccurateCut, processing.Count == 0 ? ""
+            : string.Format(LocalizationManager.Instance.String_TsTracks_ProcessingNotice, string.Join(" · ", processing)));
         dialog.EnableSilenceDetection(AnalyzeAudioTracks(video, VideoPath));
         await _dialogService.ShowDialogAsync(this, dialog);
         if (dialog.DialogResult != true || !ReferenceEquals(video, _videoInstance))

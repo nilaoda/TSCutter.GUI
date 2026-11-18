@@ -90,6 +90,10 @@ public class AppConfig : ObservableObject
     public bool ShowExportResult { get; set; } = true;
     // 导出过程中对最终输出字节同步执行 TS 检测；默认开启，可在设置中关闭。
     public bool TsCheckOnExport { get; set; } = true;
+    // TS 导出整体平移时间戳、让输出从 0 开始；默认关闭。
+    public bool TsZeroStartTime { get; set; }
+    // TS 导出删去空包（PID 0x1FFF）；默认关闭。
+    public bool TsRemoveNullPackets { get; set; }
     public bool PreferHardwareDecoding
     {
         get => IsHardwareDecodingSupported && _preferHardwareDecoding;

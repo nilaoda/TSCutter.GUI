@@ -45,10 +45,10 @@
     <x:String x:Key="String.TsExport.TablesWarningTitle">Program table warning</x:String>
     <x:String x:Key="String.TsExport.TablesWarning">Complete program tables were not found near the start of the following clips. Players or media information tools may misidentify their tracks. Adding program tables before exporting is recommended.</x:String>
     <x:String x:Key="String.TsExport.AdjustCut">Adjust cut points</x:String>
-    <x:String x:Key="String.TsExport.Continue">Export unchanged</x:String>
+    <x:String x:Key="String.TsExport.Continue">Export without tables</x:String>
     <x:String x:Key="String.TsExport.Supplement">Add tables and export</x:String>
     <x:String x:Key="String.TsExport.SupplementHint">Copy nearby PAT/PMT tables to the file header. Audio and video are not re-encoded; a small number of table packets are added, so the output is not byte-identical to the selected range.</x:String>
-    <x:String x:Key="String.TsExport.TablesUnavailable">No complete program tables could be read near the cut point. Adjust the cut point or choose Export unchanged.</x:String>
+    <x:String x:Key="String.TsExport.TablesUnavailable">No complete program tables could be read near the cut point. Adjust the cut point or choose Export without tables.</x:String>
     <x:String x:Key="String.SaveYourClip">Save Your Clip</x:String>
     <x:String x:Key="String.Menu.File">_File</x:String>
     <x:String x:Key="String.Menu.Edit">_Edit</x:String>
@@ -180,6 +180,7 @@
     <x:String x:Key="String.Clips.Empty">No clips</x:String>
     <x:String x:Key="String.SizePrefix">Size: </x:String>
     <x:String x:Key="String.SizeApproximate">~{0}</x:String>
+    <x:String x:Key="String.SizeUpperBound">≤{0}</x:String>
     <x:String x:Key="String.Ok">OK</x:String>
     <x:String x:Key="String.Cancel">Cancel</x:String>
     <x:String x:Key="String.Apply">Apply</x:String>
@@ -396,6 +397,12 @@
     <x:String x:Key="String.Settings.SaveDialogFolder.Source">The source file's folder</x:String>
     <x:String x:Key="String.Settings.SaveDialogFolderTip">Applies to saving clips, merged files, the queue, screenshots, thumbnail sheets and TS tool outputs.&#10;Open dialogs always start in the folder you last opened files from.&#10;If the chosen folder is unavailable, the other one is used.</x:String>
     <x:String x:Key="String.Settings.TsCheckOnExportHint">Checks TS data as it is exported. Uses additional CPU and memory; export speed depends on the media and disk performance.</x:String>
+    <x:String x:Key="String.Settings.TsOutputProcessing">Extra processing for TS exports (off by default)</x:String>
+    <x:String x:Key="String.Settings.TsZeroStartTime">Start at time zero</x:String>
+    <x:String x:Key="String.Settings.TsZeroStartTimeTip">Shifts all PCR, PTS and DTS values in the output&#10;so the file starts at time zero.&#10;Avoids wrong durations in some older players.&#10;Audio and video are not re-encoded and&#10;stay in sync with each other.&#10;Programs with separate clocks each start at zero.</x:String>
+    <x:String x:Key="String.Settings.TsRemoveNullPackets">Remove null packets</x:String>
+    <x:String x:Key="String.Settings.TsRemoveNullPacketsTip">Drops the PID 0x1FFF stuffing packets.&#10;The file gets smaller and the bitrate&#10;becomes variable instead of constant.&#10;Devices or workflows that expect a constant&#10;bitrate may not accept it.</x:String>
+    <x:String x:Key="String.Settings.TsOutputProcessingHint">Applies to TS/M2TS files from keyframe cuts, smart cuts and Blu-ray disc exports. When on, keyframe cuts are rewritten too instead of copying the source range as is, and the export record shows which processing was applied.</x:String>
     <x:String x:Key="String.Menu.TsCheck">TS Quick _Check</x:String>
     <x:String x:Key="String.Menu.TsTimelineRepair">TS _Timeline Repair...</x:String>
     <x:String x:Key="String.Menu.TsFilterPid">TS Filter by _PID...</x:String>
@@ -1352,6 +1359,7 @@
     <x:String x:Key="String.RemuxExport.FastSubtitleSeek">Fast MKV text subtitle seeking</x:String>
     <x:String x:Key="String.RemuxExport.FastSubtitleSeekHint">Read text subtitles from about 30 seconds before each cut. Earlier text spanning the cut may be omitted. PGS display state is restored separately.</x:String>
     <x:String x:Key="String.RemuxExport.Notice">Container data is rewritten; output is not byte-for-byte lossless.</x:String>
+    <x:String x:Key="String.RemuxExport.ProcessingNotice">Enabled in Settings: {0}. M2TS output is processed accordingly.</x:String>
     <x:String x:Key="String.RemuxExport.BoundaryHint">Audio/video is copied without re-encoding. Video cuts use keyframes.</x:String>
     <x:String x:Key="String.RemuxExport.Files">MP4 / MKV files</x:String>
     <x:String x:Key="String.RemuxExport.Error.Container">Choose the same output container for all segments and use its matching filename extension.</x:String>
@@ -1724,6 +1732,8 @@
     <x:String x:Key="String.Export_Tag_DolbyE">Dolby E transcoded</x:String>
     <x:String x:Key="String.AudioOutput.Failed">Audio rebuilding failed: {0}</x:String>
     <x:String x:Key="String.Export_Tag_ChannelMerge">Merged to 5.1</x:String>
+    <x:String x:Key="String.Export_Tag_StartTimeZeroed">Start time zeroed</x:String>
+    <x:String x:Key="String.Export_Tag_NullPacketsRemoved">Null packets removed</x:String>
     <x:String x:Key="String.ChannelMerge.Button">Merge 5.1…</x:String>
     <x:String x:Key="String.ChannelMerge.ButtonTip">This program has three or more stereo tracks. Some broadcast feeds carry one 5.1 mix as three stereo tracks (L/R, C/LFE, Ls/Rs).&#10;Click to merge them into one 5.1 track on export.</x:String>
     <x:String x:Key="String.ChannelMerge.SummaryReplace">Set: merge to {0}, replace the originals</x:String>
@@ -1794,6 +1804,10 @@
     <x:String x:Key="String.TsTracks.SameAsSource">Same as source ({0})</x:String>
     <x:String x:Key="String.TsTracks.TrackHint">Sorted by PID · Current video required</x:String>
     <x:String x:Key="String.TsTracks.Notice">With all tracks kept, the clip is copied as is. Unchecked tracks are removed from the output and their entries are dropped from the program tables; all other packets are copied unchanged.</x:String>
+    <x:String x:Key="String.TsTracks.NoticeProcessed">Unchecked tracks are removed from the output and their entries are dropped from the program tables.</x:String>
+    <x:String x:Key="String.TsTracks.ProcessingNotice">Enabled in Settings: {0}. The output is rewritten accordingly instead of being copied from the source as is.</x:String>
+    <x:String x:Key="String.TsTracks.ProcessingAvailable">If needed, Start at time zero and Remove null packets can be turned on in Settings → Export.</x:String>
+    <x:String x:Key="String.TsTracks.ProcessingTip">Start at time zero: shifts all timestamps so the file&#10;starts at zero, which avoids wrong durations&#10;in some older players.&#10;Remove null packets: drops the stuffing packets,&#10;so the file gets smaller and the bitrate&#10;becomes variable.</x:String>
     <x:String x:Key="String.TsTracks.FrameAccurateHint">Smart cut only outputs the video, audio and subtitles of the previewed program.</x:String>
     <x:String x:Key="String.TsTracks.SummaryAll">All {0} tracks exported</x:String>
     <x:String x:Key="String.TsTracks.Summary">{0} of {1} tracks exported · program tables rewritten</x:String>
