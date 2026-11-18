@@ -4,6 +4,7 @@ using System.Runtime.InteropServices;
 using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Services.TransportStream.Analysis;
+using TSCutter.GUI.Utils.Files;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 
 namespace TSCutter.GUI.Services.Editing;
@@ -169,7 +170,8 @@ internal sealed unsafe class M2tsAvioWriteContext : IDisposable
         {
             _writeException ??= exception;
             // 托管异常不得穿过原生回调边界。
-            return ffmpeg.AVERROR_EXTERNAL;
+            // 磁盘写满时以 ENOSPC 交还，封装器抛出的错误仍能识别为空间不足。
+            return DiskSpaceUtil.IsDiskFull(exception) ? DiskSpaceUtil.FFmpegNoSpace : ffmpeg.AVERROR_EXTERNAL;
         }
     }
 
@@ -212,7 +214,8 @@ internal sealed unsafe class M2tsAvioWriteContext : IDisposable
         {
             _writeException ??= exception;
             // 托管异常不得穿过原生回调边界。
-            return ffmpeg.AVERROR_EXTERNAL;
+            // 磁盘写满时以 ENOSPC 交还，封装器抛出的错误仍能识别为空间不足。
+            return DiskSpaceUtil.IsDiskFull(exception) ? DiskSpaceUtil.FFmpegNoSpace : ffmpeg.AVERROR_EXTERNAL;
         }
     }
 }

@@ -1,0 +1,28 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TSCutter.GUI.ViewModels.Editing"
+        x:Class="TSCutter.GUI.Views.Editing.ExportSpaceWarningView"
+        x:DataType="vm:ExportSpaceWarningViewModel"
+        Width="520" SizeToContent="Height" CanResize="False"
+        CanMinimize="False" CanMaximize="False" ShowInTaskbar="False"
+        WindowStartupLocation="CenterOwner" Title="{DynamicResource String.ExportSpace.Title}">
+    <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="12">
+        <TextBlock Text="{DynamicResource String.ExportSpace.Warning}" TextWrapping="Wrap" />
+        <ScrollViewer Grid.Row="1" MaxHeight="160" HorizontalScrollBarVisibility="Disabled">
+            <ItemsControl Name="VolumesList" ItemsSource="{Binding Volumes}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate x:DataType="x:String">
+                        <SelectableTextBlock Text="{Binding}" TextWrapping="Wrap" />
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </ScrollViewer>
+        <TextBlock Grid.Row="2" Text="{DynamicResource String.ExportSpace.Note}" TextWrapping="Wrap" Opacity="0.7" />
+        <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
+            <Button Name="ContinueButton" Content="{DynamicResource String.ExportSpace.Continue}" MinWidth="120"
+                    Click="ContinueClick" />
+            <Button Name="CancelButton" Content="{DynamicResource String.Cancel}" IsDefault="True" IsCancel="True"
+                    MinWidth="100" Click="CancelClick" />
+        </StackPanel>
+    </Grid>
+</Window>

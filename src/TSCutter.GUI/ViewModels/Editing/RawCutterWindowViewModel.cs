@@ -14,6 +14,7 @@ using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.TransportStream.Analysis;
 using TSCutter.GUI.Utils.TransportStream.Packets;
 using TSCutter.GUI.ViewModels;
@@ -378,6 +379,8 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
         outputVm.StartPosition = startPos;
         outputVm.EndPosition = endPos;
         outputVm.OutputPath = result.Path!.LocalPath;
+        if (!await ExportSpaceWarningViewModel.ConfirmAsync(_dialogService, this, outputVm.DescribeSpaceTasks(), null))
+            return;
         await _dialogService.ShowDialogAsync(this, outputVm);
 
         // 仅当正常完成时在窗口内临时显示成功提示
@@ -387,7 +390,9 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
         }
         else if (outputVm.Exception != null)
         {
-            ShowStatusMessage(LocalizationManager.Instance.String_Error + ": " + outputVm.Exception.Message);
+            ShowStatusMessage(LocalizationManager.Instance.String_Error + ": " + (DiskSpaceUtil.IsDiskFull(outputVm.Exception)
+                ? LocalizationManager.Instance.String_Export_DiskFull
+                : outputVm.Exception.Message));
         }
     }
 

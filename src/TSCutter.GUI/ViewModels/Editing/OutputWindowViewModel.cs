@@ -246,6 +246,58 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         OnPropertyChanged(nameof(IsMergeMode));
     }
 
+    /// <summary>
+    /// 合并与删除模式导出各段在来源中的字节与时间范围，用于估算智能剪辑与重新封装的输出大小
+    /// （这两种请求只记录时间戳或秒数）。
+    /// </summary>
+    internal IReadOnlyList<ExportSizeSegment>? MergeSizeSegments { get; set; }
+
+    /// <summary>本次导出各输出文件的大小估算输入，在开始前检查剩余空间时使用。</summary>
+    internal IReadOnlyList<ExportSizeTask> DescribeSpaceTasks()
+    {
+        if (IsBatchMode)
+            return _tasks.Select(DescribeSpaceTask).ToArray();
+        if (_frameAccurateRequest is { } frameAccurate)
+        {
+            var settings = frameAccurate.Segments[0].Settings;
+            var producesTs = settings.Container is "ts" or "m2ts";
+            return MergeSizeSegments is { Count: > 0 } segments
+                ? [new ExportSizeTask(frameAccurate.OutputPath, frameAccurate.Segments[0].SourcePath, segments,
+                    ExportSizeAccuracy.Approximate, settings.Container == "m2ts", settings.Disc, producesTs ? AudioRebuild : null)]
+                : [];
+        }
+        if (_mediaRequest is { } media)
+        {
+            var settings = media.Segments[0].Settings;
+            var segments = MergeSizeSegments is { Count: > 0 } ranges && ranges.Count == media.Segments.Count
+                ? ranges
+                : media.Segments.Select(item => new ExportSizeSegment(-1, -1, item.StartSeconds, item.EndSeconds)).ToArray();
+            return [new ExportSizeTask(media.OutputPath, media.Segments[0].SourcePath, segments,
+                ExportSizeAccuracy.Approximate, settings.Container == "m2ts", settings.Disc)];
+        }
+        if (_mergeRequest is { } merge)
+            return [new ExportSizeTask(merge.OutputPath, merge.SourcePath,
+                merge.Ranges.Select(range => new ExportSizeSegment(range.StartPosition, range.EndPosition,
+                    range.StartTimeSeconds, range.EndTimeSeconds)).ToArray(), ExportSizeAccuracy.Exact,
+                AudioRebuild: AudioRebuild)];
+        if (SourceFilePath is null || OutputPath is null)
+            return [];
+        return [DescribeSpaceTask(new BatchTask(SourceFilePath, OutputPath, StartPosition, EndPosition, ProgramId,
+            RemuxSettings, StartSeconds, EndSeconds, FrameAccurate, StartPts, EndPts, AudioRebuild: AudioRebuild))];
+    }
+
+    private ExportSizeTask DescribeSpaceTask(BatchTask task)
+    {
+        var byteCopy = task.FrameAccurate is null && task.RemuxSettings is null;
+        var container = task.FrameAccurate?.Container ?? task.RemuxSettings?.Container;
+        var producesTs = task.RemuxSettings is null && task.FrameAccurate?.Container is null or "ts" or "m2ts";
+        return new ExportSizeTask(task.DestinationPath, task.SourcePath,
+            [new ExportSizeSegment(task.StartPosition, task.EndPosition, task.StartSeconds, task.EndSeconds)],
+            byteCopy ? ExportSizeAccuracy.Exact : ExportSizeAccuracy.Approximate, container == "m2ts",
+            task.FrameAccurate?.Disc ?? task.RemuxSettings?.Disc,
+            producesTs && !IsRawByteRange ? task.AudioRebuild : null);
+    }
+
     [RelayCommand]
     private async Task OutputAsync()
     {
@@ -700,16 +752,36 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 task.StartPosition, task.EndPosition, progress, token, checkSession);
     }
 
+    /// <summary>批量导出中执行单个任务的入口；为 null 时按任务设置导出，测试中可替换。</summary>
+    internal Func<BatchTask, Task>? RunBatchTaskAsync { get; set; }
+
     private async Task RunBatchAsync()
     {
         _batchCancelled = false;
         var sources = _tasks.Select(task => task.SourcePath).Distinct(MediaFileUtil.PathComparer).ToArray();
+        // 写满过的卷：同一卷上其余任务不再尝试，直接记为失败；写到其他卷的任务照常继续。
+        HashSet<string>? fullVolumes = null;
+        var volumeByDirectory = new Dictionary<string, string?>(MediaFileUtil.PathComparer);
+        async Task<string?> VolumeOf(string path)
+        {
+            var directory = Path.GetDirectoryName(Path.GetFullPath(path)) ?? path;
+            if (!volumeByDirectory.TryGetValue(directory, out var volume))
+                volumeByDirectory[directory] = volume = await Task.Run(() => DiskSpaceUtil.TryGetVolumeId(path));
+            return volume;
+        }
         for (int i = 0; i < _tasks.Count; i++)
         {
             if (_batchCancelled)
                 break;
 
             var task = _tasks[i];
+            if (fullVolumes is not null &&
+                await VolumeOf(task.DestinationPath) is { } volume &&
+                fullVolumes.Contains(volume))
+            {
+                FailedTaskIndices.Add(i);
+                continue;
+            }
             CurrentTaskIndex = i;
             CurrentFileName = Path.GetFileName(task.DestinationPath);
             Percent = 0;
@@ -728,7 +800,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 _lastUpdateTime = _startTime;
                 _bytesCopied = 0;
 
-                await CopyClipAsync(task);
+                await (RunBatchTaskAsync ?? CopyClipAsync)(task);
                 CompletedTaskIndices.Add(i);
             }
             catch (OperationCanceledException)
@@ -738,8 +810,13 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             catch (Exception e)
             {
                 FailedTaskIndices.Add(i);
-                Exception ??= e;
+                var diskFull = DiskSpaceUtil.IsDiskFull(e);
+                // 只报告一个错误时优先报告磁盘写满，它决定了同一卷上其余任务的结果。
+                if (Exception is null || diskFull && !DiskSpaceUtil.IsDiskFull(Exception))
+                    Exception = e;
                 Console.Error.WriteLine($"Task failed: {e.Message}");
+                if (diskFull && await VolumeOf(task.DestinationPath) is { } full)
+                    (fullVolumes ??= new HashSet<string>(MediaFileUtil.PathComparer)).Add(full);
             }
         }
 

@@ -228,11 +228,13 @@ public sealed class DialogFolderMemory
         return mount?.DriveType == DriveType.Network;
     }
 
-    private static bool IsUnder(string folder, string mountPoint)
+    internal static bool IsUnder(string folder, string mountPoint)
     {
         var root = Path.TrimEndingDirectorySeparator(mountPoint);
-        return root == "/" || folder.Equals(root, StringComparison.Ordinal) ||
-               folder.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal);
+        // macOS 的卷默认不区分大小写，路径与挂载点的大小写可能不一致。
+        var comparison = OperatingSystem.IsMacOS() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal;
+        return root == "/" || folder.Equals(root, comparison) ||
+               folder.StartsWith(root + Path.DirectorySeparatorChar, comparison);
     }
 
     // 检查完成时计时器随即释放，不必等到超时。

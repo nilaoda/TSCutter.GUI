@@ -1586,6 +1586,13 @@
     <x:String x:Key="String.FrameAccurate.Timestamps.Title">Normalize video timestamps</x:String>
     <x:String x:Key="String.FrameAccurate.Timestamps.Warning">The source video has invalid decoding timestamps.&#10;&#10;Continuing smart cut will correct the timestamps and remux the TS. Original transport packets and transport errors will not be preserved as-is. Most video is still copied; only the cut boundaries are re-encoded.</x:String>
     <x:String x:Key="String.FrameAccurate.Timestamps.Continue">Normalize and continue</x:String>
+    <x:String x:Key="String.ExportSpace.Title">Not enough disk space</x:String>
+    <x:String x:Key="String.ExportSpace.Warning">The destination may not have enough free space for this export. If the disk fills up partway through, the export fails. Free up some space or choose another location.</x:String>
+    <x:String x:Key="String.ExportSpace.Volume">{0}: needs about {1}, {2} available</x:String>
+    <x:String x:Key="String.ExportSpace.VolumeFiles">{0}: {3} files need about {1}, {2} available</x:String>
+    <x:String x:Key="String.ExportSpace.Note">The required space is an estimate that includes a safety margin.</x:String>
+    <x:String x:Key="String.ExportSpace.Continue">Export Anyway</x:String>
+    <x:String x:Key="String.Export.DiskFull">The destination disk is full, so the export did not finish. Free up some space or choose another location, then try again.</x:String>
     <x:String x:Key="String.FrameAccurate.Error.Invalid">The export request is invalid. Check the output file extension and the selected clips.</x:String>
     <x:String x:Key="String.FrameAccurate.Error.FrameNotFound">A selected frame could not be found in the file. Re-mark the clip boundary.</x:String>
     <x:String x:Key="String.FrameAccurate.Error.NoRandomAccessPoint">No independently decodable keyframe was found where the cut needs one, so the boundary cannot be re-encoded and joined safely (for example, open-GOP video). Choose a range inside one GOP, or use keyframe cut.</x:String>

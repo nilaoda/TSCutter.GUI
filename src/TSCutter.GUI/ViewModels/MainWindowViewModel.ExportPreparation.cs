@@ -100,6 +100,20 @@ public partial class MainWindowViewModel
         }
     }
 
+    /// <summary>
+    /// 打开导出窗口前检查目标磁盘的剩余空间；空间足够或无法判断时不打扰用户。
+    /// 没有字节位置的来源按当前视频的时长估算，其他来源（如队列中别的文件）无法估算时跳过。
+    /// </summary>
+    private Task<bool> ConfirmExportSpaceAsync(OutputWindowViewModel output, Func<bool>? isCurrent = null)
+    {
+        var videoPath = VideoPath;
+        var duration = DurationMax;
+        double? SourceDuration(string path) =>
+            duration > 0 && !string.IsNullOrEmpty(videoPath) && MediaFileUtil.PathsEqual(path, videoPath) ? duration : null;
+        return ExportSpaceWarningViewModel.ConfirmAsync(_dialogService, this, output.DescribeSpaceTasks(), SourceDuration,
+            isCurrent);
+    }
+
     private async Task ForgetMissingClipOutputsAsync(IEnumerable<string> outputPaths)
     {
         var paths = outputPaths.ToArray();

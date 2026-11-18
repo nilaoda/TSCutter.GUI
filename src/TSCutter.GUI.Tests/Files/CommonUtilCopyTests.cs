@@ -87,6 +87,32 @@ public sealed class CommonUtilCopyTests
     }
 
     [Fact]
+    public async Task DiskFullAfterWritingRemovesThePartialCopy()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"raw-copy-{Guid.NewGuid():N}");
+        var output = path + ".out";
+        try
+        {
+            await File.WriteAllBytesAsync(path, [1, 2, 3]);
+            var diskFull = new IOException("full", OperatingSystem.IsWindows() ? unchecked((int)0x80070070) : 28);
+
+            await Assert.ThrowsAsync<IOException>(() => CommonUtil.CopyFileAsync(new FileInfo(path), output,
+                progress: (_, bytes) =>
+                {
+                    if (bytes > 0)
+                        throw diskFull;
+                }));
+
+            Assert.False(File.Exists(output));
+        }
+        finally
+        {
+            File.Delete(path);
+            File.Delete(output);
+        }
+    }
+
+    [Fact]
     public async Task ShortenedSourceDoesNotBecomeASuccessfulPartialCopy()
     {
         var path = Path.Combine(Path.GetTempPath(), $"short-copy-{Guid.NewGuid():N}");
