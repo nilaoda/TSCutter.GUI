@@ -113,6 +113,9 @@ public partial class MainWindowViewModel
             RemuxExportError.SourceChanged => strings.String_MergeClips_SourceChanged,
             _ => strings.String_RemuxExport_Error_Timestamp
         };
+        if (exception.UsableStarts.Count > 0)
+            message += "\n" + string.Format(strings.String_RemuxExport_Error_GopNearby,
+                string.Join(" / ", exception.UsableStarts.Select(seconds => Utils.CommonUtil.FormatSeconds(seconds))));
         return string.IsNullOrWhiteSpace(exception.Message) ? message : message + "\n\n" + exception.Message;
     }
 }

@@ -1372,7 +1372,8 @@
     <x:String x:Key="String.RemuxExport.Data">Data</x:String>
     <x:String x:Key="String.RemuxExport.Default">default</x:String>
     <x:String x:Key="String.RemuxExport.Forced">forced</x:String>
-    <x:String x:Key="String.RemuxExport.Error.Gop">This boundary has open-GOP pictures spanning the cut. It cannot be copied safely without losing frames. Choose another keyframe boundary or retain the complete file.</x:String>
+    <x:String x:Key="String.RemuxExport.Error.Gop">This start is an open-GOP keyframe whose leading pictures include reference pictures, so pictures after it may depend on pictures before the start and copying from here may corrupt the picture. Choose another keyframe as the start, or use smart cut if the video supports it.</x:String>
+    <x:String x:Key="String.RemuxExport.Error.GopNearby">Nearby keyframes that can be used as the start: {0}</x:String>
     <x:String x:Key="String.RemuxExport.Error.SubtitleTiming">An ASS subtitle with animation, karaoke or a scrolling effect crosses the cut. Keep the complete subtitle event or deselect this track.</x:String>
     <x:String x:Key="String.SubtitlePreview.Label">Subtitles</x:String>
     <x:String x:Key="String.SubtitlePreview.Off">Off</x:String>

@@ -93,6 +93,27 @@ internal sealed unsafe class BlurayInputFormatContext : FormatContext
         }
     }
 
+    /// <summary>
+    /// 探测流参数时解复用器读到的是片段原始时间戳，各流起点停在首个片段的入点（真实光盘常为数小时）；
+    /// 读包时时间戳已平移到标题时间轴，起点也按标题开头所在片段同样平移。否则按起点定位或取样的功能
+    /// （智能剪辑的扫描、静音检测的取样范围）会定位到标题之外。
+    /// </summary>
+    protected override void CompleteStreamInfo()
+    {
+        if ((reader.Timeline.FindByByte(0) ?? seekSegment) is not { } first)
+            return;
+        AVFormatContext* context = this;
+        var shift90k = first.RelativeStart90k - first.InPts90k;
+        for (var i = 0; i < context->nb_streams; i++)
+        {
+            var stream = context->streams[i];
+            if (stream->start_time != FF.AV_NOPTS_VALUE)
+                stream->start_time += (long)Math.Round(shift90k * (double)stream->time_base.den / (stream->time_base.num * 90_000.0));
+        }
+        if (context->start_time != FF.AV_NOPTS_VALUE)
+            context->start_time += (long)Math.Round(shift90k * (double)FF.AV_TIME_BASE / 90_000);
+    }
+
     public override void SeekFrame(long timestamp, int streamIndex, AVSEEK_FLAG flags = AVSEEK_FLAG.Backward)
     {
         if ((flags & AVSEEK_FLAG.Byte) != 0)

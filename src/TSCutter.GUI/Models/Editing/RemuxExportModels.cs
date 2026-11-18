@@ -84,4 +84,6 @@ internal enum RemuxExportError
 internal sealed class RemuxExportException(RemuxExportError code, string detail = "") : Exception(detail)
 {
     public RemuxExportError Code { get; } = code;
+    /// <summary>起点不能使用时，附近可以作为起点的关键帧时间（与片段起点同一时间轴，秒）。</summary>
+    public IReadOnlyList<double> UsableStarts { get; init; } = [];
 }

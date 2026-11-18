@@ -242,7 +242,7 @@ internal sealed unsafe class RemuxExportService
     }
 
     private sealed record PreparedSegment(RemuxExportSegment Segment, FormatContext Input, int[] Streams,
-        double Start, double End, long[] StartDts, long[] EndPts, long[] EndDurations, SourceStamp[] Source);
+        double Start, double End, long[] StartDts, long[] EndPts, long[] EndDurations, SourceStamp[] Source, bool[] EndHasLeading);
 
     internal sealed record SourceStamp(string Path, long Length, DateTime Modified);
 
@@ -323,6 +323,7 @@ internal sealed unsafe class RemuxExportService
             var starts = new long[indices.Length];
             var ends = Enumerable.Repeat(long.MaxValue, indices.Length).ToArray();
             var endDurations = new long[indices.Length];
+            var endHasLeading = new bool[indices.Length];
             for (var i = 0; i < indices.Length; i++)
             {
                 var stream = raw->streams[indices[i]];
@@ -335,11 +336,24 @@ internal sealed unsafe class RemuxExportService
                             FindBoundary(input, stream->index, endBoundary.Time, true, token);
                     if (Math.Abs(start.Time - startBoundary.Time) > 0.002 || Math.Abs(finish.Time - endBoundary.Time) > 0.002)
                         throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{stream->index}");
-                    InspectGopBoundary(input, stream->index, start.Time, token, segment.Settings.Disc is not null);
+                    try
+                    {
+                        InspectGopBoundary(input, stream->index, start.Time, token, out _, segment.Settings.Disc is not null);
+                    }
+                    catch (RemuxExportException exception) when (exception.Code == RemuxExportError.UnsafeGop)
+                    {
+                        // 建议的起点换回片段使用的时间轴（相对预览视频的首个显示时间戳）。
+                        throw new RemuxExportException(exception.Code, exception.Message)
+                        {
+                            UsableStarts = FindUsableStarts(input, stream->index, start.Time, token)
+                                .Select(time => time - segment.Settings.TimelineOriginSeconds).ToArray()
+                        };
+                    }
                     if (finish.Dts != long.MaxValue && !segment.EndExclusive)
                     {
                         // 标记终点的关键帧也要写入；音频、字幕和章节延伸到该帧显示结束。
-                        var frameEnd = InspectGopBoundary(input, stream->index, finish.Time, token, segment.Settings.Disc is not null);
+                        var frameEnd = InspectGopBoundary(input, stream->index, finish.Time, token, out endHasLeading[i],
+                            segment.Settings.Disc is not null, end: true);
                         if (!double.IsFinite(frameEnd) || frameEnd <= finish.Time)
                             throw new RemuxExportException(RemuxExportError.MissingTimestamp, $"#{stream->index}");
                         endTime = Math.Max(endTime, frameEnd);
@@ -358,7 +372,7 @@ internal sealed unsafe class RemuxExportService
             }
             ReopenAfterDvdEof();
             var result = new PreparedSegment(segment, input, indices, startBoundary.Time, endTime,
-                starts, ends, endDurations, source);
+                starts, ends, endDurations, source, endHasLeading);
             input = null!;
             return result;
         }
@@ -462,9 +476,65 @@ internal sealed unsafe class RemuxExportService
         return !next && previous is { } last ? last : throw new RemuxExportException(RemuxExportError.InvalidBoundary);
     }
 
-    private static double InspectGopBoundary(FormatContext input, int index, double boundary, CancellationToken token, bool disc = false)
+    /// <summary>
+    /// 起点不能使用时，在前后各 20 秒内找最近的可用关键帧：没有前导画面，或前导画面都能丢弃。
+    /// 前导画面排在所属关键帧之后、下一关键帧之前。
+    /// </summary>
+    private static double[] FindUsableStarts(FormatContext input, int index, double boundary, CancellationToken token)
     {
+        const double window = 20;
+        var earliest = boundary - window;
+        var latest = boundary + window;
         AVStream* stream = input.Streams[index];
+        var extradata = new ReadOnlySpan<byte>(stream->codecpar->extradata, stream->codecpar->extradata_size);
+        input.SeekFrame(Ticks(Math.Max(0, earliest), stream->time_base), index);
+        double? before = null, after = null;
+        var current = double.NaN;
+        var usable = false;
+        void Settle()
+        {
+            // 向后定位可能落到搜索范围前的关键帧。
+            if (!double.IsFinite(current) || !usable || current < earliest)
+                return;
+            if (current < boundary - 0.002)
+                before = current;
+            else if (current > boundary + 0.002)
+                after ??= current;
+        }
+        foreach (var packet in input.ReadPackets())
+        {
+            token.ThrowIfCancellationRequested();
+            if (packet.StreamIndex != index)
+                continue;
+            AVPacket* raw = packet;
+            if (raw->pts == FF.AV_NOPTS_VALUE)
+                continue;
+            var pts = Seconds(raw->pts, stream->time_base);
+            if ((raw->flags & 1) != 0)
+            {
+                Settle();
+                if (after is not null || pts > latest)
+                    break;
+                current = pts;
+                usable = true;
+            }
+            else if (double.IsFinite(current) && pts < current - 0.002 &&
+                     !LeadingPicture.CanDrop(stream->codecpar->codec_id, new ReadOnlySpan<byte>(raw->data, raw->size), extradata))
+                usable = false;
+        }
+        if (after is null)
+            Settle();
+        return new[] { before, after }.OfType<double>().ToArray();
+    }
+
+    /// <param name="end">终点关键帧：其前导画面显示在截止帧之前，随截止帧一并写入，不需要能丢弃。</param>
+    /// <param name="hasLeading">关键帧之后有显示时间更早的前导画面。</param>
+    private static double InspectGopBoundary(FormatContext input, int index, double boundary, CancellationToken token,
+        out bool hasLeading, bool disc = false, bool end = false)
+    {
+        hasLeading = false;
+        AVStream* stream = input.Streams[index];
+        var extradata = new ReadOnlySpan<byte>(stream->codecpar->extradata, stream->codecpar->extradata_size);
         input.SeekFrame(Ticks(boundary, stream->time_base), index);
         var found = false;
         var nextTime = double.PositiveInfinity;
@@ -491,10 +561,14 @@ internal sealed unsafe class RemuxExportService
                 nextTime = Math.Min(nextTime, pts);
             if ((raw->flags & 1) != 0 && pts > boundary + 0.002)
                 break;
-            // 开放 GOP 的前导画面可能排在访问点之后、显示时间却更早。
-            // 只保留访问点会丢掉这些画面，起点使用该访问点也可能缺少参考帧。
-            if (pts < boundary - 0.002 && !(disc && stream->codecpar->codec_id == AVCodecID.AV_CODEC_ID_MPEG2VIDEO))
-                throw new RemuxExportException(RemuxExportError.UnsafeGop, $"#{index}");
+            // 开放 GOP 的前导画面排在访问点之后、显示时间却更早。终点的前导画面所需的参考帧都已写入，随截止帧一并输出；
+            // 起点的前导画面缺少上一个 GOP 的参考帧，只能丢弃，而且只有不被其后的画面参考时才能丢弃，否则其后的画面也会解码出错。
+            if (pts < boundary - 0.002)
+            {
+                hasLeading = true;
+                if (!end && !LeadingPicture.CanDrop(stream->codecpar->codec_id, new ReadOnlySpan<byte>(raw->data, raw->size), extradata))
+                    throw new RemuxExportException(RemuxExportError.UnsafeGop, $"#{index}");
+            }
         }
         if (!found)
             throw new RemuxExportException(RemuxExportError.InvalidBoundary, $"#{index}");
@@ -747,6 +821,8 @@ internal sealed unsafe class RemuxExportService
         var nextSourceDts = item.StartDts.ToArray();
         var sourceStartDts = item.StartDts.ToArray();
         var finished = new bool[item.Streams.Length];
+        // 各 PGS 轨道当前显示集合是否输出；起点之前的集合已由补齐的状态代替。
+        var pgsSetKept = new bool[item.Streams.Length];
         var remainingStreams = item.Streams.Length;
         for (var i = 0; i < item.Streams.Length; i++)
         {
@@ -801,6 +877,7 @@ internal sealed unsafe class RemuxExportService
             if (finished[index])
                 continue;
             var type = stream->codecpar->codec_type;
+            var isPgs = false;
             if (type == AVMediaType.AVMEDIA_TYPE_VIDEO && timeline?.FindByByte(raw->pos) is { } videoSegment &&
                 !ReferenceEquals(videoSegments[index], videoSegment))
             {
@@ -841,10 +918,11 @@ internal sealed unsafe class RemuxExportService
             var packetDuration = Math.Max(0, Seconds(raw->duration, stream->time_base));
             var end = pts + packetDuration;
             var isEndFrame = type == AVMediaType.AVMEDIA_TYPE_VIDEO && raw->pts == item.EndPts[index];
-            var discMpeg2 = item.Segment.Settings.Disc is not null && stream->codecpar->codec_id == AVCodecID.AV_CODEC_ID_MPEG2VIDEO;
-            if (discMpeg2 && videoStarted[index] && pts < item.Start - 0.002)
+            // 起点关键帧之后、显示时间更早的前导画面缺少参考帧：边界检查已确认它们不被其后的画面参考，直接丢弃。
+            if (type == AVMediaType.AVMEDIA_TYPE_VIDEO && videoStarted[index] && pts < item.Start - 0.002)
                 continue;
-            if (discMpeg2 && endFrameWritten[index] && raw->pts > item.EndPts[index])
+            // 截止关键帧之后、显示时间更早的前导画面属于片段，随截止帧写入；读到显示时间更晚的画面时结束。
+            if (endFrameWritten[index] && raw->pts > item.EndPts[index])
             {
                 finished[index] = true;
                 remainingStreams--;
@@ -915,7 +993,11 @@ internal sealed unsafe class RemuxExportService
                 {
                     // PGS 通常没有包时长，显示与清屏由显示集合决定。
                     // 起点状态已补齐，此处原样复制后续集合，不能当作零时长文字字幕丢弃。
-                    if (pts < item.Start)
+                    // 光盘的显示集合按段分包：PCS 在前且显示时间最晚，其后的 WDS、PDS、ODS 与 END 更早。
+                    // 整个集合按 PCS 的显示时间取舍，起点落在集合内部时不能只留下其中几段。
+                    if (StartsPgsDisplaySet(new ReadOnlySpan<byte>(raw->data, raw->size)))
+                        pgsSetKept[index] = pts >= item.Start;
+                    if (!pgsSetKept[index])
                         continue;
                     if (PgsSubtitlePacket.Decompress(new ReadOnlySpan<byte>(raw->data, raw->size)) is { } decoded)
                     {
@@ -928,7 +1010,9 @@ internal sealed unsafe class RemuxExportService
                         FF.av_packet_move_ref(raw, target);
                     }
                     state.State.Read(new ReadOnlySpan<byte>(raw->data, raw->size));
-                    raw->dts = raw->pts;
+                    // 同一集合内各段的 PTS 不单调，沿用源 DTS 作为解码顺序（不晚于 PTS）。
+                    raw->dts = Math.Min(raw->dts, raw->pts);
+                    isPgs = true;
                     if (!toEof && end > item.End)
                         raw->duration = Ticks(item.End - pts, stream->time_base);
                 }
@@ -999,9 +1083,12 @@ internal sealed unsafe class RemuxExportService
                     initialCompositionOffsets[index] = raw->pts - raw->dts;
                 // MP4 的媒体时长按 DTS 计算。末端重排序延迟增大时，需同步推进终点 DTS，
                 // 否则文件报告的时长可能短于截止帧的播放时间；PTS 和帧显示时长保持不变。
-                if (isEndFrame && item.Segment.Settings.Container == "mp4")
+                // 截止帧之后还有前导画面时，它们写入后 DTS 自然延续到截止帧显示结束，不需要推进。
+                if (isEndFrame && item.Segment.Settings.Container == "mp4" && !item.EndHasLeading[index])
                     raw->dts = Math.Max(raw->dts, raw->pts - initialCompositionOffsets[index]);
             }
+            if (isPgs)
+                (raw->pts, raw->dts) = PgsTimestamps(raw->pts, raw->dts, lastDts[index]);
             if (lastDts[index] != FF.AV_NOPTS_VALUE && (raw->dts < lastDts[index] ||
                 raw->dts == lastDts[index] && type is AVMediaType.AVMEDIA_TYPE_VIDEO or AVMediaType.AVMEDIA_TYPE_AUDIO))
                 throw new RemuxExportException(RemuxExportError.NonMonotonicTimestamp, $"#{stream->index}");
@@ -1011,9 +1098,11 @@ internal sealed unsafe class RemuxExportService
             var size = raw->size;
             FFmpegException.Check(FF.av_interleaved_write_frame(output, hevc[index] is { } converter ? converter.Convert(raw) : raw));
             packetsWritten[index]++;
-            if (isEndFrame && discMpeg2)
+            // DVD 的短 GOP 可能在下一关键包之后才输出前导画面，始终读到显示时间更晚的画面为止。
+            var discMpeg2 = item.Segment.Settings.Disc is not null && stream->codecpar->codec_id == AVCodecID.AV_CODEC_ID_MPEG2VIDEO;
+            if (isEndFrame && (discMpeg2 || item.EndHasLeading[index]))
                 endFrameWritten[index] = true;
-            if (isEndFrame && !discMpeg2)
+            else if (isEndFrame)
             {
                 finished[index] = true;
                 remainingStreams--;
@@ -1093,7 +1182,9 @@ internal sealed unsafe class RemuxExportService
                     continue;
                 if (data->pts == FF.AV_NOPTS_VALUE)
                     throw new RemuxExportException(RemuxExportError.MissingTimestamp, $"#{data->stream_index}");
-                if (Seconds(data->pts, raw->streams[data->stream_index]->time_base) >= item.Start)
+                // 与复制时一致：显示集合按 PCS 的显示时间取舍，起点之后开始的集合不计入起点状态。
+                if (Seconds(data->pts, raw->streams[data->stream_index]->time_base) >= item.Start &&
+                    StartsPgsDisplaySet(new ReadOnlySpan<byte>(data->data, data->size)))
                 {
                     remaining.Remove(data->stream_index);
                     if (remaining.Count == 0)
@@ -1118,6 +1209,31 @@ internal sealed unsafe class RemuxExportService
                 throw new RemuxExportException(RemuxExportError.UnsupportedTrack, "PGS preroll");
             lookback *= 4;
         }
+    }
+
+    /// <summary>包以 PCS 开头（先解开 Matroska 的 zlib 封装）；损坏的压缩数据与读取显示状态时一样按不支持的字幕处理。</summary>
+    internal static bool StartsPgsDisplaySet(ReadOnlySpan<byte> data)
+    {
+        try
+        {
+            return PgsSubtitlePacket.StartsDisplaySet(PgsSubtitlePacket.Decompress(data) ?? data);
+        }
+        catch (System.IO.InvalidDataException)
+        {
+            throw new RemuxExportException(RemuxExportError.UnsupportedTrack, "PGS display set");
+        }
+    }
+
+    /// <summary>
+    /// PGS 段的输出时间戳：沿用源 DTS。起点补齐的状态与片段切换处的清屏写在拼接时刻，其后首个集合的 DTS 可能更早，
+    /// 此时抬到上一包的 DTS。集合在拼接时刻之后不久开始时，PCS 之后的 WDS、PDS、ODS 与 END 的 PTS 可能早于拼接时刻，
+    /// 一并抬到该 DTS（DTS 不能晚于 PTS）；显示时间由 PCS 决定，PCS 本身不早于拼接时刻，不受影响。
+    /// </summary>
+    internal static (long Pts, long Dts) PgsTimestamps(long pts, long dts, long lastDts)
+    {
+        if (lastDts != FF.AV_NOPTS_VALUE && dts < lastDts)
+            dts = lastDts;
+        return (Math.Max(pts, dts), dts);
     }
 
     private static void WritePgsPacket(AVFormatContext* output, int index, byte[] bytes, double time, long[] lastDts)

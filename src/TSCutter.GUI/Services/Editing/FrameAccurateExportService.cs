@@ -1810,7 +1810,10 @@ internal sealed unsafe class FrameAccurateExportService
                 }
                 if (!remaining.Contains(data->stream_index))
                     continue;
-                if (CompareTime(data->pts, raw->streams[data->stream_index]->time_base, startPts, video->time_base) >= 0)
+                // 显示集合按 PCS 的显示时间取舍（光盘按段分包，PCS 之后的段时间更早），与复制时一致：
+                // 起点之后开始的集合不计入起点状态，起点之前开始的集合即使后面的段较晚也读入。
+                if (CompareTime(data->pts, raw->streams[data->stream_index]->time_base, startPts, video->time_base) >= 0 &&
+                    RemuxExportService.StartsPgsDisplaySet(new ReadOnlySpan<byte>(data->data, data->size)))
                 {
                     remaining.Remove(data->stream_index);
                     if (remaining.Count == 0)
@@ -1942,6 +1945,9 @@ internal sealed unsafe class FrameAccurateExportService
             Bytes += packet->size;
             FFmpegException.Check(FF.av_interleaved_write_frame(output, packet));
         }
+
+        /// <summary>该输出轨道上一包的 DTS；还没有写出时为 AV_NOPTS_VALUE。</summary>
+        public long LastDts(int index) => lastDts[index];
 
         private void CheckDts(AVPacket* packet, int index, bool strict)
         {
@@ -2238,6 +2244,8 @@ internal sealed unsafe class FrameAccurateExportService
         writer.BeginSegment(plan.StartPts, offset, plan.FirstDts);
         // 蓝光 PGS：起点补写当时的显示状态，片段内的显示集合照常复制并跟踪状态，片段结束时清屏。
         var pgs = ReadPgsStart(context, settings.StreamIndices, plan.StartPts, token);
+        // 当前显示集合需要复制的 PGS 轨道（源轨道索引）。
+        var pgsSetKept = new HashSet<int>();
         foreach (var (index, start) in pgs)
             WritePgs(index, start.Start, plan.StartPts);
         writer.Ts?.BeginSegment(plan.StartPts, plan.EndPts,
@@ -2587,11 +2595,26 @@ internal sealed unsafe class FrameAccurateExportService
                 packet->pts = packet->dts = clipStart;
                 packet->duration = Math.Max(0, clipEnd - clipStart);
             }
-            else if (startsBefore)
+            else if (startsBefore && !pgs.ContainsKey(packet->stream_index))
                 return;
-            if (pgs.TryGetValue(packet->stream_index, out var pgsState))
+            var isPgs = pgs.TryGetValue(packet->stream_index, out var pgsState);
+            if (isPgs)
             {
-                try { pgsState.State.Read(new ReadOnlySpan<byte>(packet->data, packet->size)); }
+                try
+                {
+                    // 显示集合按 PCS 的显示时间整体取舍：光盘按段分包，PCS 在前且时间最晚，其后的段更早，
+                    // 起点落在集合内部时不能只复制其中几段；起点之前开始的集合已由起点补写的状态代替。
+                    if (RemuxExportService.StartsPgsDisplaySet(new ReadOnlySpan<byte>(packet->data, packet->size)))
+                    {
+                        if (startsBefore)
+                            pgsSetKept.Remove(packet->stream_index);
+                        else
+                            pgsSetKept.Add(packet->stream_index);
+                    }
+                    if (!pgsSetKept.Contains(packet->stream_index))
+                        return;
+                    pgsState.State.Read(new ReadOnlySpan<byte>(packet->data, packet->size));
+                }
                 catch (RemuxExportException exception)
                 {
                     throw new FrameAccurateExportException(FrameAccurateExportError.UnsupportedTrack, exception.Message);
@@ -2600,6 +2623,9 @@ internal sealed unsafe class FrameAccurateExportService
             var outputTimeBase = writer.Output->streams[outputIndex]->time_base;
             packet->pts = writer.MapTime(packet->pts, timeBase, outputIndex);
             packet->dts = writer.MapTime(packet->dts, timeBase, outputIndex);
+            // 起点补写的状态写在拼接时刻，其后首个集合的 DTS 可能更早：规则与重封装相同。
+            if (isPgs)
+                (packet->pts, packet->dts) = RemuxExportService.PgsTimestamps(packet->pts, packet->dts, writer.LastDts(outputIndex));
             if (stream->codecpar->codec_type == AVMediaType.AVMEDIA_TYPE_AUDIO && audioDelay != 0)
             {
                 // 音频延迟：各片段的音轨统一平移；提前到输出开头之前的声音不输出。
