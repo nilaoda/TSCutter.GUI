@@ -252,7 +252,6 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     }
 
     private long _queueIdCounter;
-    private string? _lastQueueOutputDirectory;
     private string? _projectPath;
     private string? _savedProjectState;
     private void SetProjectPath(string? path)
@@ -965,7 +964,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 Title = title,
                 Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts", "m2ts", "mts", "m2t", "mpegts"])]
             };
-            var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+            var result = await _dialogService.ShowOpenFilesAtImportFolderAsync(this, settings);
             filePath = result.FirstOrDefault()?.LocalPath;
         }
         if (standardOnly && filePath is not null)
@@ -1329,12 +1328,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             var settings = new SaveFileDialogSettings
             {
                 Title = LocalizationManager.Instance.String_SaveFrame,
-                SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(VideoPath)!),
                 SuggestedFileName = defaultName + "." + ext,
                 Filters = [new(filterName, [ext])],
                 DefaultExtension = ext
             };
-            var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+            var result = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings, Path.GetDirectoryName(VideoPath));
             if (result is null) return;
 
             var source = DecodedBitmap;
@@ -1542,7 +1540,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 new(LocalizationManager.Instance.String_AllFiles, "*")
             ]
         };
-        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+        var result = await _dialogService.ShowOpenFilesAtImportFolderAsync(this, settings);
         if (!result.Any()) return;
 
         await OpenVideoPathAsync(result[0].LocalPath);
@@ -1551,7 +1549,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     [RelayCommand(CanExecute = nameof(CanLoadVideo))]
     private async Task OpenDiscFolderAsync()
     {
-        var selected = await _dialogService.ShowOpenFolderDialogAsync(this, new OpenFolderDialogSettings
+        var selected = await _dialogService.ShowOpenFolderAtImportFolderAsync(this, new OpenFolderDialogSettings
         {
             Title = LocalizationManager.Instance.String_Disc_OpenFolder
         });
@@ -1567,7 +1565,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             Title = LocalizationManager.Instance.String_Project_Open,
             Filters = [new(LocalizationManager.Instance.String_Project_Files, ["tscut"])]
         };
-        var selected = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+        var selected = await _dialogService.ShowOpenFilesAtImportFolderAsync(this, settings);
         if (!selected.Any())
             return;
 
@@ -1652,6 +1650,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         SetProjectPath(projectPath);
         MarkProjectCheckpoint();
         RecordRecentProject(projectPath, project.Clips.Count);
+        DialogFolderMemory.Shared.RememberImport(projectPath);
         if (sourceLocations.Count > 0)
         {
             _savedProjectState = null;
@@ -1693,6 +1692,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 if (selected.Count == 0)
                     return null;
                 location = selected[0].LocalPath;
+                DialogFolderMemory.Shared.RememberImport(location);
             }
             sourceLocations[sourcePath] = location;
             attempt = await TryLoadAsync();
@@ -1742,14 +1742,23 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             var settings = new SaveFileDialogSettings
             {
                 Title = LocalizationManager.Instance.String_Project_Save,
-                SuggestedStartLocation = new DesktopDialogStorageFolder(
-                    Path.GetDirectoryName(_projectPath ?? VideoPath) ??
-                    Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments)),
                 SuggestedFileName = GetSuggestedProjectName(),
                 Filters = [new(LocalizationManager.Instance.String_Project_Files, ["tscut"])],
                 DefaultExtension = "tscut"
             };
-            var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+            // 已保存过的工程另存为时仍从工程所在目录开始，新工程按导出目录定位。
+            IDialogStorageFile? result;
+            if (_projectPath is not null)
+            {
+                settings.SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(_projectPath)!);
+                result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+                DialogFolderMemory.Shared.RememberExport(result?.LocalPath);
+            }
+            else
+            {
+                result = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings,
+                    Path.GetDirectoryName(VideoPath) ?? Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments));
+            }
             if (result?.Path is null)
                 return false;
             path = result.Path.LocalPath;
@@ -1915,6 +1924,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         if (ExportQueue.Count == 0)
             MarkProjectCheckpoint();
         RecordRecentItem(new RecentItem { Kind = RecentItemKind.Video, Path = path });
+        // 拖放、最近打开和命令行打开成功后同样记住导入目录。
+        DialogFolderMemory.Shared.RememberImport(path);
     }
 
     // 光盘镜像和目录先经 libbluray/libdvdread 枚举标题，
@@ -1969,11 +1980,14 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         _discTitleInfo = selectedTitle;
         VideoPath = selectedInput.SourcePath;
         if (await LoadVideoAsync())
+        {
             RecordRecentItem(new RecentItem
             {
                 Kind = RecentItemKind.Disc, Path = sourcePath, DiscKind = selectedInput.Kind,
                 DiscInputPath = selectedInput.SourcePath, DiscTitle = selectedInput.TitleNumber
             });
+            DialogFolderMemory.Shared.RememberImport(sourcePath);
+        }
 
         async Task<DiscScanResult> ScanAsync(CancellationToken token)
         {
@@ -2062,8 +2076,6 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                     (saved.EndPosition > 0 ? saved.EndPosition :
                         new FileInfo(saved.Source.Path).Length) - saved.StartPosition)
             });
-        _lastQueueOutputDirectory = ExportQueue.LastOrDefault() is { } last
-            ? Path.GetDirectoryName(last.OutputFilePath) : null;
         NotifyQueueChanged();
 
         if (IsVideoInitialized)
@@ -3003,7 +3015,6 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_SaveYourClip,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(clip.InFileInfo.FullName)!),
             SuggestedFileName = defaultName,
             Filters = new List<FileFilter>()
             {
@@ -3012,7 +3023,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             },
             DefaultExtension = extension
         };
-        var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+        var result = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings,
+            Path.GetDirectoryName(clip.InFileInfo.FullName));
         if (result?.Path is null || !ClipUnchanged()) return;
 
         dialogViewModel.OutputPath = result.Path.LocalPath;
@@ -3208,14 +3220,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             previousExtension.Equals(".mkv", StringComparison.OrdinalIgnoreCase) ||
             previousExtension.Equals(".vob", StringComparison.OrdinalIgnoreCase))
             suggestedName = Path.ChangeExtension(suggestedName, extension);
-        var suggestedDirectory = !string.IsNullOrWhiteSpace(_lastQueueOutputDirectory) &&
-                                 Directory.Exists(_lastQueueOutputDirectory)
-            ? _lastQueueOutputDirectory
-            : sourceDirectory;
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_AddToQueue,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(suggestedDirectory),
             SuggestedFileName = suggestedName,
             Filters = new List<FileFilter>()
             {
@@ -3224,7 +3231,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             },
             DefaultExtension = extension
         };
-        var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+        var result = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings, sourceDirectory);
         if (result?.Path is null || !ReferenceEquals(SelectedClip, clip) || !CanEditSelectedClip) return;
 
         var outputPath = result.Path.LocalPath;
@@ -3278,7 +3285,6 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 - clip.StartPosition),
             SizeIsApproximate = frameAccurate is not null && CanEstimateFrameAccurateSize,
         };
-        _lastQueueOutputDirectory = Path.GetDirectoryName(outputPath);
         ExportQueue.Add(item);
     }
 

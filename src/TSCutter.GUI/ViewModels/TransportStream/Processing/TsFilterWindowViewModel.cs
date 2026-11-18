@@ -293,12 +293,11 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_TsFilter_SaveTitle,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(FilePath)!),
             SuggestedFileName = Path.GetFileNameWithoutExtension(FilePath) + "_filtered.ts",
             Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])],
             DefaultExtension = "ts"
         };
-        var selected = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+        var selected = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings, Path.GetDirectoryName(FilePath));
         if (selected?.Path is null)
             return;
         var outputPath = selected.Path.LocalPath;

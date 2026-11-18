@@ -21,6 +21,8 @@ public class AppConfig : ObservableObject
     private bool _showTimelineSegments = true;
     private InputPreferences _input = new();
     private List<RecentItem> _recentItems = [];
+    private string? _lastImportFolder;
+    private string? _lastExportFolder;
 
     // 系统当前是否处于深色模式
     [JsonIgnore]
@@ -106,6 +108,19 @@ public class AppConfig : ObservableObject
         get => _recentItems;
         set => _recentItems = RecentItemList.Normalize(value);
     }
+    // 打开类与保存类对话框上次所在的目录，分别记忆、互不影响；只整理字符串，不检查目录是否存在。
+    public string? LastImportFolder
+    {
+        get => _lastImportFolder;
+        set => _lastImportFolder = DialogFolderPaths.Normalize(value);
+    }
+    public string? LastExportFolder
+    {
+        get => _lastExportFolder;
+        set => _lastExportFolder = DialogFolderPaths.Normalize(value);
+    }
+    // 保存和导出对话框默认定位到源文件所在目录；默认关闭，即定位到上次导出的目录。
+    public bool SaveDialogsStartInSourceFolder { get; set; }
     // 鼠标滚轮行为；整体替换以便界面通过属性通知同步，读入时把取值改回允许的范围。
     public InputPreferences Input
     {

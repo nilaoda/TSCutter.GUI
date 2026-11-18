@@ -301,6 +301,17 @@
                         <CheckBox IsChecked="{Binding ShowExportResult}"
                                   Content="{DynamicResource String.Settings.ShowExportResult}"
                                   Margin="0,6,0,0" />
+                        <!-- 选项顺序：上次导出的文件夹、源文件所在的文件夹。 -->
+                        <TextBlock Text="{DynamicResource String.Settings.SaveDialogFolder}" Margin="0,6,0,0" />
+                        <ComboBox HorizontalAlignment="Stretch"
+                                  SelectedIndex="{Binding SaveDialogFolderIndex, Mode=TwoWay}">
+                            <ToolTip.Tip>
+                                <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                           Text="{DynamicResource String.Settings.SaveDialogFolderTip}" />
+                            </ToolTip.Tip>
+                            <ComboBoxItem Content="{DynamicResource String.Settings.SaveDialogFolder.LastExport}" />
+                            <ComboBoxItem Content="{DynamicResource String.Settings.SaveDialogFolder.Source}" />
+                        </ComboBox>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>

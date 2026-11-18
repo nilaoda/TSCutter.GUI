@@ -118,7 +118,7 @@ public partial class TsPacketViewerWindowViewModel : ViewModelBase, IModalDialog
             Title = LocalizationManager.Instance.String_TsPacketViewer_OpenFile,
             Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts", "m2ts", "mts", "m2t", "mpegts"])]
         };
-        var result = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+        var result = await _dialogService.ShowOpenFilesAtImportFolderAsync(this, settings);
         if (result.Any())
             await OpenPathAsync(result[0].LocalPath).ConfigureAwait(true);
     }

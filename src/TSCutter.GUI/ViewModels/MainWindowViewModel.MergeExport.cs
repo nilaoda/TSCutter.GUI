@@ -96,7 +96,6 @@ public partial class MainWindowViewModel
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_MergeClips_Title,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(sourcePath)!),
             SuggestedFileName = Path.GetFileNameWithoutExtension(sourcePath) + suffix + "." + snapshot.Extension,
             Filters =
             [
@@ -105,7 +104,7 @@ public partial class MainWindowViewModel
             ],
             DefaultExtension = snapshot.Extension
         };
-        var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+        var result = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings, Path.GetDirectoryName(sourcePath));
         if (result?.Path is null || !(isCurrent?.Invoke() ?? IsMergeExportCurrent(snapshot))) return null;
 
         var path = result.Path.LocalPath;

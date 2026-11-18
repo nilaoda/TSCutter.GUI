@@ -364,13 +364,12 @@ public partial class RawCutterWindowViewModel : ViewModelBase, IModalDialogViewM
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_RawCutter_Title,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(FilePath)!),
             SuggestedFileName = defaultName,
             Filters = [new(LocalizationManager.Instance.String_TsFiles, [_extension])],
             DefaultExtension = _extension
         };
 
-        var result = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+        var result = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings, Path.GetDirectoryName(FilePath));
         if (result is null) return;
 
         var outputVm = _dialogService.CreateViewModel<OutputWindowViewModel>();

@@ -391,6 +391,10 @@
     <x:String x:Key="String.Settings.TsCheckOnExport">Check TS output during export</x:String>
     <x:String x:Key="String.Settings.TsCheckOnExportTip">The check runs on the bytes actually written during export and adds processing overhead.</x:String>
     <x:String x:Key="String.Settings.ShowExportResult">Show a result window after exporting (except the queue and other batch exports)</x:String>
+    <x:String x:Key="String.Settings.SaveDialogFolder">Save and export dialogs open in</x:String>
+    <x:String x:Key="String.Settings.SaveDialogFolder.LastExport">The last export folder</x:String>
+    <x:String x:Key="String.Settings.SaveDialogFolder.Source">The source file's folder</x:String>
+    <x:String x:Key="String.Settings.SaveDialogFolderTip">Applies to saving clips, merged files, the queue, screenshots, thumbnail sheets and TS tool outputs.&#10;Open dialogs always start in the folder you last opened files from.&#10;If the chosen folder is unavailable, the other one is used.</x:String>
     <x:String x:Key="String.Settings.TsCheckOnExportHint">Checks TS data as it is exported. Uses additional CPU and memory; export speed depends on the media and disk performance.</x:String>
     <x:String x:Key="String.Menu.TsCheck">TS Quick _Check</x:String>
     <x:String x:Key="String.Menu.TsTimelineRepair">TS _Timeline Repair...</x:String>

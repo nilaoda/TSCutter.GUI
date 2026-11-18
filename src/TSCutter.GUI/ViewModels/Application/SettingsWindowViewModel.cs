@@ -66,6 +66,9 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     private bool _tsCheckOnExport;
     [ObservableProperty]
     private bool _showExportResult;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SaveDialogFolderIndex))]
+    private bool _saveDialogsStartInSourceFolder;
     private bool _updatingThemePreset;
 
     // 鼠标滚轮设置；修改后快捷键列表中的鼠标操作说明随之更新。
@@ -147,6 +150,18 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         set => WheelStepUnit = Enum.IsDefined((WheelStepUnit)value) ? (WheelStepUnit)value : WheelStepUnit.KeyFrame;
     }
 
+    // 保存和导出对话框的默认位置：0 为上次导出的目录，1 为源文件所在目录。
+    public int SaveDialogFolderIndex
+    {
+        get => SaveDialogsStartInSourceFolder ? 1 : 0;
+        set
+        {
+            // 下拉框重建选项时可能写入 -1，只接受两个有效选项。
+            if (value is 0 or 1)
+                SaveDialogsStartInSourceFolder = value == 1;
+        }
+    }
+
     public int KeyFrameStripThumbnailSizeIndex
     {
         get => (int)KeyFrameStripThumbnailSize;
@@ -205,6 +220,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         ShowTimelineSegments = _configService.CurrentConfig.ShowTimelineSegments;
         TsCheckOnExport = _configService.CurrentConfig.TsCheckOnExport;
         ShowExportResult = _configService.CurrentConfig.ShowExportResult;
+        SaveDialogsStartInSourceFolder = _configService.CurrentConfig.SaveDialogsStartInSourceFolder;
         LoadInputPreferences(_configService.CurrentConfig.Input);
         WheelStepValues = WithCurrent(WheelStepPresets, WheelStep);
         ShiftWheelStepValues = WithCurrent(ShiftWheelStepPresets, ShiftWheelStep);
@@ -366,6 +382,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.CurrentConfig.ShowTimelineSegments = ShowTimelineSegments;
         _configService.CurrentConfig.TsCheckOnExport = TsCheckOnExport;
         _configService.CurrentConfig.ShowExportResult = ShowExportResult;
+        _configService.CurrentConfig.SaveDialogsStartInSourceFolder = SaveDialogsStartInSourceFolder;
         _configService.CurrentConfig.Input = CurrentInputPreferences();
         _configService.CurrentConfig.ThemeVariantMode = SelectedThemeVariantMode;
         // 两套配色都需保存，即使其中一套当前未启用。

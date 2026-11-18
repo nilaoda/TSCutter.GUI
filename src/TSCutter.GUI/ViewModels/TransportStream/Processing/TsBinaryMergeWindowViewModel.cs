@@ -158,7 +158,7 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
             AllowMultiple = true,
             Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts", "m2ts", "mts", "m2t", "mpegts"])]
         };
-        var selected = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+        var selected = await _dialogService.ShowOpenFilesAtImportFolderAsync(this, settings);
         await AddFilesAsync(selected.Select(item => item.LocalPath));
     }
 
@@ -189,6 +189,8 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
             {
                 var wasEmpty = Files.Count == 0;
                 Files.AddRange(items);
+                // 拖放加入成功后同样记住导入目录。
+                DialogFolderMemory.Shared.RememberImport(items[0].FilePath);
                 UpdateOrderAndSummary();
                 InvalidateAnalysis();
                 if (wasEmpty && string.IsNullOrWhiteSpace(OutputPath))
@@ -385,9 +387,6 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_TsBinaryMerge_SaveTitle,
-            SuggestedStartLocation = firstPath is not null
-                ? new DesktopDialogStorageFolder(Path.GetDirectoryName(firstPath)!)
-                : null,
             SuggestedFileName = string.IsNullOrWhiteSpace(OutputPath)
                 ? firstPath is null ? "merged.ts" : Path.GetFileName(BuildDefaultOutputPath(firstPath))
                 : Path.GetFileName(OutputPath),
@@ -398,7 +397,10 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
             ],
             DefaultExtension = "ts"
         };
-        var selected = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+        var selected = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings,
+            string.IsNullOrWhiteSpace(OutputPath)
+                ? firstPath is null ? null : Path.GetDirectoryName(firstPath)
+                : Path.GetDirectoryName(OutputPath));
         if (selected?.Path is not null)
             OutputPath = selected.Path.LocalPath;
     }

@@ -249,11 +249,8 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
         var settings = new OpenFolderDialogSettings
         {
             Title = LocalizationManager.Instance.String_TsServiceFilter_SelectFolder,
-            SuggestedStartLocation = Directory.Exists(OutputFolder)
-                ? new DesktopDialogStorageFolder(OutputFolder)
-                : null
         };
-        var selected = await _dialogService.ShowOpenFolderDialogAsync(this, settings);
+        var selected = await _dialogService.ShowOpenFolderAtExportFolderAsync(this, settings, OutputFolder);
         if (selected?.Path is not null)
             OutputFolder = selected.Path.LocalPath;
     }
