@@ -122,14 +122,25 @@ internal static class VideoBitstream
     /// <summary>
     /// 把 HEVC 的 CRA 切片原地改为 BLA_W_LP（只改 NAL 头中的类型，切片头语法两者相同）。
     /// 解码器在 BLA 处像 IDR 一样开始新的编码视频序列：重新计算 POC，丢弃（此处已不存在的）RASL 画面。
+    /// 同时把切片头的 no_output_of_prior_pics_flag 清零：CRA 在码流中间时该标志不起作用，改为 BLA 后若为 1，
+    /// 解码器会丢弃衔接点之前尚未输出的画面（重编码头段的最后几帧）。
     /// </summary>
     public static void ConvertCraToBla(Span<byte> data, int lengthSize)
     {
         foreach (var range in EnumerateNals(data, lengthSize))
         {
-            var start = range.Start.GetOffset(data.Length);
-            if (NalType(data[range], true) == 21)
-                data[start] = (byte)((data[start] & 0x81) | (16 << 1));
+            var nal = data[range];
+            if (NalType(nal, true) != 21)
+                continue;
+            nal[0] = (byte)((nal[0] & 0x81) | (16 << 1));
+            // 切片头首字节：first_slice_segment_in_pic_flag 之后即为该标志。NAL 头第二字节的 temporal_id_plus1 不为 0，
+            // 清零后的首字节变为 0 时，只有位于 NAL 末尾或与其后两字节组成 00 00 0x（x ≤ 3）才不合法，
+            // 此时（仅非首个切片段可能出现）保留原值。
+            if (nal.Length < 3 || (nal[2] & 0x40) == 0)
+                continue;
+            var cleared = (byte)(nal[2] & ~0x40);
+            if (cleared != 0 || nal.Length > 3 && (nal[3] != 0 || nal.Length > 4 && nal[4] > 3))
+                nal[2] = cleared;
         }
     }
 

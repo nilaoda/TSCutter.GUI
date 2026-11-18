@@ -77,6 +77,11 @@ def main():
            "-preset", "medium", "-crf", 26, "-x265-params", cra, "-c:a", "aac", "-b:a", "96k",
            "-output_ts_offset", 800, root / "hevc-cra.ts")
     ffmpeg("-i", root / "hevc-cra.ts", "-map", 0, "-c", "copy", "-tag:v", "hvc1", root / "hevc-cra.mp4")
+    ffmpeg("-i", root / "hevc-cra.ts", "-map", 0, "-c", "copy", root / "hevc-cra.mkv")
+    # 同样的开放 GOP，每个画面 3 个切片：复制起点的 CRA 每个切片都要改写为 BLA。
+    ffmpeg(*inputs(25, 8), "-vf", f"format=yuv420p,{FRAME_NUMBER}", "-c:v", "libx265",
+           "-preset", "medium", "-crf", 26, "-x265-params", cra + ":slices=3", "-c:a", "aac", "-b:a", "96k",
+           "-output_ts_offset", 900, root / "hevc-cra-slices.ts")
     # 从 IDR 处无重编码截取：文件以 IDR 开头，其 RADL 前导画面显示在它之前（与关键帧剪辑导出的广播片段一致）。
     ffmpeg("-ss", 2.1, "-i", root / "hevc-hlg.ts", "-map", 0, "-c", "copy", root / "hevc-leading-start.ts")
     # 开放 GOP（B 帧金字塔）：后续关键帧是普通 I 帧，前导画面中有作参考的 B 帧，衔接时丢弃并把其后画面重新编号。

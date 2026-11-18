@@ -61,4 +61,40 @@ public sealed class VideoBitstreamTests
         Assert.False(VideoBitstream.ContainsSps(data, 0, false));
         Assert.Throws<InvalidDataException>(() => VideoBitstream.SplitNals([0, 0, 0, 9, 1], 4));
     }
+
+    /// <summary>
+    /// CRA 改为 BLA_W_LP：每个 CRA 切片的 NAL 类型改为 16，并清零 no_output_of_prior_pics_flag；其他 NAL 不变。
+    /// 清零会形成起始码仿冒（00 00 0x）的非首个切片段保留原标志。
+    /// </summary>
+    [Theory]
+    [InlineData(0)]
+    [InlineData(4)]
+    public void ConvertsCraToBlaAndClearsNoOutputOfPriorPictures(int lengthSize)
+    {
+        byte[][] source =
+        [
+            [0x40, 0x01, 0x0C],                   // VPS
+            [0x2A, 0x01, 0xD0, 0x12, 0x34],       // CRA 首个切片，标志为 1
+            [0x2A, 0x01, 0x40, 0x00, 0x05, 0x80], // CRA 非首个切片段，清零后为 00 00 05，仍合法
+            [0x2A, 0x01, 0x40, 0x00, 0x02, 0x80], // 清零后为 00 00 02：保留标志
+            [0x2A, 0x01, 0x90, 0x55],             // 标志本为 0
+            [0x02, 0x01, 0xD0, 0x55]              // TRAIL_R：不改
+        ];
+        byte[][] expected =
+        [
+            [0x40, 0x01, 0x0C],
+            [0x20, 0x01, 0x90, 0x12, 0x34],
+            [0x20, 0x01, 0x00, 0x00, 0x05, 0x80],
+            [0x20, 0x01, 0x40, 0x00, 0x02, 0x80],
+            [0x20, 0x01, 0x90, 0x55],
+            [0x02, 0x01, 0xD0, 0x55]
+        ];
+        byte[] Pack(byte[][] nals) => lengthSize == 0 ? AnnexB(nals)
+            : nals.SelectMany(nal => new byte[] { 0, 0, 0, (byte)nal.Length }.Concat(nal)).ToArray();
+        var data = Pack(source);
+        VideoBitstream.ConvertCraToBla(data, lengthSize);
+        Assert.Equal(Pack(expected), data);
+        Assert.False(VideoBitstream.ContainsOpenIrap(Pack([source[0], source[5]]), lengthSize));
+        Assert.True(VideoBitstream.ContainsOpenIrap(data, lengthSize));
+    }
 }

@@ -2,6 +2,7 @@ using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Editing;
+using TSCutter.GUI.Services.Editing.AudioRebuild;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Tests.FFmpeg;
 using TSCutter.GUI.Utils.Media;
@@ -1778,12 +1779,21 @@ public sealed class FrameAccurateExportTests
     /// HEVC 开放 GOP（与常见 4K 广播一致，除开头外没有 IDR）：关键帧是 CRA，其后的 RASL 前导画面参考上一 GOP。
     /// 复制区从 CRA 开始，RASL 丢弃并随片头重新编码，CRA 改写为 BLA；尾段的 RASL 从上一个 CRA 起预热解码后重新编码。
     /// 严格模式解码无错误、帧号连续，不沿用探测延迟的解码也不丢帧；确有复制区，输出中有改写出的 BLA。
+    /// 素材每 25 帧一个 CRA（显示第 25、50、75 帧……），其前一两帧是 RASL：起点或终点分别落在 RASL、CRA 本身、
+    /// CRA 之后，以及 RASL 之前的最后一帧；多切片素材的 CRA 每个切片都要改写。
     /// </summary>
     [NativeMediaTheory("frameaccurate")]
     [InlineData("hevc-cra.ts", 30, 120)]
     [InlineData("hevc-cra.ts", 13, 177)]
     [InlineData("hevc-cra.ts", 0, 199)]
+    [InlineData("hevc-cra.ts", 24, 74)]
+    [InlineData("hevc-cra.ts", 25, 75)]
+    [InlineData("hevc-cra.ts", 26, 72)]
     [InlineData("hevc-cra.mp4", 30, 120)]
+    [InlineData("hevc-cra.mkv", 30, 120)]
+    [InlineData("hevc-cra.mkv", 24, 74)]
+    [InlineData("hevc-cra-slices.ts", 30, 120)]
+    [InlineData("hevc-cra-slices.ts", 24, 74)]
     public async Task SplicesHevcAtCra(string name, int start, int end)
     {
         var source = Fixture(name);
@@ -1802,32 +1812,108 @@ public sealed class FrameAccurateExportTests
             Assert.Equal(Enumerable.Range(start, end - start + 1),
                 Decode(output, out var errors, fresh: true).Select(frame => frame.Number));
             Assert.Equal(0, errors);
+            var bla = AssertBlaRewrite(output);
+            // 起点为 0 时复制区从文件首个 IDR 开始，没有改写的 BLA；其余起点的复制区都从 CRA 开始。
             if (start > 0)
-                Assert.Contains(16, NalTypes(output));
+                Assert.True(bla > 0, "BLA");
             AssertTimestamps(output);
         }
         finally { File.Delete(output); }
     }
 
-    /// <summary>输出视频中出现的全部 HEVC NAL 类型。</summary>
-    private static unsafe HashSet<int> NalTypes(string path)
+    /// <summary>
+    /// HEVC 开放 GOP 的多段合并：每段复制区都从改写的 BLA 开始，段间帧号连续、严格解码无错误。
+    /// TS 另开启起始时间归零：时间戳整体平移到从 0 开始，导出检测无错误，画面不变。
+    /// </summary>
+    [NativeMediaTheory("frameaccurate")]
+    [InlineData("hevc-cra.ts", false)]
+    [InlineData("hevc-cra.ts", true)]
+    [InlineData("hevc-cra.mkv", false)]
+    [InlineData("hevc-cra-slices.ts", true)]
+    public async Task MergesHevcCraSegments(string name, bool zeroStart)
+    {
+        var source = Fixture(name);
+        var frames = DecodeFrames(source);
+        var output = Temporary(name);
+        (int Start, int End)[] ranges = [(10, 60), (90, 170)];
+        try
+        {
+            var request = new FrameAccurateExportRequest(output, ranges.Select(range =>
+                new FrameAccurateExportSegment(source, frames[range.Start], frames[range.End], Settings(source))).ToList());
+            var service = new FrameAccurateExportService();
+            var check = zeroStart ? new ExportTsCheckSession(output) : null;
+            var setup = zeroStart
+                ? new AudioRebuildSetup(null, source, output, check, null, TsOutputProcessing.ZeroStartTime) : null;
+            TsOutputFile.Current = setup;
+            try
+            {
+                await service.ExportAsync(request);
+            }
+            finally
+            {
+                TsOutputFile.Current = null;
+            }
+            check?.Complete();
+
+            Assert.Equal(2, service.Reports.Count);
+            Assert.All(service.Reports, report => Assert.True(report.CopiedPackets > 0, "copy region"));
+            var expected = ranges.SelectMany(range => Enumerable.Range(range.Start, range.End - range.Start + 1)).ToList();
+            Assert.Equal(expected, DecodeNumbers(output));
+            Assert.Equal(expected, Decode(output, out var errors, fresh: true).Select(frame => frame.Number));
+            Assert.Equal(0, errors);
+            Assert.Equal(2, AssertBlaRewrite(output));
+            AssertTimestamps(output);
+            if (zeroStart)
+            {
+                Assert.Null(setup!.Error);
+                Assert.Equal(TsExportCheckState.Completed, check!.State);
+                Assert.Equal(0, check.Result!.TotalErrorCount);
+                var timestamps = TsOutputProcessingWorkflowTests.Timestamps(await File.ReadAllBytesAsync(output), out _);
+                Assert.Equal(0, timestamps.Min(item => item.Value));
+            }
+        }
+        finally { File.Delete(output); }
+    }
+
+    /// <summary>
+    /// 输出中改写出的 BLA：所在画面不再留有 CRA 切片（多切片时每个切片都已改写），
+    /// 且 no_output_of_prior_pics_flag 为 0，衔接点之前尚未输出的画面不会被丢弃。返回含 BLA 的画面数。
+    /// </summary>
+    private static unsafe int AssertBlaRewrite(string path)
     {
         using var input = FormatContext.OpenInputUrl(path);
         input.LoadStreamInfo();
         AVStream* stream = input.GetVideoStream();
         // MP4/MKV 的附加数据是 hvcC（首字节为版本 1），样本为四字节长度前缀；TS 为 Annex B。
         var lengthSize = stream->codecpar->extradata_size > 0 && stream->codecpar->extradata[0] == 1 ? 4 : 0;
-        var types = new HashSet<int>();
+        var pictures = 0;
         foreach (var packet in input.ReadPackets())
         {
             AVPacket* raw = packet;
             if (raw->stream_index != stream->index)
                 continue;
             var data = new ReadOnlySpan<byte>(raw->data, raw->size);
+            var bla = false;
+            var cra = false;
             foreach (var range in VideoBitstream.EnumerateNals(data, lengthSize))
-                types.Add(VideoBitstream.NalType(data[range], true));
+            {
+                var nal = data[range];
+                switch (VideoBitstream.NalType(nal, true))
+                {
+                    case 16:
+                        bla = true;
+                        Assert.Equal(0, nal[2] & 0x40);
+                        break;
+                    case 21:
+                        cra = true;
+                        break;
+                }
+            }
+            Assert.False(bla && cra, "CRA slice left in a BLA picture");
+            if (bla)
+                pictures++;
         }
-        return types;
+        return pictures;
     }
 
     /// <summary>
