@@ -156,7 +156,7 @@ public sealed class FrameAccurateExportTests
                     AssertTimestamps(output);
                     AssertFirstFrameHdr(output, transfer, expectMastering: name.EndsWith(".mp4"));
                     if (name.EndsWith(".mp4"))
-                        AssertHvc1(output, expectSecondEntry: report.EncodedFrames > 0);
+                        AssertHvc1(output, reencoded: report.EncodedFrames > 0);
                 }
                 finally { File.Delete(output); }
             }
@@ -178,17 +178,27 @@ public sealed class FrameAccurateExportTests
 
     /// <summary>重编码的首帧保留传输特性；源带 HDR10 静态元数据时，首帧也带有。</summary>
     /// <summary>
-    /// HEVC MP4 为严格的 hvc1：样本中没有 VPS/SPS/PPS；有重编码画面时，重编码参数集位于第二个样本描述中。
+    /// HEVC MP4 为严格的 hvc1：样本中没有 VPS/SPS/PPS，只有一个样本描述，包上没有中途切换的附加数据；
+    /// 有重编码画面时，改号后的重编码参数集与原始参数集同在这个 hvcC 中（VPS、SPS、PPS 各两个，编号不同）。
     /// </summary>
-    private static unsafe void AssertHvc1(string path, bool expectSecondEntry)
+    private static unsafe void AssertHvc1(string path, bool reencoded)
     {
         using (var input = FormatContext.OpenInputUrl(path))
         {
             input.LoadStreamInfo();
             AVStream* stream = input.GetVideoStream();
             Assert.Equal(0x31637668u, stream->codecpar->codec_tag);
+            var sets = new List<byte[]>();
             var lengthSize = VideoBitstream.ReadParameterSets(new ReadOnlySpan<byte>(stream->codecpar->extradata,
-                stream->codecpar->extradata_size), true, []);
+                stream->codecpar->extradata_size), true, sets);
+            foreach (var type in new[] { 32, 33, 34 })
+            {
+                var ofType = VideoBitstream.OfType(sets, true, type).ToList();
+                Assert.Equal(reencoded ? 2 : 1, ofType.Count);
+                // VPS 编号是 NAL 头之后首字节的高 4 位；SPS、PPS 的编号为变长编码，由复制区与重编码段都能正确解码间接核对。
+                if (type == 32 && reencoded)
+                    Assert.NotEqual(ofType[0][2] >> 4, ofType[1][2] >> 4);
+            }
             foreach (var packet in input.ReadPackets())
             {
                 if (packet.StreamIndex != stream->index)
@@ -197,12 +207,14 @@ public sealed class FrameAccurateExportTests
                 var data = new ReadOnlySpan<byte>(raw->data, raw->size);
                 Assert.False(VideoBitstream.Contains(data, lengthSize, true, type => VideoBitstream.ParameterSetOrder(type, true) >= 0),
                     "parameter set inside an hvc1 sample");
+                for (var i = 0; i < raw->side_data_elems; i++)
+                    Assert.NotEqual(AVPacketSideDataType.AV_PKT_DATA_NEW_EXTRADATA, raw->side_data[i].type);
             }
         }
         var file = File.ReadAllBytes(path);
         var stsd = FindBox(file, ["moov", "trak", "mdia", "minf", "stbl", "stsd"]);
         var entries = System.Buffers.Binary.BinaryPrimitives.ReadUInt32BigEndian(file.AsSpan(stsd + 12));
-        Assert.Equal(expectSecondEntry ? 2u : 1u, entries);
+        Assert.Equal(1u, entries);
     }
 
     private static int FindBox(byte[] file, string[] path)
@@ -385,7 +397,7 @@ public sealed class FrameAccurateExportTests
     {
         var pts = SourceFramePts(source, 2, 12);
         var (start, end) = (pts[7], pts[^9]);
-        // 同一源的两段合并：样本描述在原始/重编码参数集之间多次切换，每帧仍带杜比元数据。
+        // 同一源的两段合并：画面在原始与重编码参数集之间多次切换，每帧仍带杜比元数据。
         var merged = Temporary(".mp4");
         try
         {
@@ -724,7 +736,7 @@ public sealed class FrameAccurateExportTests
             return;
         // 基础层不兼容（Profile 5）为 dvh1，兼容 HDR10 的 8.1 保留 hvc1。
         Assert.Equal(compatibility == 0 ? 0x31687664u : 0x31637668u, stream->codecpar->codec_tag);
-        // 每个样本描述（原始参数集、重编码参数集）都应带有配置盒：profile 不超过 7 为 dvcC，8 起为 dvvC。
+        // 原始与重编码参数集同在一个样本描述中，它带有配置盒：profile 不超过 7 为 dvcC，8 起为 dvvC。
         var box = profile <= 7 ? "dvcC"u8.ToArray() : "dvvC"u8.ToArray();
         var file = File.ReadAllBytes(path);
         var stsd = FindBox(file, ["moov", "trak", "mdia", "minf", "stbl", "stsd"]);
@@ -735,7 +747,7 @@ public sealed class FrameAccurateExportTests
         for (var i = body.IndexOf(box); i >= 0; i = body[(i + 4)..].IndexOf(box) is var next and >= 0 ? i + 4 + next : -1)
             dvcc++;
         Console.WriteLine($"DoVi mp4: stsd entries {entries}, configuration boxes {dvcc}");
-        Assert.Equal(2u, entries);
+        Assert.Equal(1u, entries);
         Assert.Equal((int)entries, dvcc);
     }
 

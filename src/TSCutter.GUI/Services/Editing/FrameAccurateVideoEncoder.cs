@@ -31,7 +31,7 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
     private bool dolbyVision;
     private readonly Packet output = new();
 
-    /// <summary>H.264 编码器全局头中的参数集；HEVC 为空，参数集在码流中。</summary>
+    /// <summary>编码器全局头中的参数集（H.264 与 HEVC）；HEVC 同时在每个 IDR 前带内输出。</summary>
     public List<byte[]> ParameterSets { get; } = [];
 
     private FrameAccurateVideoEncoder(AVCodecContext* context) => this.context = context;
@@ -154,7 +154,11 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
                 Set(options, "preset", hevc ? "medium" : "slow");
                 Set(options, "crf", hevc ? "14" : "10");
                 if (hevc)
+                {
+                    // 全局头供 MP4 把改号后的参数集写入样本描述；x265 参数中的 repeat-headers=1 使码流内照常输出参数集。
+                    context->flags |= FF.AV_CODEC_FLAG_GLOBAL_HEADER;
                     ConfigureHevc(options, source, highTier, firstFrame, RelativeCap(stream, sourceBitrate, 4));
+                }
                 else
                     ConfigureH264(context, options, source, parameterSetId, fieldOrder, RelativeCap(stream, sourceBitrate, 4),
                         refresh, chromaOffset);
@@ -184,6 +188,13 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
                     throw new FrameAccurateExportException(FrameAccurateExportError.Unsupported,
                         encoded is { } value ? $"profile {value.Profile}.{value.Compatibility}" : "no DOVI configuration",
                         FrameAccurateSupport.DolbyVision);
+            }
+            if (codecId == AVCodecID.AV_CODEC_ID_HEVC)
+            {
+                VideoBitstream.ReadParameterSets(new ReadOnlySpan<byte>(context->extradata, context->extradata_size),
+                    true, encoder.ParameterSets);
+                if (encoder.ParameterSets.Count != 3)
+                    throw new FrameAccurateExportException(FrameAccurateExportError.EncodeFailed, "parameter sets");
             }
             if (codecId == AVCodecID.AV_CODEC_ID_H264)
             {
