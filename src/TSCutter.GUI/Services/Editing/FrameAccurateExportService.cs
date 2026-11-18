@@ -346,6 +346,22 @@ internal sealed unsafe class FrameAccurateExportService
             if (video->codecpar->codec_id == AVCodecID.AV_CODEC_ID_H264 &&
                 VideoBitstream.ReadPpsIds(context.EncodedParameterSets[1]).PpsId != context.ParameterSetId)
                 throw new FrameAccurateExportException(FrameAccurateExportError.IncompatibleStream, "pps id");
+            // HEVC MP4 有重编码画面时，重编码参数集改用源未用的编号，与源参数集放在同一个 hvc1 样本描述中。
+            // 只复制不重编码时样本描述中只有源参数集，与源文件相同。
+            context.HevcMp4 = hevc && settings.Container == "mp4";
+            if (context.HevcMp4 && plans.Any(plan => !plan.HasCopy || plan.HasHead || plan.TailStartPts is not null))
+            {
+                try
+                {
+                    context.HevcRenumbering = new HevcParameterSetRenumbering(context.EncodedParameterSets,
+                        context.OriginalParameterSets);
+                }
+                catch (InvalidDataException exception)
+                {
+                    throw new FrameAccurateExportException(FrameAccurateExportError.EncodeFailed,
+                        "parameter sets: " + exception.Message);
+                }
+            }
 
             FFmpegException.Check(FF.avformat_alloc_output_context2(&output, null, settings.Container switch
             {
@@ -454,7 +470,6 @@ internal sealed unsafe class FrameAccurateExportService
 
             var writer = new SpliceWriter(output, map, isTsOutput, context)
             {
-                SampleEntries = hevc && settings.Container == "mp4",
                 Ts = tsOutput
             };
             spliceWriter = writer;
@@ -806,6 +821,10 @@ internal sealed unsafe class FrameAccurateExportService
         }
         public List<byte[]> OriginalParameterSets { get; } = [];
         public List<byte[]> EncodedParameterSets { get; } = [];
+        /// <summary>HEVC 输出为 MP4（hvc1）：重编码画面须经 <see cref="HevcRenumbering"/> 改号。</summary>
+        public bool HevcMp4 { get; set; }
+        /// <summary>HEVC MP4 有重编码画面时的参数集改号；为 null 时编码输出原样写出。</summary>
+        public HevcParameterSetRenumbering? HevcRenumbering { get; set; }
         public int ParameterSetId { get; set; }
         public AVFieldOrder FieldOrder { get; set; }
         public bool HighTier { get; set; }
@@ -1706,11 +1725,12 @@ internal sealed unsafe class FrameAccurateExportService
             if (index == settings.VideoIndex && context.Nal)
             {
                 // 视频统一以 Annex B 写入。H.264 附加数据同时包含原始与重编码参数集，MP4/MKV 由封装器生成
-                // 含多组参数集的 avcC。HEVC 的重编码参数集与原始参数集编号相同，不能放进同一个 hvcC：
-                // MP4 使用 hvc1，在切换处以新附加数据让封装器写入第二个样本描述，并从样本中去掉参数集；
-                // TS/MKV 仍在每个衔接 IDR 前带内重发参数集。
+                // 含多组参数集的 avcC。HEVC 的重编码参数集与原始参数集编号相同：MP4（hvc1，封装器从样本中去掉参数集）
+                // 把重编码参数集改号后与原始参数集放进同一个 hvcC；TS/MKV 附加数据只有原始参数集，
+                // 每个衔接 IDR 前带内重发各自的参数集。
                 var parameterSets = new List<byte[]>(context.OriginalParameterSets);
-                foreach (var set in context.EncodedParameterSets)
+                var encoded = context.Hevc ? context.HevcRenumbering?.ParameterSets ?? [] : context.EncodedParameterSets;
+                foreach (var set in encoded)
                     VideoBitstream.AddParameterSet(set, context.Hevc, parameterSets);
                 ReplaceExtradata(stream->codecpar, VideoBitstream.ToAnnexB([], 0, context.Hevc, parameterSets));
                 // 杜比视界为 dvh1（参数集同样只在样本描述中），其余 HEVC 为 hvc1。
@@ -1848,8 +1868,6 @@ internal sealed unsafe class FrameAccurateExportService
         private readonly long[] lastDts = Enumerable.Repeat(FF.AV_NOPTS_VALUE, (int)output->nb_streams).ToArray();
         private readonly Packet scratch = new();
         public long Bytes { get; private set; }
-        /// <summary>HEVC MP4：参数集切换处给包附加新附加数据，由封装器选择或新建 hvc1 样本描述。</summary>
-        public bool SampleEntries { get; init; }
         /// <summary>TS → TS 按源传输包写出时的输出；为 null 时经 ffmpeg 复用器写出。</summary>
         public FrameAccurateTsOutput? Ts { get; init; }
         public AVFormatContext* Output => output;
@@ -2006,8 +2024,6 @@ internal sealed unsafe class FrameAccurateExportService
             List<byte[]>? prefix = null;
             if (insertParameterSets && !VideoBitstream.ContainsSps(data, context.LengthSize, context.Hevc))
                 prefix = context.OriginalParameterSets;
-            // 复制区首包切回原始参数集所在的样本描述。
-            var sampleEntry = SampleEntries && insertParameterSets ? context.OriginalParameterSets : null;
             // HEVC 复制区从 CRA 开始：RASL 前导画面已丢弃并随片头重新编码，CRA 改为 BLA_W_LP，
             // 解码器在此开始新的编码视频序列，POC 不再接续之前重新编码的画面。数据已改写，按改写过的 PES 写出。
             if (closeGop && context.Hevc)
@@ -2016,7 +2032,7 @@ internal sealed unsafe class FrameAccurateExportService
                 var writable = new Span<byte>(source->data, source->size);
                 VideoBitstream.ConvertCraToBla(writable, context.LengthSize);
                 WriteAnnexB(source, writable, context.LengthSize, prefix, source->pts, sourceDts, source->duration,
-                    source->flags, sampleEntry);
+                    source->flags);
                 return;
             }
             if (refreshPictures >= 0)
@@ -2034,7 +2050,7 @@ internal sealed unsafe class FrameAccurateExportService
                 WriteRewritten(source, rewriter, data, sourceDts, closeGop, prefix);
                 return;
             }
-            if (prefix is null && sampleEntry is null && context.LengthSize is 0 or 4)
+            if (prefix is null && context.LengthSize is 0 or 4)
             {
                 // TS 源本就是 Annex B；MP4/MKV 的四字节长度前缀与起始码等长，在源包上原地改写，不复制压缩数据。
                 // 缓冲区被解码器等共享时由 av_packet_make_writable 复制，不影响其他引用。
@@ -2047,12 +2063,12 @@ internal sealed unsafe class FrameAccurateExportService
                 return;
             }
             WriteAnnexB(source, data, context.LengthSize, prefix, source->pts, sourceDts, source->duration,
-                source->flags, sampleEntry);
+                source->flags);
         }
 
-        /// <summary>转为 Annex B（可插入参数集、附加新的样本描述）后直接写入原生包，不经过托管数组。</summary>
+        /// <summary>转为 Annex B（可插入参数集）后直接写入原生包，不经过托管数组。</summary>
         public void WriteAnnexB(AVPacket* properties, ReadOnlySpan<byte> data, int lengthSize, IReadOnlyList<byte[]>? prefix,
-            long pts, long dts, long duration, int flags, IReadOnlyList<byte[]>? sampleEntry)
+            long pts, long dts, long duration, int flags)
         {
             scratch.Unref();
             AVPacket* packet = scratch;
@@ -2064,7 +2080,6 @@ internal sealed unsafe class FrameAccurateExportService
                     FFmpegException.Check(FF.av_packet_copy_props(packet, properties));
                 VideoBitstream.WriteAnnexB(data, lengthSize, context.Hevc, prefix, new Span<byte>(packet->data, size));
                 packet->flags = flags;
-                AddSampleEntry(packet, sampleEntry);
                 WriteVideo(packet, pts, dts, duration, TsVideoPiece.Replaced);
             }
             finally { scratch.Unref(); }
@@ -2140,22 +2155,8 @@ internal sealed unsafe class FrameAccurateExportService
         }
 
         /// <summary>写出调用方持有的原生包（如排队的编码输出），写出后包为空，由调用方释放。</summary>
-        public void WriteOwned(AVPacket* packet, long pts, long dts, long duration, IReadOnlyList<byte[]>? sampleEntry)
-        {
-            AddSampleEntry(packet, sampleEntry);
+        public void WriteOwned(AVPacket* packet, long pts, long dts, long duration) =>
             WriteVideo(packet, pts, dts, duration, TsVideoPiece.Encoded);
-        }
-
-        private void AddSampleEntry(AVPacket* packet, IReadOnlyList<byte[]>? sampleEntry)
-        {
-            if (sampleEntry is not { Count: > 0 })
-                return;
-            var size = VideoBitstream.AnnexBSize([], 0, sampleEntry);
-            var side = FF.av_packet_new_side_data(packet, AVPacketSideDataType.AV_PKT_DATA_NEW_EXTRADATA, (ulong)size);
-            if (side == null)
-                throw new OutOfMemoryException();
-            VideoBitstream.WriteAnnexB([], 0, context.Hevc, sampleEntry, new Span<byte>(side, size));
-        }
 
         public void Dispose() => scratch.Dispose();
     }
@@ -2269,7 +2270,7 @@ internal sealed unsafe class FrameAccurateExportService
         var copiedPackets = 0;
         var pendingDurations = new Dictionary<long, long>();
         // 排队的编码输出保存为原生包引用，不复制成托管数组。
-        var encodedQueue = new Queue<(Packet Packet, long Pts, IReadOnlyList<byte[]>? SampleEntry)>();
+        var encodedQueue = new Queue<(Packet Packet, long Pts)>();
         var lastVideoEnd = long.MinValue;
         var nextCopyDts = FF.AV_NOPTS_VALUE;
         var readLimit = plan.EndExclusive == long.MaxValue ? long.MaxValue : plan.EndExclusive + context.Ticks(5);
@@ -2733,10 +2734,15 @@ internal sealed unsafe class FrameAccurateExportService
                     Crop(raw);
                 if (encoder is null)
                 {
+                    // 规划时判断有无重编码；判断遗漏时重编码画面会按源参数集解码，宁可报错。
+                    if (context.HevcMp4 && context.HevcRenumbering is null)
+                        throw new FrameAccurateExportException(FrameAccurateExportError.EncodeFailed, "parameter sets");
                     var target = refreshEncoding && context.Nal ? context.RefreshTarget : null;
                     encoder = FrameAccurateVideoEncoder.Open(video, context.ParameterSetId, context.Hevc, context.HighTier,
                         context.FieldOrder, context.SourceBitrate, raw, target, context.Mpeg2Sequence);
-                    if (!encoder.ParameterSets.SequenceEqual(target is null ? context.EncodedParameterSets
+                    // HEVC 的参数集随每个 IDR 带内输出，只有改号写入样本描述时（MP4）才要求各段与探测时相同。
+                    if ((!context.Hevc || context.HevcRenumbering is not null) &&
+                        !encoder.ParameterSets.SequenceEqual(target is null ? context.EncodedParameterSets
                             : context.RefreshEncodedParameterSets, ByteArrayComparer.Instance))
                         throw new FrameAccurateExportException(FrameAccurateExportError.IncompatibleStream, "encoder parameter sets");
                     if (target is not null)
@@ -2786,6 +2792,18 @@ internal sealed unsafe class FrameAccurateExportService
                 transformed = RewriteHead(data, firstEncodedPacket && writer.InBandParameterSets ? context.OriginalParameterSets : null);
             else if (refreshEncoding && context.Mpeg2 && context.Mpeg2Sequence is { } sequence)
                 transformed = VideoBitstream.AlignMpeg2Sequence(data, sequence);
+            else if (context.HevcRenumbering is { } renumbering)
+            {
+                // HEVC MP4：切片改用改号后的参数集，带内参数集已在样本描述中。
+                try
+                {
+                    transformed = renumbering.Rewrite(data);
+                }
+                catch (InvalidDataException exception)
+                {
+                    throw new FrameAccurateExportException(FrameAccurateExportError.EncodeFailed, exception.Message);
+                }
+            }
             if (transformed is not null)
                 data = transformed;
             // H.264 的重编码参数集在全局头中，TS 需带内补到首个 IDR；HEVC 编码器已在码流中输出。
@@ -2793,16 +2811,6 @@ internal sealed unsafe class FrameAccurateExportService
                                    !context.Hevc ? context.EncodedParameterSets : null;
             // MPEG-2 重编码段接在已写出的画面之后：先结束上一序列，新序列从编码器输出的序列头开始。
             var restart = context.Mpeg2 && firstEncodedPacket && writer.LastVideoDts != FF.AV_NOPTS_VALUE;
-            // HEVC MP4：重编码段首包带内的 VPS/SPS/PPS 作为新的样本描述。
-            List<byte[]>? sampleEntry = null;
-            if (writer.SampleEntries && firstEncodedPacket)
-            {
-                sampleEntry = [];
-                foreach (var range in VideoBitstream.SplitNals(data, 0))
-                    VideoBitstream.AddParameterSet(data[range], true, sampleEntry);
-                if (!sampleEntry.Any(set => VideoBitstream.IsSps(VideoBitstream.NalType(set, true), true)))
-                    throw new FrameAccurateExportException(FrameAccurateExportError.EncodeFailed, "parameter sets");
-            }
             firstEncodedPacket = false;
             var queued = new Packet();
             try
@@ -2835,7 +2843,7 @@ internal sealed unsafe class FrameAccurateExportService
                     VideoBitstream.WriteAnnexB(data, 0, false, prefix, new Span<byte>(raw->data, size));
                     raw->flags = packet->flags;
                 }
-                encodedQueue.Enqueue((queued, sourcePts, sampleEntry));
+                encodedQueue.Enqueue((queued, sourcePts));
             }
             catch
             {
@@ -2866,7 +2874,7 @@ internal sealed unsafe class FrameAccurateExportService
             {
                 encodedQueue.Dequeue();
                 using (item.Packet)
-                    writer.WriteOwned(item.Packet, item.Pts, item.Pts - encodeDelta, duration, item.SampleEntry);
+                    writer.WriteOwned(item.Packet, item.Pts, item.Pts - encodeDelta, duration);
                 lastVideoEnd = Math.Max(lastVideoEnd, item.Pts + duration);
             }
         }
