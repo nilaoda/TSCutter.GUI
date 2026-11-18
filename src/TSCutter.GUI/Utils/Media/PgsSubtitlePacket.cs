@@ -25,6 +25,9 @@ internal static class PgsSubtitlePacket
         return false;
     }
 
+    /// <summary>包以 PCS 开头，即一个显示集合的第一段（Matroska 每包是整个集合，光盘每包是其中一段）。</summary>
+    public static bool StartsDisplaySet(ReadOnlySpan<byte> data) => !data.IsEmpty && data[0] == 0x16;
+
     // 部分 Matroska 使用 zlib 压缩字幕包；未启用 zlib 的 FFmpeg 会返回原始压缩数据。
     // 只处理 PGS 的 zlib 封装，不改变其中的 RLE 图形数据。
     public static byte[]? Decompress(ReadOnlySpan<byte> data)

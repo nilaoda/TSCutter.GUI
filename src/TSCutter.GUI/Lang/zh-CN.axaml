@@ -1372,7 +1372,8 @@
     <x:String x:Key="String.RemuxExport.Data">数据</x:String>
     <x:String x:Key="String.RemuxExport.Default">默认</x:String>
     <x:String x:Key="String.RemuxExport.Forced">强制</x:String>
-    <x:String x:Key="String.RemuxExport.Error.Gop">此边界存在跨越切点的开放 GOP 画面，直接复制会丢失部分帧。请选择其他关键帧边界，或保留完整文件。</x:String>
+    <x:String x:Key="String.RemuxExport.Error.Gop">此起点是开放 GOP 关键帧，其前导画面中有参考画面，其后的画面可能依赖起点之前的画面，直接复制可能出现花屏。请换一个关键帧作为起点；视频支持智能剪辑时也可以改用智能剪辑。</x:String>
+    <x:String x:Key="String.RemuxExport.Error.GopNearby">附近可以作为起点的关键帧：{0}</x:String>
     <x:String x:Key="String.RemuxExport.Error.SubtitleTiming">含动画、卡拉 OK 或滚动效果的 ASS 字幕跨越剪切边界。请保留完整的字幕事件，或取消该轨道。</x:String>
     <x:String x:Key="String.SubtitlePreview.Label">字幕</x:String>
     <x:String x:Key="String.SubtitlePreview.Off">关闭</x:String>

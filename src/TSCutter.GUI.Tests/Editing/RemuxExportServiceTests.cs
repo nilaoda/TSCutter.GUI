@@ -642,18 +642,64 @@ public sealed class RemuxExportServiceTests
         AssertSubtitleRange(target.Path, 0, 6);
     }
 
+    /// <summary>
+    /// 开放 GOP 的切点：终点关键帧之后、显示更早的前导画面属于片段，随截止帧写入；起点的前导画面缺少参考帧，
+    /// 能丢弃时丢弃（HEVC 的 RASL、H.264 的非参考 B 帧），其中有参考画面时拒绝、不写文件，并给出附近可用的关键帧。
+    /// 输出的数据包与源文件中显示时间在片段内的包逐个相同。整个文件仍可完整复制。
+    /// </summary>
     [RemuxExportFact]
-    public async Task OpenGopCutIsRejectedBeforeWritingAndWholeFileCanStillBeCopied()
+    public async Task OpenGopBoundariesKeepEndLeadingPicturesAndDropDisposableStartOnes()
     {
-        var source = Fixture("open-gop.mp4");
+        RemuxExportSettings Timeline(string container, double origin)
+        {
+            var settings = Settings(container, 0);
+            settings.TimelineOriginSeconds = origin;
+            return settings;
+        }
+
+        async Task AssertCopied(string name, string container, double start, double end, double frame, double origin = 0)
+        {
+            var source = Fixture(name);
+            using var target = new TemporaryOutput(container);
+            await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path,
+                [new(source, start, end, Timeline(container, origin))]));
+            Assert.Equal(HashPackets(source, origin + start, origin + end + frame), HashPackets(target.Path, 0, double.MaxValue));
+        }
+
+        // HEVC：2 秒与 4 秒是带 RASL 的 CRA。
+        await AssertCopied("open-gop.mp4", "mp4", 0, 2, 0.04);
+        await AssertCopied("open-gop.mp4", "mp4", 2, 4, 0.04);
+        // H.264 不用 B 金字塔：2 秒关键帧之后的 3 个前导 B 帧都不被参考。
+        await AssertCopied("open-gop-h264-flat.mkv", "mkv", 2, 4, 1 / 24.0);
+        // H.264 B 金字塔（时间轴原点 10 秒）：前导 B 帧中有参考帧，不能从 2 秒起剪；终点仍可落在这样的关键帧上。
+        await AssertCopied("open-gop-h264-pyramid.mkv", "mkv", 0, 2, 1 / 24.0, origin: 10);
+        var pyramid = Fixture("open-gop-h264-pyramid.mkv");
+        using (var rejected = new TemporaryOutput("mkv"))
+        {
+            var error = await Assert.ThrowsAsync<RemuxExportException>(() => new RemuxExportService().ExportAsync(
+                new RemuxExportRequest(rejected.Path, [new(pyramid, 2, 4, Timeline("mkv", 10))])));
+            Assert.Equal(RemuxExportError.UnsafeGop, error.Code);
+            Assert.False(File.Exists(rejected.Path));
+            // 之前只有文件开头的关键帧可用；4 秒的关键帧同样有参考前导画面。建议的时间与片段同一时间轴（相对原点）。
+            Assert.Equal(0, Assert.Single(error.UsableStarts), 3);
+        }
+
+        var whole = Fixture("open-gop.mp4");
         using var target = new TemporaryOutput("mp4");
-        var error = await Assert.ThrowsAsync<RemuxExportException>(() => new RemuxExportService().ExportAsync(
-            new RemuxExportRequest(target.Path, [new(source, 0, 2, Settings("mp4", 0))])));
-        Assert.Equal(RemuxExportError.UnsafeGop, error.Code);
-        Assert.False(File.Exists(target.Path));
         await new RemuxExportService().ExportAsync(new RemuxExportRequest(target.Path,
-            [new(source, 0, null, Settings("mp4", 0))]));
-        Assert.Equal(HashPackets(source, 0, double.MaxValue), HashPackets(target.Path, 0, double.MaxValue));
+            [new(whole, 0, null, Settings("mp4", 0))]));
+        Assert.Equal(HashPackets(whole, 0, double.MaxValue), HashPackets(target.Path, 0, double.MaxValue));
+    }
+
+    [RemuxExportFact]
+    public async Task OpenGopStartSuggestionsStayWithinTwentySeconds()
+    {
+        var source = Fixture("open-gop-h264-sparse.mkv");
+        using var target = new TemporaryOutput("mkv");
+        var error = await Assert.ThrowsAsync<RemuxExportException>(() => new RemuxExportService().ExportAsync(
+            new RemuxExportRequest(target.Path, [new(source, 24, 48, Settings("mkv", 0))])));
+        Assert.Equal(RemuxExportError.UnsafeGop, error.Code);
+        Assert.Empty(error.UsableStarts);
     }
 
     [RemuxExportFact]

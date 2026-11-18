@@ -348,9 +348,10 @@ def write_clpi(path, num_packets, first_pts45k, last_pts45k, ep_points, streams)
 # ---------------------------------------------------------------------------
 
 def filter_path(path: Path) -> str:
-    """lavfi filter 参数中的路径转义（Windows 盘符冒号）。"""
+    """lavfi filter 参数中的路径：盘符冒号转义，并整体加单引号；
+    较新的 FFmpeg 在滤镜图层级还会再解析一次转义，不加引号时盘符冒号会被当成选项分隔符。"""
     text = str(path)
-    return text.replace("\\", "/").replace(":", "\\:")
+    return "'" + text.replace("\\", "/").replace(":", "\\:") + "'"
 
 
 class Generator:

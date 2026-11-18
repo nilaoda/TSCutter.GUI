@@ -111,6 +111,40 @@ public sealed class RemuxPgsTests
         Assert.Equal(original.CreateEpoch(false), restored.CreateEpoch(false));
     }
 
+    /// <summary>
+    /// 光盘的显示集合按段分包：PCS 在前且显示时间最晚，其后的段更早，只有 DTS 单调。
+    /// 集合按 PCS 识别；输出沿用源时间戳，只在补齐的状态或清屏之后把更早的 DTS 抬到上一包的 DTS，
+    /// 此时早于该 DTS 的段 PTS 一并抬高（集合在拼接时刻之后不久开始时，PCS 之后的段会早于拼接时刻）。
+    /// </summary>
+    [Fact]
+    public void DiscDisplaySetSegmentsKeepTheirDecodeOrder()
+    {
+        Assert.True(PgsSubtitlePacket.StartsDisplaySet([0x16, 0, 11]));
+        Assert.False(PgsSubtitlePacket.StartsDisplaySet([0x17, 0, 1]));
+        Assert.False(PgsSubtitlePacket.StartsDisplaySet([]));
+
+        const long none = long.MinValue;
+        // PCS、WDS、PDS、ODS、END：PTS 先降后升，DTS 单调不减，原样沿用。
+        (long Pts, long Dts)[] segments = [(5_990, 5_984), (5_989, 5_984), (5_984, 5_984), (5_985, 5_984), (5_985, 5_985)];
+        var last = none;
+        foreach (var (pts, dts) in segments)
+        {
+            Assert.Equal((pts, dts), RemuxExportService.PgsTimestamps(pts, dts, last));
+            last = dts;
+        }
+        // 起点补齐的状态写在拼接时刻 5_986，集合的 PCS 在 5_986 之后：各段 DTS 抬到 5_986，
+        // PCS 与 WDS 的 PTS 不变，早于 5_986 的 PDS、ODS 与 END 的 PTS 也抬到 5_986。
+        last = 5_986;
+        (long Pts, long Dts)[] expected = [(5_990, 5_986), (5_989, 5_986), (5_986, 5_986), (5_986, 5_986), (5_986, 5_986)];
+        for (var i = 0; i < segments.Length; i++)
+        {
+            var output = RemuxExportService.PgsTimestamps(segments[i].Pts, segments[i].Dts, last);
+            Assert.Equal(expected[i], output);
+            Assert.True(output.Dts >= last && output.Dts <= output.Pts);
+            last = output.Dts;
+        }
+    }
+
     [Fact]
     public void TruncatedPgsIsRejectedBeforeRebuildingAFrame()
     {

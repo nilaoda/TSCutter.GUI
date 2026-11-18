@@ -89,6 +89,17 @@ def main():
            "-preset", "ultrafast", "-x265-params",
            "pools=1:log-level=error:keyint=50:min-keyint=50:scenecut=0:open-gop=1:bframes=4",
            root / "open-gop.mp4")
+    # H.264 开放 GOP：B 金字塔的前导画面中有参考 B 帧，不能确定其后的画面是否引用它，不能从该关键帧起剪；
+    # 不用 B 金字塔时前导画面都不被参考，可以丢弃。
+    # 关键帧间隔是 4 的倍数，关键帧之前正好是 3 个 B 帧。B 金字塔素材从 10 秒开始，覆盖时间轴原点不为 0 的情况。
+    for name, pyramid, origin in (("open-gop-h264-pyramid.mkv", "normal", 10), ("open-gop-h264-flat.mkv", "none", 0)):
+        ffmpeg("-f", "lavfi", "-i", "testsrc2=size=128x72:rate=24:duration=6", "-c:v", "libx264",
+               "-preset", "ultrafast", "-x264-params",
+               f"keyint=48:min-keyint=48:scenecut=0:open-gop=1:bframes=3:b-adapt=0:b-pyramid={pyramid}",
+               "-output_ts_offset", origin, root / name)
+    # 拉长关键帧间隔，验证回退定位到搜索窗口以外时不把该帧列为建议。
+    ffmpeg("-itsscale", "12", "-i", root / "open-gop-h264-pyramid.mkv", "-c", "copy",
+           root / "open-gop-h264-sparse.mkv")
     # 两段使用相同 PPS 编号但不同去块参数，覆盖帧内参数更新时 hvc1 丢失配置的问题。
     with tempfile.TemporaryDirectory(prefix="dynamic-hevc-", dir=root) as temp:
         parts = []
