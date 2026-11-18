@@ -182,14 +182,13 @@ public partial class TsTimelineRepairWindowViewModel : ViewModelBase, IModalDial
     [RelayCommand(CanExecute = nameof(CanChooseOutput))]
     private async Task ChooseOutputAsync()
     {
-        var selected = await _dialogService.ShowSaveFileDialogAsync(this, new SaveFileDialogSettings
+        var selected = await _dialogService.ShowSaveFileAtExportFolderAsync(this, new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_TsTimelineRepair_Output_Title,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(FilePath)!),
             SuggestedFileName = Path.GetFileName(OutputPath),
             Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])],
             DefaultExtension = "ts"
-        });
+        }, Path.GetDirectoryName(string.IsNullOrWhiteSpace(OutputPath) ? FilePath : OutputPath));
         if (selected?.Path is not null)
             OutputPath = selected.Path.LocalPath;
     }

@@ -161,7 +161,7 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
     [RelayCommand(CanExecute = nameof(CanAddFiles))]
     private async Task AddFilesAsync()
     {
-        var selected = await _dialogService.ShowOpenFilesDialogAsync(this, new OpenFileDialogSettings
+        var selected = await _dialogService.ShowOpenFilesAtImportFolderAsync(this, new OpenFileDialogSettings
         {
             Title = _strings.String_TsBatchCheck_Title,
             AllowMultiple = true,
@@ -200,6 +200,9 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
             });
             if (_isClosed) return;
             Files.AddRange(loaded);
+            // 拖放加入成功后同样记住导入目录。
+            if (loaded.Count > 0)
+                DialogFolderMemory.Shared.RememberImport(loaded[0].FilePath);
             OperationMessage = string.Format(_strings.String_TsBinaryMerge_Status_FilesAdded, loaded.Count);
         }
         finally
@@ -340,11 +343,10 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
     [RelayCommand(CanExecute = nameof(CanBrowseFolder))]
     private async Task BrowseFolderAsync()
     {
-        var selected = await _dialogService.ShowOpenFolderDialogAsync(this, new OpenFolderDialogSettings
+        var selected = await _dialogService.ShowOpenFolderAtExportFolderAsync(this, new OpenFolderDialogSettings
         {
-            Title = _strings.String_TsBatchCheck_SelectFolder,
-            SuggestedStartLocation = Directory.Exists(OutputFolder) ? new DesktopDialogStorageFolder(OutputFolder) : null
-        });
+            Title = _strings.String_TsBatchCheck_SelectFolder
+        }, OutputFolder);
         if (!_isClosed && selected?.Path is not null) OutputFolder = selected.Path.LocalPath;
     }
 
@@ -364,13 +366,13 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
             AppendRow(item.FilePath, item.FileSize.ToString(), item.StatusText,
                 item.Percent.ToString("0.00") + "%", item.VerdictText, item.ErrorCount.ToString(),
                 item.WarningCount.ToString(), item.ElapsedText, item.LogPath, item.DetailText);
-        var selected = await _dialogService.ShowSaveFileDialogAsync(this, new SaveFileDialogSettings
+        var selected = await _dialogService.ShowSaveFileAtExportFolderAsync(this, new SaveFileDialogSettings
         {
             Title = strings.String_TsBatchCheck_Export,
             SuggestedFileName = "ts-check-summary.csv",
             DefaultExtension = "csv",
             Filters = [new("CSV", ["csv"])]
-        });
+        }, null);
         if (_isClosed || selected?.Path is null) return;
         try
         {

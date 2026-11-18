@@ -391,6 +391,10 @@
     <x:String x:Key="String.Settings.TsCheckOnExport">导出时进行 TS 检测</x:String>
     <x:String x:Key="String.Settings.TsCheckOnExportTip">检测在导出过程中对实际写出的字节执行，会增加一定处理开销。</x:String>
     <x:String x:Key="String.Settings.ShowExportResult">导出完成后显示结果窗口（队列等批量导出除外）</x:String>
+    <x:String x:Key="String.Settings.SaveDialogFolder">保存和导出对话框默认打开</x:String>
+    <x:String x:Key="String.Settings.SaveDialogFolder.LastExport">上次导出的文件夹</x:String>
+    <x:String x:Key="String.Settings.SaveDialogFolder.Source">源文件所在的文件夹</x:String>
+    <x:String x:Key="String.Settings.SaveDialogFolderTip">用于保存片段、合并输出、导出队列、截图、缩略图总览和各 TS 工具的输出。&#10;打开文件的对话框始终定位到上次打开文件的文件夹。&#10;所选文件夹不可用时改用另一个。</x:String>
     <x:String x:Key="String.Settings.TsCheckOnExportHint">在导出过程中检测写出的 TS 数据，会增加 CPU 和内存开销，实际速度受素材和磁盘性能影响。</x:String>
     <x:String x:Key="String.Menu.TsCheck">TS 快速检查(_C)</x:String>
     <x:String x:Key="String.Menu.TsTimelineRepair">TS 时间轴修复(_T)...</x:String>

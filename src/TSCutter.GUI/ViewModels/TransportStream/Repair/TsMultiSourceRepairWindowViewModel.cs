@@ -20,6 +20,7 @@ using TSCutter.GUI.Services.TransportStream.Repair;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.TransportStream.Analysis;
 using TSCutter.GUI.ViewModels;
+using TSCutter.GUI.Utils.Application;
 
 namespace TSCutter.GUI.ViewModels.TransportStream.Repair;
 
@@ -222,7 +223,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
             AllowMultiple = true,
             Filters = [new(_text.Strings.String_TsFiles, ["ts", "m2ts", "mts", "m2t", "mpegts"])]
         };
-        var selected = await _dialogService.ShowOpenFilesDialogAsync(this, settings);
+        var selected = await _dialogService.ShowOpenFilesAtImportFolderAsync(this, settings);
         var changed = false;
         foreach (var file in selected)
         {
@@ -514,12 +515,11 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         var settings = new SaveFileDialogSettings
         {
             Title = _text.Strings.String_TsRepair_SaveTitle,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(referencePath)!),
             SuggestedFileName = Path.GetFileNameWithoutExtension(referencePath) + "_repaired.ts",
             Filters = [new(_text.Strings.String_TsFiles, ["ts"])],
             DefaultExtension = "ts"
         };
-        var selected = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+        var selected = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings, Path.GetDirectoryName(referencePath));
         if (selected?.Path is null)
             return;
         var outputPath = selected.Path.LocalPath;

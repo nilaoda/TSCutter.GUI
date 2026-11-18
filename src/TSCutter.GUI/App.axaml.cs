@@ -112,6 +112,7 @@ public partial class App : Application
 
         // 加载配置
         configService.Load();
+        DialogFolderMemory.Shared = new DialogFolderMemory(configService, BusyCursor.ShowOnActiveWindow);
         FFmpegNativeBootstrapper.Configure(configService.CurrentConfig);
 
         GC.KeepAlive(typeof(DialogService));

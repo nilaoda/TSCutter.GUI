@@ -1073,15 +1073,13 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_ThumbnailSheet_SaveDialogTitle,
-            SuggestedStartLocation = string.IsNullOrEmpty(filePath)
-                ? null
-                : new DesktopDialogStorageFolder(Path.GetDirectoryName(filePath)!),
             SuggestedFileName = baseName + "." + extension,
             Filters = [new FileFilter(filterName, [extension])],
             DefaultExtension = extension
         };
 
-        var result = await App.DialogService.ShowSaveFileDialogAsync(this, settings).ConfigureAwait(true);
+        var result = await App.DialogService.ShowSaveFileAtExportFolderAsync(this, settings,
+            string.IsNullOrEmpty(filePath) ? null : Path.GetDirectoryName(filePath)).ConfigureAwait(true);
         if (result is null)
             return;
 

@@ -78,7 +78,7 @@ public static class RecentItemList
         MediaFileUtil.PathComparer.Equals(NormalizePath(first), NormalizePath(second));
 
     // 只做字符串层面的整理，不访问文件系统：离线的网络盘或移动硬盘不会拖慢启动。
-    private static string NormalizePath(string path)
+    internal static string NormalizePath(string path)
     {
         try
         {

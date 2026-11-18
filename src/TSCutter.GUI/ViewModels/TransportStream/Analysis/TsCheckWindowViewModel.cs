@@ -23,6 +23,7 @@ using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Editing;
 using TSCutter.GUI.ViewModels.TransportStream.Repair;
 using TSCutter.GUI.Views.Editing;
+using TSCutter.GUI.Utils.Application;
 
 namespace TSCutter.GUI.ViewModels.TransportStream.Analysis;
 
@@ -582,12 +583,11 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
         var settings = new SaveFileDialogSettings
         {
             Title = _text.Strings.String_TsCheck_Export_Title,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(FilePath)!),
             SuggestedFileName = Path.GetFileNameWithoutExtension(FilePath) + ".txt",
             Filters = [new(_text.Strings.String_TsCheck_Export_TextFiles, ["txt"])],
             DefaultExtension = "txt"
         };
-        var selected = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+        var selected = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings, Path.GetDirectoryName(FilePath));
         if (selected?.Path is null)
             return;
 

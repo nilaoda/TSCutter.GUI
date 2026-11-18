@@ -17,6 +17,7 @@ using TSCutter.GUI.Services.Media;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Services.Application;
 
 namespace TSCutter.GUI.ViewModels.Media;
 
@@ -235,7 +236,7 @@ public partial class MediaMuxWindowViewModel : ViewModelBase, IModalDialogViewMo
     [RelayCommand(CanExecute = nameof(CanEdit))]
     private async Task AddFilesAsync()
     {
-        var files = await _dialogs.ShowOpenFilesDialogAsync(this, new OpenFileDialogSettings
+        var files = await _dialogs.ShowOpenFilesAtImportFolderAsync(this, new OpenFileDialogSettings
         {
             Title = Strings.String_MediaMux_AddFiles, AllowMultiple = true,
             Filters = [new(Strings.String_MediaMux_MediaFiles, ["mkv", "mp4", "mov", "m4v", "ts", "m2ts", "mts", "aac", "ac3", "eac3", "dts", "flac", "wav", "mp3", "m4a", "srt", "ass", "ssa", "sup", "mks"]),
@@ -250,6 +251,7 @@ public partial class MediaMuxWindowViewModel : ViewModelBase, IModalDialogViewMo
             return;
         var cancellation = BeginOperation(false);
         var errors = new List<string>();
+        var remembered = false;
         try
         {
             foreach (var path in paths)
@@ -274,6 +276,12 @@ public partial class MediaMuxWindowViewModel : ViewModelBase, IModalDialogViewMo
                         continue;
                     }
                     Sources.Add(source);
+                    // 拖放加入成功后同样记住导入目录；同一批文件只记第一个。
+                    if (!remembered)
+                    {
+                        DialogFolderMemory.Shared.RememberImport(fullPath);
+                        remembered = true;
+                    }
                     foreach (var stream in source.Streams)
                     {
                         var row = new MediaMuxTrackItem(source, stream);
@@ -393,11 +401,11 @@ public partial class MediaMuxWindowViewModel : ViewModelBase, IModalDialogViewMo
     [RelayCommand(CanExecute = nameof(CanEdit))]
     private async Task BrowseOutputAsync()
     {
-        var file = await _dialogs.ShowSaveFileDialogAsync(this, new SaveFileDialogSettings
+        var file = await _dialogs.ShowSaveFileAtExportFolderAsync(this, new SaveFileDialogSettings
         {
             Title = Strings.String_MediaMux_ChooseOutput, SuggestedFileName = Path.GetFileName(OutputPath), DefaultExtension = Container,
             Filters = [new(Container.ToUpperInvariant(), [Container])]
-        });
+        }, string.IsNullOrWhiteSpace(OutputPath) ? null : Path.GetDirectoryName(OutputPath));
         if (file?.Path is not null)
             OutputPath = file.Path.LocalPath;
     }

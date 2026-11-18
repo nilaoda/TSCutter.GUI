@@ -479,12 +479,11 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
         var settings = new SaveFileDialogSettings
         {
             Title = LocalizationManager.Instance.String_TsRemux_SaveTitle,
-            SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(FilePath)!),
             SuggestedFileName = Path.GetFileNameWithoutExtension(FilePath) + "_remux.ts",
             Filters = [new(LocalizationManager.Instance.String_TsFiles, ["ts"])],
             DefaultExtension = "ts"
         };
-        var selected = await _dialogService.ShowSaveFileDialogAsync(this, settings);
+        var selected = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings, Path.GetDirectoryName(FilePath));
         if (selected?.Path is null)
             return;
 
