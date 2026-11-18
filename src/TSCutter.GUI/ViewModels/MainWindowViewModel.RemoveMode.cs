@@ -145,7 +145,9 @@ public partial class MainWindowViewModel
             var length = removed[0].InFileInfo.Length;
             var bytes = kept.Sum(range => Math.Max(0, (range.End?.Position ?? length) - range.Start.Position));
             return LocalizationManager.Instance.String_SizePrefix + string.Format(
-                LocalizationManager.Instance.String_SizeApproximate, CommonUtil.FormatFileSize(bytes));
+                RawSizeIsUpperBound && !UsesFrameAccurateCut
+                    ? LocalizationManager.Instance.String_SizeUpperBound
+                    : LocalizationManager.Instance.String_SizeApproximate, CommonUtil.FormatFileSize(bytes));
         }
     }
 

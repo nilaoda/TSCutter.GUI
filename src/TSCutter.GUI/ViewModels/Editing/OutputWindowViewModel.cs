@@ -104,6 +104,19 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private static bool ResolveCheckOnExport() =>
         App.ConfigService?.CurrentConfig.TsCheckOnExport ?? true;
 
+    // 起始时间归零、去除空包：与检测开关一样在导出开始时取一次，作用于本次全部 TS 输出。
+    private TsOutputProcessing _outputProcessing;
+
+    /// <summary>设置中启用的 TS 输出处理；两项默认都关闭。</summary>
+    internal static TsOutputProcessing ResolveOutputProcessing()
+    {
+        var config = App.ConfigService?.CurrentConfig;
+        if (config is null)
+            return TsOutputProcessing.None;
+        return (config.TsZeroStartTime ? TsOutputProcessing.ZeroStartTime : TsOutputProcessing.None) |
+               (config.TsRemoveNullPackets ? TsOutputProcessing.RemoveNullPackets : TsOutputProcessing.None);
+    }
+
     private ExportTsCheckSession? CreateCheckSession(string outputPath, bool checkApplicable)
     {
         if (IsRawByteRange || !_checkOnExport || !checkApplicable)
@@ -237,6 +250,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private async Task OutputAsync()
     {
         _checkOnExport = ResolveCheckOnExport();
+        _outputProcessing = ResolveOutputProcessing();
         if (!await CheckProgramTablesAsync() || !await CheckTimestampNormalizationAsync())
             return;
         if (IsBatchMode)
@@ -266,7 +280,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 CurrentFileName = Path.GetFileName(frameAccurate.OutputPath);
                 SetExportClipInfo(frameAccurate.Segments.Count, _frameAccurateRangeSummary);
                 await ExportWithRebuildAsync(frameAccurate.Segments[0].SourcePath, frameAccurate.OutputPath,
-                    checkApplicable ? AudioRebuild : null, checkApplicable ? ExcludedPids : null, session,
+                    checkApplicable ? AudioRebuild : null, checkApplicable ? ExcludedPids : null,
+                    checkApplicable ? _outputProcessing : TsOutputProcessing.None, session,
                     (_, check) => ExportFrameAccurateAsync(frameAccurate, ++_copyGeneration, check));
                 await CompleteCheckAsync(session);
                 Percent = 100;
@@ -302,7 +317,9 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 CurrentFileName = Path.GetFileName(media.OutputPath);
                 SetExportClipInfo(media.Segments.Count, FormatRangeList(
                     media.Segments.Select(item => (item.StartSeconds, item.EndSeconds))));
-                await ExportRemuxAsync(media, ++_copyGeneration, session);
+                await ExportWithRebuildAsync(media.Segments[0].SourcePath, media.OutputPath, null, null,
+                    checkApplicable ? _outputProcessing : TsOutputProcessing.None, session,
+                    (_, check) => ExportRemuxAsync(media, ++_copyGeneration, check));
                 await CompleteCheckAsync(session);
                 Percent = 100;
                 RemainingSeconds = 0;
@@ -341,8 +358,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             CurrentFileName = Path.GetFileName(request.OutputPath);
             SetExportClipInfo(request.Ranges.Count, FormatRangeList(
                 request.Ranges.Select(item => (item.StartTimeSeconds, (double?)item.EndTimeSeconds))));
-            await ExportWithRebuildAsync(request.SourcePath, request.OutputPath, AudioRebuild, ExcludedPids, mergeSession,
-                (_, check) => ExportTsAsync(request, ++_copyGeneration, supplementOutput, check)).ConfigureAwait(true);
+            await ExportWithRebuildAsync(request.SourcePath, request.OutputPath, AudioRebuild, ExcludedPids, _outputProcessing,
+                mergeSession, (_, check) => ExportTsAsync(request, ++_copyGeneration, supplementOutput, check)).ConfigureAwait(true);
             await CompleteCheckAsync(mergeSession);
             Percent = 100;
             RemainingSeconds = 0;
@@ -497,25 +514,27 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     public bool IsRawByteRange { get; set; }
 
-    // 当前任务在重组时实际做过的改动（杜比 E 转码、多轨合并、删去未选轨道），登记导出记录时使用。
+    // 当前任务在重组时实际做过的改动（杜比 E 转码、多轨合并、删去未选轨道、输出处理），登记导出记录时使用。
     private ExportModifiers _rebuildModifiers;
 
     /// <summary>
-    /// 有音轨重建计划（杜比 E 转码、多轨合并）或轨道选择时，导出服务打开的输出文件换成重组流，写出时一遍完成转码、删去未选轨道与重组；
-    /// 导出检测由重组流接收最终字节，因此不再交给导出服务。导出成功后提交独立的 FLAC 文件；失败时删除不完整的输出。
-    /// 两者都没有时直接导出。
+    /// 有音轨重建计划（杜比 E 转码、多轨合并）、轨道选择或输出处理（起始时间归零、去除空包）时，导出服务打开的输出文件换成重组流，
+    /// 写出时一遍完成转码、删去未选轨道、重组与输出处理；导出检测由重组流接收最终字节，因此不再交给导出服务。
+    /// 导出成功后提交独立的 FLAC 文件；失败时删除不完整的输出。都没有时直接导出。
     /// </summary>
     private async Task ExportWithRebuildAsync(string sourcePath, string outputPath, AudioRebuildPlan? plan,
-        IReadOnlyList<int>? excludedPids, ExportTsCheckSession? session, Func<string, ExportTsCheckSession?, Task> export)
+        IReadOnlyList<int>? excludedPids, TsOutputProcessing processing, ExportTsCheckSession? session,
+        Func<string, ExportTsCheckSession?, Task> export)
     {
         _rebuildModifiers = ExportModifiers.None;
         var transcode = plan is { HasWork: true };
-        if (!transcode && excludedPids is not { Count: > 0 })
+        if (!transcode && excludedPids is not { Count: > 0 } && processing == TsOutputProcessing.None)
         {
             await export(outputPath, session);
             return;
         }
-        var setup = new Services.Editing.AudioRebuild.AudioRebuildSetup(plan, sourcePath, outputPath, session, excludedPids);
+        var setup = new Services.Editing.AudioRebuild.AudioRebuildSetup(plan, sourcePath, outputPath, session, excludedPids,
+            processing);
         Services.Editing.AudioRebuild.TsOutputFile.Current = setup;
         try
         {
@@ -523,7 +542,9 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             // 没有经过重组流的导出路径（例如由封装器写出的输出）不支持转码；
             // 这类路径（智能剪辑由复用器写出时）已按轨道选择建立输出流，不需要再删去轨道。
             var failure = setup.Error ?? (setup.StreamCount == 0 && transcode
-                ? new NotSupportedException("This export path does not support audio rebuilding.") : null);
+                ? new NotSupportedException("This export path does not support audio rebuilding.")
+                : processing != TsOutputProcessing.None && setup.ProcessedStreamCount == 0
+                    ? new NotSupportedException("This export path does not support TS output processing.") : null);
             if (failure is not null)
             {
                 TryDeleteOutput(outputPath);
@@ -537,6 +558,10 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 _rebuildModifiers |= ExportModifiers.ChannelsMerged;
             if (setup.TracksRemoved || setup.StreamCount == 0 && excludedPids is { Count: > 0 })
                 _rebuildModifiers |= ExportModifiers.TracksSelected;
+            if (processing.HasFlag(TsOutputProcessing.ZeroStartTime))
+                _rebuildModifiers |= ExportModifiers.StartTimeZeroed;
+            if (processing.HasFlag(TsOutputProcessing.RemoveNullPackets))
+                _rebuildModifiers |= ExportModifiers.NullPacketsRemoved;
         }
         catch
         {
@@ -581,10 +606,13 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         var stopwatch = Stopwatch.StartNew();
         var producesTs = task.RemuxSettings is null && task.FrameAccurate?.Container is null or "ts" or "m2ts";
         var rebuild = producesTs && !IsRawByteRange;
+        // 光盘重封装的 M2TS 由封装器写出，只经过输出处理，不重组音轨。
+        var processing = rebuild || task.RemuxSettings?.Container == "m2ts" ? _outputProcessing : TsOutputProcessing.None;
         try
         {
             await ExportWithRebuildAsync(task.SourcePath, task.DestinationPath, rebuild ? task.AudioRebuild : null,
-                rebuild ? task.ExcludedPids : null, session, (_, check) => CopyClipCoreAsync(task, check, addTables));
+                rebuild ? task.ExcludedPids : null, processing, session,
+                (_, check) => CopyClipCoreAsync(task, check, addTables));
             await CompleteCheckAsync(session);
             RegisterOutcome(task.DestinationPath, true, session, kind, checkApplicable, stopwatch.Elapsed, modifiers, delay);
         }

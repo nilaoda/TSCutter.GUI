@@ -44,7 +44,25 @@ public partial class RemuxExportOptionsViewModel : ViewModelBase, IModalDialogVi
     public string TsContainerText { get; private set; } = "";
     /// <summary>当前为智能剪辑：只输出预览视频所在节目的音视频和字幕。</summary>
     public bool ShowsFrameAccurateHint { get; private set; }
-    partial void OnContainerChanged(string value) => OnPropertyChanged(nameof(IsVobOutput));
+    /// <summary>设置中启用的 TS 输出处理说明；没有启用时为空，此时说明全部保留即按原样复制。</summary>
+    public string TsProcessingNotice { get; private set; } = "";
+    public bool HasTsProcessingNotice => TsProcessingNotice.Length > 0;
+    public string TsTracksNotice => HasTsProcessingNotice
+        ? Utils.Application.LocalizationManager.Instance.String_TsTracks_NoticeProcessed
+        : Utils.Application.LocalizationManager.Instance.String_TsTracks_Notice;
+    /// <summary>蓝光光盘导出为 M2TS 时同样经过设置中启用的 TS 输出处理。</summary>
+    public string RemuxProcessingNotice { get; private set; } = "";
+    public bool ShowsRemuxProcessingNotice => IsRemuxOutput && Container == "m2ts" && RemuxProcessingNotice.Length > 0;
+    /// <summary>都没有开启时提示可在设置中开启：TS 原包导出始终提示，光盘导出只在选择 M2TS 时提示。</summary>
+    public bool ShowsProcessingAvailableHint => IsTsOutput ? !HasTsProcessingNotice
+        : _canProcessM2ts && Container == "m2ts" && RemuxProcessingNotice.Length == 0;
+    private bool _canProcessM2ts;
+    partial void OnContainerChanged(string value)
+    {
+        OnPropertyChanged(nameof(IsVobOutput));
+        OnPropertyChanged(nameof(ShowsRemuxProcessingNotice));
+        OnPropertyChanged(nameof(ShowsProcessingAvailableHint));
+    }
     [ObservableProperty] private string _container = "mp4";
     [ObservableProperty] private bool _fastSubtitleSeek = true;
     public List<RemuxExportTrackChoice> Tracks { get; } = [];
@@ -142,10 +160,13 @@ public partial class RemuxExportOptionsViewModel : ViewModelBase, IModalDialogVi
             : string.Format(CultureInfo.CurrentCulture, strings.String_SilenceDetect_Peak, peak);
     }
 
-    internal void Initialize(RemuxExportSettings settings, IEnumerable<RemuxExportTrackChoice> tracks, bool isMatroskaSource)
+    internal void Initialize(RemuxExportSettings settings, IEnumerable<RemuxExportTrackChoice> tracks, bool isMatroskaSource,
+        string processingNotice = "")
     {
+        RemuxProcessingNotice = processingNotice;
         if (settings.Disc is { } disc)
         {
+            _canProcessM2ts = disc.Kind == Models.Discs.DiscKind.BluRay;
             Containers = [disc.Kind == Models.Discs.DiscKind.Dvd ? "vob" : "m2ts", "mkv", "mp4"];
             OnPropertyChanged(nameof(Containers));
         }
@@ -164,9 +185,11 @@ public partial class RemuxExportOptionsViewModel : ViewModelBase, IModalDialogVi
         OnPropertyChanged(nameof(CanUseFastSubtitleSeek));
     }
 
-    internal void InitializeTs(string container, IEnumerable<RemuxExportTrackChoice> tracks, bool frameAccurate)
+    internal void InitializeTs(string container, IEnumerable<RemuxExportTrackChoice> tracks, bool frameAccurate,
+        string processingNotice = "")
     {
         IsTsOutput = true;
+        TsProcessingNotice = processingNotice;
         TsContainerText = string.Format(Utils.Application.LocalizationManager.Instance.String_TsTracks_SameAsSource,
             container.ToUpperInvariant());
         ShowsFrameAccurateHint = frameAccurate;

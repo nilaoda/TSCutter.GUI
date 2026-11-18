@@ -59,6 +59,14 @@ public partial class ExportQueueItem : ObservableObject
     /// <summary>帧精确任务按单节目 TS 的源字节范围预估大小，显示时带“~”。</summary>
     public bool SizeIsApproximate { get; init; }
 
+    /// <summary>来源是按字节剪辑的 TS：设置中去除空包时，大小只是上限。</summary>
+    public bool IsTsSource { get; init; }
+
+    /// <summary>去除空包时显示为“≤”大小上限。由主窗口按设置同步。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(EstimatedSizeStr))]
+    private bool _sizeIsUpperBound;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusText))]
     private ClipExportStatus _status = ClipExportStatus.Pending;
@@ -83,7 +91,10 @@ public partial class ExportQueueItem : ObservableObject
         : $"{CommonUtil.FormatSeconds(EndTimeSeconds)} ]";
 
     public string EstimatedSizeStr => LocalizationManager.Instance.String_SizePrefix
-        + (ProgramId is null && RemuxSettings is null && FrameAccurate is null ? CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes))
+        + (ProgramId is null && RemuxSettings is null && FrameAccurate is null
+            ? SizeIsUpperBound
+                ? string.Format(LocalizationManager.Instance.String_SizeUpperBound, CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes)))
+                : CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes))
             : FrameAccurate is not null && SizeIsApproximate
                 ? string.Format(LocalizationManager.Instance.String_SizeApproximate, CommonUtil.FormatFileSize(Math.Max(0, EstimatedBytes)))
                 : LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport);

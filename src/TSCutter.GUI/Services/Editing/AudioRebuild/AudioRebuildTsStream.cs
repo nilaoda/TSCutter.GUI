@@ -12,14 +12,21 @@ using TSCutter.GUI.Utils.TransportStream.Packets;
 namespace TSCutter.GUI.Services.Editing.AudioRebuild;
 
 /// <summary>
-/// 一次导出的 TS 重组设置与结果：重建音轨（杜比 E 转码、多轨合并）、删去未选的轨道。导出成功后提交独立的 FLAC 文件，失败时丢弃。
+/// 一次导出的 TS 重组设置与结果：重建音轨（杜比 E 转码、多轨合并）、删去未选的轨道，以及起始时间归零、去除空包等输出处理。
+/// 导出成功后提交独立的 FLAC 文件，失败时丢弃。
 /// </summary>
 internal sealed class AudioRebuildSetup(AudioRebuildPlan? plan, string sourcePath, string outputPath, ExportTsCheckSession? session,
-    IReadOnlyCollection<int>? excludedPids = null)
+    IReadOnlyCollection<int>? excludedPids = null, TsOutputProcessing processing = TsOutputProcessing.None)
 {
     public AudioRebuildPlan Plan { get; } = plan ?? new AudioRebuildPlan();
     /// <summary>不输出的轨道（PID）：这些包从输出中删去，节目表中的对应条目一并去掉。</summary>
     public IReadOnlySet<int> ExcludedPids { get; } = new HashSet<int>(excludedPids ?? []);
+    /// <summary>对最终输出字节做的附加处理（重组之后、写入文件与检测之前）。</summary>
+    public TsOutputProcessing Processing { get; } = processing;
+    /// <summary>实际按 <see cref="Processing"/> 处理了输出的流个数；为 0 说明这条导出路径没有经过输出处理。</summary>
+    public int ProcessedStreamCount { get; internal set; }
+    /// <summary>去除空包时删去的空包个数。</summary>
+    public long NullPacketsRemoved { get; internal set; }
     /// <summary>实际删去了未选轨道的包或节目表条目。</summary>
     public bool TracksRemoved { get; internal set; }
     /// <summary>导出的源文件：开头的节目表决定来源音轨所在的节目与可用的 PID。</summary>
@@ -91,8 +98,8 @@ internal sealed record AudioRebuildTrack(int[] SourcePids, bool KeepOriginal, bo
 }
 
 /// <summary>
-/// TS 导出服务打开输出文件的入口。没有音轨重建与轨道选择时返回普通文件流，参数与原来完全相同；
-/// 导出窗口设置了重建计划或轨道选择时返回重组流，导出服务的写出代码不变。
+/// TS 导出服务打开输出文件的入口。没有音轨重建、轨道选择与输出处理时返回普通文件流，参数与原来完全相同；
+/// 导出窗口设置了其中任何一项时返回重组流，导出服务的写出代码不变。
 /// </summary>
 internal static class TsOutputFile
 {
@@ -113,6 +120,18 @@ internal static class TsOutputFile
         if (setup.StreamCount++ > 0)
             throw new InvalidOperationException("Audio rebuilding supports a single output stream per export.");
         return new AudioRebuildTsStream(path, mode, access, share, bufferSize, options, setup);
+    }
+
+    /// <summary>
+    /// 由封装器重新生成的 TS 输出（轨道已按选择建立）：不做重组，只按当前设置做输出处理。
+    /// 没有设置输出处理时返回 null，由调用方按原来的方式打开输出。
+    /// </summary>
+    public static FileStream? CreateProcessedOnly(string path, int packetSize)
+    {
+        if (CurrentSetup.Value is not { Processing: not TsOutputProcessing.None } setup)
+            return null;
+        return new AudioRebuildTsStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096,
+            FileOptions.SequentialScan, setup, packetSize);
     }
 }
 
@@ -191,6 +210,10 @@ internal sealed class AudioRebuildTsStream : FileStream
     private readonly bool[] excluded = new bool[0x2000];
     private bool initialized;
     private bool active;
+    // 输出处理：重组后的字节经它写入文件与检测会话；没有设置输出处理时为 null。
+    private TsOutputPostProcessor? processor;
+    // 只做输出处理（封装器的输出）时的包长；为 0 表示按源文件检测并按设置重组。
+    private readonly int processedOnlyPacketSize;
     private bool finishing;
     private bool closed;
     // 未凑满一个包的输入字节。
@@ -202,9 +225,11 @@ internal sealed class AudioRebuildTsStream : FileStream
     private int heldCount;
 
     internal AudioRebuildTsStream(string path, FileMode mode, FileAccess access, FileShare share, int bufferSize,
-        FileOptions options, AudioRebuildSetup setup) : base(path, mode, access, share, bufferSize, options)
+        FileOptions options, AudioRebuildSetup setup, int processedOnlyPacketSize = 0)
+        : base(path, mode, access, share, bufferSize, options)
     {
         this.setup = setup;
+        this.processedOnlyPacketSize = processedOnlyPacketSize;
     }
 
     public override bool CanSeek => false;
@@ -297,11 +322,17 @@ internal sealed class AudioRebuildTsStream : FileStream
                 if (partialLength > 0)
                     writer!.WriteRaw(partial.AsSpan(0, partialLength));
                 writer!.Flush();
+                CompleteProcessing();
                 // 与其他导出路径一样只交给系统缓存，不强制落盘。
                 base.Flush(false);
                 setup.Changed = tracks.Count > 0;
                 foreach (var track in tracks)
                     track.MarkChanged(setup);
+            }
+            else if (setup.Error is null)
+            {
+                CompleteProcessing();
+                base.Flush(false);
             }
         }
         catch (Exception exception)
@@ -400,8 +431,33 @@ internal sealed class AudioRebuildTsStream : FileStream
 
     private void EmitBlock(byte[] buffer, int count)
     {
-        base.Write(buffer, 0, count);
-        setup.Session?.Append(buffer.AsSpan(0, count));
+        if (processor is not null)
+            processor.Write(buffer.AsSpan(0, count));
+        else
+            WriteOutput(buffer, 0, count);
+    }
+
+    private void WriteOutput(byte[] buffer, int offset, int count)
+    {
+        base.Write(buffer, offset, count);
+        setup.Session?.Append(buffer.AsSpan(offset, count));
+    }
+
+    /// <summary>写出输出处理暂存的全部字节，并记下处理结果。</summary>
+    private void CompleteProcessing()
+    {
+        if (processor is null)
+            return;
+        processor.Complete();
+        setup.NullPacketsRemoved += processor.NullPacketsRemoved;
+    }
+
+    private void CreateProcessor(int packetSize)
+    {
+        if (setup.Processing == TsOutputProcessing.None)
+            return;
+        processor = new TsOutputPostProcessor(setup.Processing, packetSize, WriteOutput);
+        setup.ProcessedStreamCount++;
     }
 
     /// <summary>
@@ -412,10 +468,20 @@ internal sealed class AudioRebuildTsStream : FileStream
         initialized = true;
         try
         {
+            // 封装器的输出只做输出处理，不读取源文件。
+            if (processedOnlyPacketSize > 0)
+            {
+                CreateProcessor(processedOnlyPacketSize);
+                return;
+            }
             layout = TsPacketLayout.Detect(setup.SourcePath);
             layout.RequireSupported();
+            CreateProcessor(layout.PacketSize);
             var excludedPids = new HashSet<int>(setup.ExcludedPids);
             var work = setup.Tracks(excludedPids);
+            // 只做输出处理时不重组，也不必预扫描源文件的节目表。
+            if (work.Count == 0 && excludedPids.Count == 0)
+                return;
             // 只删轨道时不分配新 PID，读到全部节目表即可停止预扫描。
             var programs = Prescan(setup.SourcePath, layout, CancellationToken.None, work.Count > 0, out var usedPids,
                 out var pmtPids);

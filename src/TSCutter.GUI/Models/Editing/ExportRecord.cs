@@ -35,7 +35,11 @@ public enum ExportModifiers
     /// <summary>转码了杜比 E 音轨。</summary>
     DolbyETranscoded = 16,
     /// <summary>把多条立体声音轨合并成了一条 5.1。</summary>
-    ChannelsMerged = 32
+    ChannelsMerged = 32,
+    /// <summary>整体平移了 PCR/PTS/DTS，输出从 0 开始。</summary>
+    StartTimeZeroed = 64,
+    /// <summary>删去了空包（PID 0x1FFF）。</summary>
+    NullPacketsRemoved = 128
 }
 
 public enum TsExportCheckState

@@ -524,7 +524,12 @@ public sealed class DiscIntegrationTests
                         throw new Xunit.Sdk.XunitException($"{name}, container={extension}: {exception.Code}: {exception}");
                     }
                     if (name == "bluray")
+                    {
                         Assert.Equal(192, TSCutter.GUI.Utils.TransportStream.Packets.TsPacketLayout.Detect(output).PacketSize);
+                        // 复用器为解码缓冲留出提前量：PCR 领先 DTS 0.7 秒，扣除音频交织的偏差至少 0.4 秒。
+                        var lead = TSCutter.GUI.Tests.Editing.FrameAccurateTsOutputTests.MinimumPesLead(output);
+                        Assert.True(lead >= 36_000, $"minimum lead {lead / 90.0:F1} ms");
+                    }
                     using var video = new VideoInstance(output);
                     video.InitVideo();
                     Assert.InRange(video.GetVideoDurationInSeconds(), selectedEnd - selectedStart - 1, selectedEnd - selectedStart + 2);

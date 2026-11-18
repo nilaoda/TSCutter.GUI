@@ -45,10 +45,10 @@
     <x:String x:Key="String.TsExport.TablesWarningTitle">節目表提示</x:String>
     <x:String x:Key="String.TsExport.TablesWarning">以下片段的起點附近未找到完整節目表，播放器或媒體資訊工具可能無法正確辨識軌道。建議補充節目表後匯出。</x:String>
     <x:String x:Key="String.TsExport.AdjustCut">返回調整剪輯點</x:String>
-    <x:String x:Key="String.TsExport.Continue">原樣匯出</x:String>
+    <x:String x:Key="String.TsExport.Continue">不補充直接匯出</x:String>
     <x:String x:Key="String.TsExport.Supplement">補充節目表並匯出</x:String>
     <x:String x:Key="String.TsExport.SupplementHint">將剪輯點附近的 PAT/PMT 補充到檔案開頭，音視訊不重新編碼。會增加少量節目表封包，輸出檔案不再與所選位元組範圍完全一致。</x:String>
-    <x:String x:Key="String.TsExport.TablesUnavailable">未能讀取剪輯點附近的完整節目表，無法補充。請調整剪輯點，或選擇原樣匯出。</x:String>
+    <x:String x:Key="String.TsExport.TablesUnavailable">未能讀取剪輯點附近的完整節目表，無法補充。請調整剪輯點，或選擇不補充直接匯出。</x:String>
     <x:String x:Key="String.SaveYourClip">儲存片段</x:String>
     <x:String x:Key="String.Menu.File">檔案(_F)</x:String>
     <x:String x:Key="String.Menu.Edit">編輯(_E)</x:String>
@@ -180,6 +180,7 @@
     <x:String x:Key="String.Clips.Empty">無任何剪輯</x:String>
     <x:String x:Key="String.SizePrefix">大小：</x:String>
     <x:String x:Key="String.SizeApproximate">~{0}</x:String>
+    <x:String x:Key="String.SizeUpperBound">≤{0}</x:String>
     <x:String x:Key="String.Ok">確定</x:String>
     <x:String x:Key="String.Cancel">取消</x:String>
     <x:String x:Key="String.Apply">套用</x:String>
@@ -396,6 +397,12 @@
     <x:String x:Key="String.Settings.SaveDialogFolder.Source">來源檔案所在的資料夾</x:String>
     <x:String x:Key="String.Settings.SaveDialogFolderTip">用於儲存片段、合併輸出、匯出佇列、截圖、縮圖總覽和各 TS 工具的輸出。&#10;開啟檔案的對話方塊一律定位到上次開啟檔案的資料夾。&#10;所選資料夾無法使用時改用另一個。</x:String>
     <x:String x:Key="String.Settings.TsCheckOnExportHint">在匯出過程中檢測寫出的 TS 資料，會增加 CPU 和記憶體開銷，實際速度受素材和磁碟效能影響。</x:String>
+    <x:String x:Key="String.Settings.TsOutputProcessing">TS 匯出的附加處理（預設關閉）</x:String>
+    <x:String x:Key="String.Settings.TsZeroStartTime">起始時間歸零</x:String>
+    <x:String x:Key="String.Settings.TsZeroStartTimeTip">把輸出中的 PCR、PTS、DTS 整體前移，&#10;讓檔案的時間從 0 開始，&#10;避免部分老舊播放器把時長算錯。&#10;音訊視訊不重新編碼，各軌道的相對時間不變；&#10;時鐘不同的多個節目各自從 0 開始。</x:String>
+    <x:String x:Key="String.Settings.TsRemoveNullPackets">去除空封包</x:String>
+    <x:String x:Key="String.Settings.TsRemoveNullPacketsTip">刪去 PID 0x1FFF 的填充封包，檔案會變小，&#10;位元率由固定變為可變。&#10;依賴固定位元率的裝置或流程可能不相容。</x:String>
+    <x:String x:Key="String.Settings.TsOutputProcessingHint">適用於關鍵影格剪輯、智慧剪輯和藍光光碟匯出的 TS/M2TS 檔案。開啟後，關鍵影格剪輯也會改寫輸出資料，而不是原樣複製來源檔案片段；匯出記錄會標示所做的處理。</x:String>
     <x:String x:Key="String.Menu.TsCheck">TS 快速檢查(_C)</x:String>
     <x:String x:Key="String.Menu.TsTimelineRepair">TS 時間軸修復(_T)...</x:String>
     <x:String x:Key="String.Menu.TsFilterPid">TS 依 PID 過濾(_P)...</x:String>
@@ -1352,6 +1359,7 @@
     <x:String x:Key="String.RemuxExport.FastSubtitleSeek">快速定位 MKV 文字字幕</x:String>
     <x:String x:Key="String.RemuxExport.FastSubtitleSeekHint">文字字幕從每段起點前約 30 秒開始讀取，可能遺漏更早開始且跨越起點的文字字幕。PGS 顯示狀態會單獨還原。</x:String>
     <x:String x:Key="String.RemuxExport.Notice">封裝資訊會重新寫入，輸出並非位元組級無損。</x:String>
+    <x:String x:Key="String.RemuxExport.ProcessingNotice">已在設定中開啟：{0}。M2TS 輸出會據此處理。</x:String>
     <x:String x:Key="String.RemuxExport.BoundaryHint">音訊視訊不重新編碼；視訊按關鍵影格剪輯。</x:String>
     <x:String x:Key="String.RemuxExport.Files">MP4 / MKV 檔案</x:String>
     <x:String x:Key="String.RemuxExport.Error.Container">請為所有片段選擇相同的輸出封裝，並使用對應的檔案副檔名。</x:String>
@@ -1724,6 +1732,8 @@
     <x:String x:Key="String.Export_Tag_DolbyE">杜比 E 轉碼</x:String>
     <x:String x:Key="String.AudioOutput.Failed">音軌重建失敗：{0}</x:String>
     <x:String x:Key="String.Export_Tag_ChannelMerge">合併 5.1</x:String>
+    <x:String x:Key="String.Export_Tag_StartTimeZeroed">起始時間歸零</x:String>
+    <x:String x:Key="String.Export_Tag_NullPacketsRemoved">去除空封包</x:String>
     <x:String x:Key="String.ChannelMerge.Button">合併 5.1…</x:String>
     <x:String x:Key="String.ChannelMerge.ButtonTip">目前節目有三條以上立體聲音軌。有些廣播訊號用三條立體聲承載一條 5.1（L/R、C/LFE、Ls/Rs）。&#10;點擊設定匯出時把它們合併為一條 5.1 音軌。</x:String>
     <x:String x:Key="String.ChannelMerge.SummaryReplace">已設定：合併為 {0}，取代原軌</x:String>
@@ -1794,6 +1804,10 @@
     <x:String x:Key="String.TsTracks.SameAsSource">與來源檔案相同（{0}）</x:String>
     <x:String x:Key="String.TsTracks.TrackHint">按 PID 排序 · 目前視訊必選</x:String>
     <x:String x:Key="String.TsTracks.Notice">全部保留時按原樣複製。取消勾選的軌道會從輸出中刪除，節目表中的對應項目一併移除，其餘資料封包原樣複製。</x:String>
+    <x:String x:Key="String.TsTracks.NoticeProcessed">取消勾選的軌道會從輸出中刪除，節目表中的對應項目一併移除。</x:String>
+    <x:String x:Key="String.TsTracks.ProcessingNotice">已在設定中開啟：{0}。輸出會據此改寫，而不是原樣複製來源檔案片段。</x:String>
+    <x:String x:Key="String.TsTracks.ProcessingAvailable">如有需要，可在「設定 → 匯出」中開啟起始時間歸零和去除空封包。</x:String>
+    <x:String x:Key="String.TsTracks.ProcessingTip">起始時間歸零：把時間戳記整體前移，讓檔案從 0 開始，&#10;避免部分老舊播放器把時長算錯。&#10;去除空封包：刪去用於填充的空封包，檔案變小，&#10;位元率由固定變為可變。</x:String>
     <x:String x:Key="String.TsTracks.FrameAccurateHint">智慧剪輯只輸出預覽視訊所在節目的視訊、音訊和字幕。</x:String>
     <x:String x:Key="String.TsTracks.SummaryAll">輸出全部 {0} 條軌道</x:String>
     <x:String x:Key="String.TsTracks.Summary">輸出 {0}/{1} 條軌道 · 改寫節目表</x:String>

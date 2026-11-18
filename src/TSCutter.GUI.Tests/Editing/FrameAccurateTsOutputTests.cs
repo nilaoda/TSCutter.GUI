@@ -420,6 +420,58 @@ public sealed class FrameAccurateTsOutputTests
         finally { File.Delete(source); File.Delete(output); }
     }
 
+    /// <summary>
+    /// 修正 DTS 时由复用器写出 TS/M2TS：PCR 领先各轨道的 DTS，留出解码缓冲，没有包晚于自己的解码时间到达；
+    /// 两段合并的画面完整解码。
+    /// </summary>
+    [NativeMediaTheory("frameaccurate")]
+    [InlineData("h264.ts", "ts")]
+    [InlineData("h264.m2ts", "m2ts")]
+    public async Task MuxerOutputLeavesDecoderBuffer(string name, string container)
+    {
+        var fixture = Fixture(name);
+        var source = Temporary("." + container);
+        var output = Temporary("." + container);
+        try
+        {
+            WriteLateDtsSource(fixture, source);
+            var frames = FrameAccurateExportTests.DecodeFrames(fixture);
+            var settings = FrameAccurateExportTests.Settings(source);
+            settings.Container = container;
+            await new FrameAccurateExportService().ExportAsync(new FrameAccurateExportRequest(output,
+                [new(source, frames[40], frames[100], settings), new(source, frames[150], frames[230], settings)],
+                NormalizeTimestamps: true));
+
+            // 0.7 秒的缓冲减去音频交织的偏差，至少保留 0.4 秒。
+            var lead = MinimumPesLead(output);
+            Assert.True(lead >= 36_000, $"minimum lead {lead / 90.0:F1} ms");
+            var decoded = FrameAccurateExportTests.Decode(output, out var errors);
+            Assert.Equal(0, errors);
+            Assert.Equal(Enumerable.Range(40, 61).Concat(Enumerable.Range(150, 81)), decoded.Select(frame => frame.Number));
+        }
+        finally { File.Delete(source); File.Delete(output); }
+    }
+
+    /// <summary>每个 PES 的 DTS（没有时取 PTS）领先此前最近一个 PCR 的最小量（90 kHz）。</summary>
+    internal static long MinimumPesLead(string path)
+    {
+        var size = TsPacketLayout.Detect(path).PacketSize;
+        var data = File.ReadAllBytes(path);
+        long lastPcr = -1;
+        var leads = new List<long>();
+        for (var offset = 0; offset + size <= data.Length; offset += size)
+        {
+            var packet = data.AsSpan(offset + size - 188, 188);
+            if (TsTimestampFieldCodec.TryReadPcr(packet, out var pcr, out _, out _))
+                lastPcr = pcr;
+            var pid = (packet[1] & 0x1F) << 8 | packet[2];
+            if (pid >= 0x20 && lastPcr >= 0 && TsTimestampFieldCodec.TryLocatePesTimestamps(packet, out var pts, out var dts))
+                leads.Add(TsTimestampFieldCodec.ReadPesTimestamp(packet.Slice(dts >= 0 ? dts : pts, 5)) - lastPcr);
+        }
+        Assert.NotEmpty(leads);
+        return leads.Min();
+    }
+
     internal static unsafe void WriteLateDtsSource(string from, string to, long dtsOffset = 45_000)
     {
         using var input = FormatContext.OpenInputUrl(from);

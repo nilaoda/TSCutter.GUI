@@ -298,6 +298,26 @@
                                   Margin="0,6,0,0" />
                         <TextBlock Text="{DynamicResource String.Settings.TsCheckOnExportHint}"
                                    TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}" />
+                        <!-- TS 导出的附加处理：两项默认关闭，开启后输出不再与源文件字节一致。 -->
+                        <TextBlock Text="{DynamicResource String.Settings.TsOutputProcessing}" Margin="0,6,0,0" />
+                        <StackPanel Orientation="Horizontal" Spacing="16">
+                            <CheckBox IsChecked="{Binding TsZeroStartTime}"
+                                      Content="{DynamicResource String.Settings.TsZeroStartTime}">
+                                <ToolTip.Tip>
+                                    <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                               Text="{DynamicResource String.Settings.TsZeroStartTimeTip}" />
+                                </ToolTip.Tip>
+                            </CheckBox>
+                            <CheckBox IsChecked="{Binding TsRemoveNullPackets}"
+                                      Content="{DynamicResource String.Settings.TsRemoveNullPackets}">
+                                <ToolTip.Tip>
+                                    <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                               Text="{DynamicResource String.Settings.TsRemoveNullPacketsTip}" />
+                                </ToolTip.Tip>
+                            </CheckBox>
+                        </StackPanel>
+                        <TextBlock Text="{DynamicResource String.Settings.TsOutputProcessingHint}"
+                                   TextWrapping="Wrap" Foreground="{DynamicResource AppSecondaryTextBrush}" />
                         <CheckBox IsChecked="{Binding ShowExportResult}"
                                   Content="{DynamicResource String.Settings.ShowExportResult}"
                                   Margin="0,6,0,0" />
