@@ -314,6 +314,8 @@ public partial class MainWindow : ClassicWindow
             }
             return;
         }
+        // 正常关闭：删除本实例的恢复文件，下次启动不再提示恢复。
+        ViewModel.DiscardRecoveryOnExit();
         ViewModel.Close();
     }
 

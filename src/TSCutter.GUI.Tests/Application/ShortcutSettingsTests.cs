@@ -301,7 +301,7 @@ public sealed class ShortcutSettingsTests
         new(new KeyLocalization(overrides));
 
     /// <summary>直接返回资源键（可按键替换为指定文字），便于断言列表内容；同时记录读取过的键。</summary>
-    private sealed class KeyLocalization(Dictionary<string, string>? overrides = null) : ILocalizationService
+    internal sealed class KeyLocalization(Dictionary<string, string>? overrides = null) : ILocalizationService
     {
         public HashSet<string> Requested { get; } = [];
         public List<SupportedLang> SupportedLanguages { get; } = [new("en-US", "English")];

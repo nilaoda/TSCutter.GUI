@@ -98,6 +98,23 @@
                             <Button Content="{DynamicResource String.Recent.Clear}"
                                     Command="{Binding ClearRecentItemsCommand}" />
                         </StackPanel>
+                        <StackPanel Orientation="Vertical" Spacing="4">
+                            <CheckBox IsChecked="{Binding AutoSaveRecovery}"
+                                      Content="{DynamicResource String.Settings.AutoSaveRecovery}">
+                                <ToolTip.Tip>
+                                    <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                               Text="{DynamicResource String.Settings.AutoSaveRecoveryTip}" />
+                                </ToolTip.Tip>
+                            </CheckBox>
+                            <Grid ColumnDefinitions="100, *" VerticalAlignment="Center">
+                                <TextBlock Grid.Column="0" VerticalAlignment="Center"
+                                           Text="{DynamicResource String.Settings.AutoSaveInterval}" />
+                                <ComboBox Grid.Column="1" HorizontalAlignment="Stretch"
+                                          ItemsSource="{Binding AutoSaveIntervalTexts}"
+                                          SelectedIndex="{Binding AutoSaveIntervalIndex, Mode=TwoWay}"
+                                          IsEnabled="{Binding AutoSaveRecovery}" />
+                            </Grid>
+                        </StackPanel>
                     </StackPanel>
                 </ScrollViewer>
             </TabItem>
