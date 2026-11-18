@@ -304,7 +304,7 @@ public sealed class TsOutputProcessingWorkflowTests
     }
 
     /// <summary>按出现顺序列出全部 PCR 基数与 PES 头中的 PTS/DTS。</summary>
-    private static List<(int Pid, long Value)> Timestamps(byte[] data, out int nullPackets)
+    internal static List<(int Pid, long Value)> Timestamps(byte[] data, out int nullPackets)
     {
         var result = new List<(int, long)>();
         nullPackets = 0;

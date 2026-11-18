@@ -81,7 +81,7 @@ public sealed class FrameAccurateTsOutputTests
     }
 
     /// <summary>
-    /// 干净素材（闭合/开放 GOP、隔行 MBAFF、MPEG-2、HEVC（含 CRA 开放 GOP）、10 位 4:2:2、33 位 PTS 回绕、M2TS）剪切后检测无任何错误与警告：
+    /// 干净素材（闭合/开放 GOP、隔行 MBAFF、MPEG-2、HEVC（含 CRA 开放 GOP，起点落在 RASL 上，多切片）、10 位 4:2:2、33 位 PTS 回绕、M2TS）剪切后检测无任何错误与警告：
     /// 重编码画面填入原画面位置、改写 PES 写回、补包与删包后，CC、PCR、时间戳与 PES 长度都连续合规。
     /// 起点落在开放 GOP I 帧的前导画面上时，片头画面在源中排在 I 帧之后、没有可用位置，全部在复制起点前补包写出。
     /// </summary>
@@ -95,6 +95,8 @@ public sealed class FrameAccurateTsOutputTests
     [InlineData("hevc-hlg.ts", 17)]
     [InlineData("hevc-422.ts", 17)]
     [InlineData("hevc-cra.ts", 17)]
+    [InlineData("hevc-cra.ts", 24)]
+    [InlineData("hevc-cra-slices.ts", 24)]
     [InlineData("h264-422-10bit.ts", 17)]
     [InlineData("h264-422-10bit.ts", 149)]
     [InlineData("h264-422-interlaced.ts", 17)]
@@ -108,7 +110,7 @@ public sealed class FrameAccurateTsOutputTests
         var output = Temporary(Path.GetExtension(name));
         try
         {
-            if (name is "h264.m2ts" or "wrap.ts" or "hevc-cra.ts")
+            if (name is "h264.m2ts" or "wrap.ts" or "hevc-cra.ts" or "hevc-cra-slices.ts")
                 Assert.False(await new FrameAccurateExportService().NeedsTimestampNormalizationAsync(new(output,
                     [new(source, frames[start].Pts, frames[^23].Pts, FrameAccurateExportTests.Settings(source))]), default));
             await Export(source, output, frames[start].Pts, frames[^23].Pts);
