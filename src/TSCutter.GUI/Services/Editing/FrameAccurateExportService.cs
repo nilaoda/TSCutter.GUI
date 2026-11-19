@@ -135,12 +135,13 @@ internal sealed unsafe class FrameAccurateExportService
                 : vp9 ? parameters->profile is not (0 or 2)
                 : parameters->codec_id != AVCodecID.AV_CODEC_ID_H264 || FrameAccurateVideoEncoder.H264ProfileName(parameters->profile) is null)
             return FrameAccurateSupport.Codec;
-        // 杜比视界仅支持单层 Profile 5 与 8.1（HDR10 兼容基础层），不带增强层、不压缩元数据：重编码画面由 x265
-        // 按每帧解码出的杜比元数据重新生成 RPU，8.1 的 HDR10 静态元数据另行写入。8.2/8.4 暂无样本验证，不放开。
+        // 杜比视界仅支持单层 Profile 5、8.1（HDR10 兼容基础层）与 8.4（HLG 兼容基础层），不带增强层、不压缩元数据：
+        // 重编码画面由 x265 按每帧解码出的杜比元数据重新生成 RPU，8.1 的 HDR10 静态元数据另行写入；8.4 的颜色描述
+        // （HLG 传输特性、BT.2020）沿用源流参数，源无母版显示元数据时不写。8.2（SDR 兼容）暂无样本验证，不放开。
         // TS/M2TS 由 TSCutter 按传输包写出，源 PMT 中的杜比描述符原样保留（多节目时随节目表重建一并保留），
         // 重编码段的 RPU 在码流中；ffmpeg 的 TS 复用器不写杜比描述符，导出时若未按传输包写出则拒绝。
         if (FrameAccurateVideoEncoder.DolbyVisionConfiguration(parameters) is { } dovi &&
-            (dovi is not ({ Profile: 5, Compatibility: 0 } or { Profile: 8, Compatibility: 1 }) ||
+            (dovi is not ({ Profile: 5, Compatibility: 0 } or { Profile: 8, Compatibility: 1 or 4 }) ||
              !dovi.Rpu || !dovi.BaseLayer || dovi.EnhancementLayer || dovi.Compression != 0))
             return FrameAccurateSupport.DolbyVision;
         // 隔行 H.264 按完整帧选择，重编码保持原场序；HEVC 隔行及场序混合的码流不支持。

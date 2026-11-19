@@ -715,16 +715,32 @@ public sealed class RemuxExportServiceTests
     [RemuxExportFact("TSCUTTER_DOVI_TEST_SAMPLE")]
     public Task DolbyVisionConfigAndRpuPayloadSurviveMp4AndMkvExports() =>
         DolbyVisionSurvivesExports(Environment.GetEnvironmentVariable("TSCUTTER_DOVI_TEST_SAMPLE")!,
-            VideoDynamicRangeDetector.MakeCodecTag('d', 'v', 'h', '1'));
+            VideoDynamicRangeDetector.MakeCodecTag('d', 'v', 'h', '1'), 5, 0);
 
     /// <summary>Profile 8.1 的基础层兼容 HDR10：MP4 保留 hvc1，配置记录仍写入。</summary>
     [RemuxExportFact("TSCUTTER_DOVI_P81_TEST_SAMPLE")]
     public Task CompatibleDolbyVisionKeepsHvc1InMp4() =>
         DolbyVisionSurvivesExports(Environment.GetEnvironmentVariable("TSCUTTER_DOVI_P81_TEST_SAMPLE")!,
-            VideoDynamicRangeDetector.MakeCodecTag('h', 'v', 'c', '1'));
+            VideoDynamicRangeDetector.MakeCodecTag('h', 'v', 'c', '1'), 8, 1);
 
-    private static async Task DolbyVisionSurvivesExports(string source, uint mp4Tag)
+    /// <summary>Profile 8.4 的基础层兼容 HLG：MP4 保留 hvc1，配置记录仍写入。</summary>
+    [RemuxExportFact("TSCUTTER_DOVI_P84_TEST_SAMPLE")]
+    public Task HlgCompatibleDolbyVisionKeepsHvc1InMp4() =>
+        DolbyVisionSurvivesExports(Environment.GetEnvironmentVariable("TSCUTTER_DOVI_P84_TEST_SAMPLE")!,
+            VideoDynamicRangeDetector.MakeCodecTag('h', 'v', 'c', '1'), 8, 4);
+
+    private static async Task DolbyVisionSurvivesExports(string source, uint mp4Tag, byte profile, byte compatibility)
     {
+        unsafe
+        {
+            using var input = Open(source);
+            AVStream* video = input.GetVideoStream();
+            var record = FrameAccurateVideoEncoder.DolbyVisionConfiguration(video->codecpar);
+            Assert.True(record.HasValue, "DOVI configuration record in source sample");
+            Assert.Equal(profile, record.Value.Profile);
+            Assert.Equal(compatibility, record.Value.Compatibility);
+        }
+
         var expected = HashPackets(source, 0, double.MaxValue);
         foreach (var container in new[] { "mp4", "mkv" })
         {

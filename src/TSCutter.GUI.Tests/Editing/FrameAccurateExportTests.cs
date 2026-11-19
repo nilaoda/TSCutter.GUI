@@ -240,7 +240,16 @@ public sealed class FrameAccurateExportTests
         return offset - 8;
     }
 
-    private static unsafe void AssertFirstFrameHdr(string path, AVColorTransferCharacteristic transfer, bool expectMastering)
+    private static void AssertFirstFrameHdr(string path, AVColorTransferCharacteristic transfer, bool expectMastering)
+    {
+        var (actualTransfer, format, mastering) = FirstFrameHdr(path);
+        Assert.Equal(transfer, actualTransfer);
+        Assert.Equal(AVPixelFormat.AV_PIX_FMT_YUV420P10LE, format);
+        Assert.Equal(expectMastering, mastering);
+    }
+
+    /// <summary>首个解码画面的传输特性、像素格式，以及是否带有母版显示元数据。</summary>
+    private static unsafe (AVColorTransferCharacteristic Transfer, AVPixelFormat Format, bool Mastering) FirstFrameHdr(string path)
     {
         using var input = FormatContext.OpenInputUrl(path);
         input.LoadStreamInfo();
@@ -257,13 +266,11 @@ public sealed class FrameAccurateExportTests
             if (FF.avcodec_receive_frame(decoder, frame) < 0)
                 continue;
             AVFrame* raw = frame;
-            Assert.Equal(transfer, raw->color_trc);
-            Assert.Equal(AVPixelFormat.AV_PIX_FMT_YUV420P10LE, (AVPixelFormat)raw->format);
-            Assert.Equal(expectMastering,
+            return (raw->color_trc, (AVPixelFormat)raw->format,
                 FF.av_frame_get_side_data(raw, AVFrameSideDataType.AV_FRAME_DATA_MASTERING_DISPLAY_METADATA) != null);
-            return;
         }
         Assert.Fail("no decoded frame");
+        return default;
     }
 
     /// <summary>
@@ -327,6 +334,14 @@ public sealed class FrameAccurateExportTests
     public Task CutsDolbyVisionProfile81AtArbitraryFrames() =>
         CutsDolbyVisionAtArbitraryFrames(Environment.GetEnvironmentVariable("TSCUTTER_DOVI_P81_TEST_SAMPLE")!, 8, 1);
 
+    /// <summary>
+    /// 杜比视界 Profile 8.4（HLG 兼容基础层）：除重新生成 RPU 外，重编码画面还须带有 HLG 颜色描述，
+    /// 母版显示元数据与源一致；MP4 保留 hvc1，使不支持杜比视界的播放器仍按 HLG 播放。
+    /// </summary>
+    [NativeRuntimeFact("TSCUTTER_DOVI_P84_TEST_SAMPLE")]
+    public Task CutsDolbyVisionProfile84AtArbitraryFrames() =>
+        CutsDolbyVisionAtArbitraryFrames(Environment.GetEnvironmentVariable("TSCUTTER_DOVI_P84_TEST_SAMPLE")!, 8, 4);
+
     private static async Task CutsDolbyVisionAtArbitraryFrames(string sample, byte profile, byte compatibility)
     {
         // 与广播一致的杜比 TS：样本转为 TS（ffmpeg 不写杜比描述符），再在 PMT 的视频项后补上描述符。
@@ -377,6 +392,10 @@ public sealed class FrameAccurateExportTests
                 // HDR10 兼容基础层：首帧（重编码）带母版显示元数据，颜色为 PQ。
                 if (compatibility == 1)
                     AssertFirstFrameHdr(output, AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084, expectMastering: true);
+                // HLG 兼容基础层：首帧（重编码）颜色为 HLG；母版显示元数据与源一致，源没有时不写。
+                if (compatibility == 4)
+                    AssertFirstFrameHdr(output, AVColorTransferCharacteristic.AVCOL_TRC_ARIB_STD_B67,
+                        expectMastering: FirstFrameHdr(source).Mastering);
                 // 首尾画面与目标帧最接近，而不是相邻帧（Luma 在取满 6 帧后停止解码源文件）。
                 var wanted = new[] { pts[6], start, pts[8], pts[^10], end, pts[^8] };
                 var reference = Luma(source, pts[0], value => wanted.Contains(value));
@@ -419,8 +438,8 @@ public sealed class FrameAccurateExportTests
     }
 
     /// <summary>
-    /// 杜比视界支持判断（在合成素材上附加配置记录）：单层 Profile 5 与 8.1 输出 MP4/MKV 可用；
-    /// TS 输出同样可用（按传输包写出、保留杜比描述符）；其他 profile（含 8.2/8.4）、带增强层、压缩元数据导出前即说明原因。
+    /// 杜比视界支持判断（在合成素材上附加配置记录）：单层 Profile 5、8.1 与 8.4 输出 MP4/MKV 可用；
+    /// TS 输出同样可用（按传输包写出、保留杜比描述符）；其他 profile（含 8.2）、带增强层、压缩元数据导出前即说明原因。
     /// </summary>
     [NativeMediaFact("frameaccurate")]
     public unsafe void ClassifiesDolbyVisionConfigurations()
@@ -430,7 +449,8 @@ public sealed class FrameAccurateExportTests
                      ("hevc-hdr10.mp4", 5, 0, false, 0, FrameAccurateSupport.Supported),
                      ("hevc-hdr10.mp4", 8, 1, false, 0, FrameAccurateSupport.Supported),
                      ("hevc-hdr10.mp4", 8, 2, false, 0, FrameAccurateSupport.DolbyVision),
-                     ("hevc-hdr10.mp4", 8, 4, false, 0, FrameAccurateSupport.DolbyVision),
+                     ("hevc-hlg.ts", 8, 4, false, 0, FrameAccurateSupport.Supported),
+                     ("hevc-hlg.ts", 8, 4, false, 2, FrameAccurateSupport.DolbyVision),
                      ("hevc-hdr10.mp4", 5, 1, false, 0, FrameAccurateSupport.DolbyVision),
                      ("hevc-hdr10.mp4", 7, 6, true, 0, FrameAccurateSupport.DolbyVision),
                      ("hevc-hdr10.mp4", 5, 0, false, 2, FrameAccurateSupport.DolbyVision),
@@ -734,7 +754,7 @@ public sealed class FrameAccurateExportTests
         Assert.Equal(compatibility, record.Value.Compatibility);
         if (container != "mp4")
             return;
-        // 基础层不兼容（Profile 5）为 dvh1，兼容 HDR10 的 8.1 保留 hvc1。
+        // 基础层不兼容（Profile 5）为 dvh1，兼容 HDR10 的 8.1 与兼容 HLG 的 8.4 保留 hvc1。
         Assert.Equal(compatibility == 0 ? 0x31687664u : 0x31637668u, stream->codecpar->codec_tag);
         // 原始与重编码参数集同在一个样本描述中，它带有配置盒：profile 不超过 7 为 dvcC，8 起为 dvvC。
         var box = profile <= 7 ? "dvcC"u8.ToArray() : "dvvC"u8.ToArray();
