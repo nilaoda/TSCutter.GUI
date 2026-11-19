@@ -46,6 +46,15 @@ internal sealed class HevcParameterSetRenumbering
         ParameterSets = [RewriteVps(vps), RewriteSps(spsNal), RewritePps(ppsNal)];
     }
 
+    /// <summary>VPS、SPS、PPS 自身的编号；其他 NAL 返回 null，数据不完整时抛出。</summary>
+    public static int? ReadId(ReadOnlySpan<byte> nal) => VideoBitstream.NalType(nal, true) switch
+    {
+        32 => nal.Length > 2 ? nal[2] >> 4 : throw new InvalidDataException("Truncated VPS."),
+        33 => Sps.ReadId(Rbsp.Unescape(nal).Data),
+        34 => Pps.ReadIds(Rbsp.Unescape(nal).Data).Id,
+        _ => null
+    };
+
     private static int VpsIdOf(byte[] vps) =>
         vps.Length > 2 ? vps[2] >> 4 : throw new InvalidDataException("Truncated VPS.");
 
