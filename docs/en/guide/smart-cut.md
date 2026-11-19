@@ -30,7 +30,7 @@ The switch state is remembered and saved with projects, and queued exports keep 
 | AV1 | Main (MP4/MKV only) |
 | VP9 | Profile 0/2 (MP4/MKV only) |
 
-Re-encoded pictures keep HDR10, HLG and single-layer Dolby Vision Profile 5/8.1.
+Re-encoded pictures keep HDR10, HLG and single-layer Dolby Vision Profile 5/8.1/8.4.
 
 ## Output formats
 

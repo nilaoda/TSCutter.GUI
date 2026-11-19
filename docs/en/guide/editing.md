@@ -14,7 +14,7 @@ Files with multiple programs, video tracks, or embedded subtitles show selectors
 For multi-program TS, “Export current program only” keeps all tracks in the selected program and applies to saving, merging, and newly queued tasks.
 
 ::: info TS exports in keyframe mode
-An ordinary single-clip TS/M2TS export copies the original bytes when all programs and tracks are retained, program tables are not patched and no audio delay is applied. Merged and remuxed exports adjust some structures or timestamps and are not byte-for-byte copies.
+An ordinary single-clip TS/M2TS export copies the original bytes when all programs and tracks are retained, program tables are not patched, no audio delay is applied and the [extra processing](#start-at-time-zero-and-remove-null-packets) is off. Merged and remuxed exports adjust some structures or timestamps and are not byte-for-byte copies.
 :::
 
 ## TS export settings
@@ -49,9 +49,24 @@ Some broadcast feeds, such as sports world feeds, carry one discrete 5.1 mix as 
 
 Once set, the audio selector gains a "Merged 5.1 (downmix preview)" entry: playback and the waveform use the merged result downmixed to stereo, so you can listen before exporting. The tracks are aligned by timestamp, and parts that start late or are missing are filled with silence. Newly opened files are not merged by default.
 
+### Start at time zero and remove null packets
+
+**Tools → Settings → Export** has two extra processing options for TS output, both off by default. They apply to TS/M2TS output from keyframe cuts and smart cuts, including M2TS exported from Blu-ray discs:
+
+- **Start at time zero**: shifts the PCR, PTS and DTS of the output so the file starts at zero, which avoids wrong durations in some older players that use the first timestamp. Audio and video are not re-encoded and tracks keep their relative timing; programs with different clocks each start at zero, and the arrival timestamps in M2TS headers are unchanged.
+- **Remove null packets**: drops the PID 0x1FFF stuffing packets. The file gets smaller and the bitrate becomes variable instead of constant, which devices or workflows that rely on a constant bitrate may not accept.
+
+With either option on, the output is no longer byte-identical to the source, the export is no longer labelled a "TS byte copy", and the TS check during export covers the processed data.
+
 ### Export types
 
-Export records and the result window label each export by what was actually done: output that is only copied is a "TS byte copy", and a single-clip export with any change is a "TS packet export", with tags listing changes such as current program only, patched program tables, selected tracks, audio delay, Dolby E transcoding and merged 5.1.
+Export records and the result window label each export by what was actually done: output that is only copied is a "TS byte copy", and a single-clip export with any change is a "TS packet export", with tags listing changes such as current program only, patched program tables, selected tracks, audio delay, Dolby E transcoding, merged 5.1, start time zeroed and null packets removed.
+
+## Disk space check
+
+Before an export starts, the size of each output is estimated and compared with the free space on the destination disk. This covers saving a clip, export all, merging, remove-mode export and the export queue. Keyframe cuts are measured exactly from the source byte range; smart cuts, remuxes and disc titles are estimated with a margin; Dolby E transcoding and merged 5.1 add the size of the new audio tracks. Queue items writing to the same disk are added up.
+
+A dialog appears only when space is clearly short. It lists each disk's required and available space, defaults to cancelling, and offers **Export Anyway**. When space is enough, or cannot be read (for example a network drive that does not answer), the export starts right away. If the disk still fills up during an export, a clear "destination disk is full" message is shown and the half-written file is removed; in the queue, the remaining items for that disk are marked as failed and items on other disks continue.
 
 ## Export results
 

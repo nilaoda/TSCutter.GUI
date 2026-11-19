@@ -30,7 +30,7 @@
 | AV1 | Main（仅 MP4／MKV） |
 | VP9 | Profile 0／2（仅 MP4／MKV） |
 
-重新编码的画面保留 HDR10、HLG 及单层杜比视界 Profile 5／8.1。
+重新编码的画面保留 HDR10、HLG 及单层杜比视界 Profile 5／8.1／8.4。
 
 ## 输出格式
 

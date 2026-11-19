@@ -7,7 +7,9 @@ The following describes keyframe-mode exports. Smart cut re-encodes video near c
 - Choose the output container and retained tracks in **Export settings**. Track order, language, titles, and default/forced flags follow the source.
 - Export individual clips or batches, or merge selected ranges from one source. Overlapping selected clips are combined once.
 - Video cuts use keyframes and include the marked end frame; audio cuts use compressed packet boundaries. Compatible text subtitles, including MP4 mov_text and MKV ASS, and chapters are trimmed and retimed. MKV also supports PGS bitmap subtitles, restoring the picture active at each cut and clearing it at the end. MKV attachments and MP4 cover art can be retained.
+- Open-GOP sources: leading pictures after the end keyframe that display before it are kept with the end. Leading pictures after the start keyframe lack their references and are dropped. A cut can start at such a keyframe only when no later picture references those leading pictures (MPEG-2, HEVC RASL/RADL, non-reference H.264 B-frames). Otherwise the export is rejected and lists usable start keyframes within 20 seconds before and after, if any; smart cut is another option.
 - Copy compressed audio/video and codec configuration, preserving container-supported color, HDR static data, and Dolby Vision configuration. Dynamic metadata in the bitstream travels with the packets.
+- HEVC in MP4 normally uses `hvc1`, or `dvh1` for Dolby Vision with no compatible base layer (such as Profile 5). If the source carries its parameter sets only in the bitstream, the export tries to rebuild the configuration record from each segment’s starting keyframe. If the required sets are missing or conflicting, the output keeps `hev1` or `dvhe`.
 - Check codec and track compatibility, with clear errors when content cannot be safely cut or merged.
 
 ::: info Not re-encoded, but not byte-for-byte lossless
@@ -22,7 +24,7 @@ Failed or cancelled exports preserve existing destinations and remove temporary 
 
 Open **Tools → Merge and Mux → Media Muxer** to combine tracks from video, audio and subtitle files. Select tracks, drag them into output order, and edit their names, language codes, default/forced flags and time offsets. Output supports MKV, MP4, TS and M2TS without re-encoding audio or video.
 
-- HEVC MP4 outputs use hvc1, or dvh1 when Dolby Vision is signaled, while preserving in-band decoder parameters.
+- Media Muxer uses the same HEVC MP4 tags and preserves in-band parameter sets. If the configuration record needs rebuilding, the muxer reads parameter sets from the first video sample. If the required sets are missing, the output keeps `hev1` or `dvhe`.
 - **Optimize for web playback** is available for MP4 and off by default; it moves the index to the beginning and requires an additional move of data within the output file when finishing.
 - Positive offsets delay a track; negative offsets advance it, like FFmpeg `-itsoffset`. The output container handles timestamps before zero: MP4 uses an edit list to skip leading content, while MKV and TS/M2TS may shift the timeline.
 - **Stop at the shortest track** is off by default; enable it to stop at the earliest audio/video end after offsets, and optionally include subtitles. Cover art and attachments are ignored. Cuts follow compressed packet boundaries; subtitle display durations are clipped to the end. Tracks without duration information require an initial packet read to determine their end.
