@@ -88,8 +88,15 @@ internal sealed unsafe class RemuxExportService
                 for (var index = 0; index < output->nb_streams; index++)
                 {
                     var stream = output->streams[index];
-                    if (stream->codecpar->codec_id == AVCodecID.AV_CODEC_ID_HEVC && (stream->disposition & 1024) == 0)
-                        hevc[index] = HevcMp4PacketConverter.Create(stream->codecpar);
+                    if (stream->codecpar->codec_id != AVCodecID.AV_CODEC_ID_HEVC || (stream->disposition & 1024) != 0)
+                        continue;
+                    hevc[index] = HevcMp4PacketConverter.Create(stream->codecpar);
+                    // 参数集只在码流中：按各片段起点关键帧中的参数集补全配置记录，改标 hvc1／dvh1。
+                    var outputIndex = index;
+                    if (hevc[index] is null && prepared.All(item => item.Segment.Settings.Disc is null) &&
+                        HevcInBandConfiguration.TryFill(stream->codecpar,
+                            prepared.Select(item => (item.Segment.SourcePath, item.Streams[outputIndex], (double?)item.Start)), token))
+                        stream->codecpar->codec_tag = RemuxCodecTag.Select("mp4", stream->codecpar);
                 }
             }
             if (first.Segment.Settings.Container == "m2ts" && AudioRebuild.TsOutputFile.CreateProcessedOnly(temporary,

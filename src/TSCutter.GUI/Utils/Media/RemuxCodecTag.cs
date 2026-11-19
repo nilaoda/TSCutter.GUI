@@ -1,3 +1,7 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using FFmpeg.AutoGen.Abstractions;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 
@@ -15,6 +19,7 @@ internal static class RemuxCodecTag
         // 非 MP4 输出清除源 FourCC；MKV 通过原生 CodecID 保存 HEVC。
         if (container != "mp4" || parameters->codec_id != AVCodecID.AV_CODEC_ID_HEVC)
             return 0;
+        var dolbyOnly = parameters->codec_tag is Dvhe or Dvh1;
         // MKV 和部分 MP4 通过侧数据携带杜比配置，不能仅凭 dvhe／dvh1 标记识别。
         // 基础层兼容编号为 0（如 Profile 5）只能按杜比视界解码，标记 dvh1；基础层兼容 HDR10/SDR/HLG 的配置
         // （如 8.1/8.2/8.4）保留 hvc1，不支持杜比视界的播放器仍可按基础层播放，配置记录照常写入 dvcC/dvvC。
@@ -23,9 +28,36 @@ internal static class RemuxCodecTag
             var side = parameters->coded_side_data[index];
             // FFmpeg 9 的配置记录为独立字节字段，第 8 个字节是 dv_bl_signal_compatibility_id。
             if (side.type == AVPacketSideDataType.AV_PKT_DATA_DOVI_CONF && side.data != null && side.size >= 8)
-                return side.data[7] == 0 ? Dvh1 : Hvc1;
+            {
+                dolbyOnly = side.data[7] == 0;
+                break;
+            }
         }
-        return parameters->codec_tag is Dvhe or Dvh1 ? Dvh1 : Hvc1;
+        // 配置记录中没有参数集、参数集只在码流中时，只能沿用 hev1／dvhe：hvc1／dvh1 要求参数集都在样本描述中，
+        // 带着空的配置记录改标 hvc1 会写出无法打开的文件。导出前可由 HevcInBandConfiguration 从码流补全配置记录。
+        return ParameterSetsOnlyInBand(parameters) ? dolbyOnly ? Dvhe : Hev1 : dolbyOnly ? Dvh1 : Hvc1;
+    }
+
+    /// <summary>
+    /// 配置记录（hvcC）中没有 SPS。Annex B 形式的附加数据（TS 等来源）不算：写出前由
+    /// <see cref="HevcMp4PacketConverter"/> 生成含参数集的配置记录。配置记录无法解析时按原样处理。
+    /// </summary>
+    internal static unsafe bool ParameterSetsOnlyInBand(AVCodecParameters* parameters)
+    {
+        var extradata = new ReadOnlySpan<byte>(parameters->extradata, parameters->extradata_size);
+        // HEVC 配置记录的固定字段共 23 字节；更短的数据按原样处理。
+        if (!extradata.IsEmpty && (extradata[0] != 1 || extradata.Length < 23))
+            return false;
+        var sets = new List<byte[]>();
+        try
+        {
+            VideoBitstream.ReadParameterSets(extradata, true, sets);
+        }
+        catch (InvalidDataException)
+        {
+            return false;
+        }
+        return !sets.Any(set => VideoBitstream.IsSps(VideoBitstream.NalType(set, true), true));
     }
 
     /// <summary>
