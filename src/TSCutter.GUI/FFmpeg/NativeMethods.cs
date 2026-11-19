@@ -320,4 +320,16 @@ public static unsafe partial class NativeMethods
     [LibraryImport("tscutter.swscale", EntryPoint = "sws_freeContext", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial void sws_freeContext(SwsContext* @swsContext);
+
+    [LibraryImport("tscutter.swscale", EntryPoint = "sws_alloc_context")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial SwsContext* sws_alloc_context();
+
+    [LibraryImport("tscutter.swscale", EntryPoint = "sws_init_context")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int sws_init_context(SwsContext* @context, SwsFilter* @srcFilter, SwsFilter* @dstFilter);
+
+    [LibraryImport("tscutter.swscale", EntryPoint = "sws_scale_frame")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int sws_scale_frame(SwsContext* @context, AVFrame* @dst, AVFrame* @src);
 }

@@ -102,6 +102,8 @@ public sealed unsafe class CodecContext : SafeHandle
     public AVRational PacketTimeBase { set => Raw->pkt_timebase = value; }
     public AVDiscard SkipFrame { set => Raw->skip_frame = value; }
     public AVDiscard SkipLoopFilter { set => Raw->skip_loop_filter = value; }
+    /// <summary>硬件解码表面池在解码器所需之外预留的帧数；须在打开解码器之前设置。</summary>
+    public int ExtraHardwareFrames { set => Raw->extra_hw_frames = value; }
     public int ThreadCount { set => Raw->thread_count = value; }
     public void FillParameters(CodecParameters parameters)
         => FFmpegException.Check(FF.avcodec_parameters_to_context(Raw, parameters));

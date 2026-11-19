@@ -23,6 +23,7 @@ using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.FileSystem;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Rendering;
+using TSCutter.GUI.Rendering.Gpu;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Discs;
 using TSCutter.GUI.Models.Editing;
@@ -966,9 +967,24 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         }
     }
 
-    private Bitmap? CreateCurrentFrameThumbnail() => DecodedBitmap is { } bitmap
-        ? ImageUtil.CreateThumbnail(bitmap)
-        : null;
+    private Bitmap? CreateCurrentFrameThumbnail()
+    {
+        if (DecodedBitmap is { } bitmap)
+            return ImageUtil.CreateThumbnail(bitmap);
+        // GPU 画面没有 CPU 位图，按缩略图尺寸从来源帧转换。
+        if (DecodedGpuFrame is not SkiaVideoFrame frame)
+            return null;
+        try
+        {
+            using var scaled = frame.CreateBitmap(320, 180);
+            return ImageUtil.CreateThumbnail(scaled);
+        }
+        catch (Exception exception) when (exception is not OutOfMemoryException)
+        {
+            Console.WriteLine($"Clip thumbnail unavailable: {exception.Message}");
+            return null;
+        }
+    }
 
     // 顶部菜单不传路径，继续选择文件；工具栏传入当前路径，直接创建独立工具窗口。
     private async Task<string?> ResolveTsToolFileAsync(string? filePath, string title, bool standardOnly = false)
@@ -1326,20 +1342,12 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private async Task SaveFrameClickAsync()
     {
         await PausePlaybackForNavigationAsync();
-        if (lastFrameFromPlayback && _videoInstance is { } video)
-        {
-            await RunDecodeOperationAsync(async () =>
-            {
-                var frame = await video.CapturePlaybackFrameAsync(_displayedFramePts);
-                if (frame is null)
-                    return;
-                if (ReferenceEquals(video, _videoInstance))
-                    ApplyDecodedFrame(frame, fromPlayback: true);
-                else
-                    DisposePreviewResult(frame);
-            });
-        }
-        if (DecodedBitmap is null) return;
+        var sourceSize = DecodedFrameSourceSize;
+        var correctAspectRatio = decodedFrameRequiresSampleAspectRatioCorrection;
+        var sourcePath = VideoPath;
+        var timestamp = CurrentTime;
+        using var snapshot = await CaptureScreenshotBitmapAsync();
+        if (snapshot is null) return;
 
         var captureVm = _dialogService.CreateViewModel<CaptureFrameViewModel>();
         var dialogResult = await _dialogService.ShowDialogAsync(this, captureVm);
@@ -1347,7 +1355,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
         if (captureVm.IsSaveToFile)
         {
-            var defaultName = Path.GetFileNameWithoutExtension(VideoPath) + $"_{CommonUtil.FormatSeconds(CurrentTime, true)}";
+            var defaultName = Path.GetFileNameWithoutExtension(sourcePath) + $"_{CommonUtil.FormatSeconds(timestamp, true)}";
             var isPng = captureVm.IsPngFormat;
             var ext = isPng ? "png" : "jpg";
             var filterName = isPng
@@ -1360,16 +1368,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 Filters = [new(filterName, [ext])],
                 DefaultExtension = ext
             };
-            var result = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings, Path.GetDirectoryName(VideoPath));
+            var result = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings, Path.GetDirectoryName(sourcePath));
             if (result is null) return;
 
-            var source = DecodedBitmap;
-            if (source is null) return;
-            // 保存期间预览可能切换或归还帧租约，先复制像素以固定本次截图。
-            using var snapshot = ImageUtil.CreateThumbnail(source, source.PixelSize.Width, source.PixelSize.Height);
-            var sourceSize = DecodedFrameSourceSize;
-            var correctAspectRatio = decodedFrameRequiresSampleAspectRatioCorrection;
-            var outputPath = result!.Path!.LocalPath;
+            var outputPath = result.Path!.LocalPath;
             await Task.Run(() =>
             {
                 using var correctedBitmap = ImageUtil.CreateSampleAspectRatioCorrectedBitmap(
@@ -1384,17 +1386,34 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         }
         else
         {
-            var source = DecodedBitmap;
-            if (source is null) return;
-            using var snapshot = ImageUtil.CreateThumbnail(source, source.PixelSize.Width, source.PixelSize.Height);
-            var sourceSize = DecodedFrameSourceSize;
-            var correctAspectRatio = decodedFrameRequiresSampleAspectRatioCorrection;
             using var correctedBitmap = await Task.Run(() => ImageUtil.CreateSampleAspectRatioCorrectedBitmap(
                 snapshot, sourceSize, correctAspectRatio));
-            await ImageUtil.CopyBitmapToClipboardAsync(
-                correctedBitmap ?? snapshot,
-                captureVm.IsPngFormat);
+            await ImageUtil.CopyBitmapToClipboardAsync(correctedBitmap ?? snapshot, captureVm.IsPngFormat);
         }
+    }
+
+    // 对话框期间仍可能换帧，先固定截图像素；GPU 预览继续持有自己的帧。
+    private async Task<Bitmap?> CaptureScreenshotBitmapAsync()
+    {
+        if (!lastFrameFromPlayback && DecodedBitmap is { } bitmap)
+            return ImageUtil.CreateThumbnail(bitmap, bitmap.PixelSize.Width, bitmap.PixelSize.Height);
+        if (_videoInstance is not { } video || DecodedGpuFrame is null && !lastFrameFromPlayback)
+            return null;
+
+        var pts = _displayedFramePts;
+        Bitmap? snapshot = null;
+        await RunDecodeOperationAsync(async () =>
+        {
+            var frame = await video.CapturePlaybackFrameAsync(pts);
+            if (frame is null) return;
+            try
+            {
+                if (ReferenceEquals(video, _videoInstance) && frame.Bitmap is { } source)
+                    snapshot = ImageUtil.CreateThumbnail(source, source.PixelSize.Width, source.PixelSize.Height);
+            }
+            finally { DisposePreviewResult(frame); }
+        });
+        return snapshot;
     }
 
     [ObservableProperty]
@@ -1650,7 +1669,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                     _configService.CurrentConfig.PreferHardwareDecoding, project.PreviewSelection,
                     () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true)
                 {
-                    HardwareDecodingDevice = _configService.CurrentConfig.HardwareDecodingDevice
+                    HardwareDecodingDevice = _configService.CurrentConfig.HardwareDecodingDevice,
+                    IsMainPreview = true
                 };
                 await prepared.InitVideoAsync();
                 if (project.Clips.Count > 0 && !prepared.CanClip)
@@ -2694,7 +2714,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                     enableSdrToneMapping: () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true,
                     discInput: _discInput)
                 {
-                    HardwareDecodingDevice = _configService.CurrentConfig.HardwareDecodingDevice
+                    HardwareDecodingDevice = _configService.CurrentConfig.HardwareDecodingDevice,
+                    IsMainPreview = true
                 };
                 if (prepared is null)
                     await _videoInstance.InitVideoAsync();

@@ -76,6 +76,10 @@ internal sealed class SkiaVideoFrame : IGpuFrameLease
         _ => "CPU"
     };
     public bool TryAttach(Avalonia.Visual host) => Volatile.Read(ref ownerReleased) == 0;
+
+    /// <summary>按需把来源帧转换成 CPU 位图（片段缩略图等），映射设置与 GPU 绘制一致；调用方须持有本帧租约。</summary>
+    internal Avalonia.Media.Imaging.Bitmap CreateBitmap(int maxWidth, int maxHeight) =>
+        TSCutter.GUI.Utils.Media.ImageUtil.CreateScaledBitmapFromFrame(source, maxWidth, maxHeight, enableSdrToneMapping: toneMapping);
     public void UpdateViewport(Rect destination) { }
 
     internal void Draw(DrawingContext context, Rect destination, Rect clip)

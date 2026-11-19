@@ -5,6 +5,8 @@ using System.Threading.Tasks;
 using Avalonia.Media.Imaging;
 using TSCutter.GUI.FFmpeg;
 using TSCutter.GUI.Rendering;
+using TSCutter.GUI.Rendering.Gpu;
+using TSCutter.GUI.Extensions;
 using TSCutter.GUI.Utils.Media;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 
@@ -15,6 +17,52 @@ public partial class VideoInstance
     private Frame? retainedPreviewFrame;
     private DecodeResult? retainedPreviewInfo;
     private int retainedPreviewWidth, retainedPreviewHeight;
+    private SkiaVideoFramePresenter? previewGpuPresenter;
+
+    /// <summary>
+    /// 主预览实例：画面交给 GPU 着色器呈现（与播放相同的转色、缩放和 HDR 映射），不在 CPU 上转换整幅画面；
+    /// 逐帧步进缓存最近解出的画面。导航条、缩略图、搜索等需要 CPU 位图的实例不开启。
+    /// </summary>
+    internal bool IsMainPreview { get; init; }
+
+    /// <summary>
+    /// 为主预览创建 GPU 画面。渲染器尚未就绪、扫描或格式不支持时返回 false，由调用方转换 CPU 位图。
+    /// 能直接导入的硬件表面（VideoToolbox）不回读；其余硬件帧回读一次后上传，暂停重绘复用同一份纹理。
+    /// </summary>
+    private bool TryCreatePreviewGpuFrame(Frame frame, int maxWidth, int maxHeight, out SkiaVideoFrame? preview,
+        out VideoPresentationMode mode)
+    {
+        preview = null;
+        mode = VideoPresentationMode.SoftwareGpu;
+        if (!IsMainPreview || isSearchScan || !SkiaVideoFramePresenter.IsRendererAvailable)
+            return false;
+        // Windows 预览解码器不在渲染设备上，表面无法直接采样；交给着色器前先回读，避免渲染失败后停用播放的直接采样。
+        var direct = frame.HasHardwareFramesContext && OperatingSystem.IsMacOS() && HardwareVideoTexture.CanImport(frame);
+        Frame? software = null;
+        try
+        {
+            if (frame.HasHardwareFramesContext && !direct)
+                software = frame.TransferToSoftwareFrame();
+            var presenter = previewGpuPresenter ??= new SkiaVideoFramePresenter();
+            // GPU 呈现失败过一次后不再尝试，后续画面都走 CPU 转换。
+            if (!presenter.TryPresent(software ?? frame, enableSdrToneMapping?.Invoke() ?? true,
+                    new PixelSize(maxWidth, maxHeight), false, static (_, _) => { }, static () => { }, out preview))
+                return false;
+            mode = direct ? VideoPresentationMode.HardwareGpu
+                : frame.HasHardwareFramesContext ? VideoPresentationMode.HardwareGpuUpload : VideoPresentationMode.SoftwareGpu;
+            return true;
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException and not OutOfMemoryException)
+        {
+            // 回读失败时交给调用方的回读路径，由它判断硬件解码是否失效。
+            Console.WriteLine($"GPU preview unavailable; using CPU conversion: {exception.Message}");
+            return false;
+        }
+        finally
+        {
+            software?.Dispose();
+        }
+    }
 
     // 仅主预览保留一帧 CPU 数据引用，开关映射时不重新 seek，也不改变标记位置。
     private unsafe void RetainPreviewFrame(Frame source, DecodeResult result, bool retainStandardFrame = false)
@@ -130,6 +178,11 @@ public partial class VideoInstance
                 return DecodePreviewFrameAtPts(pts, cancellationToken);
             if (retainedPreviewFrame is null || retainedPreviewInfo is null
                 || retainedPreviewInfo.VideoDynamicRange == VideoDynamicRange.Standard) return null;
+            if (TryCreatePreviewGpuFrame(retainedPreviewFrame, retainedPreviewWidth, retainedPreviewHeight,
+                    out var preview, out var mode))
+            {
+                return CopyPreviewInfo(retainedPreviewInfo, gpuFrame: preview, mode: mode);
+            }
             var bitmap = ConvertPreviewFrame(retainedPreviewFrame, retainedPreviewWidth, retainedPreviewHeight, out var lease);
             try
             {
@@ -157,13 +210,14 @@ public partial class VideoInstance
     }
 
     // 缓存只保存来源信息，不持有界面的位图租约。
-    private static DecodeResult CopyPreviewInfo(DecodeResult source, Bitmap? bitmap = null, IBitmapFrameLease? lease = null) => new()
+    private static DecodeResult CopyPreviewInfo(DecodeResult source, Bitmap? bitmap = null, IBitmapFrameLease? lease = null,
+        IGpuFrameLease? gpuFrame = null, VideoPresentationMode? mode = null) => new()
     {
-        Bitmap = bitmap, BitmapLease = lease, SourcePixelSize = source.SourcePixelSize,
+        Bitmap = bitmap, BitmapLease = lease, GpuFrame = gpuFrame, SourcePixelSize = source.SourcePixelSize,
         RequiresSampleAspectRatioCorrection = source.RequiresSampleAspectRatioCorrection,
         VideoDynamicRange = source.VideoDynamicRange, FrameTimestamp = source.FrameTimestamp,
         FramePts = source.FramePts, FramePts90k = source.FramePts90k, FramePosition = source.FramePosition,
         KeyFrameType = source.KeyFrameType,
-        FrameEndSignature = source.FrameEndSignature, FrameAnchor = source.FrameAnchor, PresentationMode = source.PresentationMode
+        FrameEndSignature = source.FrameEndSignature, FrameAnchor = source.FrameAnchor, PresentationMode = mode ?? source.PresentationMode
     };
 }

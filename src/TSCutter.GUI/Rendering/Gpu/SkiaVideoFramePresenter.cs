@@ -30,6 +30,13 @@ internal sealed unsafe class SkiaVideoFramePresenter : IDisposable
     private readonly Action markValidated;
     private readonly WindowsVideoTexture.Owner windowsTextures;
 
+    /// <summary>
+    /// 播放是否直接采样 Windows 解码表面。实测（RTX 4060，约 66 Hz）直接采样解码器的纹理数组时，
+    /// 4K 50 fps 每 8 秒有约 65 帧晚到而被丢弃；先在 GPU 内复制到独立纹理再采样，只剩 4–9 帧，CPU 占用不变。
+    /// 因此播放与测速使用 GPU 内复制，复制失败时仍回读上传。
+    /// </summary>
+    internal const bool PlaybackDirectSampling = false;
+
     internal SkiaVideoFramePresenter(bool allowDirect = true)
     {
         windowsTextures = new(allowDirect);

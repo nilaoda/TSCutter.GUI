@@ -167,7 +167,8 @@ public partial class MainWindowViewModel
                 () => EnableSdrToneMapping, retainPreviewFrame: true, probeHardwareDecoding: true,
                 discInput: _videoInstance?.Disc)
             {
-                HardwareDecodingDevice = _configService.CurrentConfig.HardwareDecodingDevice
+                HardwareDecodingDevice = _configService.CurrentConfig.HardwareDecodingDevice,
+                IsMainPreview = true
             };
             await candidate.InitVideoAsync(cancellation.Token);
             var duration = candidate.GetVideoDurationInSeconds();
