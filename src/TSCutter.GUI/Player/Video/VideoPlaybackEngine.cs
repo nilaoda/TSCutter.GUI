@@ -28,6 +28,9 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
 {
     private const int MaxConsecutiveDecodeFailures = 100;
 
+    /// <summary>会话的解码帧队列容量，硬件表面池按它预留余量。</summary>
+    internal const int FrameQueueCapacity = 6;
+
     private PlaybackOptions options;
     private VideoFrameQueue outputQueue;
     private CancellationTokenSource cancellation = new();
@@ -470,6 +473,10 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
                         candidate.FillParameters(videoStream.Codecpar!);
                         candidate.PacketTimeBase = timeBase;
                         // 播放需要全部画面：不设置 AVDISCARD_NONKEY。
+                        // D3D11VA/DXVA2 的表面池大小固定，只够解码器自身使用；帧队列和在途绘制还要持有画面，
+                        // 余量不足时解码器取不到表面而报错回退。VideoToolbox 按需分配，不需要预留。
+                        if (deviceType is AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA or AVHWDeviceType.AV_HWDEVICE_TYPE_DXVA2)
+                            candidate.ExtraHardwareFrames = FrameQueueCapacity;
                         var rendererAttached = rendererDevice && WindowsVideoTexture.TryAttachDecoder(candidate, allowDirect);
                         if (!rendererAttached)
                         {
@@ -502,6 +509,12 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
         return false;
     }
 
+    /// <summary>
+    /// 连续播放软解的线程数，不超过 12。自动线程数在多核机器上会开 16 个以上的帧线程：
+    /// 8K AVS3 实测自动 51.6 fps、工作集 4.5 GB，12 线程 60.7 fps、2.8 GB；4K HEVC 12 线程比自动慢约 5%，内存少约 15%。
+    /// </summary>
+    internal static int PlaybackDecodeThreadCount => Math.Clamp(Environment.ProcessorCount, 1, 12);
+
     private void OpenSoftwareDecoder()
     {
         var codecId = videoStream.Codecpar?.CodecId
@@ -524,8 +537,8 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
                 candidate.FillParameters(videoStream.Codecpar!);
                 candidate.PacketTimeBase = timeBase;
                 // 连续播放需要完整解码；FFmpeg 默认 thread_count=1 会让 AVS2 等退化为单线程。
-                // 0 由解码器按机器能力选择线程数，不改变关键帧导航的低延迟设置。
-                candidate.ThreadCount = 0;
+                // 不改变关键帧导航的低延迟设置。
+                candidate.ThreadCount = PlaybackDecodeThreadCount;
                 candidate.Open();
                 videoDecoder = candidate;
                 hardwareDecoderOpened = false;
@@ -615,8 +628,30 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
         return options.Disc is null ? result : Math.Max(0, result);
     }
 
+    /// <summary>
+    /// 预滚中保留完整处理的范围：目标之前两帧。更早的画面不显示，非参考帧不必解码，也不回读、不去隔行；
+    /// 目标前两帧照常处理，去隔行需要相邻的场。
+    /// </summary>
+    private long PrerollKeepPts => videoStream.AvgFrameRate is { num: > 0, den: > 0 } rate
+        ? Math.Max(1, (long)Math.Ceiling(2.0 * rate.den * timeBase.den / ((double)rate.num * timeBase.num)))
+        : Math.Max(1, keyFrameGapPts / 12);
+
+    private bool IsBeforePrerollWindow(long pts, long target) =>
+        pts != FF.AV_NOPTS_VALUE && pts < target - PrerollKeepPts;
+
     /// <summary>解码直到取出不早于 targetPts 的帧并入队；期间早于目标的帧直接丢弃。</summary>
     private async Task DecodeUntilTargetAsync(long target, CancellationToken token)
+    {
+        try { await DecodeUntilTargetCoreAsync(target, token).ConfigureAwait(false); }
+        finally
+        {
+            // 预滚结束后恢复完整解码；解码器已在回退中换掉时设置的是新解码器的默认值。
+            if (videoDecoder is { IsClosed: false, IsInvalid: false } decoder)
+                decoder.SkipFrame = AVDiscard.AVDISCARD_DEFAULT;
+        }
+    }
+
+    private async Task DecodeUntilTargetCoreAsync(long target, CancellationToken token)
     {
         var destination = reusableDecodeFrame ??= new Frame();
         while (!token.IsCancellationRequested)
@@ -624,6 +659,10 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
             if (await ReceiveAndEnqueueAsync(destination, token, target).ConfigureAwait(false))
                 return;
             using var packet = await ReadNextVideoPacketAsync(token).ConfigureAwait(false);
+            // 显示时间远早于目标的非参考帧只会被丢弃，跳过解码；参考帧仍要解码以建立参考链。
+            if (packet is not null)
+                videoDecoder!.SkipFrame = IsBeforePrerollWindow(packet.Pts, target)
+                    ? AVDiscard.AVDISCARD_NONREF : AVDiscard.AVDISCARD_DEFAULT;
             if (packet is null)
             {
                 // 输入结束仍可能缓存最后一帧；取不到目标帧时按无画面处理。
@@ -871,9 +910,15 @@ internal sealed class VideoPlaybackEngine : IAsyncDisposable
     private async Task<bool> EnqueueDecodedFrameAsync(Frame frame, CancellationToken token, long? prerollTarget)
     {
         // FFmpeg 可能在收到数据后才拒绝 SRV 纹理并选择软件格式；此时先重试仅解码绑定。
-        if (rendererDirectDecoder && !frame.HasHardwareFramesContext)
-            throw new HardwareTransferException(new NotSupportedException("Renderer SRV decode surfaces were rejected."));
+        // 设备不支持该格式（如 4:2:2）时同一解码器会改用单线程软解，同样换掉，回退到多线程软解码器。
+        if (hardwareDecoderOpened && !frame.HasHardwareFramesContext)
+            throw new HardwareTransferException(new NotSupportedException(rendererDirectDecoder
+                ? "Renderer SRV decode surfaces were rejected." : "The hardware decoder returned software frames."));
         decodedFrameCount++;
+        // 预滚中远早于目标的画面不显示：不回读、不送去隔行，直接丢弃。
+        if (prerollTarget is { } preroll && IsBeforePrerollWindow(
+                frame.BestEffortTimestamp != FF.AV_NOPTS_VALUE ? frame.BestEffortTimestamp : frame.Pts, preroll))
+            return false;
         if (!enableDeinterlacing || deinterlacer is null && (frame.Flags & FF.AV_FRAME_FLAG_INTERLACED) == 0)
             return await EnqueuePresentationFrameAsync(frame, token, prerollTarget).ConfigureAwait(false);
 

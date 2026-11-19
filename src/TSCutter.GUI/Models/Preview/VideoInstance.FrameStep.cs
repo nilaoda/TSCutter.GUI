@@ -44,7 +44,8 @@ public partial class VideoInstance
     /// </summary>
     private T WithFullDecoder<T>(Func<T> action)
     {
-        if (hardwareDecoderOpened || useFullPacketDecoding && UsesGradualRefresh || UsesFullDecoder ||
+        // 硬件解码器确实输出硬件帧时直接用它完整解码；设备不支持该格式而改用单线程软解时，换用多线程解码器。
+        if (hardwareDecoderOpened && IsHardwareDecodingAvailable || useFullPacketDecoding && UsesGradualRefresh || UsesFullDecoder ||
             (fullDecoder ??= OpenFullDecoder()) is not { } decoder)
             return action();
         var keyFrameDecoder = videoDecoder;
@@ -144,7 +145,7 @@ public partial class VideoInstance
     /// </summary>
     internal Task<DecodeResult?> DecodeAdjacentFrameAsync(long anchorPts, int direction, DvdFrameAnchor frameAnchor = default,
         CancellationToken cancellationToken = default) =>
-        Task.Run(() => RunReadOperation(() => DecodeAdjacentFrame(ResolveDvdFramePts(anchorPts, frameAnchor, cancellationToken),
+        Task.Run(() => RunStepOperation(() => DecodeAdjacentFrame(ResolveDvdFramePts(anchorPts, frameAnchor, cancellationToken),
             direction, cancellationToken), cancellationToken), cancellationToken);
 
     /// <summary>
@@ -178,10 +179,10 @@ public partial class VideoInstance
     /// 目标超出最后一帧时取最后一帧。
     /// </summary>
     internal Task<DecodeResult?> DecodeFrameFromPtsAsync(long targetPts, CancellationToken cancellationToken = default) =>
-        Task.Run(() => RunReadOperation(() => WithSoftwareFallback(() =>
+        Task.Run(() => RunStepOperation(() => WithSoftwareFallback(() =>
         {
             var target = Math.Clamp(targetPts, firstFrameTimestamp, Math.Max(firstFrameTimestamp, maxPts - 1));
-            return DecodeMatchingFrame(target, pts => pts >= target, stopAfter: long.MaxValue, cancellationToken)
+            return DecodeMatchingFrame(target, pts => pts >= target, stopAfter: long.MaxValue, cancellationToken, cache: true)
                    ?? DecodeAdjacentFrameCore(target, -1, cancellationToken);
         }, cancellationToken), cancellationToken), cancellationToken);
 
@@ -208,8 +209,10 @@ public partial class VideoInstance
 
     private DecodeResult? DecodeAdjacentFrameCore(long anchorPts, int direction, CancellationToken token)
     {
+        if (TryStepFromCache(anchorPts, direction, token, out var cached))
+            return cached;
         if (direction > 0)
-            return DecodeMatchingFrame(anchorPts, pts => pts > anchorPts, stopAfter: long.MaxValue, token);
+            return DecodeMatchingFrame(anchorPts, pts => pts > anchorPts, stopAfter: long.MaxValue, token, cache: true);
         // 上一帧需要先知道其显示时间：解码到锚点为止，取锚点之前最晚的一帧，再精确解码该帧。
         long? previous = null;
         var distance = Math.Max(1, keyFrameGap);
@@ -223,9 +226,13 @@ public partial class VideoInstance
                 if (pts < anchorPts && pts >= firstFrameTimestamp && (previous is null || pts > previous))
                     previous = pts;
                 return false;
-            }, stopAfter: anchorPts, token);
+            }, stopAfter: anchorPts, token, cache: true);
             if (previous is null && start <= firstFrameTimestamp)
                 return null;
+            // 这一遍已缓存到锚点为止的画面，上一帧直接取用，不必再解码一遍。
+            if (previous is { } found && FindCachedStep(anchorPts, -1)?.Pts == found
+                && TryStepFromCache(anchorPts, -1, token, out var fromCache))
+                return fromCache;
         }
         return previous is { } target
             ? DecodeMatchingFrame(target, pts => pts == target, stopAfter: target, token)
@@ -238,11 +245,15 @@ public partial class VideoInstance
     /// 解码输出超过 stopAfter 仍未匹配时结束。
     /// </summary>
     private DecodeResult? DecodeMatchingFrame(long seekPts, Func<long, bool> predicate, long stopAfter,
-        CancellationToken token) =>
-        WithFullDecoder(() => DecodeMatchingFrameCore(seekPts, predicate, stopAfter, token));
+        CancellationToken token, bool cache = false) =>
+        WithFullDecoder(() => DecodeMatchingFrameCore(seekPts, predicate, stopAfter, token, cache && StepCacheEnabled));
 
+    /// <summary>
+    /// <paramref name="cache"/> 为 true 时缓存本轮解出的画面；命中后把同一次送包的其余输出也收进缓存，
+    /// 解码器不清空，下一次前进可直接续解。
+    /// </summary>
     private DecodeResult? DecodeMatchingFrameCore(long seekPts, Func<long, bool> predicate, long stopAfter,
-        CancellationToken token)
+        CancellationToken token, bool cache = false)
     {
         var distance = Math.Max(1, keyFrameGap);
         (long Pts, long Position)? beforeGap = null;
@@ -251,6 +262,8 @@ public partial class VideoInstance
         {
             // 起点落在时间戳跳变的空白里时，改从跳变之前的关键包开始解码，经过跳变读到目标。
             var start = beforeGap is { } gap ? gap.Pts - gapDistance : attempt == 0 ? seekPts : seekPts - distance;
+            if (cache)
+                BeginStepRun();
             // 片头处 TS 带 B 帧时须从首帧之前预读，与关键帧导航相同。
             if (start <= firstFrameTimestamp)
                 Seek(firstFrameTimestamp - Math.Max(1, keyFrameGap * 2), AVSEEK_FLAG.Backward);
@@ -271,6 +284,8 @@ public partial class VideoInstance
                 return anchored && predicate(pts);
             };
             SetKeyFramesOnly(false);
+            stepCaching = cache;
+            DecodeResult? matched = null;
             try
             {
                 foreach (var packet in inFc.ReadPackets())
@@ -279,24 +294,40 @@ public partial class VideoInstance
                     activeReadDeadline?.ThrowIfInterrupted();
                     if (packet.StreamIndex != videoStreamIndex)
                         continue;
-                    var result = DecodePacket(packet, token, 0, 0);
+                    var result = DecodePacket(packet, token, 0, 0, preserveRemainingOutput: cache);
                     if (result is not null)
-                        return result;
+                    {
+                        if (cache)
+                            DrainStepOutput(token);
+                        return matched = result;
+                    }
                     if (late || passed)
                         break;
                 }
                 if (!late && !passed)
                 {
-                    var delayed = DecodePacket(null, token, 0, 0);
+                    var delayed = DecodePacket(null, token, 0, 0, preserveRemainingOutput: cache);
                     if (delayed is not null)
-                        return delayed;
+                    {
+                        if (cache)
+                            DrainStepOutput(token);
+                        return matched = delayed;
+                    }
                 }
+                // 没有命中时也收下本次送包已产生的输出，缓存末尾才与解码进度一致。
+                if (cache)
+                    DrainStepOutput(token);
             }
             finally
             {
                 exactFrameFilter = null;
-                // 丢弃逐帧解码遗留的重排序缓存，后续关键帧导航从当前文件位置继续读取下一个关键包。
-                videoDecoder.FlushBuffers();
+                stepCaching = false;
+                // 命中且有缓存时保留解码器状态，下一次前进接着送包；其他情况丢弃逐帧解码遗留的重排序缓存，
+                // 后续关键帧导航从当前文件位置继续读取下一个关键包。
+                if (cache && matched is not null && stepFrames.Count > 0)
+                    stepContinuation = new StepContinuation(videoDecoder, stepFrames[^1].Pts);
+                else
+                    videoDecoder.FlushBuffers();
                 SetKeyFramesOnly(true);
             }
             // 看到过不晚于 seekPts 的画面仍未匹配：确实没有目标。否则（先出现的画面已晚于 seekPts，或一帧都没有输出——
@@ -331,6 +362,7 @@ public partial class VideoInstance
         RunReadOperation(() =>
         {
             lastSeekPts = key.Pts;
+            stepReadPositionPts = null;
             inFc.SeekFrame(key.Position, -1, AVSEEK_FLAG.Byte);
             activeReadDeadline!.ThrowIfInterrupted();
             PrerollToRecoveredKeyFrame(key.Pts, AVSEEK_FLAG.Backward);

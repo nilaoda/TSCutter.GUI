@@ -161,7 +161,8 @@ public sealed class PlaybackGpuBenchmarkControl : Control
                 using var surface = SKSurface.Create(context, true,
                     new SKImageInfo(size.Width, size.Height, SKColorType.Bgra8888, SKAlphaType.Opaque))
                     ?? throw new NotSupportedException("Cannot create the GPU benchmark surface.");
-                using var presenter = new SkiaVideoFramePresenter();
+                // 与播放使用相同的呈现方式。
+                using var presenter = new SkiaVideoFramePresenter(SkiaVideoFramePresenter.PlaybackDirectSampling);
                 var transfer = GpuBenchmarkTransfer.HardwareSurface;
                 long readbacks = 0, directFrames = 0, copyFrames = 0;
                 // 预热表格、着色器和目标纹理；先排空旧命令，避免把先前的界面绘制算入本批。

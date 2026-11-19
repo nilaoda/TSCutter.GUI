@@ -58,6 +58,8 @@ internal static class PlaybackBenchmarkService
         IProgress<PlaybackBenchmarkProgress>? progress, Action<DecodeResult>? present, CancellationToken token,
         PlaybackBenchmarkLimits? limits = null, Action<Action>? uiPost = null, GpuBenchmarkRunner? gpuBenchmark = null)
     {
+        // GPU 测速逐批同步等待完成；Windows 默认定时器粒度会把每批的等待取整到约 15.6 ms，测出的吞吐偏低。
+        using var timerResolution = PlaybackTimerResolution.Acquire();
         limits ??= new();
         var options = new PlaybackOptions
         {

@@ -400,6 +400,9 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                     candidate.FillParameters(inVideoStream.Codecpar!);
                     candidate.PacketTimeBase = inVideoStream.TimeBase;
                     ApplyKeyFrameDecodingOptions(candidate, fullPacketDecoding);
+                    // 固定大小的 D3D11VA/DXVA2 表面池为逐帧缓存与保留帧预留余量，避免解码器取不到表面。
+                    if (deviceType is AVHWDeviceType.AV_HWDEVICE_TYPE_D3D11VA or AVHWDeviceType.AV_HWDEVICE_TYPE_DXVA2)
+                        candidate.ExtraHardwareFrames = StepCacheHardwareFrameLimit;
                     candidate.AttachHardwareDevice(deviceType, selected?.DeviceArgument);
                     candidate.Open();
                     var opened = candidate;
@@ -476,6 +479,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
 
     private void ReplaceVideoDecoder(CodecContext decoder)
     {
+        // 缓存的画面可能来自旧解码器的表面池，续解状态也随旧解码器失效。
+        ClearStepCache();
         videoDecoder?.Close();
         videoDecoder?.Dispose();
         videoDecoder = decoder;
@@ -641,6 +646,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         {
             Console.WriteLine($"SeekFile lastSeekPts: {lastSeekPts}, targetPts: {pts}");
             lastSeekPts = pts;
+            stepReadPositionPts = null;
             inFc.SeekFrame(pts - keyFrameGap * 4, videoStreamIndex);
             activeReadDeadline!.ThrowIfInterrupted();
             PrerollToRecoveredKeyFrame(pts - keyFrameGap * 4, 0);
@@ -660,6 +666,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 flag = AVSEEK_FLAG.Backward;
             Console.WriteLine($"lastSeekPts: {lastSeekPts}, targetPts: {pts}, flag: {flag}");
             lastSeekPts = pts;
+            stepReadPositionPts = null;
             if (Disc is not null)
                 pts = Math.Max(0, pts);
             try
@@ -920,6 +927,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         bool isNavigation)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        // 关键帧导航从当前读取位置继续；逐帧画面取自缓存时先恢复到该帧之后的位置。
+        RestoreStepReadPosition(cancellationToken);
         var anchorPts = currentKeyFramePts;
         // 已在片头时按单步钳位处理，避免粗跳反复查找不存在的更早画面。
         if (count < -1 && isNavigation && anchorPts <= firstFrameTimestamp)
@@ -1434,6 +1443,9 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         lock (decoderSync)
         {
             ObjectDisposedException.ThrowIf(closed, this);
+            // 逐帧续解保留了解码器输出；其他读取开始前先清空，恢复关键帧导航的状态。
+            if (!stepOperation)
+                EndStepContinuation();
             return RunReadOperationCore(operation, cancellationToken, timeout);
         }
     }
@@ -1504,6 +1516,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         retainedPreviewFrame?.Dispose();
         retainedPreviewFrame = null;
         retainedPreviewInfo = null;
+        ClearStepCache();
         hostFramePresenter.Dispose();
     }
 
@@ -1512,6 +1525,7 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         Close();
         if (gpuFramePresenter.IsValueCreated)
             gpuFramePresenter.Value.Dispose();
+        previewGpuPresenter?.Dispose();
     }
 
     private long TimeSpanToPts(TimeSpan timeSpan)
@@ -1712,7 +1726,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                 var pktPosition = frame.PacketPosition;
                 if (!IsFrameInDiscTitle(pts, pktPosition))
                     continue;
-                // 逐帧定位只转换目标画面，其余画面仅用于推进解码。
+                // 逐帧定位只转换目标画面，其余画面仅用于推进解码；步进时同时缓存，供相邻帧直接取用。
+                CacheStepFrame(frame, pts);
                 if (exactFrameFilter is { } filter && !filter(pts))
                     continue;
                 currentKeyFramePts = pts;
@@ -1776,6 +1791,40 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
                         if (exception is OperationCanceledException)
                             throw;
                         Console.WriteLine($"GPU frame presentation unavailable; using CPU fallback: {exception.Message}");
+                    }
+                }
+
+                // 主预览交给 GPU 着色器转色和映射，不在 CPU 上转换整幅画面。
+                if (!AudioMode && TryCreatePreviewGpuFrame(frame, maxWidth, maxHeight, out var previewFrame, out var previewMode))
+                {
+                    IsHardwareDecoding = isHardwareFrame;
+                    IsGpuPresentation = true;
+                    PresentationMode = previewMode;
+                    var gpuResult = new DecodeResult
+                    {
+                        GpuFrame = previewFrame,
+                        SourcePixelSize = displayGeometry.PixelSize,
+                        RequiresSampleAspectRatioCorrection = displayGeometry.RequiresCorrection,
+                        VideoDynamicRange = videoDynamicRange,
+                        FrameTimestamp = PtsToTimeSpan(pts),
+                        FramePts = pts,
+                        FramePts90k = pts == FF.AV_NOPTS_VALUE ? FF.AV_NOPTS_VALUE
+                            : (long)Math.Round(pts * (double)timeBase.num * 90_000 / timeBase.den),
+                        FramePosition = PositionInFile,
+                        FrameEndSignature = FindKeyPacketBoundary(pktPosition, pts),
+                        FrameAnchor = DvdAnchor(pts),
+                        PresentationMode = PresentationMode,
+                    };
+                    try
+                    {
+                        // GPU 画面没有 CPU 位图，保留来源帧供截图和映射开关时重新呈现。
+                        RetainPreviewFrame(frame, gpuResult, retainStandardFrame: true);
+                        return gpuResult;
+                    }
+                    catch
+                    {
+                        previewFrame!.Dispose();
+                        throw;
                     }
                 }
 

@@ -19,11 +19,12 @@ public sealed class PlaybackSession : IAsyncDisposable
     private const double LateDropSeconds = 0.25;
     private const double CatchUpLagSeconds = 1;
     private PlaybackOptions options;
-    private VideoFrameQueue frameQueue = new(6);
+    private VideoFrameQueue frameQueue = new(VideoPlaybackEngine.FrameQueueCapacity);
     private readonly VideoPlaybackEngine engine;
     private readonly PlaybackClock clock = new();
     private readonly HostFramePresenter hostPresenter = new();
-    private readonly SkiaVideoFramePresenter gpuPresenter = new();
+    private readonly SkiaVideoFramePresenter gpuPresenter = new(SkiaVideoFramePresenter.PlaybackDirectSampling);
+    private readonly UploadDownscaler downscaler = new();
     private Action<bool, bool> gpuFrameRendered = null!;
     private Action gpuFrameDropped = null!;
     private long gpuPresentedFrameCount, hardwareSurfaceFrameCount;
@@ -54,6 +55,7 @@ public sealed class PlaybackSession : IAsyncDisposable
     private Func<IAudioOutput?>? audioOutputFactory;
     private int stopped, disposed, presentationPending, terminalReported;
     private volatile PlaybackState state;
+    private IDisposable? timerResolution;
 
     private PlaybackSession(PlaybackOptions options, Action<Action>? uiPost, CancellationToken token)
     {
@@ -203,6 +205,7 @@ public sealed class PlaybackSession : IAsyncDisposable
         lock (publicationSync)
             lastPresentationAt = Stopwatch.GetTimestamp() / (double)Stopwatch.Frequency;
         state = PlaybackState.Playing;
+        UpdateTimerResolution(playing: true);
         presentTask = Task.Run(() => PresentLoopAsync(token));
         _ = decodeTask.ContinueWith(task =>
         {
@@ -224,6 +227,7 @@ public sealed class PlaybackSession : IAsyncDisposable
                 Volatile.Write(ref resumeSignal, new(TaskCreationOptions.RunContinuationsAsynchronously));
                 state = PlaybackState.Paused;
             }
+            UpdateTimerResolution(playing: false);
             if (audioPipeline is { Failure: null, IsPlaying: true } audio
                 && !await Task.Run(audio.Pause).ConfigureAwait(false))
                 await DisableAudioAsync().ConfigureAwait(false);
@@ -250,6 +254,7 @@ public sealed class PlaybackSession : IAsyncDisposable
                 Volatile.Write(ref performanceCounter, new());
             }
             state = PlaybackState.Playing;
+            UpdateTimerResolution(playing: true);
             Interlocked.Exchange(ref resumeSignal, null)?.TrySetResult();
         }
         finally { operations.Release(); }
@@ -273,7 +278,7 @@ public sealed class PlaybackSession : IAsyncDisposable
             runCancellation.Dispose();
             runCancellation = CancellationTokenSource.CreateLinkedTokenSource(lifecycle.Token);
             frameQueue.Dispose();
-            frameQueue = new(6);
+            frameQueue = new(VideoPlaybackEngine.FrameQueueCapacity);
             engine.ResetForSeek(options, frameQueue, runCancellation.Token);
             await ResetAudioForSeekAsync(runCancellation.Token).ConfigureAwait(false);
             presentationPending = terminalReported = 0;
@@ -354,6 +359,7 @@ public sealed class PlaybackSession : IAsyncDisposable
 
     private async Task StopRunAsync()
     {
+        UpdateTimerResolution(playing: false);
         // 先递增代次，尚未执行的界面回调和 GPU 回调不能再发布旧位置的数据。
         lock (publicationSync)
             Interlocked.Increment(ref generation);
@@ -490,6 +496,7 @@ public sealed class PlaybackSession : IAsyncDisposable
                             await Task.Run(finishedAudio.Pause).ConfigureAwait(false);
                         clock.Pause();
                         state = PlaybackState.Ended;
+                        UpdateTimerResolution(playing: false);
                         uiPost(() =>
                         {
                             if (Volatile.Read(ref stopped) == 0 && !token.IsCancellationRequested)
@@ -571,6 +578,11 @@ public sealed class PlaybackSession : IAsyncDisposable
             targetSize = size;
     }
 
+    /// <summary>超过 4K 的软件帧在呈现线程上缩到 4K；硬件帧与不需要缩放的帧返回 null。</summary>
+    private TSCutter.GUI.FFmpeg.Frame? PrepareUpload(TSCutter.GUI.FFmpeg.Frame frame) =>
+        options.EnableGpuPresentation && SkiaVideoFramePresenter.IsRendererAvailable && UploadDownscaler.Applies(frame)
+            ? downscaler.TryScale(frame) : null;
+
     private void Present(QueuedVideoFrame item)
     {
         var capturedGeneration = Interlocked.Read(ref generation);
@@ -589,6 +601,8 @@ public sealed class PlaybackSession : IAsyncDisposable
         pendingPresentation = presented.Task;
         IBitmapFrameLease? lease = null;
         SkiaVideoFrame? gpuFrame = null;
+        // 绘制回调在发布之后才执行，此时 gpuFrame 已转交界面并置空；统计改读这里保留的引用。
+        SkiaVideoFrame? renderedFrame = null;
         var published = false;
         TSCutter.GUI.FFmpeg.Frame? capturedFrame = null;
         try
@@ -602,7 +616,9 @@ public sealed class PlaybackSession : IAsyncDisposable
             if (softwareFrame is not null)
                 Interlocked.Increment(ref presentationReadbacks);
             var displaySource = softwareFrame ?? item.Frame;
-            if ((!options.EnableGpuPresentation || !gpuPresenter.TryPresent(displaySource, options.EnableSdrToneMapping, size,
+            // 超过 4K 的软件帧先缩到 4K 再上传，渲染线程不必逐帧搬运整幅 8K 画面；CPU 兜底仍用原帧。
+            using var downscaled = PrepareUpload(displaySource);
+            if ((!options.EnableGpuPresentation || !gpuPresenter.TryPresent(downscaled ?? displaySource, options.EnableSdrToneMapping, size,
                     options.RenderAtRequestedSize,
                     (gpu, hardware) =>
                     {
@@ -610,9 +626,9 @@ public sealed class PlaybackSession : IAsyncDisposable
                         {
                             if (capturedGeneration != Interlocked.Read(ref generation) || token.IsCancellationRequested)
                                 return;
-                            if (gpuFrame?.LastPresentationMode == VideoPresentationMode.HardwareGpuCopy)
+                            if (renderedFrame?.LastPresentationMode == VideoPresentationMode.HardwareGpuCopy)
                                 Interlocked.Increment(ref gpuCopyFrameCount);
-                            Interlocked.Add(ref presentationReadbacks, gpuFrame?.HardwareReadbacks ?? 0);
+                            Interlocked.Add(ref presentationReadbacks, renderedFrame?.HardwareReadbacks ?? 0);
                             rendered(gpu, hardware);
                         }
                         presented.TrySetResult();
@@ -626,6 +642,7 @@ public sealed class PlaybackSession : IAsyncDisposable
                 Interlocked.Increment(ref busyDroppedFrameCount);
                 return;
             }
+            renderedFrame = gpuFrame;
             var presentationMode = item.Mode;
             if (gpuFrame is null && lease is not null && displaySource.HasHardwareFramesContext)
                 Interlocked.Increment(ref presentationReadbacks);
@@ -746,11 +763,29 @@ public sealed class PlaybackSession : IAsyncDisposable
                 return;
             state = PlaybackState.Idle;
         }
+        UpdateTimerResolution(playing: false);
         uiPost(() =>
         {
             if (Volatile.Read(ref stopped) == 0 && capturedGeneration == Interlocked.Read(ref generation))
                 Failed?.Invoke(exception);
         });
+    }
+
+    /// <summary>
+    /// 只在实际播放时提高 Windows 定时器精度，让帧按时释放；暂停可能持续很久，暂停、结束和停止时都立即归还。
+    /// </summary>
+    private void UpdateTimerResolution(bool playing)
+    {
+        if (!playing)
+        {
+            Interlocked.Exchange(ref timerResolution, null)?.Dispose();
+            return;
+        }
+        if (Volatile.Read(ref timerResolution) is not null)
+            return;
+        var lease = PlaybackTimerResolution.Acquire();
+        if (Interlocked.CompareExchange(ref timerResolution, lease, null) is not null)
+            lease.Dispose();
     }
 
     public void Cancel()
@@ -793,6 +828,7 @@ public sealed class PlaybackSession : IAsyncDisposable
         await engine.DisposeAsync().ConfigureAwait(false);
         frameQueue.Dispose();
         state = PlaybackState.Idle;
+        UpdateTimerResolution(playing: false);
     }
 
     public async ValueTask DisposeAsync()
@@ -802,6 +838,7 @@ public sealed class PlaybackSession : IAsyncDisposable
             return;
         hostPresenter.Dispose();
         gpuPresenter.Dispose();
+        downscaler.Dispose();
         cancelEngine.Dispose();
         runCancellation.Dispose();
         lifecycle.Dispose();
