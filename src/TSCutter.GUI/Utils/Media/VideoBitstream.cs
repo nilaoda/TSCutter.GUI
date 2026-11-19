@@ -216,15 +216,16 @@ internal static class VideoBitstream
         }
     }
 
-    /// <summary>从 avcC/hvcC 或 Annex B 附加数据中取出参数集；返回长度字段字节数（Annex B 为 0）。</summary>
-    public static int ReadParameterSets(ReadOnlySpan<byte> extradata, bool hevc, List<byte[]> sets)
+    /// <summary>从 avcC/hvcC 或 Annex B 附加数据中按原顺序取出参数集；返回长度字段字节数（Annex B 为 0）。</summary>
+    /// <param name="keepLatestById">源参数集遇到同类型、同编号时采用最后读取的一份。</param>
+    public static int ReadParameterSets(ReadOnlySpan<byte> extradata, bool hevc, List<byte[]> sets, bool keepLatestById = false)
     {
         if (extradata.IsEmpty)
             return 0;
         if (extradata[0] != 1)
         {
             foreach (var range in SplitNals(extradata, 0))
-                AddParameterSet(extradata[range], hevc, sets);
+                ReadSet(extradata[range]);
             return 0;
         }
         try
@@ -240,7 +241,7 @@ internal static class VideoBitstream
                     for (var i = 0; i < count; i++)
                     {
                         var size = BinaryPrimitives.ReadUInt16BigEndian(extradata[position..]);
-                        AddParameterSet(extradata.Slice(position + 2, size), hevc, sets);
+                        ReadSet(extradata.Slice(position + 2, size));
                         position += 2 + size;
                     }
                 }
@@ -254,7 +255,7 @@ internal static class VideoBitstream
                 for (var i = 0; i < count; i++)
                 {
                     var size = BinaryPrimitives.ReadUInt16BigEndian(extradata[offset..]);
-                    AddParameterSet(extradata.Slice(offset + 2, size), hevc, sets);
+                    ReadSet(extradata.Slice(offset + 2, size));
                     offset += 2 + size;
                 }
             }
@@ -263,6 +264,14 @@ internal static class VideoBitstream
         catch (ArgumentOutOfRangeException exception)
         {
             throw new InvalidDataException("Invalid decoder configuration record.", exception);
+        }
+
+        void ReadSet(ReadOnlySpan<byte> nal)
+        {
+            if (keepLatestById)
+                RecordParameterSet(nal, hevc, sets);
+            else
+                AddParameterSet(nal, hevc, sets);
         }
     }
 
@@ -277,6 +286,42 @@ internal static class VideoBitstream
                 return;
         var index = sets.FindIndex(set => ParameterSetOrder(NalType(set, hevc), hevc) > order);
         sets.Insert(index < 0 ? sets.Count : index, nal.ToArray());
+    }
+
+    /// <summary>
+    /// 记录源码流带内的参数集：已有同类型、同编号的参数集时以新的一份替换，每个编号只保留一份。
+    /// 解码器遇到同编号的参数集时也以后到的为准；有的源每个 IDR 前的参数集末尾字节都不同，逐份累积会让
+    /// 样本描述和衔接处补发的参数集重复多份。读不出编号时按 <see cref="AddParameterSet"/> 加入。
+    /// </summary>
+    public static void RecordParameterSet(ReadOnlySpan<byte> nal, bool hevc, List<byte[]> sets)
+    {
+        var type = NalType(nal, hevc);
+        if (ParameterSetOrder(type, hevc) >= 0 && ParameterSetId(nal, hevc) is { } id)
+        {
+            var index = sets.FindIndex(set => NalType(set, hevc) == type && ParameterSetId(set, hevc) == id);
+            if (index >= 0)
+            {
+                if (!nal.SequenceEqual(sets[index]))
+                    sets[index] = nal.ToArray();
+                return;
+            }
+        }
+        AddParameterSet(nal, hevc, sets);
+    }
+
+    /// <summary>VPS、SPS、PPS 自身的编号；不是参数集或数据不完整时返回 null。</summary>
+    public static int? ParameterSetId(ReadOnlySpan<byte> nal, bool hevc)
+    {
+        try
+        {
+            return hevc
+                ? HevcParameterSetRenumbering.ReadId(nal)
+                : NalType(nal, false) switch { 7 => ReadSpsId(nal), 8 => ReadPpsIds(nal).PpsId, _ => null };
+        }
+        catch (Exception exception) when (exception is InvalidDataException or IOException or ArgumentOutOfRangeException)
+        {
+            return null;
+        }
     }
 
     public static IEnumerable<byte[]> OfType(IEnumerable<byte[]> sets, bool hevc, int type) =>

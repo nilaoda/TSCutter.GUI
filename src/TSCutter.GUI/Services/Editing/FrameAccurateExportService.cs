@@ -1559,7 +1559,7 @@ internal sealed unsafe class FrameAccurateExportService
                         // 记录带内参数集；广播 TS 通常只在码流中携带 SPS/PPS。
                         if (context.Nal)
                             foreach (var range in VideoBitstream.SplitNals(data, context.LengthSize))
-                                VideoBitstream.AddParameterSet(data[range], context.Hevc, context.OriginalParameterSets);
+                                VideoBitstream.RecordParameterSet(data[range], context.Hevc, context.OriginalParameterSets);
                         if (firstIdr < 0)
                             firstIdr = packets.Count;
                     }
@@ -1598,7 +1598,8 @@ internal sealed unsafe class FrameAccurateExportService
                 {
                     if (context.OriginalParameterSets.Count == 0 && context.Nal)
                         VideoBitstream.ReadParameterSets(new ReadOnlySpan<byte>(video->codecpar->extradata,
-                            video->codecpar->extradata_size), context.Hevc, context.OriginalParameterSets);
+                            video->codecpar->extradata_size), context.Hevc, context.OriginalParameterSets,
+                            keepLatestById: context.Hevc);
                     return (packets, firstIdr, targetIndex, reachedEof);
                 }
                 // 未找到目标帧时，若已从文件开头读取且目标不在其中，说明所选画面不是该流的帧。

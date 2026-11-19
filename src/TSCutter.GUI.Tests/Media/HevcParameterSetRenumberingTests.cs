@@ -61,6 +61,69 @@ public sealed class HevcParameterSetRenumberingTests
         Assert.Throws<InvalidDataException>(() => renumbering.Rewrite(packets[0]));
     }
 
+    [NativeMediaFact("frameaccurate")]
+    public void DecoderConfigurationKeepsTheLastSourceParameterSetPerId()
+    {
+        var source = Path.Combine(NativeTestEnvironment.FixtureDirectory("frameaccurate"), "hevc-cra.ts");
+        var sets = new List<byte[]>();
+        var firstPacket = VideoPackets(source)[0];
+        foreach (var range in VideoBitstream.EnumerateNals(firstPacket, 0))
+            VideoBitstream.AddParameterSet(firstPacket[range], true, sets);
+        Assert.Equal(3, sets.Count);
+
+        var configuration = new List<byte>(new byte[23]);
+        configuration[0] = 1;
+        configuration[21] = 3; // 四字节 NAL 长度
+        configuration[22] = 3; // VPS、SPS、PPS 各有一个数组
+        foreach (var set in sets)
+        {
+            configuration.AddRange([(byte)(0x80 | VideoBitstream.NalType(set, true)), 0, 3]);
+            // 同编号 A、B、A：应保留最后读到的 A，即使与第一份逐字节相同。
+            foreach (var variant in new byte[][] { set, [.. set, 0x80], set })
+            {
+                configuration.AddRange([(byte)(variant.Length >> 8), (byte)variant.Length]);
+                configuration.AddRange(variant);
+            }
+        }
+
+        var decoded = new List<byte[]>();
+        Assert.Equal(4, VideoBitstream.ReadParameterSets(configuration.ToArray(), true, decoded, keepLatestById: true));
+        Assert.Equal(sets, decoded);
+    }
+
+    [NativeMediaFact("frameaccurate")]
+    public void RecordedSourceParameterSetsKeepOneSetPerId()
+    {
+        var packets = VideoPackets(Path.Combine(NativeTestEnvironment.FixtureDirectory("frameaccurate"), "hevc-cra.ts"));
+        var sets = new List<byte[]>();
+        foreach (var range in VideoBitstream.SplitNals(packets[0], 0))
+            VideoBitstream.AddParameterSet(packets[0][range], true, sets);
+        Assert.Equal(3, sets.Count);
+
+        // 每个 IDR 前的参数集末尾多出两个不同的字节：同编号只保留一份，以最后一份为准，顺序不变。
+        var recorded = new List<byte[]>();
+        byte[] Variant(byte[] set, int index) => [.. set, (byte)index, (byte)(index * 7 + 1)];
+        for (var index = 0; index < 5; index++)
+            foreach (var set in sets)
+                VideoBitstream.RecordParameterSet(Variant(set, index), true, recorded);
+        Assert.Equal(sets.Select(set => Variant(set, 4)), recorded);
+
+        // 编号不同的参数集（如改号后的重编码参数集）各自保留。
+        var renumbering = new HevcParameterSetRenumbering(sets, sets);
+        foreach (var set in renumbering.ParameterSets)
+            VideoBitstream.RecordParameterSet(set, true, recorded);
+        Assert.Equal(6, recorded.Count);
+        Assert.Equal([32, 32, 33, 33, 34, 34], recorded.Select(set => VideoBitstream.NalType(set, true)));
+        Assert.Equal([0, 1, 0, 1, 0, 1], recorded.Select(set => VideoBitstream.ParameterSetId(set, true)!.Value));
+
+        // 读不出编号的参数集不报错，按内容不重复加入。
+        byte[] truncated = [0x40, 0x01];
+        Assert.Null(VideoBitstream.ParameterSetId(truncated, true));
+        VideoBitstream.RecordParameterSet(truncated, true, recorded);
+        VideoBitstream.RecordParameterSet(truncated, true, recorded);
+        Assert.Equal(7, recorded.Count);
+    }
+
     private static unsafe List<byte[]> VideoPackets(string path)
     {
         using var input = FormatContext.OpenInputUrl(path);
