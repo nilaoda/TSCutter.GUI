@@ -23,6 +23,8 @@ public class AppConfig : ObservableObject
     private List<RecentItem> _recentItems = [];
     private string? _lastImportFolder;
     private string? _lastExportFolder;
+    private bool _autoSaveRecovery = true;
+    private int _autoSaveIntervalSeconds = DefaultAutoSaveIntervalSeconds;
 
     // 系统当前是否处于深色模式
     [JsonIgnore]
@@ -125,6 +127,18 @@ public class AppConfig : ObservableObject
     }
     // 保存和导出对话框默认定位到源文件所在目录；默认关闭，即定位到上次导出的目录。
     public bool SaveDialogsStartInSourceFolder { get; set; }
+    // 定时把未保存的剪辑状态写入应用数据目录中的恢复文件，异常退出后下次启动可以恢复；默认开启。
+    public bool AutoSaveRecovery
+    {
+        get => _autoSaveRecovery;
+        set => SetProperty(ref _autoSaveRecovery, value);
+    }
+    // 写入恢复文件的间隔（秒）；读入时限制在允许的范围内。
+    public int AutoSaveIntervalSeconds
+    {
+        get => _autoSaveIntervalSeconds;
+        set => SetProperty(ref _autoSaveIntervalSeconds, NormalizeAutoSaveInterval(value));
+    }
     // 鼠标滚轮行为；整体替换以便界面通过属性通知同步，读入时把取值改回允许的范围。
     public InputPreferences Input
     {
@@ -135,6 +149,14 @@ public class AppConfig : ObservableObject
     [JsonIgnore]
     public static bool IsHardwareDecodingSupported =>
         OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
+
+    public const int DefaultAutoSaveIntervalSeconds = 60;
+    public const int MinAutoSaveIntervalSeconds = 15;
+    public const int MaxAutoSaveIntervalSeconds = 3600;
+
+    internal static int NormalizeAutoSaveInterval(int seconds) => seconds <= 0
+        ? DefaultAutoSaveIntervalSeconds
+        : Math.Clamp(seconds, MinAutoSaveIntervalSeconds, MaxAutoSaveIntervalSeconds);
 
     internal static bool NormalizeHardwareDecodingPreference(bool requested, bool supported) => requested && supported;
 }

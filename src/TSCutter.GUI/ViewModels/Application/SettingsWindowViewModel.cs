@@ -41,6 +41,15 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     private bool _autoCheckForUpdates;
     [ObservableProperty]
     private bool _rememberRecentItems;
+    [ObservableProperty]
+    private bool _autoSaveRecovery;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AutoSaveIntervalIndex))]
+    private int _autoSaveIntervalSeconds = AppConfig.DefaultAutoSaveIntervalSeconds;
+    // 间隔下拉框的文字，切换语言后重新生成。
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(AutoSaveIntervalIndex))]
+    private IReadOnlyList<string> _autoSaveIntervalTexts = [];
     // “清除列表”立即生效，不等待确定或应用。
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ClearRecentItemsCommand))]
@@ -121,6 +130,19 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     /// <summary>步长下拉框提供的档位；配置文件中不在档位里的取值会额外列出，打开设置不会改掉它。</summary>
     public static IReadOnlyList<int> WheelStepPresets { get; } = [1, 2, 3, 5, 10];
     public static IReadOnlyList<int> ShiftWheelStepPresets { get; } = [5, 10, 20, 30, 60];
+    /// <summary>自动保存间隔（秒）的档位；配置文件中不在档位里的取值会额外列出。</summary>
+    public static IReadOnlyList<int> AutoSaveIntervalPresets { get; } = [30, 60, 120, 300, 600];
+    public IReadOnlyList<int> AutoSaveIntervalValues { get; private set; } = AutoSaveIntervalPresets;
+
+    public int AutoSaveIntervalIndex
+    {
+        get => IndexOf(AutoSaveIntervalValues, AutoSaveIntervalSeconds);
+        set
+        {
+            if (value >= 0 && value < AutoSaveIntervalValues.Count)
+                AutoSaveIntervalSeconds = AutoSaveIntervalValues[value];
+        }
+    }
 
     /// <summary>步长下拉框各项对应的数量，与 <see cref="WheelStepTexts"/> 一一对应。</summary>
     public IReadOnlyList<int> WheelStepValues { get; private set; } = WheelStepPresets;
@@ -211,6 +233,9 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         AutoCheckForUpdates = _configService.CurrentConfig.AutoCheckForUpdates;
         RememberRecentItems = _configService.CurrentConfig.RememberRecentItems;
         HasRecentItems = _configService.CurrentConfig.RecentItems.Count > 0;
+        AutoSaveRecovery = _configService.CurrentConfig.AutoSaveRecovery;
+        AutoSaveIntervalSeconds = AppConfig.NormalizeAutoSaveInterval(_configService.CurrentConfig.AutoSaveIntervalSeconds);
+        AutoSaveIntervalValues = WithCurrent(AutoSaveIntervalPresets, AutoSaveIntervalSeconds);
         ShowImageNavigator = _configService.CurrentConfig.ShowImageNavigator;
         ShowKeyFrameStrip = _configService.CurrentConfig.ShowKeyFrameStrip;
         ShowAudioWaveform = _configService.CurrentConfig.ShowAudioWaveform;
@@ -231,6 +256,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         WheelStepValues = WithCurrent(WheelStepPresets, WheelStep);
         ShiftWheelStepValues = WithCurrent(ShiftWheelStepPresets, ShiftWheelStep);
         RefreshWheelStepTexts();
+        RefreshAutoSaveIntervalTexts();
         SelectedTheme = _configService.CurrentConfig.ThemeModel;
         SelectedDarkTheme = _configService.CurrentConfig.DarkThemeModel;
         SelectedThemeVariantMode = _configService.CurrentConfig.ThemeVariantMode;
@@ -330,6 +356,16 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         ShiftWheelStepTexts = ShiftWheelStepValues.Select(value => ShortcutCatalog.UnitCountText(_strings, value)).ToArray();
     }
 
+    private void RefreshAutoSaveIntervalTexts() =>
+        AutoSaveIntervalTexts = AutoSaveIntervalValues.Select(value => FormatAutoSaveInterval(_strings, value)).ToArray();
+
+    /// <summary>整分钟按分钟显示，其余按秒显示。</summary>
+    private static string FormatAutoSaveInterval(LocalizationManager strings, int seconds) => seconds % 60 != 0
+        ? string.Format(strings.String_Settings_AutoSaveInterval_Seconds, seconds)
+        : seconds == 60
+            ? strings.String_Settings_AutoSaveInterval_Minute
+            : string.Format(strings.String_Settings_AutoSaveInterval_Minutes, seconds / 60);
+
     [RelayCommand(CanExecute = nameof(HasRecentItems))]
     private void ClearRecentItems()
     {
@@ -377,6 +413,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
             _configService.CurrentConfig.RecentItems = [];
             HasRecentItems = false;
         }
+        _configService.CurrentConfig.AutoSaveIntervalSeconds = AutoSaveIntervalSeconds;
+        _configService.CurrentConfig.AutoSaveRecovery = AutoSaveRecovery;
         _configService.CurrentConfig.ShowImageNavigator = ShowImageNavigator;
         _configService.CurrentConfig.ShowAudioWaveform = ShowAudioWaveform;
         // 先改大小再改显示：同时打开预览条并改大小时只按新尺寸解码一次。
@@ -416,6 +454,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.ApplyLanguage(AutoDetectLanguage ? "" : SelectedLanguage.Code);
         // 列表与步长档位的文字取自当前语言，切换语言后重新生成。
         RefreshWheelStepTexts();
+        RefreshAutoSaveIntervalTexts();
         OnPropertyChanged(nameof(ShortcutGroups));
         OnPropertyChanged(nameof(HasNoShortcutMatch));
 

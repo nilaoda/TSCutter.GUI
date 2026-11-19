@@ -1847,4 +1847,17 @@
     <x:String x:Key="String.Recent.Yesterday">昨天 {0}</x:String>
     <x:String x:Key="String.Settings.RememberRecentItems">記住最近開啟的檔案</x:String>
     <x:String x:Key="String.Settings.RememberRecentItemsTip">在「檔案 → 最近開啟」中列出最近開啟的影片、光碟和專案。&#10;關閉後會同時清空清單。</x:String>
+    <x:String x:Key="String.Settings.AutoSaveRecovery">自動儲存復原資訊</x:String>
+    <x:String x:Key="String.Settings.AutoSaveRecoveryTip">定時把尚未儲存的片段、匯出佇列和專案設定寫入應用程式資料夾中的復原檔案，不會變更專案檔案。&#10;程式當機或斷電後，下次啟動時提示復原。&#10;正常關閉、儲存專案或捨棄變更時刪除復原檔案。&#10;光碟來源不支援復原。</x:String>
+    <x:String x:Key="String.Settings.AutoSaveInterval">儲存間隔</x:String>
+    <x:String x:Key="String.Settings.AutoSaveInterval.Seconds">{0} 秒</x:String>
+    <x:String x:Key="String.Settings.AutoSaveInterval.Minute">1 分鐘</x:String>
+    <x:String x:Key="String.Settings.AutoSaveInterval.Minutes">{0} 分鐘</x:String>
+    <x:String x:Key="String.Recovery.Title">復原尚未儲存的工作</x:String>
+    <x:String x:Key="String.Recovery.Prompt">上次沒有正常結束，發現尚未儲存的工作：&#10;&#10;來源檔案：{0}&#10;專案：{1}&#10;片段：{2} 個，匯出佇列：{3} 項&#10;自動儲存於：{4}&#10;&#10;是否復原？選擇「否」將刪除這份復原資訊，選擇「取消」將保留，下次啟動時再提示。</x:String>
+    <x:String x:Key="String.Recovery.NoSource">（無，僅有匯出佇列）</x:String>
+    <x:String x:Key="String.Recovery.SourceMissing">{0}（檔案不存在，復原時可重新定位）</x:String>
+    <x:String x:Key="String.Recovery.NotSaved">（尚未儲存為專案）</x:String>
+    <x:String x:Key="String.Recovery.Failed">無法復原尚未儲存的工作：{0}</x:String>
+    <x:String x:Key="String.Recovery.TitleMarker">已復原</x:String>
 </ResourceDictionary>

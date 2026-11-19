@@ -64,8 +64,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         get
         {
-            var projectName = _projectPath is null ? string.Empty :
-                $" [{Path.GetFileName(_projectPath)}]";
+            var projectName = (_projectPath is null ? string.Empty :
+                $" [{Path.GetFileName(_projectPath)}]") +
+                (_recoveredUnsaved ? $" ({LocalizationManager.Instance.String_Recovery_TitleMarker})" : string.Empty);
             if (!string.IsNullOrEmpty(VideoPath))
                 return $"{TitleInfo} - {Path.GetFileName(VideoPath)}{projectName}";
             return TitleInfo + projectName;
@@ -150,6 +151,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         RefreshTimelineSegmentTexts();
 
         OnPropertyChanged(nameof(ZoomFactorStr));
+        OnPropertyChanged(nameof(WindowTitle));
         OnPropertyChanged(nameof(DecodeModeText));
         OnPropertyChanged(nameof(ToneMappingStatusText));
         OnPropertyChanged(nameof(PlaybackButtonToolTip));
@@ -269,6 +271,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private void SetProjectPath(string? path)
     {
         _projectPath = path;
+        // 换源、打开或保存工程后不再是恢复出来的未保存内容。
+        SetRecoveredUnsaved(false);
         OnPropertyChanged(nameof(WindowTitle));
     }
     public ObservableCollection<ExportQueueItem> ExportQueue { get; } = new();
@@ -504,6 +508,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     private async Task ProcessCommandLineAsync()
     {
         _ = RefreshRecentItemsAsync();
+        // 先处理上次未正常退出留下的工作；恢复后不再打开命令行指定的文件，以免覆盖恢复的内容。
+        var recovered = await OfferProjectRecoveryAsync();
+        StartProjectRecovery();
+        if (recovered)
+            return;
         var args = Environment.GetCommandLineArgs();
         if (args.Length > 1 && File.Exists(args[1]))
         {
@@ -1287,7 +1296,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         Close();
         ClearVars();
         SetProjectPath(null);
-        if (ExportQueue.Count == 0) MarkProjectCheckpoint();
+        if (ExportQueue.Count == 0)
+        {
+            MarkProjectCheckpoint();
+            DiscardRecovery();
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanUseCurrentFile))]
@@ -1454,6 +1467,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             OnTimelineSegmentsPreferenceChanged();
         else if (e.PropertyName is nameof(AppConfig.ThemeName) or nameof(AppConfig.DarkThemeName))
             UpdateThemeMenuChecks();
+        else if (e.PropertyName is nameof(AppConfig.AutoSaveRecovery) or nameof(AppConfig.AutoSaveIntervalSeconds))
+            ApplyRecoverySettings();
     }
 
     public double MaxZoomFactor => 3.0;
@@ -1587,36 +1602,43 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         await OpenProjectPathAsync(selected[0].LocalPath);
     }
 
-    private async Task OpenProjectPathAsync(string projectPath)
+    private Task OpenProjectPathAsync(string projectPath) => OpenProjectCoreAsync(projectPath, recoveryPath: null);
+
+    /// <summary>
+    /// 打开工程文件；<paramref name="recoveryPath"/> 不为 null 时改从恢复文件载入，
+    /// 此时 <paramref name="projectPath"/> 是它对应的工程文件（可能为 null），载入后标记为未保存。返回是否已载入。
+    /// </summary>
+    private async Task<bool> OpenProjectCoreAsync(string? projectPath, string? recoveryPath)
     {
-        if (_isLoadingVideo) return;
+        if (_isLoadingVideo) return false;
         CutterProject? project;
         var sourceLocations = new Dictionary<string, string>(MediaFileUtil.PathComparer);
+        var openFailed = recoveryPath is null
+            ? LocalizationManager.Instance.String_Project_OpenFailed
+            : LocalizationManager.Instance.String_Recovery_Failed;
         try
         {
-            project = await LoadProjectWithSourceLocationsAsync(projectPath, sourceLocations);
+            project = await LoadProjectWithSourceLocationsAsync(projectPath, recoveryPath, sourceLocations);
             if (project is null)
-                return;
+                return false;
         }
         catch (Exception exception)
         {
-            await ShowMessageAsync(string.Format(
-                    LocalizationManager.Instance.String_Project_OpenFailed,
-                    FormatProjectError(exception)),
+            await ShowMessageAsync(string.Format(openFailed, FormatProjectError(exception)),
                 LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
-            return;
+            return false;
         }
 
-        if (_isLoadingVideo) return;
+        if (_isLoadingVideo) return false;
         if (HasUnsavedProjectChanges)
         {
-            if (!await ConfirmProjectReplacementAsync()) return;
+            if (!await ConfirmProjectReplacementAsync()) return false;
         }
         else if ((IsVideoInitialized || Clips.Count > 0 || ExportQueue.Count > 0) &&
                  !await ShowConfirmAsync(LocalizationManager.Instance.String_Project_ReplaceConfirm))
-            return;
+            return false;
 
-        if (_isLoadingVideo) return;
+        if (_isLoadingVideo) return false;
         if (project.Source is not null)
         {
             VideoInstance? prepared = null;
@@ -1637,11 +1659,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             catch (Exception exception)
             {
                 prepared?.Dispose();
-                await ShowMessageAsync(string.Format(
-                        LocalizationManager.Instance.String_Project_OpenFailed,
-                        FormatProjectError(exception)),
+                await ShowMessageAsync(string.Format(openFailed, FormatProjectError(exception)),
                     LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
-                return;
+                return false;
             }
             finally
             {
@@ -1652,7 +1672,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             _discTitleInfo = null;
             VideoPath = project.Source.Path;
             if (!await LoadVideoAsync(prepared))
-                return;
+                return false;
         }
         else
         {
@@ -1663,26 +1683,38 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
         await RestoreProjectAsync(project);
         SetProjectPath(projectPath);
+        if (recoveryPath is not null)
+        {
+            // 恢复的内容与磁盘上的工程文件不同：标记为未保存，关闭或换源时提示保存。
+            // 工程文件本身没有变化，最近打开列表只在从视频开始时记录该视频。
+            _savedProjectState = null;
+            SetRecoveredUnsaved(true);
+            if (projectPath is null && project.Source is not null)
+                RecordRecentItem(new RecentItem { Kind = RecentItemKind.Video, Path = project.Source.Path });
+            return true;
+        }
         MarkProjectCheckpoint();
-        RecordRecentProject(projectPath, project.Clips.Count);
+        RecordRecentProject(projectPath!, project.Clips.Count);
         DialogFolderMemory.Shared.RememberImport(projectPath);
         if (sourceLocations.Count > 0)
         {
             _savedProjectState = null;
             OnPropertyChanged(nameof(HasUnsavedProjectChanges));
         }
+        return true;
     }
 
-    private async Task<CutterProject?> LoadProjectWithSourceLocationsAsync(string projectPath,
+    private async Task<CutterProject?> LoadProjectWithSourceLocationsAsync(string? projectPath, string? recoveryPath,
         Dictionary<string, string> sourceLocations)
     {
+        var projectFolder = projectPath is null ? null : Path.GetDirectoryName(Path.GetFullPath(projectPath));
         var attempt = await TryLoadAsync();
         while (attempt.SourcePath is { } sourcePath)
         {
-            var nearby = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(projectPath))!,
-                CutterProjectService.GetSourceFileName(sourcePath));
+            var nearby = projectFolder is null ? null
+                : Path.Combine(projectFolder, CutterProjectService.GetSourceFileName(sourcePath));
             string location;
-            if (!attempt.ContentsChanged && !sourceLocations.ContainsKey(sourcePath) &&
+            if (nearby is not null && !attempt.ContentsChanged && !sourceLocations.ContainsKey(sourcePath) &&
                 File.Exists(nearby) && !PathsEqual(nearby, sourcePath))
             {
                 location = nearby;
@@ -1694,10 +1726,12 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                     : LocalizationManager.Instance.String_Project_SourceLocateConfirm, sourcePath);
                 if (!await ShowConfirmAsync(prompt, LocalizationManager.Instance.String_Project_SourceLocate))
                     return null;
+                // 没有工程文件时（从视频开始的恢复内容）从原源文件所在的文件夹开始，文件夹也不在时由系统决定。
+                var startFolder = projectFolder ?? ExistingFolderOf(sourcePath);
                 var selected = await _dialogService.ShowOpenFilesDialogAsync(this, new OpenFileDialogSettings
                 {
                     Title = LocalizationManager.Instance.String_Project_SourceLocate,
-                    SuggestedStartLocation = new DesktopDialogStorageFolder(Path.GetDirectoryName(Path.GetFullPath(projectPath))!),
+                    SuggestedStartLocation = startFolder is null ? null : new DesktopDialogStorageFolder(startFolder),
                     Filters =
                     [
                         new(LocalizationManager.Instance.String_VideoFiles, PreviewFileExtensions),
@@ -1718,16 +1752,33 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         {
             try
             {
-                return (await CutterProjectService.LoadAsync(projectPath, sourceLocations: sourceLocations), null, false);
+                var project = recoveryPath is null
+                    ? await CutterProjectService.LoadAsync(projectPath!, sourceLocations: sourceLocations)
+                    : await Task.Run(() => CutterProjectService.Prepare(
+                        ProjectRecoveryStore.Read(recoveryPath).Project, sourceLocations));
+                return (project, null, false);
             }
             catch (FileNotFoundException missing) when (missing.FileName is not null &&
-                                                       !PathsEqual(missing.FileName, projectPath))
+                                                       !PathsEqual(missing.FileName, recoveryPath ?? projectPath!))
             {
                 return (null, missing.FileName, false);
             }
             catch (ProjectSourceChangedException changed)
             {
                 return (null, changed.SourcePath, true);
+            }
+        }
+
+        static string? ExistingFolderOf(string path)
+        {
+            try
+            {
+                var folder = Path.GetDirectoryName(path);
+                return Path.IsPathFullyQualified(path) && Directory.Exists(folder) ? folder : null;
+            }
+            catch (Exception exception) when (exception is ArgumentException or PathTooLongException)
+            {
+                return null;
             }
         }
     }
@@ -1809,6 +1860,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             }
             SetProjectPath(path);
             _savedProjectState = savedState;
+            DiscardRecovery();
             RecordRecentProject(path, project.Clips.Count);
             return true;
         }
@@ -1898,7 +1950,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         TimelineViewStart = includeThumbnails ? TimelineViewport.ViewStart : 0
     };
 
-    public bool HasUnsavedProjectChanges => _projectPath is not null &&
+    public bool HasUnsavedProjectChanges => _recoveredUnsaved || _projectPath is not null &&
         (_savedProjectState is null ||
          _savedProjectState != CutterProjectService.Serialize(CaptureProject(includeThumbnails: false)));
 
@@ -1917,9 +1969,16 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         return result switch
         {
             MessageBoxResult.Yes => await SaveProjectCoreAsync(saveAs: false),
-            MessageBoxResult.No => true,
+            MessageBoxResult.No => DiscardChangesForReplacement(),
             _ => false
         };
+    }
+
+    // 放弃修改时恢复文件随之删除；随后的换源或关闭会重新决定是否需要写入。
+    private bool DiscardChangesForReplacement()
+    {
+        DiscardRecovery();
+        return true;
     }
 
     private async Task OpenVideoPathAsync(string path)

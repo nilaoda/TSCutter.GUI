@@ -17,7 +17,7 @@ namespace TSCutter.GUI.Services.Editing;
 
 internal static class CutterProjectService
 {
-    private const int MaximumProjectBytes = 16 * 1024 * 1024;
+    internal const int MaximumProjectBytes = 16 * 1024 * 1024;
     private const int MaximumItems = 10_000;
     private const int MaximumCapturedAnchorsPerSource = 32;
 
@@ -89,15 +89,23 @@ internal static class CutterProjectService
         if (new FileInfo(path).Length > MaximumProjectBytes)
             throw new InvalidDataException("The project file is too large.");
         var json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
-        return await Task.Run(() =>
-        {
-            var project = JsonSerializer.Deserialize(json, AppJsonContext.Default.CutterProject)
-                ?? throw new InvalidDataException("The project file is empty.");
-            Validate(project, checkSourceFiles: false);
-            ResolveSourceLocations(project, sourceLocations);
-            Validate(project);
-            return project;
-        }, cancellationToken).ConfigureAwait(false);
+        return await Task.Run(() => Prepare(
+            JsonSerializer.Deserialize(json, AppJsonContext.Default.CutterProject)
+            ?? throw new InvalidDataException("The project file is empty."), sourceLocations),
+            cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// 校验读入的工程并按 <paramref name="sourceLocations"/> 重定位源文件；源文件缺失或内容不符时抛出
+    /// <see cref="FileNotFoundException"/> 或 <see cref="ProjectSourceChangedException"/>。会读取源文件，应在后台线程调用。
+    /// </summary>
+    public static CutterProject Prepare(CutterProject project,
+        IReadOnlyDictionary<string, string>? sourceLocations = null)
+    {
+        Validate(project, checkSourceFiles: false);
+        ResolveSourceLocations(project, sourceLocations);
+        Validate(project);
+        return project;
     }
 
     public static async Task SaveAsync(string path, CutterProject project,

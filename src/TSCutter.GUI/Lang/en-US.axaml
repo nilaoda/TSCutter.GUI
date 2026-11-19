@@ -1847,4 +1847,17 @@
     <x:String x:Key="String.Recent.Yesterday">Yesterday {0}</x:String>
     <x:String x:Key="String.Settings.RememberRecentItems">Remember recently opened files</x:String>
     <x:String x:Key="String.Settings.RememberRecentItemsTip">Lists recently opened videos, discs and projects in File → Open Recent.&#10;Turning this off also clears the list.</x:String>
+    <x:String x:Key="String.Settings.AutoSaveRecovery">Auto-save recovery data</x:String>
+    <x:String x:Key="String.Settings.AutoSaveRecoveryTip">Regularly writes unsaved clips, the export queue and project settings to a recovery file in the app data folder. Project files are not changed.&#10;If TSCutter crashes or the computer loses power, you will be offered to recover the work at the next launch.&#10;The recovery file is deleted when you close normally, save the project or discard changes.&#10;Disc sources are not covered.</x:String>
+    <x:String x:Key="String.Settings.AutoSaveInterval">Save every</x:String>
+    <x:String x:Key="String.Settings.AutoSaveInterval.Seconds">{0} seconds</x:String>
+    <x:String x:Key="String.Settings.AutoSaveInterval.Minute">1 minute</x:String>
+    <x:String x:Key="String.Settings.AutoSaveInterval.Minutes">{0} minutes</x:String>
+    <x:String x:Key="String.Recovery.Title">Recover Unsaved Work</x:String>
+    <x:String x:Key="String.Recovery.Prompt">TSCutter did not close normally last time. Unsaved work was found:&#10;&#10;Source file: {0}&#10;Project: {1}&#10;Clips: {2}, export queue: {3}&#10;Saved automatically: {4}&#10;&#10;Recover it? Choose No to delete this recovery data, or Cancel to keep it and be asked again next time.</x:String>
+    <x:String x:Key="String.Recovery.NoSource">(none, export queue only)</x:String>
+    <x:String x:Key="String.Recovery.SourceMissing">{0} (not found, you can locate it while recovering)</x:String>
+    <x:String x:Key="String.Recovery.NotSaved">(not saved as a project)</x:String>
+    <x:String x:Key="String.Recovery.Failed">Could not recover the unsaved work: {0}</x:String>
+    <x:String x:Key="String.Recovery.TitleMarker">Recovered</x:String>
 </ResourceDictionary>
