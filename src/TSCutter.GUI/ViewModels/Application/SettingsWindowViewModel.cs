@@ -40,6 +40,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     [ObservableProperty]
     private bool _autoCheckForUpdates;
     [ObservableProperty]
+    private bool _showSystemProgress;
+    [ObservableProperty]
     private bool _rememberRecentItems;
     [ObservableProperty]
     private bool _autoSaveRecovery;
@@ -213,6 +215,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
 
     public bool HasNoShortcutMatch => ShortcutGroups.Count == 0;
     public bool IsHardwareDecodingAvailable => AppConfig.IsHardwareDecodingSupported;
+    // 任务栏进度只在 Windows 和 macOS 上可用，其他平台不显示这一项。
+    public bool IsSystemProgressAvailable => OperatingSystem.IsWindows() || OperatingSystem.IsMacOS();
     /// <summary>“自动”加当前可选的解码设备；已保存但当前不可用的设备也列出，避免打开设置后被静默改回自动。</summary>
     public IReadOnlyList<HardwareDecodingDeviceOption> HardwareDecodingDeviceOptions { get; }
     /// <summary>只有自动一项时（macOS、Linux 或未找到显卡）不可选择。</summary>
@@ -231,6 +235,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
             ? _configService.CurrentConfig.ClipOutputTemplate : Utils.Editing.ClipOutputNaming.DefaultTemplate;
         AutoDetectLanguage = _configService.CurrentConfig.AutoDetectLanguage;
         AutoCheckForUpdates = _configService.CurrentConfig.AutoCheckForUpdates;
+        ShowSystemProgress = _configService.CurrentConfig.ShowSystemProgress;
         RememberRecentItems = _configService.CurrentConfig.RememberRecentItems;
         HasRecentItems = _configService.CurrentConfig.RecentItems.Count > 0;
         AutoSaveRecovery = _configService.CurrentConfig.AutoSaveRecovery;
@@ -406,6 +411,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         // 更新配置
         _configService.CurrentConfig.AutoDetectLanguage = AutoDetectLanguage;
         _configService.CurrentConfig.AutoCheckForUpdates = AutoCheckForUpdates;
+        _configService.CurrentConfig.ShowSystemProgress = ShowSystemProgress;
         // 关闭记录时同时清空已有的列表。
         _configService.CurrentConfig.RememberRecentItems = RememberRecentItems;
         if (!RememberRecentItems)

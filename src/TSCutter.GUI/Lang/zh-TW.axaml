@@ -242,6 +242,8 @@
     <x:String x:Key="String.Settings.CurrentLightTheme">目前淺色佈景主題</x:String>
     <x:String x:Key="String.Settings.CurrentDarkTheme">目前深色佈景主題</x:String>
     <x:String x:Key="String.Settings.AutoCheckForUpdates">程式啟動後自動檢查更新</x:String>
+    <x:String x:Key="String.Settings.ShowSystemProgress">在工作列或 Dock 圖示上顯示進度</x:String>
+    <x:String x:Key="String.Settings.ShowSystemProgressTip">在工作列按鈕（Windows）或 Dock 圖示（macOS）上顯示匯出、檢測、修復等耗時操作的進度。&#10;操作失敗時進度列會變紅。</x:String>
     <x:String x:Key="String.Settings.ShowImageNavigator">顯示影像導覽小地圖</x:String>
     <x:String x:Key="String.Settings.ShowImageNavigatorTip">畫面超出可視區域時顯示導覽縮圖，可點擊或拖曳定位。</x:String>
     <x:String x:Key="String.Settings.ShowKeyFrameStrip">顯示關鍵影格預覽列</x:String>

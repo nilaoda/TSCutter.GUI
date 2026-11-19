@@ -12,6 +12,7 @@ using HanumanInstitute.MvvmDialogs;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Media;
 using TSCutter.GUI.Models.TransportStream.Processing;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils;
@@ -305,18 +306,47 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         _outputProcessing = ResolveOutputProcessing();
         if (!await CheckProgramTablesAsync() || !await CheckTimestampNormalizationAsync())
             return;
-        if (IsBatchMode)
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
+        try
         {
-            await RunBatchAsync();
+            if (IsBatchMode)
+            {
+                await RunBatchAsync();
+            }
+            else if (IsMergeMode)
+            {
+                await RunMergeAsync();
+            }
+            else
+            {
+                await RunSingleAsync();
+            }
         }
-        else if (IsMergeMode)
+        finally
         {
-            await RunMergeAsync();
+            _systemProgress = null;
         }
+        // 取消不算失败；批量导出中有任何一项失败时也记录 Exception。
+        if (Exception is not null)
+            systemProgress.Fail();
         else
-        {
-            await RunSingleAsync();
-        }
+            systemProgress.Complete();
+    }
+
+    private SystemProgressOperation? _systemProgress;
+
+    partial void OnPercentChanged(double value) => ReportSystemProgress();
+
+    partial void OnCurrentTaskIndexChanged(int value) => ReportSystemProgress();
+
+    // 批量导出按“已完成数 + 当前任务进度”折算整个队列的进度。
+    private void ReportSystemProgress()
+    {
+        if (_systemProgress is not { } progress)
+            return;
+        var fraction = Math.Clamp(Percent / 100, 0, 1);
+        progress.Report(IsBatchMode ? Math.Min(1, (CurrentTaskIndex + fraction) / TotalTasks) : fraction);
     }
 
     private async Task RunMergeAsync()
@@ -780,6 +810,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 fullVolumes.Contains(volume))
             {
                 FailedTaskIndices.Add(i);
+                _systemProgress?.MarkError();
                 continue;
             }
             CurrentTaskIndex = i;
@@ -810,6 +841,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             catch (Exception e)
             {
                 FailedTaskIndices.Add(i);
+                _systemProgress?.MarkError();
                 var diskFull = DiskSpaceUtil.IsDiskFull(e);
                 // 只报告一个错误时优先报告磁盘写满，它决定了同一卷上其余任务的结果。
                 if (Exception is null || diskFull && !DiskSpaceUtil.IsDiskFull(Exception))

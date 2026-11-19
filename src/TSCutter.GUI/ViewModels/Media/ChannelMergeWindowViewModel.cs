@@ -8,6 +8,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
 using TSCutter.GUI.Models.Media;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.Media;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Media;
@@ -209,12 +210,15 @@ public sealed partial class ChannelMergeWindowViewModel : ViewModelBase, IModalD
         IsAnalyzing = true;
         var strings = LocalizationManager.Instance;
         AnalysisStatus = string.Format(strings.String_ChannelMerge_Analyzing, 0);
+        using var systemProgress = SystemProgressService.Begin(this);
         try
         {
             var progress = new Progress<double>(value =>
             {
-                if (IsAnalyzing)
-                    AnalysisStatus = string.Format(strings.String_ChannelMerge_Analyzing, (int)Math.Round(value * 100));
+                if (!IsAnalyzing)
+                    return;
+                AnalysisStatus = string.Format(strings.String_ChannelMerge_Analyzing, (int)Math.Round(value * 100));
+                systemProgress.Report(value);
             });
             result = await analyze(program.Tracks.Select(track => track.Pid).ToArray(), SelectedPids(), progress, cancellation.Token);
             AnalysisStatus = strings.String_ChannelMerge_Analyzed;
@@ -226,6 +230,7 @@ public sealed partial class ChannelMergeWindowViewModel : ViewModelBase, IModalD
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             AnalysisStatus = string.Format(strings.String_ChannelMerge_AnalyzeFailed, exception.Message);
         }
         finally

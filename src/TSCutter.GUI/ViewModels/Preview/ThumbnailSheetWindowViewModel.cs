@@ -17,6 +17,7 @@ using TSCutter.GUI.Rendering;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.Preview;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
@@ -66,6 +67,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
     private double jpegQuality = 90;
     private bool isBusy;
     private double progressValue;
+    private SystemProgressOperation? _systemProgress;
     private string statusText = string.Empty;
     private bool isInitialized;
     private bool isClosed;
@@ -539,7 +541,11 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
     public double ProgressValue
     {
         get => progressValue;
-        private set => SetProperty(ref progressValue, value);
+        private set
+        {
+            SetProperty(ref progressValue, value);
+            _systemProgress?.ReportPercent(value);
+        }
     }
 
     public string StatusText
@@ -752,9 +758,16 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
 
         IsBusy = true;
         ProgressValue = 0;
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             await BuildCellsAsync(layout, cancellationToken).ConfigureAwait(true);
+        }
+        catch (Exception exception)
+        {
+            systemProgress.Fail(exception);
+            throw;
         }
         finally
         {

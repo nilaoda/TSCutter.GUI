@@ -11,6 +11,7 @@ using Splat;
 using TSCutter.GUI.Converters;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Media;
@@ -118,6 +119,8 @@ public partial class App : Application
 
         GC.KeepAlive(typeof(DialogService));
         DialogService.Show(null, MainWindow);
+        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime progressDesktop)
+            SystemProgressService.Initialize(progressDesktop, () => configService.CurrentConfig.ShowSystemProgress);
 
         // 后台静默检查更新
         if (configService.CurrentConfig.AutoCheckForUpdates)

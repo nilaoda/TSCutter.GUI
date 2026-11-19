@@ -16,6 +16,7 @@ using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Models.TransportStream.Repair;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.TransportStream.Repair;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.TransportStream.Analysis;
@@ -123,6 +124,10 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
 
     [ObservableProperty]
     private double _percent;
+
+    private SystemProgressOperation? _systemProgress;
+
+    partial void OnPercentChanged(double value) => _systemProgress?.ReportPercent(value);
 
     [ObservableProperty]
     private string _statusText = string.Empty;
@@ -288,6 +293,8 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         Percent = 0;
         ProgressText = "0 / 0";
         SpeedText = $"{CommonUtil.FormatFileSize(0)}/s";
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var paths = Sources.Select(item => item.FilePath).ToArray();
@@ -336,6 +343,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             ResetIntensiveStatusDelay();
             if (!_isClosing)
                 StatusText = string.Format(_text.Strings.String_TsRepair_Status_Failed, exception.Message);
@@ -391,6 +399,8 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         IsAnalysisSummaryVisible = false;
         IsOutputSummaryVisible = false;
         Percent = 0;
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var progress = new Progress<TsMultiSourceProgress>(value =>
@@ -422,6 +432,7 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
                 StatusText = string.Format(
                     _text.Strings.String_TsRepair_Status_Failed, exception.Message);
@@ -539,6 +550,8 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         ProgressText = $"{CommonUtil.FormatFileSize(0)} / {CommonUtil.FormatFileSize(analysis.ReferenceSource.Catalog.FileSize)}";
         SpeedText = $"{CommonUtil.FormatFileSize(0)}/s";
         StatusText = _text.Strings.String_TsRepair_Status_Outputting;
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var plan = _repairService.BuildOutputPlan(
@@ -568,18 +581,21 @@ public partial class TsMultiSourceRepairWindowViewModel : ViewModelBase, IModalD
         }
         catch (TsRepairException exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
                 StatusText = string.Format(
                     _text.Strings.String_TsRepair_Status_Failed, FormatRepairError(exception));
         }
         catch (TsFilterException exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
                 StatusText = string.Format(
                     _text.Strings.String_TsRepair_Status_Failed, FormatFilterError(exception));
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
                 StatusText = string.Format(_text.Strings.String_TsRepair_Status_Failed, exception.Message);
         }

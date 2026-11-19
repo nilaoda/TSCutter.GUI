@@ -14,6 +14,7 @@ using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Services.TransportStream.Processing;
 using TSCutter.GUI.Utils;
@@ -70,6 +71,10 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
 
     [ObservableProperty]
     private double _percent;
+
+    private SystemProgressOperation? _systemProgress;
+
+    partial void OnPercentChanged(double value) => _systemProgress?.ReportPercent(value);
 
     [ObservableProperty]
     private string _statusText = string.Empty;
@@ -132,6 +137,8 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
         _catalog = null;
         StatusText = LocalizationManager.Instance.String_TsRemux_Status_Probing;
 
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var analyzer = new TsStreamAnalyzer();
@@ -166,6 +173,7 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing && generation == _generation)
                 StatusText = string.Format(LocalizationManager.Instance.String_TsRemux_Status_Failed, exception.Message);
         }
@@ -494,6 +502,8 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
         ShowOutputProgress = true;
         Percent = 0;
         StatusText = LocalizationManager.Instance.String_TsRemux_Status_Writing;
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var progress = new Progress<TsRemuxProgress>(value =>
@@ -525,11 +535,13 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
         }
         catch (TsRemuxException exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
                 StatusText = FormatError(exception);
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
                 StatusText = string.Format(LocalizationManager.Instance.String_TsRemux_Status_Failed, exception.Message);
         }

@@ -16,6 +16,7 @@ using HanumanInstitute.MvvmDialogs.FileSystem;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.TransportStream.Analysis;
@@ -157,6 +158,10 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
     [ObservableProperty]
     private double _percent;
 
+    private SystemProgressOperation? _systemProgress;
+
+    partial void OnPercentChanged(double value) => _systemProgress?.ReportPercent(value);
+
     [ObservableProperty]
     private string _statusText = string.Empty;
 
@@ -255,6 +260,8 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
         BroadcastTimeText = string.Empty;
         StatusText = _text.Strings.String_TsCheck_Status_Scanning;
 
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             // Progress 在 UI 线程创建，扫描器只按节流后的频率回传，避免逐包跨线程调度。
@@ -275,11 +282,13 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing && scanGeneration == _scanGeneration)
                 StatusText = string.Format(_text.Strings.String_TsCheck_Status_Failed, exception.Message);
         }
         finally
         {
+            _systemProgress = null;
             if (ReferenceEquals(_cancellationTokenSource, cancellationTokenSource))
                 _cancellationTokenSource = null;
             cancellationTokenSource.Dispose();

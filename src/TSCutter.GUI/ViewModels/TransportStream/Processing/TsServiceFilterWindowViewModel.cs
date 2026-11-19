@@ -14,6 +14,7 @@ using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Services.TransportStream.Processing;
 using TSCutter.GUI.Utils;
@@ -60,6 +61,10 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
     [ObservableProperty]
     private double _percent;
 
+    private SystemProgressOperation? _systemProgress;
+
+    partial void OnPercentChanged(double value) => _systemProgress?.ReportPercent(value);
+
     [ObservableProperty]
     private string _statusText = string.Empty;
 
@@ -102,6 +107,8 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
         OutputFolder = Path.GetDirectoryName(FilePath) ?? string.Empty;
         StatusText = LocalizationManager.Instance.String_TsServiceFilter_Status_Probing;
 
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var analyzer = new TsStreamAnalyzer();
@@ -135,6 +142,7 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing && generation == _generation)
                 StatusText = string.Format(LocalizationManager.Instance.String_TsServiceFilter_Status_Failed, exception.Message);
         }
@@ -275,6 +283,8 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
         Percent = 0;
         StatusText = string.Format(
             LocalizationManager.Instance.String_TsServiceFilter_Status_Filtering, outputs.Count);
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var progress = new Progress<TsFilterProgress>(value =>
@@ -302,6 +312,7 @@ public partial class TsServiceFilterWindowViewModel : ViewModelBase, IModalDialo
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
             {
                 var message = exception is TsFilterException filterException
