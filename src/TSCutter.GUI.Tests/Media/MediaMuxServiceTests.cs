@@ -1,3 +1,4 @@
+using System.Buffers.Binary;
 using System.Security.Cryptography;
 using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.FFmpeg;
@@ -235,6 +236,192 @@ public sealed class MediaMuxServiceTests
             Assert.Equal(VideoDynamicRangeDetector.MakeCodecTag('d', 'v', 'h', '1'), RemuxCodecTag.Select("mp4", parameters));
         }
         Assert.Empty(Directory.GetFiles(directory.Path, ".tscutter-mux-*.tmp"));
+    }
+
+    /// <summary>
+    /// hev1 且配置记录中没有参数集（参数集只在码流中）的 MP4：媒体混流与关键帧剪辑输出 MP4 时从码流取出参数集
+    /// 补全配置记录并标记 hvc1，输出能正常打开，画面与源逐帧相同。配置记录无法补全时只能沿用 hev1
+    /// （杜比视界基础层兼容编号为 0 时为 dvhe），直接改标 hvc1 会写出无法打开的文件。
+    /// </summary>
+    [RemuxExportFact]
+    public async Task HevcWithParameterSetsOnlyInBandGetsHvc1Configuration()
+    {
+        using var directory = new TemporaryDirectory();
+        var service = new MediaMuxService();
+        var transport = await service.ProbeAsync(Fixture("dynamic-hevc.ts"));
+        var expected = RemuxExportServiceTests.DecodeVideoFrames(transport.Path).Select(frame => frame.Hash).ToArray();
+        var hvc1 = Path.Combine(directory.Path, "hvc1.mp4");
+        await service.ExportAsync(new(hvc1, "mp4", [Select(transport, 0)]));
+        var hev1 = Path.Combine(directory.Path, "hev1.mp4");
+        WriteWithParameterSetsOnlyInBand(hvc1, hev1);
+        Assert.Equal(expected, RemuxExportServiceTests.DecodeVideoFrames(hev1).Select(frame => frame.Hash));
+
+        var muxed = Path.Combine(directory.Path, "muxed.mp4");
+        await service.ExportAsync(new(muxed, "mp4", [Select(await service.ProbeAsync(hev1), 0)]));
+        var cut = Path.Combine(directory.Path, "cut.mp4");
+        await new TSCutter.GUI.Services.Editing.RemuxExportService().ExportAsync(new TSCutter.GUI.Models.Editing.RemuxExportRequest(cut,
+        [
+            new TSCutter.GUI.Models.Editing.RemuxExportSegment(hev1, 0, null, new TSCutter.GUI.Models.Editing.RemuxExportSettings
+            {
+                Container = "mp4", ReferenceVideoIndex = 0, TimelineOriginSeconds = VideoStart(hev1), StreamIndices = [0]
+            })
+        ]));
+        foreach (var output in new[] { muxed, cut })
+        {
+            Assert.Equal(VideoDynamicRangeDetector.MakeCodecTag('h', 'v', 'c', '1'), CodecTag(output));
+            Assert.Contains(ConfigurationParameterSets(output), set => VideoBitstream.IsSps(VideoBitstream.NalType(set, true), true));
+            Assert.Equal(expected, RemuxExportServiceTests.DecodeVideoFrames(output).Select(frame => frame.Hash));
+        }
+
+        // 两段的 PPS 编号相同、内容不同，放不进同一个配置记录：沿用 hev1，输出仍能正常打开。
+        var halves = Path.Combine(directory.Path, "halves.mp4");
+        var settings = new TSCutter.GUI.Models.Editing.RemuxExportSettings
+        {
+            Container = "mp4", ReferenceVideoIndex = 0, TimelineOriginSeconds = VideoStart(hev1), StreamIndices = [0]
+        };
+        await new TSCutter.GUI.Services.Editing.RemuxExportService().ExportAsync(new TSCutter.GUI.Models.Editing.RemuxExportRequest(halves,
+        [
+            new TSCutter.GUI.Models.Editing.RemuxExportSegment(hev1, 0, 1, settings, EndExclusive: true),
+            new TSCutter.GUI.Models.Editing.RemuxExportSegment(hev1, 1, null, settings.Snapshot())
+        ]));
+        Assert.Equal(VideoDynamicRangeDetector.MakeCodecTag('h', 'e', 'v', '1'), CodecTag(halves));
+        Assert.Equal(expected, RemuxExportServiceTests.DecodeVideoFrames(halves).Select(frame => frame.Hash));
+
+        unsafe
+        {
+            using var input = FormatContext.OpenInputUrl(hev1);
+            input.LoadStreamInfo();
+            AVFormatContext* raw = input;
+            var parameters = raw->streams[0]->codecpar;
+            var side = FF.av_packet_side_data_new(&parameters->coded_side_data, &parameters->nb_coded_side_data,
+                AVPacketSideDataType.AV_PKT_DATA_DOVI_CONF, 9, 0);
+            Assert.True(side != null);
+            byte[] record = [1, 0, 7, 6, 1, 0, 1, 6, 0];
+            record.CopyTo(new Span<byte>(side->data, record.Length));
+            Assert.Equal(VideoDynamicRangeDetector.MakeCodecTag('h', 'e', 'v', '1'), RemuxCodecTag.Select("mp4", parameters));
+            side->data[2] = 5;
+            side->data[7] = 0;
+            Assert.Equal(VideoDynamicRangeDetector.MakeCodecTag('d', 'v', 'h', 'e'), RemuxCodecTag.Select("mp4", parameters));
+        }
+    }
+
+    [RemuxExportFact]
+    public async Task InBandHevcKeepsTwoByteNalLengthsInMp4()
+    {
+        using var directory = new TemporaryDirectory();
+        var service = new MediaMuxService();
+        var transport = await service.ProbeAsync(Fixture("dynamic-hevc.ts"));
+        var source = Path.Combine(directory.Path, "source.mp4");
+        await service.ExportAsync(new(source, "mp4", [Select(transport, 0)]));
+        var hev1 = Path.Combine(directory.Path, "hev1.mp4");
+        WriteWithParameterSetsOnlyInBand(source, hev1, lengthSize: 2);
+        var expected = RemuxExportServiceTests.DecodeVideoFrames(source).Select(frame => frame.Hash).ToArray();
+        Assert.Equal(expected, RemuxExportServiceTests.DecodeVideoFrames(hev1).Select(frame => frame.Hash));
+
+        var output = Path.Combine(directory.Path, "muxed.mp4");
+        await service.ExportAsync(new(output, "mp4", [Select(await service.ProbeAsync(hev1), 0)]));
+        Assert.Equal(VideoDynamicRangeDetector.MakeCodecTag('h', 'v', 'c', '1'), CodecTag(output));
+        Assert.Equal(expected, RemuxExportServiceTests.DecodeVideoFrames(output).Select(frame => frame.Hash));
+    }
+
+    /// <summary>把 MP4 中的 HEVC 复制为 hev1，配置记录只保留固定字段，样本中的参数集不变。</summary>
+    private static unsafe void WriteWithParameterSetsOnlyInBand(string source, string target, int lengthSize = 4)
+    {
+        using var input = FormatContext.OpenInputUrl(source);
+        input.LoadStreamInfo();
+        AVFormatContext* raw = input;
+        var video = raw->streams[0];
+        var configuration = new ReadOnlySpan<byte>(video->codecpar->extradata, video->codecpar->extradata_size);
+        Assert.True(configuration.Length > 23 && configuration[0] == 1);
+        byte[] header = [.. configuration[..22], 0];
+        header[21] = (byte)((header[21] & ~3) | (lengthSize - 1));
+        AVFormatContext* output = null;
+        FFmpegException.Check(FF.avformat_alloc_output_context2(&output, null, "mp4", target));
+        try
+        {
+            var stream = FF.avformat_new_stream(output, null);
+            Assert.True(stream != null);
+            FFmpegException.Check(FF.avcodec_parameters_copy(stream->codecpar, video->codecpar));
+            var extradata = (byte*)FF.av_mallocz((ulong)header.Length + 64);
+            header.CopyTo(new Span<byte>(extradata, header.Length));
+            FF.av_free(stream->codecpar->extradata);
+            stream->codecpar->extradata = extradata;
+            stream->codecpar->extradata_size = header.Length;
+            stream->codecpar->codec_tag = VideoDynamicRangeDetector.MakeCodecTag('h', 'e', 'v', '1');
+            stream->time_base = video->time_base;
+            FFmpegException.Check(FF.avio_open2(&output->pb, target, 2, null, null));
+            FFmpegException.Check(FF.avformat_write_header(output, null));
+            using var narrowed = new Packet();
+            foreach (var packet in input.ReadPackets())
+            {
+                AVPacket* p = packet;
+                if (p->stream_index != video->index)
+                    continue;
+                p->stream_index = 0;
+                p->pts = MediaMuxService.Rescale(p->pts, video->time_base, stream->time_base);
+                p->dts = MediaMuxService.Rescale(p->dts, video->time_base, stream->time_base);
+                p->duration = MediaMuxService.Rescale(p->duration, video->time_base, stream->time_base);
+                p->pos = -1;
+                if (lengthSize == 2)
+                    p = UseTwoByteNalLengths(p, narrowed);
+                FFmpegException.Check(FF.av_interleaved_write_frame(output, p));
+            }
+            FFmpegException.Check(FF.av_write_trailer(output));
+        }
+        finally
+        {
+            if (output != null)
+            {
+                FF.avio_closep(&output->pb);
+                FF.avformat_free_context(output);
+            }
+        }
+        Assert.Equal(VideoDynamicRangeDetector.MakeCodecTag('h', 'e', 'v', '1'), CodecTag(target));
+        Assert.Empty(ConfigurationParameterSets(target));
+    }
+
+    private static unsafe AVPacket* UseTwoByteNalLengths(AVPacket* source, Packet narrowed)
+    {
+        var size = source->size;
+        var data = new ReadOnlySpan<byte>(source->data, size);
+        var nals = VideoBitstream.SplitNals(data, 4);
+        AVPacket* output = narrowed;
+        FFmpegException.Check(FF.av_new_packet(output, size - 2 * nals.Count));
+        FFmpegException.Check(FF.av_packet_copy_props(output, source));
+        var destination = new Span<byte>(output->data, output->size);
+        foreach (var range in nals)
+        {
+            var nal = data[range];
+            BinaryPrimitives.WriteUInt16BigEndian(destination, checked((ushort)nal.Length));
+            nal.CopyTo(destination[2..]);
+            destination = destination[(2 + nal.Length)..];
+        }
+        return output;
+    }
+
+    private static uint CodecTag(string path)
+    {
+        using var input = FormatContext.OpenInputUrl(path);
+        input.LoadStreamInfo();
+        return input.Streams[0].Codecpar!.CodecTag;
+    }
+
+    private static unsafe List<byte[]> ConfigurationParameterSets(string path)
+    {
+        using var input = FormatContext.OpenInputUrl(path);
+        input.LoadStreamInfo();
+        AVCodecParameters* parameters = input.Streams[0].Codecpar!;
+        var sets = new List<byte[]>();
+        VideoBitstream.ReadParameterSets(new ReadOnlySpan<byte>(parameters->extradata, parameters->extradata_size), true, sets);
+        return sets;
+    }
+
+    private static double VideoStart(string path)
+    {
+        using var input = FormatContext.OpenInputUrl(path);
+        input.LoadStreamInfo();
+        var video = input.GetVideoStream();
+        return video.StartTime * (double)video.TimeBase.num / video.TimeBase.den;
     }
 
     private static string[] Mp4Boxes(string path)

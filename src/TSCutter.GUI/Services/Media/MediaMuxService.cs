@@ -241,7 +241,13 @@ internal sealed unsafe class MediaMuxService
                     FFmpegException.Check(FF.avcodec_parameters_copy(stream->codecpar, source->codecpar));
                 stream->codecpar->codec_tag = RemuxCodecTag.Select(request.Container, source->codecpar);
                 if (request.Container == "mp4" && source->codecpar->codec_id == AVCodecID.AV_CODEC_ID_HEVC && !track.Stream.IsCover)
+                {
                     state.Hevc = HevcMp4PacketConverter.Create(stream->codecpar);
+                    // 参数集只在码流中：按文件开头关键帧中的参数集补全配置记录，改标 hvc1／dvh1。
+                    if (state.Hevc is null &&
+                        HevcInBandConfiguration.TryFill(stream->codecpar, [(track.Source.Path, track.Stream.Index, null)], token))
+                        stream->codecpar->codec_tag = RemuxCodecTag.Select(request.Container, stream->codecpar);
+                }
                 if (state.Subtitle is null)
                     stream->time_base = source->time_base;
                 stream->avg_frame_rate = source->avg_frame_rate;

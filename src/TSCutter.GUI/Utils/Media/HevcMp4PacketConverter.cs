@@ -16,15 +16,28 @@ internal sealed unsafe class HevcMp4PacketConverter : IDisposable
         var extra = new ReadOnlySpan<byte>(parameters->extradata, parameters->extradata_size);
         if (!extra.StartsWith((ReadOnlySpan<byte>)[0, 0, 1]) && !extra.StartsWith((ReadOnlySpan<byte>)[0, 0, 0, 1]))
             return null;
-        var configuration = CreateConfiguration(parameters);
-        var replacement = (byte*)FF.av_mallocz(checked((ulong)configuration.Length + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE));
+        SetExtradata(parameters, CreateConfiguration(parameters));
+        return new HevcMp4PacketConverter();
+    }
+
+    /// <summary>按 Annex B 形式的参数集生成配置记录（hvcC）并替换附加数据；样本已是长度前缀格式，不需要转换。</summary>
+    internal static void ReplaceConfiguration(AVCodecParameters* parameters, ReadOnlySpan<byte> annexB)
+    {
+        var configuration = CreateConfiguration(parameters, annexB);
+        // FFmpeg 生成四字节 NAL 长度字段；已封装的样本仍使用源 hvcC 声明的长度字段宽度。
+        configuration[21] = (byte)((configuration[21] & ~3) | (parameters->extradata[21] & 3));
+        SetExtradata(parameters, configuration);
+    }
+
+    private static void SetExtradata(AVCodecParameters* parameters, ReadOnlySpan<byte> data)
+    {
+        var replacement = (byte*)FF.av_mallocz(checked((ulong)data.Length + ffmpeg.AV_INPUT_BUFFER_PADDING_SIZE));
         if (replacement == null)
             throw new OutOfMemoryException();
-        configuration.CopyTo(new Span<byte>(replacement, configuration.Length));
+        data.CopyTo(new Span<byte>(replacement, data.Length));
         FF.av_free(parameters->extradata);
         parameters->extradata = replacement;
-        parameters->extradata_size = configuration.Length;
-        return new HevcMp4PacketConverter();
+        parameters->extradata_size = data.Length;
     }
 
     public AVPacket* Convert(AVPacket* source)
@@ -72,7 +85,7 @@ internal sealed unsafe class HevcMp4PacketConverter : IDisposable
         }
     }
 
-    private static byte[] CreateConfiguration(AVCodecParameters* parameters)
+    private static byte[] CreateConfiguration(AVCodecParameters* parameters, ReadOnlySpan<byte> annexB = default)
     {
         AVFormatContext* muxer = null;
         byte* buffer = null;
@@ -87,6 +100,8 @@ internal sealed unsafe class HevcMp4PacketConverter : IDisposable
             if (stream == null)
                 throw new OutOfMemoryException();
             FFmpegException.Check(FF.avcodec_parameters_copy(stream->codecpar, parameters));
+            if (!annexB.IsEmpty)
+                SetExtradata(stream->codecpar, annexB);
             stream->codecpar->codec_tag = RemuxCodecTag.Hev1;
             stream->time_base = new AVRational { num = 1, den = 1000 };
             FFmpegException.Check(FF.avio_open_dyn_buf(&muxer->pb));
