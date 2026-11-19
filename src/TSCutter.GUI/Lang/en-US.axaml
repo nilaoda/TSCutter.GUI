@@ -1570,7 +1570,7 @@
     <x:String x:Key="String.CutMode.Reason.PixelFormat">only 4:2:0 video&#10;(8-bit, or 10-bit for HEVC, AV1 and VP9)&#10;and 4:2:2 video (8- or 10-bit H.264 and HEVC,&#10;8-bit MPEG-2) are supported for now.</x:String>
     <x:String x:Key="String.CutMode.Reason.DynamicHdr">per-frame dynamic HDR metadata (such as HDR10+)&#10;cannot be kept for re-encoded frames.</x:String>
     <x:String x:Key="String.CutMode.Reason.Pulldown">soft pulldown (repeated fields)&#10;cannot be kept for re-encoded frames.</x:String>
-    <x:String x:Key="String.CutMode.Reason.DolbyVision">only single-layer Dolby Vision Profile 5 and 8.1&#10;are supported; this video uses a different Dolby Vision format.</x:String>
+    <x:String x:Key="String.CutMode.Reason.DolbyVision">only single-layer Dolby Vision Profile 5, 8.1 and 8.4&#10;are supported; this video uses a different Dolby Vision format.</x:String>
     <x:String x:Key="String.CutMode.Reason.DolbyVisionContainer">the Dolby Vision signaling cannot be kept&#10;when the output format differs from the source (TS to M2TS or back).</x:String>
     <x:String x:Key="String.CutMode.Reason.MultipleVideo">more than one video track is selected.</x:String>
     <x:String x:Key="String.CutMode.Reason.Encoder">the FFmpeg runtime has no encoder&#10;that can re-encode this video's codec and pixel format.</x:String>

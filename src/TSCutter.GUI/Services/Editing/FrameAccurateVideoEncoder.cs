@@ -164,7 +164,7 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
                         refresh, chromaOffset);
             }
             // 杜比视界：x265 由每帧解码出的杜比元数据重新生成 RPU。首帧元数据交给编码器推断配置，
-            // 打开后核对推断出的配置与源一致。
+            // 基础层兼容编号按上面传入的颜色描述推断（PQ 为 8.1，HLG 为 8.4），打开后核对推断出的配置与源一致。
             var sourceDovi = DolbyVisionConfiguration(source);
             if (sourceDovi != null)
             {
