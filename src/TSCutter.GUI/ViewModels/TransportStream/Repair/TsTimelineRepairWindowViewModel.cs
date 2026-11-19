@@ -13,6 +13,7 @@ using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Models.TransportStream.Repair;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.TransportStream.Repair;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
@@ -70,6 +71,10 @@ public partial class TsTimelineRepairWindowViewModel : ViewModelBase, IModalDial
 
     [ObservableProperty]
     private double _percent;
+
+    private SystemProgressOperation? _systemProgress;
+
+    partial void OnPercentChanged(double value) => _systemProgress?.ReportPercent(value);
 
     [ObservableProperty]
     private string _statusText = string.Empty;
@@ -131,6 +136,8 @@ public partial class TsTimelineRepairWindowViewModel : ViewModelBase, IModalDial
         Percent = 0;
         SummaryText = "-";
         SetStatus(AnalyzeStatusText);
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var progress = CreateProgress(generation);
@@ -166,6 +173,7 @@ public partial class TsTimelineRepairWindowViewModel : ViewModelBase, IModalDial
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing && generation == _generation)
             {
                 _lastException = exception;
@@ -209,6 +217,8 @@ public partial class TsTimelineRepairWindowViewModel : ViewModelBase, IModalDial
         _isRepairOperation = true;
         Percent = 0;
         SetStatus(LocalizationManager.Instance.String_TsTimelineRepair_Status_Repairing);
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var progress = CreateProgress(generation);
@@ -242,6 +252,7 @@ public partial class TsTimelineRepairWindowViewModel : ViewModelBase, IModalDial
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing && generation == _generation)
             {
                 _lastException = exception;

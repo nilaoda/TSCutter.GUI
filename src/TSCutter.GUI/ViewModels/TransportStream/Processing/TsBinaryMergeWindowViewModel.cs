@@ -11,6 +11,7 @@ using HanumanInstitute.MvvmDialogs.FileSystem;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.TransportStream.Processing;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
@@ -103,6 +104,10 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
 
     [ObservableProperty]
     private double _percent;
+
+    private SystemProgressOperation? _systemProgress;
+
+    partial void OnPercentChanged(double value) => _systemProgress?.ReportPercent(value);
 
     [ObservableProperty]
     private string _statusText = string.Empty;
@@ -329,6 +334,8 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
         StatusText = _mode == TsBinaryMergeMode.ContentOverlap
             ? LocalizationManager.Instance.String_TsBinaryMerge_Status_ContentAnalyzing
             : LocalizationManager.Instance.String_TsBinaryMerge_Status_Analyzing;
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var progress = new Progress<TsBinaryMergeProgress>(value =>
@@ -369,6 +376,7 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
                 StatusText = string.Format(
                     LocalizationManager.Instance.String_TsBinaryMerge_Status_Failed,
@@ -413,6 +421,8 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
         Percent = 0;
         StatusText = string.Format(LocalizationManager.Instance.String_TsBinaryMerge_Status_Validating,
             1, Files.Count);
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var progress = new Progress<TsBinaryMergeProgress>(value =>
@@ -458,6 +468,7 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
                 StatusText = string.Format(
                     LocalizationManager.Instance.String_TsBinaryMerge_Status_Failed,

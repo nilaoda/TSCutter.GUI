@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Utils.Application;
 
 namespace TSCutter.GUI.ViewModels.Editing;
@@ -47,13 +48,32 @@ public partial class ExportPreparationWindowViewModel : ViewModelBase, IModalDia
         CurrentFileName = value.FileName ?? "";
         Total = value.Total;
         Completed = value.Completed;
+        if (IsIndeterminate)
+            _systemProgress?.SetIndeterminate();
+        else
+            _systemProgress?.ReportPercent(Percent);
     }
+
+    private SystemProgressOperation? _systemProgress;
 
     internal async Task ObserveCompletionAsync()
     {
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         RefreshProgress();
-        try { await Operation; DialogResult = true; }
-        catch { DialogResult = false; } // 调用方统一处理任务的错误和取消。
+        try
+        {
+            await Operation;
+            DialogResult = true;
+        }
+        catch (Exception exception)
+        {
+            // 调用方统一处理任务的错误和取消。
+            DialogResult = false;
+            if (exception is not OperationCanceledException)
+                systemProgress.Fail();
+        }
+        _systemProgress = null;
         RefreshProgress();
         RequestClose?.Invoke();
     }

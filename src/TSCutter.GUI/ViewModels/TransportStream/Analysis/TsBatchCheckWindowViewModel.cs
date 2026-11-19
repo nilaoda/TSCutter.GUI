@@ -12,6 +12,7 @@ using HanumanInstitute.MvvmDialogs.FileSystem;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
@@ -253,6 +254,9 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
         var folder = SaveBesideSource ? null : OutputFolder;
         OperationMessage = string.Empty;
         IsScanning = true;
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
+        var anyFailed = false;
         try
         {
             while (!_isClosed && !cancellation.IsCancellationRequested)
@@ -276,6 +280,7 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
                     item.UpdateProgress(value);
                     if (OnlyIssues && hadIssues != HasIssues(item)) NotifyState();
                     OnPropertyChanged(nameof(Percent));
+                    _systemProgress?.ReportPercent(Percent);
                     SpeedText = $"{CommonUtil.FormatFileSize(value.BytesPerSecond)}/s";
                 });
                 try
@@ -305,6 +310,11 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
                     item.Failure = exception.Message;
                     item.State = cancellation.IsCancellationRequested
                         ? TsBatchCheckState.Cancelled : TsBatchCheckState.Failed;
+                    if (item.State == TsBatchCheckState.Failed)
+                    {
+                        anyFailed = true;
+                        systemProgress.MarkError();
+                    }
                     item.RefreshLocalizedText();
                 }
                 NotifyState();
@@ -313,13 +323,20 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
         catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
         finally
         {
+            _systemProgress = null;
             _generation++;
             _cancellation = null;
             IsScanning = false;
             SpeedText = "—";
             NotifyState();
         }
+        if (anyFailed)
+            systemProgress.Fail();
+        else
+            systemProgress.Complete();
     }
+
+    private SystemProgressOperation? _systemProgress;
 
     [ObservableProperty]
     private string _speedText = "—";
@@ -403,6 +420,7 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
             nameof(CanBrowseFolder), nameof(UseCustomFolder), nameof(Percent), nameof(SummaryText), nameof(SelectedDetail),
             nameof(HasSelectedDetail), nameof(StatusText) })
             OnPropertyChanged(name);
+        _systemProgress?.ReportPercent(Percent);
         AddFilesCommand.NotifyCanExecuteChanged();
         RemoveFilesCommand.NotifyCanExecuteChanged();
         ClearCommand.NotifyCanExecuteChanged();

@@ -14,6 +14,7 @@ using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Services.TransportStream.Processing;
 using TSCutter.GUI.Utils;
@@ -61,6 +62,10 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
 
     [ObservableProperty]
     private double _percent;
+
+    private SystemProgressOperation? _systemProgress;
+
+    partial void OnPercentChanged(double value) => _systemProgress?.ReportPercent(value);
 
     [ObservableProperty]
     private string _statusText = string.Empty;
@@ -116,6 +121,8 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
         _plan = null;
         StatusText = LocalizationManager.Instance.String_TsFilter_Status_Probing;
 
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var progress = new Progress<TsCheckProgress>(value =>
@@ -158,6 +165,7 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing && generation == _generation)
                 StatusText = string.Format(LocalizationManager.Instance.String_TsFilter_Status_Failed, exception.Message);
         }
@@ -314,6 +322,8 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
         ShowOutputProgress = true;
         Percent = 0;
         StatusText = LocalizationManager.Instance.String_TsFilter_Status_Filtering;
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var progress = new Progress<TsFilterProgress>(value =>
@@ -341,6 +351,7 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
         }
         catch (TsFilterException exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
                 StatusText = string.Format(
                     LocalizationManager.Instance.String_TsFilter_Status_Failed,
@@ -348,6 +359,7 @@ public partial class TsFilterWindowViewModel : ViewModelBase, IModalDialogViewMo
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
                 StatusText = string.Format(LocalizationManager.Instance.String_TsFilter_Status_Failed, exception.Message);
         }

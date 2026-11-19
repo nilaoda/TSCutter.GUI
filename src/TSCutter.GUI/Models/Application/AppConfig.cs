@@ -90,6 +90,8 @@ public class AppConfig : ObservableObject
     public Models.Editing.ClipListMode ClipListMode { get; set; }
     // 单个导出完成后显示结果窗口（耗时、大小、路径与检测结论）；队列等批量导出不显示。导出失败时总是显示。
     public bool ShowExportResult { get; set; } = true;
+    // 在任务栏按钮（Windows）或 Dock 图标（macOS）上显示导出等长时间操作的进度；默认开启。
+    public bool ShowSystemProgress { get; set; } = true;
     // 导出过程中对最终输出字节同步执行 TS 检测；默认开启，可在设置中关闭。
     public bool TsCheckOnExport { get; set; } = true;
     // TS 导出整体平移时间戳、让输出从 0 开始；默认关闭。

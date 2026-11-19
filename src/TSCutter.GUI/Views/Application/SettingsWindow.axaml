@@ -87,6 +87,14 @@
                         </StackPanel>
                         <CheckBox IsChecked="{Binding AutoCheckForUpdates}"
                                   Content="{DynamicResource String.Settings.AutoCheckForUpdates}" />
+                        <CheckBox IsChecked="{Binding ShowSystemProgress}"
+                                  IsVisible="{Binding IsSystemProgressAvailable}"
+                                  Content="{DynamicResource String.Settings.ShowSystemProgress}">
+                            <ToolTip.Tip>
+                                <TextBlock MaxWidth="320" TextWrapping="Wrap"
+                                           Text="{DynamicResource String.Settings.ShowSystemProgressTip}" />
+                            </ToolTip.Tip>
+                        </CheckBox>
                         <StackPanel Orientation="Horizontal" Spacing="10">
                             <CheckBox IsChecked="{Binding RememberRecentItems}" VerticalAlignment="Center"
                                       Content="{DynamicResource String.Settings.RememberRecentItems}">

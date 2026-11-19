@@ -15,6 +15,7 @@ using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Services.TransportStream.Processing;
 using TSCutter.GUI.Utils;
@@ -64,6 +65,10 @@ public partial class TsEsExtractorWindowViewModel : ViewModelBase, IModalDialogV
     [ObservableProperty]
     private double _percent;
 
+    private SystemProgressOperation? _systemProgress;
+
+    partial void OnPercentChanged(double value) => _systemProgress?.ReportPercent(value);
+
     [ObservableProperty]
     private string _statusText = string.Empty;
 
@@ -108,6 +113,8 @@ public partial class TsEsExtractorWindowViewModel : ViewModelBase, IModalDialogV
         OutputFolder = Path.GetDirectoryName(FilePath) ?? string.Empty;
         SetStatus(StatusKind.Probing);
 
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var analyzer = new TsStreamAnalyzer();
@@ -142,6 +149,7 @@ public partial class TsEsExtractorWindowViewModel : ViewModelBase, IModalDialogV
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing && generation == _generation)
                 SetStatus(StatusKind.Failed, exception.Message);
         }
@@ -309,6 +317,8 @@ public partial class TsEsExtractorWindowViewModel : ViewModelBase, IModalDialogV
         SpeedText = $"{CommonUtil.FormatFileSize(0)}/s";
         SetStatus(StatusKind.Extracting);
 
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var extractionProgress = new Progress<TsEsExtractionProgress>(value =>
@@ -343,11 +353,13 @@ public partial class TsEsExtractorWindowViewModel : ViewModelBase, IModalDialogV
         }
         catch (TsEsExtractionException exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
                 SetStatus(StatusKind.Failed, exception);
         }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             if (!_isClosing)
                 SetStatus(StatusKind.Failed, exception.Message);
         }

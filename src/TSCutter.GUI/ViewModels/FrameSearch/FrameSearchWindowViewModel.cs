@@ -11,6 +11,7 @@ using CommunityToolkit.Mvvm.Input;
 using HanumanInstitute.MvvmDialogs;
 using TSCutter.GUI.Models.FrameSearch;
 using TSCutter.GUI.Models.Preview;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.FrameSearch;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.ViewModels;
@@ -56,6 +57,13 @@ public sealed partial class FrameSearchWindowViewModel : ViewModelBase, IModalDi
     [ObservableProperty]
     private bool isPaused;
 
+    private SystemProgressOperation? _systemProgress;
+
+    partial void OnProgressPercentChanged(double value) => _systemProgress?.ReportPercent(value);
+
+    // 找到匹配后等待用户决定是否继续，期间显示为暂停。
+    partial void OnIsPausedChanged(bool value) => _systemProgress?.SetPaused(value);
+
     [ObservableProperty]
     private Bitmap? referenceImage;
 
@@ -76,6 +84,8 @@ public sealed partial class FrameSearchWindowViewModel : ViewModelBase, IModalDi
             ProgressPercent = fraction * 100;
             if (!IsPaused) UpdateSearchingStatus();
         });
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             using var stream = new MemoryStream(Template!.Jpeg, writable: false);
@@ -97,6 +107,7 @@ public sealed partial class FrameSearchWindowViewModel : ViewModelBase, IModalDi
         }
         catch (Exception error)
         {
+            systemProgress.Fail(error);
             if (!cancellation.IsCancellationRequested)
                 StatusText = string.Format(LocalizationManager.Instance.String_FrameSearch_Failed,
                     error.Message);

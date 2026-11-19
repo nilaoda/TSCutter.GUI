@@ -13,6 +13,7 @@ using FFmpeg.AutoGen.Abstractions;
 using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Models.Media;
+using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.Media;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Files;
@@ -187,6 +188,8 @@ public partial class MediaMuxWindowViewModel : ViewModelBase, IModalDialogViewMo
     [ObservableProperty, NotifyPropertyChangedFor(nameof(HasErrorDetails))] private string _errorDetails = "";
     public bool HasErrorDetails => ErrorDetails.Length > 0;
     [ObservableProperty] private double _percent;
+    private SystemProgressOperation? _systemProgress;
+    partial void OnPercentChanged(double value) => _systemProgress?.ReportPercent(value);
     [ObservableProperty] private string _statusText;
     [ObservableProperty] private string _progressText = "";
 
@@ -421,6 +424,8 @@ public partial class MediaMuxWindowViewModel : ViewModelBase, IModalDialogViewMo
             Shortest, ShortestIncludesSubtitles, FastStart);
         var cancellation = BeginOperation(true);
         SetStatus(static () => Strings.String_MediaMux_Running);
+        using var systemProgress = SystemProgressService.Begin(this);
+        _systemProgress = systemProgress;
         try
         {
             var progress = new Progress<MediaMuxProgress>(value =>
@@ -439,6 +444,7 @@ public partial class MediaMuxWindowViewModel : ViewModelBase, IModalDialogViewMo
         catch (OperationCanceledException) { SetStatus(static () => Strings.String_MediaMux_Cancelled); }
         catch (Exception exception)
         {
+            systemProgress.Fail(exception);
             IsFailure = true;
             _statusTextProvider = null;
             StatusText = FormatError(exception);

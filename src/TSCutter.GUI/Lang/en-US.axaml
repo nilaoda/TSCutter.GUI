@@ -242,6 +242,8 @@
     <x:String x:Key="String.Settings.CurrentLightTheme">Light theme</x:String>
     <x:String x:Key="String.Settings.CurrentDarkTheme">Dark theme</x:String>
     <x:String x:Key="String.Settings.AutoCheckForUpdates">Auto check for updates after app started</x:String>
+    <x:String x:Key="String.Settings.ShowSystemProgress">Show progress on the taskbar or Dock icon</x:String>
+    <x:String x:Key="String.Settings.ShowSystemProgressTip">Shows the progress of exports, checks, repairs and other long tasks on the taskbar button (Windows) or the Dock icon (macOS).&#10;The bar turns red when a task fails.</x:String>
     <x:String x:Key="String.Settings.ShowImageNavigator">Show image navigator</x:String>
     <x:String x:Key="String.Settings.ShowImageNavigatorTip">Show a navigation thumbnail when the image extends beyond the view. Click or drag to move the visible area.</x:String>
     <x:String x:Key="String.Settings.ShowKeyFrameStrip">Show keyframe strip</x:String>
