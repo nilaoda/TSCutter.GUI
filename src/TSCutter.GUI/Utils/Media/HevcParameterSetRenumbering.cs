@@ -15,6 +15,93 @@ namespace TSCutter.GUI.Utils.Media;
 /// </summary>
 internal sealed class HevcParameterSetRenumbering
 {
+    internal static byte[] RewriteSpsTransferCharacteristic(ReadOnlySpan<byte> nal, byte transferCharacteristic)
+    {
+        var data = ReadMetadataRbsp(nal);
+        Sps.Parse(data, out var reader);
+        reader.Skip(1); // strong_intra_smoothing_enabled_flag
+        if (!reader.Flag()) // vui_parameters_present_flag
+            throw new InvalidDataException("Missing HEVC VUI.");
+        if (reader.Flag() && reader.Bits(8) == 255) // aspect_ratio_info_present_flag / Extended_SAR
+            reader.Skip(32);
+        if (reader.Flag()) // overscan_info_present_flag
+            reader.Skip(1);
+        if (!reader.Flag()) // video_signal_type_present_flag
+            throw new InvalidDataException("Missing HEVC video signal type.");
+        reader.Skip(4); // video_format and video_full_range_flag
+        if (!reader.Flag() || reader.Position + 24 >= Rbsp.StopBit(data))
+            throw new InvalidDataException("Missing or truncated HEVC colour description.");
+        reader.Skip(8); // colour_primaries
+
+        var start = reader.Position;
+        for (var bit = 0; bit < 8; bit++)
+        {
+            var position = start + bit;
+            var mask = 0x80 >> (position & 7);
+            var value = (transferCharacteristic & (0x80 >> bit)) != 0 ? mask : 0;
+            data[position >> 3] = (byte)((data[position >> 3] & ~mask) | value);
+        }
+        return EscapeMetadataRbsp(data, nal.Length);
+    }
+
+    internal static byte[]? RewriteSeiTransferCharacteristic(ReadOnlySpan<byte> nal, byte transferCharacteristic)
+    {
+        var data = ReadMetadataRbsp(nal);
+        if (data[^1] != 0x80)
+            throw new InvalidDataException("Invalid HEVC SEI trailing bits.");
+
+        var messages = data.AsSpan(2, data.Length - 3);
+        var offset = 0;
+        var changed = false;
+        while (offset < messages.Length)
+        {
+            var type = ReadSeiValue(messages, ref offset);
+            var size = ReadSeiValue(messages, ref offset);
+            if (size > messages.Length - offset)
+                throw new InvalidDataException("Truncated HEVC SEI message.");
+            if (type == 147) // alternative_transfer_characteristics
+            {
+                if (size != 1)
+                    throw new InvalidDataException("Invalid HEVC alternative transfer characteristics SEI.");
+                changed |= messages[offset] != transferCharacteristic;
+                messages[offset] = transferCharacteristic;
+            }
+            offset += size;
+        }
+        return changed ? EscapeMetadataRbsp(data, nal.Length) : null;
+    }
+
+    private static int ReadSeiValue(ReadOnlySpan<byte> messages, ref int offset)
+    {
+        var value = 0;
+        while (offset < messages.Length)
+        {
+            var current = messages[offset++];
+            value += current;
+            if (current != 255)
+                return value;
+        }
+        throw new InvalidDataException("Truncated HEVC SEI header.");
+    }
+
+    private static byte[] ReadMetadataRbsp(ReadOnlySpan<byte> nal)
+    {
+        if (nal.Length < 3 || (nal[0] & 0x80) != 0 || (nal[1] & 7) == 0)
+            throw new InvalidDataException("Invalid HEVC NAL header.");
+        var (data, _) = Rbsp.Unescape(nal);
+        if (!nal.SequenceEqual(Rbsp.Escape(data)))
+            throw new InvalidDataException("Invalid HEVC emulation prevention.");
+        return data;
+    }
+
+    private static byte[] EscapeMetadataRbsp(byte[] data, int nalLength)
+    {
+        var rewritten = Rbsp.Escape(data);
+        if (rewritten.Length != nalLength)
+            throw new InvalidDataException("Rewriting HEVC metadata would change the NAL length.");
+        return rewritten;
+    }
+
     private readonly byte[][] encoded;
     private readonly Sps sps;
     private readonly Pps pps;
@@ -345,6 +432,8 @@ internal sealed class HevcParameterSetRenumbering
             var reader = new BitReader(data, 16);
             reader.Skip(4); // sps_video_parameter_set_id
             maxSubLayers = (int)reader.Bits(3);
+            if (maxSubLayers > 6)
+                throw new InvalidDataException("Invalid HEVC temporal sub-layer count.");
             reader.Skip(1);
             ProfileTierLevel(reader, maxSubLayers);
             return reader;
@@ -352,15 +441,19 @@ internal sealed class HevcParameterSetRenumbering
 
         public static int ReadId(byte[] data) => (int)ReadToId(data, out _).Ue();
 
-        public static Sps Parse(byte[] data)
+        public static Sps Parse(byte[] data) => Parse(data, out _);
+
+        public static Sps Parse(byte[] data, out BitReader reader)
         {
-            var reader = ReadToId(data, out var maxSubLayers);
+            reader = ReadToId(data, out var maxSubLayers);
             var sps = new Sps { IdStart = reader.Position };
             reader.Ue();
             sps.IdEnd = reader.Position;
-            var chroma = (int)reader.Ue();
+            var chroma = reader.Ue();
+            if (chroma > 3)
+                throw new InvalidDataException("Invalid HEVC chroma format.");
             sps.SeparateColourPlane = chroma == 3 && reader.Flag();
-            sps.ChromaArrayType = sps.SeparateColourPlane ? 0 : chroma;
+            sps.ChromaArrayType = sps.SeparateColourPlane ? 0 : (int)chroma;
             var width = (int)reader.Ue();
             var height = (int)reader.Ue();
             if (reader.Flag())
@@ -368,7 +461,10 @@ internal sealed class HevcParameterSetRenumbering
                     reader.Ue();
             reader.Ue();
             reader.Ue();
-            sps.Log2MaxPocLsb = (int)reader.Ue() + 4;
+            var log2MaxPocLsbMinus4 = reader.Ue();
+            if (log2MaxPocLsbMinus4 > 12)
+                throw new InvalidDataException("Invalid HEVC picture order count bit width.");
+            sps.Log2MaxPocLsb = (int)log2MaxPocLsbMinus4 + 4;
             var ordering = reader.Flag();
             for (var i = ordering ? 0 : maxSubLayers; i <= maxSubLayers; i++)
             {
@@ -391,16 +487,20 @@ internal sealed class HevcParameterSetRenumbering
                 reader.Ue();
                 reader.Skip(1);
             }
-            sps.NumShortTermRefPicSets = (int)reader.Ue();
-            if (sps.NumShortTermRefPicSets > 64)
+            var shortTermRefPicSets = reader.Ue();
+            if (shortTermRefPicSets > 64)
                 throw new InvalidDataException("Too many short-term reference picture sets.");
+            sps.NumShortTermRefPicSets = (int)shortTermRefPicSets;
             sps.NumDeltaPocs = new int[sps.NumShortTermRefPicSets + 1];
             for (var i = 0; i < sps.NumShortTermRefPicSets; i++)
                 sps.NumDeltaPocs[i] = ShortTermRefPicSet(reader, i, sps.NumDeltaPocs, sps.NumShortTermRefPicSets);
             sps.LongTermRefPicsPresent = reader.Flag();
             if (sps.LongTermRefPicsPresent)
             {
-                sps.NumLongTermRefPicsSps = (int)reader.Ue();
+                var longTermRefPics = reader.Ue();
+                if (longTermRefPics > 32)
+                    throw new InvalidDataException("Too many long-term reference pictures.");
+                sps.NumLongTermRefPicsSps = (int)longTermRefPics;
                 for (var i = 0; i < sps.NumLongTermRefPicsSps; i++)
                     reader.Skip(sps.Log2MaxPocLsb + 1);
             }
@@ -432,7 +532,7 @@ internal sealed class HevcParameterSetRenumbering
             }
             var negative = reader.Ue();
             var positive = reader.Ue();
-            if (negative + positive > 32)
+            if (negative > 32 || positive > 32 - negative)
                 throw new InvalidDataException("Invalid reference picture set.");
             for (var i = 0u; i < negative + positive; i++)
             {

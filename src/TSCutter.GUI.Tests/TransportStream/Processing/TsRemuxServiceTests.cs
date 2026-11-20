@@ -12,6 +12,8 @@ public sealed class TsRemuxServiceTests
     private const int SourcePmtPid = 0x0100;
     private const int VideoPid = 0x0101;
     private const int AudioPid = 0x0102;
+    private static readonly byte[] HlgSps = Convert.FromHexString(
+        "4201010220000003008000000300000300B4A001E020021C4D8DB59242362AE5525E5CCD42448241000003000100000300323F8B1280");
 
     [Fact]
     public void MissingServiceMetadataIsNotGeneratedByDefault()
@@ -459,7 +461,93 @@ public sealed class TsRemuxServiceTests
         Assert.True(TsPsiSectionBuilder.HasValidCrc(section));
     }
 
-    private static TsCheckResult CreateCatalog(byte[]? serviceDescriptors = null, long fileSize = 0)
+    [Fact]
+    public async Task TransferEditUpdatesSplitSpsAndSeiAndPreservesOtherPacketBytes()
+    {
+        // The transfer value (HLG) spans SPS bytes 37 and 38. BT.709 changes both bytes.
+        var sps = HlgSps;
+        byte[] pesHeader = [0, 0, 1, 0xE0, 0, 0, 0x80, 0x80, 5, 0x21, 0, 1, 0, 1];
+        byte[] seiAndSlice = [0, 0, 1, 0x4E, 1, 0x93, 1, 0, 5, 1, 0xAB, 0x80, 0, 0, 1, 2, 1, 0xAA, 0x80];
+        var packets = new[]
+        {
+            CreateVideoPacket(pesHeader[..2], 0, start: true),
+            CreateVideoPacket([.. pesHeader[2..], 0, 0], 1),
+            CreateVideoPacket([1, .. sps[..38]], 2),
+            CreatePayloadPacket(AudioPid, 0),
+            CreateVideoPacket([.. pesHeader, .. sps[38..], .. seiAndSlice], 3, start: true),
+            CreateVideoPacket([.. pesHeader, .. sps[38..], .. seiAndSlice], 3, start: true)
+        };
+        var catalog = CreateCatalog(fileSize: packets.Length * TsStreamAnalyzer.PacketSize, videoType: TsStreamTypes.Hevc);
+        var expected = packets.Select(packet => packet.ToArray()).ToArray();
+        expected[2][^1] = 0x40;
+        foreach (var packet in expected[4..])
+        {
+            var payloadStart = TsPacketParser.Parse(packet).PayloadOffset;
+            packet[payloadStart + pesHeader.Length] = 0x42;
+            packet[payloadStart + pesHeader.Length + sps.Length - 38 + 7] = 1;
+        }
+        foreach (var packet in expected.Where(packet => TsPacketParser.Parse(packet).Pid == VideoPid))
+            packet[2] = 0x11; // The transfer edit follows the remapped output PID.
+
+        var (result, output) = await RemuxAsync(packets, catalog, CreateConfiguration(
+            videoOutputPid: 0x0111, videoTransfer: TsRemuxTransferCharacteristic.Bt709));
+
+        Assert.Equal(0, result.ContinuityErrors);
+        Assert.Equal(expected.SelectMany(packet => packet).ToArray(), output);
+    }
+
+    [Fact]
+    public async Task TruncatedMetadataPesPreservesExistingOutput()
+    {
+        var directory = Directory.CreateTempSubdirectory("ts-remux-transfer-");
+        try
+        {
+            var sourcePath = Path.Combine(directory.FullName, "source.ts");
+            var outputPath = Path.Combine(directory.FullName, "output.ts");
+            byte[] previousOutput = [0xAB, 0xCD];
+            byte[] videoPesHeader = [0, 0, 1, 0xE0, 0, 0, 0x80, 0, 0];
+            var packets = new[]
+            {
+                CreateVideoPacket([.. videoPesHeader, 0, 0, 1, .. HlgSps, 0, 0, 1, 2, 1, 0x80], 0, start: true),
+                CreatePayloadPacket(AudioPid, 0),
+                CreatePayloadPacket(AudioPid, 1),
+                CreatePayloadPacket(AudioPid, 2),
+                CreatePayloadPacket(AudioPid, 3),
+                // The SEI looks complete, but EOF arrived before the declared end of its PES.
+                CreateVideoPacket([0, 0, 1, 0xE0, 0, 20, 0x80, 0, 0, 0, 0, 1, 0x4E, 1, 0x93, 1, 0, 0x80],
+                    1, start: true)
+            };
+            var data = packets.SelectMany(packet => packet).ToArray();
+            await File.WriteAllBytesAsync(sourcePath, data);
+            await File.WriteAllBytesAsync(outputPath, previousOutput);
+            var catalog = CreateCatalog(fileSize: data.Length, videoType: TsStreamTypes.Hevc);
+
+            var exception = await Assert.ThrowsAsync<TsRemuxException>(() => new TsRemuxService().RemuxAsync(
+                sourcePath, outputPath, catalog, CreateConfiguration(videoTransfer: TsRemuxTransferCharacteristic.Hlg)));
+
+            Assert.Equal(TsRemuxErrorCode.TransferCharacteristicRewriteFailed, exception.Code);
+            Assert.Equal(previousOutput, await File.ReadAllBytesAsync(outputPath));
+            Assert.Equal(2, directory.GetFiles().Length);
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
+    private static byte[] CreateVideoPacket(ReadOnlySpan<byte> payload, int counter, bool start = false)
+    {
+        var packet = CreatePayloadPacket(VideoPid, counter, pcrBase: 90_000);
+        if (start)
+            packet[1] |= 0x40;
+        packet[4] = (byte)(packet.Length - 5 - payload.Length);
+        packet.AsSpan(12, packet[4] - 7).Fill(0xFF);
+        payload.CopyTo(packet.AsSpan(packet.Length - payload.Length));
+        return packet;
+    }
+
+    private static TsCheckResult CreateCatalog(
+        byte[]? serviceDescriptors = null, long fileSize = 0, byte videoType = TsStreamTypes.H264)
     {
         var result = new TsCheckResult
         {
@@ -476,9 +564,9 @@ public sealed class TsRemuxServiceTests
             PcrPid = VideoPid,
             PmtVersion = 0
         };
-        program.Streams[VideoPid] = 0x1B;
+        program.Streams[VideoPid] = videoType;
         program.Streams[AudioPid] = 0x03;
-        program.StreamDefinitions[VideoPid] = new TsStreamDefinition { StreamType = 0x1B };
+        program.StreamDefinitions[VideoPid] = new TsStreamDefinition { StreamType = videoType };
         program.StreamDefinitions[AudioPid] = new TsStreamDefinition { StreamType = 0x03 };
         result.Programs[1] = program;
         result.Pids[VideoPid] = new TsCheckPidSummary { Pid = VideoPid };
@@ -516,7 +604,8 @@ public sealed class TsRemuxServiceTests
         bool keepEpg = true,
         string? audioLanguage = null,
         int videoOrder = 0,
-        int audioOrder = 1) => new()
+        int audioOrder = 1,
+        TsRemuxTransferCharacteristic? videoTransfer = null) => new()
     {
         KeepEpg = keepEpg,
         OutputMode = outputMode,
@@ -539,6 +628,7 @@ public sealed class TsRemuxServiceTests
                         SourcePid = VideoPid,
                         OutputPid = videoOutputPid,
                         Keep = keepVideo,
+                        OutputTransferCharacteristic = videoTransfer,
                         Order = videoOrder
                     },
                     new TsRemuxTrackConfiguration

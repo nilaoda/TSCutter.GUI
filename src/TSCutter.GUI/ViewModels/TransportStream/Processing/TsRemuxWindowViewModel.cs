@@ -45,6 +45,7 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
         _dialogService = dialogService;
         BuildServiceTypeOptions();
         BuildLanguageOptions();
+        BuildTransferOptions();
         StatusText = LocalizationManager.Instance.String_TsRemux_Status_Ready;
         App.LocalizationService.LanguageChanged += OnLanguageChanged;
     }
@@ -60,6 +61,7 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
     public ObservableCollection<TsRemuxServiceItem> Services { get; } = [];
     public ObservableCollection<TsRemuxServiceTypeOption> ServiceTypeOptions { get; } = [];
     public ObservableCollection<TsRemuxLanguageOption> LanguageOptions { get; } = [];
+    public ObservableCollection<TsRemuxTransferOption> TransferOptions { get; } = [];
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(CanOutput), nameof(CanEdit), nameof(CanCancel), nameof(CanEditPids), nameof(CanMoveTrackUp), nameof(CanMoveTrackDown))]
@@ -214,6 +216,9 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
                         BitrateText = CommonUtil.FormatOptionalBitrate(summary?.Bitrate ?? 0),
                         OriginalLanguageCode = summary?.Language ?? string.Empty,
                         SelectedLanguage = FindOrAddLanguageOption(summary?.Language),
+                        SelectedTransferCharacteristic = definition.Value.StreamType == TsStreamTypes.Hevc
+                            ? TransferOptions[0]
+                            : null,
                         IsPcrSource = definition.Key == program.PcrPid,
                         IsPcrOnly = false,
                         Definition = definition.Value,
@@ -585,6 +590,7 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
                     OutputPid = outputPid,
                     Keep = !track.IsPcrOnly && track.IsSelected,
                     OutputLanguageCode = track.IsPcrOnly ? null : track.SelectedLanguage?.Code,
+                    OutputTransferCharacteristic = track.SelectedTransferCharacteristic?.Value,
                     Order = item.Tracks.IndexOf(track)
                 });
             }
@@ -635,6 +641,9 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
             TsRemuxErrorCode.DuplicateServiceId => strings.String_TsRemux_Error_DuplicateServiceId,
             TsRemuxErrorCode.DuplicatePid => strings.String_TsRemux_Error_DuplicatePid,
             TsRemuxErrorCode.InvalidLanguage => strings.String_TsRemux_Error_InvalidLanguage,
+            TsRemuxErrorCode.InvalidTransferCharacteristic => strings.String_TsRemux_Error_InvalidTransferCharacteristic,
+            TsRemuxErrorCode.ConflictingTransferCharacteristics => strings.String_TsRemux_Error_ConflictingTransferCharacteristics,
+            TsRemuxErrorCode.TransferCharacteristicRewriteFailed => strings.String_TsRemux_Error_TransferCharacteristicRewriteFailed,
             TsRemuxErrorCode.EncryptedServiceUnsupported => strings.String_TsRemux_Error_Encrypted,
             TsRemuxErrorCode.MetadataRequiresServiceInformationSlots => strings.String_TsRemux_Error_PreserveMetadata,
             TsRemuxErrorCode.PreserveEpgRequiresUnchangedServices => strings.String_TsRemux_Error_PreserveEpg,
@@ -686,8 +695,13 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
         var selectedLanguages = Services.SelectMany(item => item.Tracks)
             .Select(item => (Track: item, Code: item.SelectedLanguage?.Code))
             .ToArray();
+        var selectedTransfers = selectedLanguages.Select(item => item.Track)
+            .Where(track => track.CanEditTransferCharacteristic)
+            .Select(track => (Track: track, Value: track.SelectedTransferCharacteristic?.Value))
+            .ToArray();
         BuildServiceTypeOptions();
         BuildLanguageOptions();
+        BuildTransferOptions();
         foreach (var code in selectedLanguages.Select(item => item.Code)
                      .Where(item => !string.IsNullOrWhiteSpace(item)).Distinct())
             FindOrAddLanguageOption(code);
@@ -700,6 +714,8 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
         }
         foreach (var (track, code) in selectedLanguages)
             track.SelectedLanguage = FindLanguageOption(code) ?? LanguageOptions[0];
+        foreach (var (track, value) in selectedTransfers)
+            track.SelectedTransferCharacteristic = TransferOptions.First(option => option.Value == value);
         if (_catalog is null)
             return;
         OnPropertyChanged(nameof(ChangeSummaryText));
@@ -739,7 +755,10 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
                                  selectedServices.SelectMany(item => item.Tracks)
                                      .Count(track => (track.IsSelected || track.IsPcrSource) &&
                                                      !HasSameNumber(track.OutputPidText, track.SourcePid));
-        var changedMetadata = selectedServices.Sum(CountMetadataChanges);
+        var changedMetadata = selectedServices.Sum(CountMetadataChanges) +
+                              selectedServices.SelectMany(item => item.Tracks)
+                                  .Where(track => track.IsSelected && track.SelectedTransferCharacteristic?.Value is not null)
+                                  .Select(track => track.SourcePid).Distinct().Count();
         var changedLanguages = selectedServices.SelectMany(item => item.Tracks)
             .Where(track => track.IsSelected && !track.IsPcrOnly)
             .Count(track => !string.Equals(track.SelectedLanguage?.Code, track.OriginalLanguageCode,
@@ -820,6 +839,17 @@ public partial class TsRemuxWindowViewModel : ViewModelBase, IModalDialogViewMod
     {
         ServiceTypeOptions.Add(new TsRemuxServiceTypeOption(
             value, value is { } item ? $"{name} (0x{item:X2})" : name));
+    }
+
+    private void BuildTransferOptions()
+    {
+        TransferOptions.Clear();
+        TransferOptions.Add(new(null, LocalizationManager.Instance.String_TsRemux_TransferCharacteristic_KeepSource));
+        TransferOptions.Add(new(TsRemuxTransferCharacteristic.Bt709, "BT.709"));
+        TransferOptions.Add(new(TsRemuxTransferCharacteristic.Bt601, "BT.601 (SMPTE 170M)"));
+        TransferOptions.Add(new(TsRemuxTransferCharacteristic.Srgb, "sRGB"));
+        TransferOptions.Add(new(TsRemuxTransferCharacteristic.Pq, "PQ (SMPTE ST 2084)"));
+        TransferOptions.Add(new(TsRemuxTransferCharacteristic.Hlg, "HLG (ARIB STD-B67)"));
     }
 
     private void BuildLanguageOptions()

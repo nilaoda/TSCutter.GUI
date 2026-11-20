@@ -18,6 +18,7 @@ public sealed class TsRemuxService
 {
     private const int PacketSize = TsStreamAnalyzer.PacketSize;
     private const int ReadBufferSize = PacketSize * 32_768;
+    private const int MaxTransferTailBytes = PacketSize * 1_024;
     private static readonly HashSet<int> ReservedOutputPids =
         [0x0000, 0x0001, 0x0010, 0x0011, 0x0012, 0x0013, 0x0014, 0x1FFF];
 
@@ -34,6 +35,7 @@ public sealed class TsRemuxService
         var targetPidSources = new Dictionary<int, int>();
         var sourcePidMap = new Dictionary<int, int>();
         var sourcePidServiceIds = new Dictionary<int, int>();
+        var transferChoices = new Dictionary<int, TsRemuxTransferCharacteristic?>();
         var fullPayloadSourcePids = new HashSet<int>();
         var pcrOnlySourcePids = new HashSet<int>();
         var serviceIdMap = new Dictionary<int, int>();
@@ -70,6 +72,12 @@ public sealed class TsRemuxService
                 if (!trackConfigurations.TryGetValue(definition.Key, out var track) || !track.Keep)
                     continue;
                 RegisterPid(track.SourcePid, track.OutputPid);
+                var transfer = track.OutputTransferCharacteristic;
+                if (transfer is { } value &&
+                    (definition.Value.StreamType != TsStreamTypes.Hevc || !Enum.IsDefined(value)))
+                    throw new TsRemuxException(TsRemuxErrorCode.InvalidTransferCharacteristic, FormatPid(track.SourcePid));
+                if (!transferChoices.TryAdd(track.OutputPid, transfer) && transferChoices[track.OutputPid] != transfer)
+                    throw new TsRemuxException(TsRemuxErrorCode.ConflictingTransferCharacteristics, FormatPid(track.SourcePid));
                 fullPayloadSourcePids.Add(track.SourcePid);
                 sourcePidServiceIds.TryAdd(track.SourcePid, item.SourceServiceId);
                 streams.Add(new TsRemuxStreamPlan
@@ -175,6 +183,8 @@ public sealed class TsRemuxService
             Programs = programs,
             SourcePidMap = sourcePidMap,
             SourcePidServiceIds = sourcePidServiceIds,
+            TransferCharacteristicsByOutputPid = transferChoices.Where(pair => pair.Value.HasValue)
+                .ToDictionary(pair => pair.Key, pair => pair.Value!.Value),
             FullPayloadSourcePids = fullPayloadSourcePids,
             PcrOnlySourcePids = pcrOnlySourcePids,
             StaticSectionsBySourcePid = staticSections,
@@ -299,14 +309,32 @@ public sealed class TsRemuxService
         var sourceLayout = await Task.Run(() => TsPacketLayout.Detect(sourcePath, cancellationToken, Math.Max(0, catalog.SyncOffset)), cancellationToken).ConfigureAwait(false);
         sourceLayout.RequireSupported(standardOnly: true);
         var plan = BuildPlan(catalog, configuration);
-        return await RemuxCoreAsync(sourcePath, outputPath, plan, progress, cancellationToken)
-            .ConfigureAwait(false);
+        if (plan.TransferCharacteristicsByOutputPid.Count == 0)
+            return await RemuxCoreAsync(sourcePath, outputPath, plan, null, progress, cancellationToken)
+                .ConfigureAwait(false);
+
+        outputPath = Path.GetFullPath(outputPath);
+        var temporaryPath = Path.Combine(Path.GetDirectoryName(outputPath)!, $".ts-remux-{Guid.NewGuid():N}.tmp");
+        try
+        {
+            var editor = new TsHevcTransferEditor(plan.TransferCharacteristicsByOutputPid);
+            var result = await RemuxCoreAsync(sourcePath, temporaryPath, plan, editor, progress, cancellationToken)
+                .ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            File.Move(temporaryPath, outputPath, overwrite: true);
+            return result;
+        }
+        finally
+        {
+            TryDelete(temporaryPath);
+        }
     }
 
     private static async Task<TsRemuxResult> RemuxCoreAsync(
         string sourcePath,
         string outputPath,
         TsRemuxPlan plan,
+        TsHevcTransferEditor? transferEditor,
         IProgress<TsRemuxProgress>? progress,
         CancellationToken cancellationToken)
     {
@@ -328,6 +356,7 @@ public sealed class TsRemuxService
         var lastProgressTicks = 0L;
         var buffered = 0;
         var outputLength = 0;
+        var scannedOutputLength = 0;
         var bytesProcessed = Math.Max(0, plan.Catalog.SyncOffset);
         var bytesWritten = 0L;
         var packetsWritten = 0L;
@@ -341,21 +370,54 @@ public sealed class TsRemuxService
                 sourcePath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
             var output = new FileStream(
-                outputPath, FileMode.Create, FileAccess.Write, FileShare.None,
-                ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                outputPath, transferEditor is null ? FileMode.Create : FileMode.CreateNew,
+                FileAccess.Write, FileShare.None, transferEditor is null ? ReadBufferSize : 1,
+                FileOptions.Asynchronous | FileOptions.SequentialScan);
             await using (output.ConfigureAwait(false))
             {
+                // 使用应用层缓冲批量写入。仅当待改写的数据跨过保留范围时，才回写已落盘字节。
+                var outputHandle = transferEditor is null ? null : output.SafeFileHandle;
                 input.Position = Math.Max(0, plan.Catalog.SyncOffset);
 
-                async ValueTask FlushAsync()
+                void PatchTransferByte(long position, byte value)
                 {
-                    if (outputLength == 0)
-                        return;
-                    validator.Process(outputBuffer.AsSpan(0, outputLength));
-                    await output.WriteAsync(outputBuffer.AsMemory(0, outputLength), cancellationToken)
-                        .ConfigureAwait(false);
-                    bytesWritten += outputLength;
-                    outputLength = 0;
+                    if (position >= bytesWritten)
+                        outputBuffer[(int)(position - bytesWritten)] = value;
+                    else
+                        RandomAccess.Write(outputHandle!, [value], position);
+                }
+
+                Action<long, byte>? patchTransferByte = transferEditor is null ? null : PatchTransferByte;
+
+                async ValueTask FlushAsync(bool complete = false)
+                {
+                    validator.Process(outputBuffer.AsSpan(scannedOutputLength, outputLength - scannedOutputLength),
+                        bytesWritten + scannedOutputLength, transferEditor, patchTransferByte, cancellationToken);
+                    var writableLength = outputLength;
+                    if (transferEditor is not null)
+                    {
+                        if (complete)
+                        {
+                            transferEditor.Complete(patchTransferByte!);
+                        }
+                        else
+                        {
+                            // 保留仍可能被修改的尾部整包，避免常见的跨批次 NAL 触发随机写入。
+                            var pendingOffset = Math.Clamp(transferEditor.FirstPendingPosition - bytesWritten, 0, outputLength);
+                            var firstPendingPacket = (int)(pendingOffset / PacketSize * PacketSize);
+                            writableLength = Math.Max(firstPendingPacket, outputLength - MaxTransferTailBytes);
+                        }
+                    }
+                    if (writableLength > 0)
+                    {
+                        await output.WriteAsync(outputBuffer.AsMemory(0, writableLength), cancellationToken)
+                            .ConfigureAwait(false);
+                        bytesWritten += writableLength;
+                        outputLength -= writableLength;
+                        if (outputLength > 0)
+                            outputBuffer.AsSpan(writableLength, outputLength).CopyTo(outputBuffer);
+                    }
+                    scannedOutputLength = outputLength;
                 }
 
                 async ValueTask WritePacketAsync(byte[] source, int sourceOffset)
@@ -558,7 +620,8 @@ public sealed class TsRemuxService
                             throw new TsRemuxException(TsRemuxErrorCode.InsufficientPsiPacketSlots, FormatPid(item.Key));
                     }
                 }
-                await FlushAsync().ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                await FlushAsync(complete: true).ConfigureAwait(false);
                 await output.FlushAsync(cancellationToken).ConfigureAwait(false);
                 continuityErrors = validator.ContinuityErrors;
                 transportErrors = validator.TransportErrors;
@@ -820,12 +883,16 @@ public sealed class TsRemuxService
         public long ContinuityErrors { get; private set; }
         public long TransportErrors { get; private set; }
 
-        public void Process(ReadOnlySpan<byte> packets)
+        public void Process(ReadOnlySpan<byte> packets, long batchStart, TsHevcTransferEditor? editor,
+            Action<long, byte>? patch, CancellationToken cancellationToken)
         {
             for (var offset = 0; offset < packets.Length; offset += PacketSize)
             {
+                if ((offset & 0xFFFF) == 0)
+                    cancellationToken.ThrowIfCancellationRequested();
                 var packet = packets.Slice(offset, PacketSize);
                 var info = TsPacketParser.Parse(packet);
+                editor?.ProcessPacket(packets, offset, info, batchStart, patch!);
                 if (!info.IsValid)
                     continue;
                 if (info.TransportError)
@@ -849,6 +916,7 @@ public sealed class TsRemuxService
                 _hasCounter[info.Pid] = true;
                 _lastCounters[info.Pid] = info.ContinuityCounter;
             }
+            editor?.EndBatch(packets, batchStart);
         }
     }
 }
