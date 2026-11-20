@@ -1194,6 +1194,12 @@
     <x:String x:Key="String.TsRemux.Column.Role">Role</x:String>
     <x:String x:Key="String.TsRemux.Column.Bitrate">Bitrate</x:String>
     <x:String x:Key="String.TsRemux.Column.Language">Language</x:String>
+    <x:String x:Key="String.TsRemux.TransferCharacteristic">Transfer function</x:String>
+    <x:String x:Key="String.TsRemux.TransferCharacteristic.KeepSource">Keep source</x:String>
+    <x:String x:Key="String.TsRemux.TransferCharacteristic.Hint">Updates the existing HEVC transfer characteristics tag. Choose the transfer function used by the source footage.</x:String>
+    <x:String x:Key="String.TsRemux.Error.InvalidTransferCharacteristic">PID {0} cannot use the selected transfer characteristics.</x:String>
+    <x:String x:Key="String.TsRemux.Error.ConflictingTransferCharacteristics">Multiple services share PID {0}. Choose the same transfer characteristics for all of them.</x:String>
+    <x:String x:Key="String.TsRemux.Error.TransferCharacteristicRewriteFailed">Could not safely update the transfer characteristics of PID {0}. This requires complete HEVC parameter sets with an existing colour description and the same parameter set length after editing.</x:String>
     <x:String x:Key="String.TsRemux.Column.OutputPid">Output PID</x:String>
     <x:String x:Key="String.TsRemux.MoveUp">Move up</x:String>
     <x:String x:Key="String.TsRemux.MoveDown">Move down</x:String>

@@ -72,6 +72,11 @@
                 <ClassicBorderDecorator Grid.Column="1" BorderThickness="1" BorderStyle="Etched" Padding="8">
                     <Grid ColumnDefinitions="Auto,*,16,Auto,*" RowDefinitions="Auto,Auto,Auto" ColumnSpacing="7" RowSpacing="5"
                           IsVisible="{Binding HasSelectedService}" IsEnabled="{Binding CanEdit}">
+                        <Grid.Styles>
+                            <Style Selector="ComboBox.service-type:not(.with-transfer)">
+                                <Setter Property="Grid.ColumnSpan" Value="4" />
+                            </Style>
+                        </Grid.Styles>
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="{DynamicResource String.TsRemux.OutputServiceId}" VerticalAlignment="Center" />
                         <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding SelectedService.OutputServiceIdText}" />
                         <TextBlock Grid.Row="0" Grid.Column="3" Text="{DynamicResource String.TsRemux.OutputPmtPid}" VerticalAlignment="Center" />
@@ -87,9 +92,21 @@
                                  IsEnabled="{Binding SelectedService.WriteProviderName}" />
 
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="{DynamicResource String.TsRemux.ServiceType}" VerticalAlignment="Center" />
-                        <ComboBox Grid.Row="2" Grid.Column="1" Grid.ColumnSpan="4" ItemsSource="{Binding ServiceTypeOptions}"
+                        <ComboBox Grid.Row="2" Grid.Column="1" Classes="service-type"
+                                  Classes.with-transfer="{Binding SelectedTrack.CanEditTransferCharacteristic, FallbackValue=False}"
+                                  ItemsSource="{Binding ServiceTypeOptions}"
                                   SelectedItem="{Binding SelectedService.SelectedServiceType, Mode=TwoWay}"
                                   DisplayMemberBinding="{Binding DisplayName}" />
+                        <TextBlock Grid.Row="2" Grid.Column="3" Text="{DynamicResource String.TsRemux.TransferCharacteristic}"
+                                   IsVisible="{Binding SelectedTrack.CanEditTransferCharacteristic, FallbackValue=False}"
+                                   VerticalAlignment="Center" />
+                        <ComboBox Grid.Row="2" Grid.Column="4" ItemsSource="{Binding TransferOptions}"
+                                  IsVisible="{Binding SelectedTrack.CanEditTransferCharacteristic, FallbackValue=False}"
+                                  IsEnabled="{Binding SelectedTrack.IsSelected, FallbackValue=False}"
+                                  SelectedItem="{Binding SelectedTrack.SelectedTransferCharacteristic, Mode=TwoWay}"
+                                  DisplayMemberBinding="{Binding DisplayName}"
+                                  ToolTip.ShowOnDisabled="True"
+                                  ToolTip.Tip="{DynamicResource String.TsRemux.TransferCharacteristic.Hint}" />
                     </Grid>
                 </ClassicBorderDecorator>
             </Grid>

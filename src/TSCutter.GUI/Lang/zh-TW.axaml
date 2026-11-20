@@ -1194,6 +1194,12 @@
     <x:String x:Key="String.TsRemux.Column.Role">角色</x:String>
     <x:String x:Key="String.TsRemux.Column.Bitrate">位元率</x:String>
     <x:String x:Key="String.TsRemux.Column.Language">語言</x:String>
+    <x:String x:Key="String.TsRemux.TransferCharacteristic">傳輸特性</x:String>
+    <x:String x:Key="String.TsRemux.TransferCharacteristic.KeepSource">保留來源標記</x:String>
+    <x:String x:Key="String.TsRemux.TransferCharacteristic.Hint">僅改寫 HEVC 位元流中已有的傳輸特性標記。請選擇素材實際使用的傳輸特性。</x:String>
+    <x:String x:Key="String.TsRemux.Error.InvalidTransferCharacteristic">PID {0} 無法使用選取的傳輸特性。</x:String>
+    <x:String x:Key="String.TsRemux.Error.ConflictingTransferCharacteristics">多個節目共用 PID {0}，請為它們選擇相同的傳輸特性。</x:String>
+    <x:String x:Key="String.TsRemux.Error.TransferCharacteristicRewriteFailed">無法安全改寫 PID {0} 的傳輸特性。需要完整的 HEVC 參數集和已有的色彩描述，改寫後的參數集長度必須保持一致。</x:String>
     <x:String x:Key="String.TsRemux.Column.OutputPid">輸出 PID</x:String>
     <x:String x:Key="String.TsRemux.MoveUp">上移</x:String>
     <x:String x:Key="String.TsRemux.MoveDown">下移</x:String>

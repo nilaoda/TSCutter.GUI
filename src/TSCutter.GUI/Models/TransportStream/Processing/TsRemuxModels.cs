@@ -14,6 +14,17 @@ public enum TsRemuxOutputMode
 
 public sealed record TsRemuxLanguageOption(string Code, string DisplayName);
 
+public enum TsRemuxTransferCharacteristic : byte
+{
+    Bt709 = 1,
+    Bt601 = 6,
+    Srgb = 13,
+    Pq = 16,
+    Hlg = 18
+}
+
+public sealed record TsRemuxTransferOption(TsRemuxTransferCharacteristic? Value, string DisplayName);
+
 public readonly record struct TsRemuxChangeSummary(
     int SelectedServices,
     int SelectedTracks,
@@ -40,7 +51,10 @@ public enum TsRemuxErrorCode
     SdtTooLarge,
     MetadataRequiresServiceInformationSlots,
     PreserveEpgRequiresUnchangedServices,
-    InsufficientPsiPacketSlots
+    InsufficientPsiPacketSlots,
+    InvalidTransferCharacteristic,
+    ConflictingTransferCharacteristics,
+    TransferCharacteristicRewriteFailed
 }
 
 public sealed class TsRemuxException(TsRemuxErrorCode code, params object[] arguments) : Exception
@@ -77,6 +91,7 @@ public sealed class TsRemuxTrackConfiguration
     public required int OutputPid { get; init; }
     public required bool Keep { get; init; }
     public string? OutputLanguageCode { get; init; }
+    public TsRemuxTransferCharacteristic? OutputTransferCharacteristic { get; init; }
     public int Order { get; init; }
 }
 
@@ -88,6 +103,7 @@ internal sealed class TsRemuxPlan
     public required IReadOnlyList<TsRemuxProgramPlan> Programs { get; init; }
     public required IReadOnlyDictionary<int, int> SourcePidMap { get; init; }
     public required IReadOnlyDictionary<int, int> SourcePidServiceIds { get; init; }
+    public required IReadOnlyDictionary<int, TsRemuxTransferCharacteristic> TransferCharacteristicsByOutputPid { get; init; }
     public required IReadOnlySet<int> FullPayloadSourcePids { get; init; }
     public required IReadOnlySet<int> PcrOnlySourcePids { get; init; }
     public required IReadOnlyDictionary<int, byte[]> StaticSectionsBySourcePid { get; init; }
@@ -198,6 +214,7 @@ public sealed partial class TsRemuxTrackItem : ObservableObject
     public required TsStreamDefinition? Definition { get; init; }
     public required int OriginalOrder { get; init; }
     public required IReadOnlyList<TsRemuxLanguageOption> LanguageOptions { get; init; }
+    public bool CanEditTransferCharacteristic => Definition?.StreamType == TsStreamTypes.Hevc;
 
     [ObservableProperty]
     private bool _isSelected = true;
@@ -220,9 +237,13 @@ public sealed partial class TsRemuxTrackItem : ObservableObject
     [ObservableProperty]
     private TsRemuxLanguageOption? _selectedLanguage;
 
+    [ObservableProperty]
+    private TsRemuxTransferOption? _selectedTransferCharacteristic;
+
     public event Action? SelectionChanged;
 
     partial void OnIsSelectedChanged(bool value) => SelectionChanged?.Invoke();
     partial void OnOutputPidTextChanged(string value) => SelectionChanged?.Invoke();
     partial void OnSelectedLanguageChanged(TsRemuxLanguageOption? value) => SelectionChanged?.Invoke();
+    partial void OnSelectedTransferCharacteristicChanged(TsRemuxTransferOption? value) => SelectionChanged?.Invoke();
 }
