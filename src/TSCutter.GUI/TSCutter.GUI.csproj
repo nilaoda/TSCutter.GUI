@@ -69,4 +69,5 @@
     </ItemGroup>
 
     <Import Project="native/audio/AudioBridge.targets" />
+    <Import Project="native/ffmpeg/FFmpeg.Static.targets" />
 </Project>

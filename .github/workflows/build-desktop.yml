@@ -12,13 +12,13 @@ on:
 env:
   DOTNET_SDK_VERSION: 11.x
   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
-  FFMPEG_RUNTIME_WIN_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261106/ffmpeg-runtime-win64-gpl-shared-9.0.2.zip
-  FFMPEG_RUNTIME_LINUX_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261106/ffmpeg-runtime-linux-x64-gpl-shared-9.0.2.zip
-  FFMPEG_RUNTIME_OSX_ARM64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261106/ffmpeg-runtime-osx-arm64-gpl-shared-9.0.2.zip
+  FFMPEG_RUNTIME_WIN_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261121/ffmpeg-runtime-win64-gpl-static-9.0.2.zip
+  FFMPEG_RUNTIME_LINUX_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261121/ffmpeg-runtime-linux-x64-gpl-static-9.0.2.zip
+  FFMPEG_RUNTIME_OSX_ARM64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261121/ffmpeg-runtime-osx-arm64-gpl-static-9.0.2.zip
 
 jobs:
   release-info:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       version: ${{ steps.metadata.outputs.version }}
       stage: ${{ steps.metadata.outputs.stage }}
@@ -69,7 +69,7 @@ jobs:
           retention-days: 1
 
   build-win-x64:
-    runs-on: windows-latest
+    runs-on: windows-2022
     needs: release-info
 
     steps:
@@ -79,6 +79,43 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: ${{ needs.release-info.outputs.sdk-version }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download FFmpeg static SDK [win-x64]
+        shell: pwsh
+        run: |
+          $zipPath = Join-Path $env:RUNNER_TEMP 'ffmpeg-static-win-x64.zip'
+          Invoke-WebRequest -Uri "$env:FFMPEG_RUNTIME_WIN_X64_URL" -OutFile $zipPath -MaximumRetryCount 5 -RetryIntervalSec 3
+          $sdkRoot = Join-Path $env:RUNNER_TEMP 'ffmpeg-static'
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $sdkRoot
+          "FFMPEG_STATIC_ROOT=$sdkRoot" >> $env:GITHUB_ENV
+          "FFMPEG_STATIC_SUPPORT_ROOT=$(Join-Path $env:RUNNER_TEMP 'ffmpeg-static-support')" >> $env:GITHUB_ENV
+
+      - name: Set up MinGW static link support
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-binutils
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-libiconv
+
+      - name: Prepare FFmpeg static libraries
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $mingwRoot = Join-Path $env:MSYS2_LOCATION 'mingw64'
+          python -m unittest discover -s tools/ffmpeg-static -p "test_*.py"
+          if ($LASTEXITCODE -ne 0) { throw "FFmpeg COFF normalization tests failed." }
+          python tools/ffmpeg-static/prepare.py --sdk "$env:FFMPEG_STATIC_ROOT" --mingw "$mingwRoot" --output "$env:FFMPEG_STATIC_SUPPORT_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw "FFmpeg static library preparation failed." }
+          "MINGW_ROOT=$mingwRoot" >> $env:GITHUB_ENV
 
       - name: Install 7zip and zip
         run: |
@@ -112,15 +149,14 @@ jobs:
       - name: Publish [win-x64]
         run: | 
           cd src/TSCutter.GUI
-          dotnet publish -r win-x64 -c Release -o artifact
-          if (Test-Path "artifact/tscutter_audio.dll") { throw "The AOT audio bridge must be statically linked." }
+          dotnet publish -r win-x64 -c Release -o artifact -p:FFmpegLinkMode=Static "-p:FFmpegStaticRoot=$env:FFMPEG_STATIC_ROOT" "-p:FFmpegStaticSupportRoot=$env:FFMPEG_STATIC_SUPPORT_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw "Windows static publish failed." }
 
-      - name: Download FFmpeg Runtime [win-x64]
+      - name: Verify single EXE [win-x64]
         shell: pwsh
         run: |
-          $zipPath = Join-Path $env:RUNNER_TEMP "ffmpeg-runtime-win-x64.zip"
-          Invoke-WebRequest -Uri "${{ env.FFMPEG_RUNTIME_WIN_X64_URL }}" -OutFile $zipPath -MaximumRetryCount 5 -RetryIntervalSec 3
-          Expand-Archive -Path $zipPath -DestinationPath "src/TSCutter.GUI/artifact" -Force
+          python tools/ffmpeg-static/verify.py --executable src/TSCutter.GUI/artifact/TSCutterGUI.exe --objdump "$env:MINGW_ROOT/bin/objdump.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Windows static runtime verification failed." }
 
       - name: Download third-party notices [win-x64]
         uses: actions/download-artifact@v4
@@ -131,7 +167,7 @@ jobs:
       - name: Package [win-x64]
         run: |
           cd src/TSCutter.GUI/artifact
-          zip -r ../../../TSCutter.GUI_${{ needs.release-info.outputs.stage }}_win-x64_${{ needs.release-info.outputs.version }}.zip . -x "lib*" -x "av_*" -x "*.pdb"
+          zip ../../../TSCutter.GUI_${{ needs.release-info.outputs.stage }}_win-x64_${{ needs.release-info.outputs.version }}.zip TSCutterGUI.exe THIRD_PARTY_NOTICES.txt
 
       - name: Upload Artifact [win-x64]
         uses: actions/upload-artifact@v4
@@ -141,12 +177,13 @@ jobs:
           retention-days: 1
 
   build-linux-x64:
+    # Build the FFmpeg static SDK on Ubuntu 24.04 or older as well.
     runs-on: ubuntu-24.04
     needs: release-info
 
     steps:
       - run: sudo apt-get update
-      - run: sudo apt-get install -y curl wget unzip libicu-dev libcurl4-openssl-dev zlib1g-dev libkrb5-dev zip
+      - run: sudo apt-get install -y build-essential clang binutils pkg-config curl wget unzip libicu-dev libcurl4-openssl-dev zlib1g-dev libkrb5-dev zip
       - uses: actions/checkout@v4
 
       - name: Set up dotnet
@@ -154,15 +191,20 @@ jobs:
         with:
           dotnet-version: ${{ needs.release-info.outputs.sdk-version }}
 
+      - name: Prepare FFmpeg static SDK [linux-x64]
+        run: |
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 "$FFMPEG_RUNTIME_LINUX_X64_URL" -o "$RUNNER_TEMP/ffmpeg-static.zip"
+          unzip -q "$RUNNER_TEMP/ffmpeg-static.zip" -d "$RUNNER_TEMP/ffmpeg-static"
+          python3 -m unittest discover -s tools/ffmpeg-static -p 'test_*.py'
+          python3 tools/ffmpeg-static/prepare.py --sdk "$RUNNER_TEMP/ffmpeg-static" --output "$RUNNER_TEMP/ffmpeg-static-support"
+
       - name: Publish [linux-x64]
         run: |
-          dotnet publish src/TSCutter.GUI -r linux-x64 -c Release -o artifact
+          dotnet publish src/TSCutter.GUI -r linux-x64 -c Release -o artifact -p:FFmpegLinkMode=Static -p:FFmpegStaticRoot="$RUNNER_TEMP/ffmpeg-static" -p:FFmpegStaticSupportRoot="$RUNNER_TEMP/ffmpeg-static-support"
           test ! -e artifact/libtscutter_audio.so
 
-      - name: Download FFmpeg Runtime [linux-x64]
-        run: |
-          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 "${{ env.FFMPEG_RUNTIME_LINUX_X64_URL }}" -o "$RUNNER_TEMP/ffmpeg-runtime-linux-x64.zip"
-          unzip -o "$RUNNER_TEMP/ffmpeg-runtime-linux-x64.zip" -d artifact
+      - name: Verify FFmpeg static runtime [linux-x64]
+        run: python3 tools/ffmpeg-static/verify.py --executable artifact/TSCutterGUI --sdk "$RUNNER_TEMP/ffmpeg-static"
 
       - name: Download third-party notices [linux-x64]
         uses: actions/download-artifact@v4
@@ -196,10 +238,21 @@ jobs:
         with:
           dotnet-version: ${{ needs.release-info.outputs.sdk-version }}
 
+      - name: Prepare FFmpeg static SDK [osx-arm64]
+        run: |
+          brew install pkgconf
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 "$FFMPEG_RUNTIME_OSX_ARM64_URL" -o "$RUNNER_TEMP/ffmpeg-static.zip"
+          unzip -q "$RUNNER_TEMP/ffmpeg-static.zip" -d "$RUNNER_TEMP/ffmpeg-static"
+          python3 -m unittest discover -s tools/ffmpeg-static -p 'test_*.py'
+          python3 tools/ffmpeg-static/prepare.py --sdk "$RUNNER_TEMP/ffmpeg-static" --output "$RUNNER_TEMP/ffmpeg-static-support"
+
       - name: Publish [osx-arm64]
         run: |
-          dotnet publish src/TSCutter.GUI -r osx-arm64 -c Release -o artifact -p:AppleMinOSVersion="$MACOSX_DEPLOYMENT_TARGET"
+          dotnet publish src/TSCutter.GUI -r osx-arm64 -c Release -o artifact -p:AppleMinOSVersion="$MACOSX_DEPLOYMENT_TARGET" -p:FFmpegLinkMode=Static -p:FFmpegStaticRoot="$RUNNER_TEMP/ffmpeg-static" -p:FFmpegStaticSupportRoot="$RUNNER_TEMP/ffmpeg-static-support"
           test ! -e artifact/libtscutter_audio.dylib
+
+      - name: Verify FFmpeg static runtime [osx-arm64]
+        run: python3 tools/ffmpeg-static/verify.py --executable artifact/TSCutterGUI --sdk "$RUNNER_TEMP/ffmpeg-static"
 
       - name: Assemble .app [osx-arm64]
         run: |
@@ -215,8 +268,6 @@ jobs:
           mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
 
           cp -R artifact/. "$MACOS_DIR/"
-          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 "${{ env.FFMPEG_RUNTIME_OSX_ARM64_URL }}" -o "$RUNNER_TEMP/ffmpeg-runtime-osx-arm64.zip"
-          unzip -o "$RUNNER_TEMP/ffmpeg-runtime-osx-arm64.zip" -d "$MACOS_DIR"
           find "$MACOS_DIR" -maxdepth 1 -name '*.dSYM' -prune -exec rm -rf {} +
 
           cp "$ICON_SOURCE" "$RESOURCES_DIR/logo.icns"
@@ -274,7 +325,7 @@ jobs:
 
   release:
     if: ${{ github.event.inputs.publish_release != 'false' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
     needs: [build-win-x64, build-linux-x64, build-mac-arm64, release-info]

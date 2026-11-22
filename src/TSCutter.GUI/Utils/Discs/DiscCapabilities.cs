@@ -77,8 +77,14 @@ internal static class DiscCapabilities
               + "）。使用启用 libbluray/libdvdnav/libdvdread 的 FFmpeg 运行库后重试。";
     }
 
+#if TSCUTTER_FFMPEG_STATIC
+    // Missing static entry points are link errors; there are no optional DLL handles.
+    public static bool HasBlurayLibrary => true;
+    public static bool HasDvdReadLibrary => true;
+#else
     public static bool HasBlurayLibrary => FFmpegNativeBootstrapper.TryGetOptionalLibrary("bluray", out _);
 
     public static bool HasDvdReadLibrary => FFmpegNativeBootstrapper.TryGetOptionalLibrary("dvdread", out _);
+#endif
 
 }

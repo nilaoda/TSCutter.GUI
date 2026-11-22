@@ -1,0 +1,42 @@
+<Project>
+    <PropertyGroup>
+        <FFmpegLinkMode Condition="'$(FFmpegLinkMode)' == ''">Shared</FFmpegLinkMode>
+        <FFmpegStaticSupportRoot Condition="'$(FFmpegStaticSupportRoot)' == ''">$(MSBuildThisFileDirectory)../../../../artifacts/aot-link-support</FFmpegStaticSupportRoot>
+    </PropertyGroup>
+    <PropertyGroup Condition="'$(FFmpegLinkMode)' == 'Static'">
+        <DefineConstants>$(DefineConstants);TSCUTTER_FFMPEG_STATIC</DefineConstants>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(FFmpegLinkMode)' == 'Static'">
+        <Compile Remove="Utils/Media/FFmpegNativeBootstrapper.cs" />
+        <DirectPInvoke Include="tscutter.avutil;tscutter.avcodec;tscutter.avformat;tscutter.avfilter;tscutter.avdevice;tscutter.swscale;tscutter.swresample;tscutter.ass;tscutter.bluray;tscutter.dvdread" />
+        <NativeLibrary Include="bcrypt.lib;ole32.lib;user32.lib;gdi32.lib;advapi32.lib;shell32.lib;ws2_32.lib" Condition="'$(RuntimeIdentifier)' == 'win-x64'" />
+    </ItemGroup>
+    <Import Project="$(FFmpegStaticSupportRoot)/NativeLibraries.props"
+            Condition="'$(FFmpegLinkMode)' == 'Static' And Exists('$(FFmpegStaticSupportRoot)/NativeLibraries.props')" />
+    <Target Name="ValidateFFmpegLinkMode" BeforeTargets="PrepareForBuild">
+        <Error Condition="'$(FFmpegLinkMode)' != 'Shared' And '$(FFmpegLinkMode)' != 'Static'"
+               Text="FFmpegLinkMode must be Shared or Static." />
+    </Target>
+    <Target Name="ValidateFFmpegStaticSdk" BeforeTargets="PrepareForBuild" Condition="'$(FFmpegLinkMode)' == 'Static'">
+        <Error Condition="'$(PublishAot)' != 'true' Or ('$(RuntimeIdentifier)' != 'win-x64' And '$(RuntimeIdentifier)' != 'linux-x64' And '$(RuntimeIdentifier)' != 'osx-arm64')"
+               Text="FFmpeg static linking requires NativeAOT and a supported RID: win-x64, linux-x64 or osx-arm64." />
+        <Error Condition="!Exists('$(FFmpegStaticRoot)/lib/libavcodec.a')"
+               Text="Set FFmpegStaticRoot to the extracted target-platform static SDK." />
+        <Error Condition="!Exists('$(FFmpegStaticSupportRoot)/NativeLibraries.props')"
+               Text="Run tools/ffmpeg-static/prepare.py before static publishing." />
+    </Target>
+    <Target Name="ConfigureUnixFFmpegStaticLink" BeforeTargets="LinkNative"
+            Condition="'$(FFmpegLinkMode)' == 'Static' And '$(RuntimeIdentifier)' != 'win-x64'">
+        <Error Condition="!Exists('$(FFmpegStaticSupportRoot)/ffmpeg-link.rsp')"
+               Text="Run tools/ffmpeg-static/prepare.py on the target OS before publishing." />
+        <ItemGroup>
+            <!-- Keep NativeLibrary inputs for incremental tracking; pass the SDK's ordered flags once. -->
+            <LinkerArg Remove="@(FFmpegStaticArchive);$(FFmpegStaticResponseFile);-lstdc++" />
+            <LinkerArg Include="@&quot;$(FFmpegStaticResponseFile)&quot;" />
+        </ItemGroup>
+    </Target>
+    <!-- Match the audio bridge: no redundant dynamic libraries in a static publish. -->
+    <Target Name="RemoveDynamicLibrariesFromFFmpegStaticPublish" AfterTargets="Publish" Condition="'$(FFmpegLinkMode)' == 'Static' And '$(RuntimeIdentifier)' == 'win-x64'">
+        <Delete Files="$(PublishDir)av_libglesv2.dll;$(PublishDir)libHarfBuzzSharp.dll;$(PublishDir)libSkiaSharp.dll;$(PublishDir)avutil-61.dll;$(PublishDir)avcodec-63.dll;$(PublishDir)avformat-63.dll;$(PublishDir)avfilter-12.dll;$(PublishDir)avdevice-63.dll;$(PublishDir)swscale-10.dll;$(PublishDir)swresample-7.dll" />
+    </Target>
+</Project>

@@ -22,9 +22,13 @@ public static unsafe partial class NativeMethods
     public const int AV_FRAME_FLAG_KEY = 1 << 1;
     public const int AV_CODEC_FLAG_COPY_OPAQUE = 1 << 7;
 
+#if TSCUTTER_FFMPEG_STATIC
+    static NativeMethods() => FFmpegNativeBootstrapper.Initialize();
+#else
     static NativeMethods() => NativeLibrary.SetDllImportResolver(typeof(NativeMethods).Assembly,
         (name, assembly, path) => name.StartsWith("tscutter.", StringComparison.Ordinal)
             ? FFmpegNativeBootstrapper.ResolveLibrary(name[9..]) : IntPtr.Zero);
+#endif
 
     public static double av_q2d(AVRational value) => value.num / (double)value.den;
 
