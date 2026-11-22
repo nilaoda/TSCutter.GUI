@@ -1,0 +1,29 @@
+<Project>
+    <PropertyGroup Condition="'$(NativeGraphicsStaticRoot)' != ''">
+        <DefineConstants>$(DefineConstants);TSCUTTER_GRAPHICS_STATIC</DefineConstants>
+    </PropertyGroup>
+    <ItemGroup Condition="'$(NativeGraphicsStaticRoot)' != ''">
+        <DirectPInvoke Include="libSkiaSharp;libHarfBuzzSharp" />
+        <DirectPInvoke Include="av_libglesv2" Condition="'$(RuntimeIdentifier)' == 'win-x64'" />
+        <DirectPInvoke Include="libAvaloniaNative" Condition="'$(RuntimeIdentifier)' == 'osx-arm64'" />
+    </ItemGroup>
+    <Import Project="$(NativeGraphicsSupportRoot)/NativeLibraries.props"
+            Condition="'$(NativeGraphicsStaticRoot)' != '' And Exists('$(NativeGraphicsSupportRoot)/NativeLibraries.props')" />
+    <Target Name="ValidateNativeGraphicsSdk" BeforeTargets="PrepareForBuild" Condition="'$(NativeGraphicsStaticRoot)' != ''">
+        <Error Condition="'$(PublishAot)' != 'true' Or ('$(RuntimeIdentifier)' != 'win-x64' And '$(RuntimeIdentifier)' != 'linux-x64' And '$(RuntimeIdentifier)' != 'osx-arm64')"
+               Text="Static graphics require NativeAOT and win-x64, linux-x64 or osx-arm64." />
+        <Error Condition="!Exists('$(NativeGraphicsStaticRoot)/manifest.json') Or !Exists('$(NativeGraphicsSupportRoot)/NativeLibraries.props')"
+               Text="Extract the native graphics SDK and run tools/graphics-static/prepare.py before publishing." />
+    </Target>
+    <Target Name="ConfigureUnixGraphicsStaticLink" BeforeTargets="LinkNative" AfterTargets="ConfigureUnixFFmpegStaticLink"
+            Condition="'$(NativeGraphicsStaticRoot)' != '' And '$(RuntimeIdentifier)' != 'win-x64'">
+        <Error Condition="!Exists('$(NativeGraphicsResponseFile)')" Text="The native graphics response file is missing." />
+        <ItemGroup>
+            <LinkerArg Remove="$(NativeGraphicsResponseFile)" />
+            <LinkerArg Include="@&quot;$(NativeGraphicsResponseFile)&quot;" />
+        </ItemGroup>
+    </Target>
+    <Target Name="RemoveSharedGraphicsLibraries" AfterTargets="Publish" Condition="'$(NativeGraphicsStaticRoot)' != ''">
+        <Delete Files="$(PublishDir)libSkiaSharp.dll;$(PublishDir)libHarfBuzzSharp.dll;$(PublishDir)av_libglesv2.dll;$(PublishDir)libSkiaSharp.so;$(PublishDir)libHarfBuzzSharp.so;$(PublishDir)libSkiaSharp.dylib;$(PublishDir)libHarfBuzzSharp.dylib;$(PublishDir)libAvaloniaNative.dylib" />
+    </Target>
+</Project>

@@ -1,0 +1,6 @@
+<Project>
+    <!-- 在发布配置加载后，再读取原生库链接配置。 -->
+    <Import Project="native/audio/AudioBridge.targets" />
+    <Import Project="native/graphics/Graphics.Static.targets" />
+    <Import Project="native/ffmpeg/FFmpeg.Static.targets" />
+</Project>

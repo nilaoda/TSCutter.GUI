@@ -15,6 +15,9 @@ env:
   FFMPEG_RUNTIME_WIN_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261121/ffmpeg-runtime-win64-gpl-static-9.0.2.zip
   FFMPEG_RUNTIME_LINUX_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261121/ffmpeg-runtime-linux-x64-gpl-static-9.0.2.zip
   FFMPEG_RUNTIME_OSX_ARM64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261121/ffmpeg-runtime-osx-arm64-gpl-static-9.0.2.zip
+  GRAPHICS_SDK_WIN_X64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.12-20261122/avalonia-native-win-x64-all.zip
+  GRAPHICS_SDK_LINUX_X64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.12-20261122/avalonia-native-linux-x64-all.zip
+  GRAPHICS_SDK_OSX_ARM64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.12-20261122/avalonia-native-osx-arm64-all.zip
 
 jobs:
   release-info:
@@ -117,39 +120,27 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "FFmpeg static library preparation failed." }
           "MINGW_ROOT=$mingwRoot" >> $env:GITHUB_ENV
 
-      - name: Install 7zip and zip
+      - name: Install zip
         run: |
-          choco install 7zip --no-progress --yes
           choco install zip --no-progress --yes
 
-      - name: Download ANGLE.Static
-        shell: bash
+      - name: Prepare native graphics SDK [win-x64]
+        shell: pwsh
         run: |
-          cd src/TSCutter.GUI/lib
-          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 \
-            "https://github.com/2ndlab/ANGLE.Static/releases/download/251105/angle-x64-windows-static-chromium-7151-10.0.26100.0-1.79e529b.7z" -o angle.7z
-          7z x -y angle.7z
-
-      - name: Download SkiaSharp.Static (HarfBuzz)
-        shell: bash
-        run: |
-          cd src/TSCutter.GUI/lib
-          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 \
-            "https://github.com/2ndlab/SkiaSharp.Static/releases/download/251104/libHarfBuzzSharp-3.119.0-10.0.26100.0-1.1c7d845.7z" -o harfbuzz.7z
-          7z x -y harfbuzz.7z
-
-      - name: Download SkiaSharp.Static (SkiaSharp)
-        shell: bash
-        run: |
-          cd src/TSCutter.GUI/lib
-          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 \
-            "https://github.com/2ndlab/SkiaSharp.Static/releases/download/251104/libSkiaSharp-2.88.9-10.0.26100.0-1.1c7d845.7z" -o skiasharp.7z
-          7z x -y skiasharp.7z
+          $zipPath = Join-Path $env:RUNNER_TEMP 'graphics-static.zip'
+          $sdkRoot = Join-Path $env:RUNNER_TEMP 'graphics-static'
+          $supportRoot = Join-Path $env:RUNNER_TEMP 'graphics-static-support'
+          Invoke-WebRequest -Uri "$env:GRAPHICS_SDK_WIN_X64_URL" -OutFile $zipPath -MaximumRetryCount 5 -RetryIntervalSec 3
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $sdkRoot
+          python -m unittest discover -s tools/graphics-static -p "test_*.py"
+          if ($LASTEXITCODE -ne 0) { throw "Graphics SDK tests failed." }
+          python tools/graphics-static/prepare.py --rid win-x64 --sdk "$sdkRoot" --output "$supportRoot"
+          if ($LASTEXITCODE -ne 0) { throw "Graphics SDK preparation failed." }
 
       - name: Publish [win-x64]
         run: | 
           cd src/TSCutter.GUI
-          dotnet publish -r win-x64 -c Release -o artifact -p:FFmpegLinkMode=Static "-p:FFmpegStaticRoot=$env:FFMPEG_STATIC_ROOT" "-p:FFmpegStaticSupportRoot=$env:FFMPEG_STATIC_SUPPORT_ROOT"
+          dotnet publish -r win-x64 -c Release -o artifact -p:PublishProfile=Static
           if ($LASTEXITCODE -ne 0) { throw "Windows static publish failed." }
 
       - name: Verify single EXE [win-x64]
@@ -157,6 +148,12 @@ jobs:
         run: |
           python tools/ffmpeg-static/verify.py --executable src/TSCutter.GUI/artifact/TSCutterGUI.exe --objdump "$env:MINGW_ROOT/bin/objdump.exe"
           if ($LASTEXITCODE -ne 0) { throw "Windows static runtime verification failed." }
+
+      - name: Verify static graphics [win-x64]
+        shell: pwsh
+        run: |
+          python tools/graphics-static/verify.py --executable src/TSCutter.GUI/artifact/TSCutterGUI.exe --objdump "$env:MINGW_ROOT/bin/objdump.exe"
+          if ($LASTEXITCODE -ne 0) { throw "Windows graphics verification failed." }
 
       - name: Download third-party notices [win-x64]
         uses: actions/download-artifact@v4
@@ -198,13 +195,23 @@ jobs:
           python3 -m unittest discover -s tools/ffmpeg-static -p 'test_*.py'
           python3 tools/ffmpeg-static/prepare.py --sdk "$RUNNER_TEMP/ffmpeg-static" --output "$RUNNER_TEMP/ffmpeg-static-support"
 
+      - name: Prepare native graphics SDK [linux-x64]
+        run: |
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 "$GRAPHICS_SDK_LINUX_X64_URL" -o "$RUNNER_TEMP/graphics-static.zip"
+          unzip -q "$RUNNER_TEMP/graphics-static.zip" -d "$RUNNER_TEMP/graphics-static"
+          python3 -m unittest discover -s tools/graphics-static -p 'test_*.py'
+          python3 tools/graphics-static/prepare.py --rid linux-x64 --sdk "$RUNNER_TEMP/graphics-static" --output "$RUNNER_TEMP/graphics-static-support" --ffmpeg-sdk "$RUNNER_TEMP/ffmpeg-static"
+
       - name: Publish [linux-x64]
         run: |
-          dotnet publish src/TSCutter.GUI -r linux-x64 -c Release -o artifact -p:FFmpegLinkMode=Static -p:FFmpegStaticRoot="$RUNNER_TEMP/ffmpeg-static" -p:FFmpegStaticSupportRoot="$RUNNER_TEMP/ffmpeg-static-support"
+          dotnet publish src/TSCutter.GUI -r linux-x64 -c Release -o artifact -p:PublishProfile=Static
           test ! -e artifact/libtscutter_audio.so
 
       - name: Verify FFmpeg static runtime [linux-x64]
         run: python3 tools/ffmpeg-static/verify.py --executable artifact/TSCutterGUI --sdk "$RUNNER_TEMP/ffmpeg-static"
+
+      - name: Verify static graphics [linux-x64]
+        run: python3 tools/graphics-static/verify.py --executable artifact/TSCutterGUI
 
       - name: Download third-party notices [linux-x64]
         uses: actions/download-artifact@v4
@@ -246,9 +253,16 @@ jobs:
           python3 -m unittest discover -s tools/ffmpeg-static -p 'test_*.py'
           python3 tools/ffmpeg-static/prepare.py --sdk "$RUNNER_TEMP/ffmpeg-static" --output "$RUNNER_TEMP/ffmpeg-static-support"
 
+      - name: Prepare native graphics SDK [osx-arm64]
+        run: |
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 "$GRAPHICS_SDK_OSX_ARM64_URL" -o "$RUNNER_TEMP/graphics-static.zip"
+          unzip -q "$RUNNER_TEMP/graphics-static.zip" -d "$RUNNER_TEMP/graphics-static"
+          python3 -m unittest discover -s tools/graphics-static -p 'test_*.py'
+          python3 tools/graphics-static/prepare.py --rid osx-arm64 --sdk "$RUNNER_TEMP/graphics-static" --output "$RUNNER_TEMP/graphics-static-support" --ffmpeg-sdk "$RUNNER_TEMP/ffmpeg-static"
+
       - name: Publish [osx-arm64]
         run: |
-          dotnet publish src/TSCutter.GUI -r osx-arm64 -c Release -o artifact -p:AppleMinOSVersion="$MACOSX_DEPLOYMENT_TARGET" -p:FFmpegLinkMode=Static -p:FFmpegStaticRoot="$RUNNER_TEMP/ffmpeg-static" -p:FFmpegStaticSupportRoot="$RUNNER_TEMP/ffmpeg-static-support"
+          dotnet publish src/TSCutter.GUI -r osx-arm64 -c Release -o artifact -p:PublishProfile=Static
           test ! -e artifact/libtscutter_audio.dylib
 
       - name: Verify FFmpeg static runtime [osx-arm64]
@@ -304,6 +318,9 @@ jobs:
           </dict>
           </plist>
           EOF
+
+      - name: Verify static graphics [osx-arm64]
+        run: python3 tools/graphics-static/verify.py --executable artifact/TSCutterGUI
 
       - name: Download third-party notices [osx-arm64]
         uses: actions/download-artifact@v4

@@ -12,6 +12,13 @@ sealed class Program
     [STAThread]
     public static void Main(string[] args)
     {
+#if TSCUTTER_GRAPHICS_STATIC
+        if (args.Length == 1 && args[0] == "--verify-static-graphics")
+        {
+            Environment.ExitCode = Utils.Media.NativeGraphicsSmokeTest.Run();
+            return;
+        }
+#endif
 #if TSCUTTER_FFMPEG_STATIC
         if (args.Length > 0 && args[0] == "--verify-static-ffmpeg")
         {
