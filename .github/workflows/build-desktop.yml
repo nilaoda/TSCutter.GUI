@@ -15,9 +15,9 @@ env:
   FFMPEG_RUNTIME_WIN_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261121/ffmpeg-runtime-win64-gpl-static-9.0.2.zip
   FFMPEG_RUNTIME_LINUX_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261121/ffmpeg-runtime-linux-x64-gpl-static-9.0.2.zip
   FFMPEG_RUNTIME_OSX_ARM64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261121/ffmpeg-runtime-osx-arm64-gpl-static-9.0.2.zip
-  GRAPHICS_SDK_WIN_X64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.12-20261122/avalonia-native-win-x64-all.zip
-  GRAPHICS_SDK_LINUX_X64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.12-20261122/avalonia-native-linux-x64-all.zip
-  GRAPHICS_SDK_OSX_ARM64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.12-20261122/avalonia-native-osx-arm64-all.zip
+  GRAPHICS_SDK_WIN_X64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.23-20261122/avalonia-native-win-x64-all.zip
+  GRAPHICS_SDK_LINUX_X64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.23-20261122/avalonia-native-linux-x64-all.zip
+  GRAPHICS_SDK_OSX_ARM64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.23-20261122/avalonia-native-osx-arm64-all.zip
 
 jobs:
   release-info:

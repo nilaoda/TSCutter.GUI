@@ -14,12 +14,19 @@ class GraphicsSdkTests(unittest.TestCase):
         (sdk / "lib").mkdir(parents=True)
         manifest = {"rid": rid, "components": {
             "skia": {"version": "2.88.9"}, "harfbuzz": {"binding_version": "8.3.1.1"},
-            "avalonia": {"version": "11.3.12"}, "angle": {"version": "chromium/7151"}},
+            "avalonia": {"version": "11.3.23"}, "angle": {"version": "chromium/7151"}},
             "sha256": {}, "link": {"skia": {"libs": [], "frameworks": []}}}
         for name in LIBRARIES[rid]:
             data = b"!<arch>\n" + name.encode()
             (sdk / "lib" / name).write_bytes(data)
             manifest["sha256"][name] = hashlib.sha256(data).hexdigest()
+        if rid == "osx-arm64":
+            (sdk / "build").mkdir()
+            manifest["support_sha256"] = {}
+            for name in ("StaticSkia.targets", "StaticSkiaLoader.c"):
+                data = name.encode()
+                (sdk / "build" / name).write_bytes(data)
+                manifest["support_sha256"]["build/" + name] = hashlib.sha256(data).hexdigest()
         return sdk, manifest
 
     def save(self, sdk, manifest):
@@ -61,6 +68,15 @@ class GraphicsSdkTests(unittest.TestCase):
             prepare(sdk, root / "output", "linux-x64", ffmpeg)
             flags = shlex.split((root / "output/graphics-link.rsp").read_text())
             self.assertEqual(["-lpthread", "-ldl"], flags)
+
+    def test_macos_rejects_corrupted_static_metal_support(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            sdk, manifest = self.make_sdk(root, "osx-arm64")
+            self.save(sdk, manifest)
+            (sdk / "build/StaticSkiaLoader.c").write_bytes(b"corrupt")
+            with self.assertRaises(ValueError):
+                prepare(sdk, root / "output", "osx-arm64")
 
     def test_macos_frameworks_are_normalized_and_retention_goes_to_linker(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -31,11 +31,11 @@
     </ItemGroup>
 
     <ItemGroup>
-        <PackageReference Include="Avalonia" Version="11.3.12" />
-        <PackageReference Include="Avalonia.Desktop" Version="11.3.12" />
-        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.12" />
-        <PackageReference Include="Avalonia.Controls.ColorPicker" Version="11.3.12" />
-        <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.3.12" />
+        <PackageReference Include="Avalonia" Version="11.3.23" />
+        <PackageReference Include="Avalonia.Desktop" Version="11.3.23" />
+        <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.23" />
+        <PackageReference Include="Avalonia.Controls.ColorPicker" Version="11.3.23" />
+        <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.3.23" />
         <PackageReference Include="Avalonia.ReactiveUI" Version="11.3.8" />
     </ItemGroup>
 

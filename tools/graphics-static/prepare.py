@@ -22,10 +22,19 @@ def prepare(sdk, output, rid, ffmpeg=None):
     components = manifest["components"]
     if components["skia"]["version"] != "2.88.9" or components["harfbuzz"]["binding_version"] != "8.3.1.1":
         raise ValueError("The native graphics SDK must match SkiaSharp 2.88.9 and HarfBuzzSharp 8.3.1.1")
-    if rid == "osx-arm64" and components["avalonia"]["version"] != "11.3.12":
-        raise ValueError("The native windowing SDK must match Avalonia.Native 11.3.12")
+    if rid == "osx-arm64" and components["avalonia"]["version"] != "11.3.23":
+        raise ValueError("The native windowing SDK must match Avalonia.Native 11.3.23")
     if rid == "win-x64" and components["angle"]["version"] != "chromium/7151":
         raise ValueError("The native graphics SDK must contain ANGLE chromium/7151")
+    if rid == "osx-arm64":
+        for name in ("build/StaticSkia.targets", "build/StaticSkiaLoader.c"):
+            path = sdk / name
+            if not path.is_file():
+                raise ValueError(f"The macOS static Metal support file is missing: {name}")
+            with path.open("rb") as support:
+                digest = hashlib.file_digest(support, "sha256").hexdigest()
+            if digest != manifest.get("support_sha256", {}).get(name):
+                raise ValueError(f"Static Metal support checksum mismatch: {name}")
     paths = []
     for name in LIBRARIES[rid]:
         path = sdk / "lib" / name

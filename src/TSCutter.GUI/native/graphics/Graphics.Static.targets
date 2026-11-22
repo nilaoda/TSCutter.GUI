@@ -9,6 +9,8 @@
     </ItemGroup>
     <Import Project="$(NativeGraphicsSupportRoot)/NativeLibraries.props"
             Condition="'$(NativeGraphicsStaticRoot)' != '' And Exists('$(NativeGraphicsSupportRoot)/NativeLibraries.props')" />
+    <Import Project="$(NativeGraphicsStaticRoot)/build/StaticSkia.targets"
+            Condition="'$(NativeGraphicsStaticRoot)' != '' And $(RuntimeIdentifier.StartsWith('osx-')) And Exists('$(NativeGraphicsStaticRoot)/build/StaticSkia.targets')" />
     <Target Name="ValidateNativeGraphicsSdk" BeforeTargets="PrepareForBuild" Condition="'$(NativeGraphicsStaticRoot)' != ''">
         <Error Condition="'$(PublishAot)' != 'true' Or ('$(RuntimeIdentifier)' != 'win-x64' And '$(RuntimeIdentifier)' != 'linux-x64' And '$(RuntimeIdentifier)' != 'osx-arm64')"
                Text="Static graphics require NativeAOT and win-x64, linux-x64 or osx-arm64." />
