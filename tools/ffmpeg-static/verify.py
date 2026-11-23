@@ -5,10 +5,30 @@ import os
 from pathlib import Path
 import re
 import shutil
+import struct
 import subprocess
 import sys
 import tempfile
 import wave
+
+
+def reject_gnu_initializers(executable):
+    data = executable.read_bytes()
+    if len(data) < 64 or data[:2] != b"MZ":
+        raise RuntimeError("Invalid Windows PE executable")
+    pe = struct.unpack_from("<I", data, 60)[0]
+    if pe + 24 > len(data) or data[pe:pe + 4] != b"PE\0\0":
+        raise RuntimeError("Invalid Windows PE header")
+    count = struct.unpack_from("<H", data, pe + 6)[0]
+    sections = pe + 24 + struct.unpack_from("<H", data, pe + 20)[0]
+    if not count or sections + count * 40 > len(data):
+        raise RuntimeError("Invalid Windows PE section table")
+    names = [data[offset:offset + 8].rstrip(b"\0")
+             for offset in range(sections, sections + count * 40, 40)]
+    unsupported = [name.decode("ascii", errors="replace") for name in names
+                   if name.startswith((b".ctors", b".dtors", b".init_ar", b".fini_ar"))]
+    if unsupported:
+        raise RuntimeError(f"GNU initializers will not run under MSVC startup: {unsupported}")
 
 
 def dependency_names(metadata, platform):
@@ -17,6 +37,12 @@ def dependency_names(metadata, platform):
     if platform == "linux":
         return re.findall(r"\(NEEDED\).*?\[([^]]+)\]", metadata)
     return [line.strip().split()[0] for line in metadata.splitlines()[1:] if line.strip()]
+
+
+def readobj_dependency_names(metadata):
+    # llvm-readobj --coff-imports prints one "Name: <dll>" field per imported DLL;
+    # required for ARM64 PE, which the MinGW x86_64 objdump cannot parse.
+    return re.findall(r"^\s+Name:\s*(\S+)", metadata, re.MULTILINE)
 
 
 def reject_sdk_shared_libraries(names, sdk):
@@ -31,6 +57,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--executable", type=Path, required=True)
     parser.add_argument("--objdump", type=Path)
+    parser.add_argument("--readobj", type=Path)
     parser.add_argument("--sdk", type=Path)
     args = parser.parse_args()
     platform = {"win32": "windows", "linux": "linux", "darwin": "macos"}.get(sys.platform)
@@ -38,16 +65,24 @@ def main():
         parser.error("Unsupported verification host")
     executable = args.executable.resolve()
     if platform == "windows":
-        if args.objdump is None:
-            parser.error("Windows verification requires --objdump")
+        reject_gnu_initializers(executable)
+        if args.objdump is None and args.readobj is None:
+            parser.error("Windows verification requires --objdump or --readobj")
         if {entry.name for entry in executable.parent.iterdir()} != {executable.name}:
             raise RuntimeError("The Windows publish directory must contain only the executable before packaging notices.")
-        command = [args.objdump, "-p", executable]
+        if args.readobj is not None:
+            command = [args.readobj, "--coff-imports", executable]
+        else:
+            command = [args.objdump, "-p", executable]
     else:
         if args.sdk is None or not (args.sdk / "lib/libavcodec.a").is_file():
             parser.error("Unix verification requires --sdk pointing to the static SDK")
         command = ["readelf", "-d", executable] if platform == "linux" else ["otool", "-L", executable]
-    imports = dependency_names(subprocess.check_output(command, text=True), platform)
+    raw_imports = subprocess.check_output(command, text=True)
+    imports = (readobj_dependency_names(raw_imports) if platform == "windows" and args.readobj is not None
+               else dependency_names(raw_imports, platform))
+    if platform == "windows" and not imports:
+        raise RuntimeError("Could not parse the import table of the executable")
     if platform == "windows":
         system = {"advapi32.dll", "bcrypt.dll", "crypt32.dll", "d3d9.dll", "dxgi.dll", "gdi32.dll",
                   "iphlpapi.dll", "kernel32.dll", "ncrypt.dll", "ntdll.dll", "ole32.dll", "oleaut32.dll",

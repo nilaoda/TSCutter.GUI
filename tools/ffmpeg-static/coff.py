@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Normalize GNU section metadata for Microsoft's COFF linker.
 
-Only section-definition auxiliary records and section-name separators change.
+Only section-definition auxiliary records, section names and initializer flags change.
 Code, relocations, archive indexes, symbol indexes and byte offsets remain unchanged. See PE/COFF's
 IMAGE_COMDAT_SELECT_ASSOCIATIVE definition.
 """
@@ -20,7 +20,9 @@ def normalize_object(data):
             return data, 0  # Short import-library member, not a bigobj.
         count, symbols, symbol_count = struct.unpack_from("<III", data, 44)
         header, stride = 56, 20
-    elif machine == 0x8664:
+    elif machine in (0x8664, 0xAA64):
+        # x86_64 and AArch64 objects share the classic COFF layout; the MinGW
+        # aarch64 SDK needs the same COMDAT/section-name normalization as x64.
         symbols, symbol_count = struct.unpack_from("<II", data, 8)
         header, stride = 20 + struct.unpack_from("<H", data, 16)[0], 18
     else:
@@ -28,11 +30,16 @@ def normalize_object(data):
     if not symbols or not symbol_count:
         return data, 0
     strings = symbols + symbol_count * stride
-    if strings + 4 > len(data) or header + count * 40 > len(data):
+    if header + count * 40 > len(data):
         raise ValueError("Invalid COFF table bounds")
-    string_size = struct.unpack_from("<I", data, strings)[0]
-    if string_size < 4 or strings + string_size > len(data):
-        raise ValueError("Invalid COFF string table size")
+    # The string table is optional: clang omits it (or leaves a zeroed
+    # placeholder) when an object only uses short section/symbol names, e.g.
+    # resource-compiler objects. A real table is at least 4 bytes long.
+    if strings + 4 <= len(data):
+        declared = struct.unpack_from("<I", data, strings)[0]
+        string_size = declared if declared >= 4 and strings + declared <= len(data) else 4
+    else:
+        string_size = 4
 
     def string(offset):
         start = strings + offset
@@ -46,7 +53,7 @@ def normalize_object(data):
         offset = header + (index - 1) * 40
         raw = bytes(data[offset:offset + 8]).rstrip(b"\0")
         name = string(int(raw[1:])) if raw.startswith(b"/") else raw.decode("ascii")
-        name_locations.append((name, strings + int(raw[1:]) if raw.startswith(b"/") else offset))
+        name_locations.append((name, offset, strings + int(raw[1:]) if raw.startswith(b"/") else offset))
         sections[index] = (name, struct.unpack_from("<I", data, offset + 36)[0])
     by_name = {name: index for index, (name, _) in sections.items()}
     definitions, externals = {}, set()
@@ -64,11 +71,37 @@ def normalize_object(data):
             externals.add(section)
         if storage == 3 and auxiliaries == 1 and value == 0 and symbol_type == 0 and section in sections and name == sections[section][0]:
             definitions[section] = offset + stride
-            name_locations.append((name, strings + struct.unpack_from("<I", raw, 4)[0] if raw[:4] == b"\0" * 4 else offset))
+            name_locations.append((name, offset, strings + struct.unpack_from("<I", raw, 4)[0] if raw[:4] == b"\0" * 4 else offset))
         index += 1 + auxiliaries
 
+    # GNU startup walks .ctors backwards; MSVC only executes .CRT$XC*
+    # entries between XCA/XCZ. In particular, winpthreads' priority-0
+    # constructor initializes the clock API pointers used by nanosleep.
+    # Keep every replacement within its existing name field/string so archive
+    # indexes and relocation offsets remain valid. Hex priorities retain the
+    # GNU ordering while fitting the 12 bytes in .ctors.NNNNN.
+    initializer_names = {}
     changed = 0
     for section, (name, flags) in sections.items():
+        if name == ".ctors":
+            initializer_names[name] = b".CRT$XCU"
+        elif name == ".dtors":
+            initializer_names[name] = b".CRT$XPT"
+        elif name.startswith((".ctors.", ".dtors.")):
+            suffix = name[len(".ctors."):]
+            if len(suffix) != 5 or not suffix.isdigit() or int(suffix) > 65535:
+                raise ValueError(f"Unsupported GNU initializer section: {name}")
+            # GNU destructors run after atexit handlers in MSVC's pre-terminator
+            # table, in the opposite priority order to the constructors.
+            replacement = (f".CRT$XCT{65535 - int(suffix):04X}" if name.startswith(".ctors.")
+                           else f".CRT$XPU{int(suffix):04X}")
+            initializer_names[name] = replacement.encode("ascii")
+        if name in initializer_names:
+            # Match MSVC's read-only initializer sections; a writable .CRT
+            # would be emitted separately and fall outside XCA/XCZ.
+            offset = header + (section - 1) * 40 + 36
+            struct.pack_into("<I", data, offset, (flags | 0x40000040) & ~0x80000000)
+            changed += 1
         # MinGW's DEFINE_GUID uses SAME_SIZE, while the Windows SDK uses
         # selectany. Microsoft link rejects the differing selection modes.
         # Restrict this normalization to 16-byte GUID constants.
@@ -97,7 +130,17 @@ def normalize_object(data):
     # GNU uses dot-separated hot/cold function sections. MSVC groups sections
     # at '$', and otherwise emits one output section per full GNU name.
     # Replacing just the separator preserves all string-table byte offsets.
-    for name, offset in name_locations:
+    for name, field_offset, offset in name_locations:
+        if name in initializer_names:
+            replacement = initializer_names[name]
+            if len(replacement) <= 8:
+                # Short names may also live in the string table. Use the
+                # inline field so a longer replacement cannot overwrite the
+                # following string or its terminator.
+                data[field_offset:field_offset + 8] = replacement.ljust(8, b"\0")
+            else:
+                data[offset:offset + len(replacement)] = replacement
+            continue
         for prefix in (".text.", ".data.", ".bss.", ".rdata."):
             if name.startswith(prefix):
                 data[offset + len(prefix) - 1] = ord("$")

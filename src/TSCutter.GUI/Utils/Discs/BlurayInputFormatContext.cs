@@ -44,10 +44,10 @@ internal sealed unsafe class BlurayInputFormatContext : FormatContext
 
     public static BlurayInputFormatContext Open(DiscInput disc, Func<bool> shouldInterrupt)
     {
+        var interrupt = Media.InterruptibleInputFormatContext.CreateInterruptCallback(shouldInterrupt);
         var reader = new Reader(disc, shouldInterrupt);
         ReadCallback read = reader.Read;
         SeekCallback seek = reader.Seek;
-        AVIOInterruptCB_callback interrupt = _ => shouldInterrupt() ? 1 : 0;
         AVFormatContext* context = null;
         AVIOContext* io = null;
         byte* buffer = null;

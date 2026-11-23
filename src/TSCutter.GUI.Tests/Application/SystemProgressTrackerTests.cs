@@ -5,6 +5,7 @@ using Xunit;
 
 namespace TSCutter.GUI.Tests.Application;
 
+[Collection("Avalonia UI")]
 public class SystemProgressTrackerTests
 {
     private sealed class ManualTime : TimeProvider

@@ -12,12 +12,18 @@ on:
 env:
   DOTNET_SDK_VERSION: 11.x
   ACTIONS_ALLOW_USE_UNSECURE_NODE_VERSION: true
-  FFMPEG_RUNTIME_WIN_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261121/ffmpeg-runtime-win64-gpl-static-9.0.2.zip
-  FFMPEG_RUNTIME_LINUX_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261121/ffmpeg-runtime-linux-x64-gpl-static-9.0.2.zip
-  FFMPEG_RUNTIME_OSX_ARM64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261121/ffmpeg-runtime-osx-arm64-gpl-static-9.0.2.zip
+  FFMPEG_RUNTIME_WIN_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261123/ffmpeg-runtime-win64-gpl-static-9.0.2.zip
+  FFMPEG_RUNTIME_LINUX_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261123/ffmpeg-runtime-linux-x64-gpl-static-9.0.2.zip
+  FFMPEG_RUNTIME_OSX_ARM64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261123/ffmpeg-runtime-osx-arm64-gpl-static-9.0.2.zip
+  FFMPEG_RUNTIME_WIN_ARM64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261123/ffmpeg-runtime-win-arm64-gpl-static-9.0.2.zip
+  FFMPEG_RUNTIME_LINUX_ARM64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261123/ffmpeg-runtime-linux-arm64-gpl-static-9.0.2.zip
+  FFMPEG_RUNTIME_OSX_X64_URL: https://github.com/nilaoda/FFmpegSharedLibraries/releases/download/20261123/ffmpeg-runtime-osx-x64-gpl-static-9.0.2.zip
   GRAPHICS_SDK_WIN_X64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.23-20261122/avalonia-native-win-x64-all.zip
   GRAPHICS_SDK_LINUX_X64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.23-20261122/avalonia-native-linux-x64-all.zip
   GRAPHICS_SDK_OSX_ARM64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.23-20261122/avalonia-native-osx-arm64-all.zip
+  GRAPHICS_SDK_WIN_ARM64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.23-20261122/avalonia-native-win-arm64-all.zip
+  GRAPHICS_SDK_LINUX_ARM64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.23-20261122/avalonia-native-linux-arm64-all.zip
+  GRAPHICS_SDK_OSX_X64_URL: https://github.com/nilaoda/AvaloniaNativeLibraries/releases/download/avalonia-11.3.23-20261122/avalonia-native-osx-x64-all.zip
 
 jobs:
   release-info:
@@ -138,7 +144,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "Graphics SDK preparation failed." }
 
       - name: Publish [win-x64]
-        run: | 
+        run: |
           cd src/TSCutter.GUI
           dotnet publish -r win-x64 -c Release -o artifact -p:PublishProfile=Static
           if ($LASTEXITCODE -ne 0) { throw "Windows static publish failed." }
@@ -171,6 +177,114 @@ jobs:
         with:
           name: TSCutter.GUI_win-x64
           path: TSCutter.GUI_${{ needs.release-info.outputs.stage }}_win-x64_${{ needs.release-info.outputs.version }}.zip
+          retention-days: 1
+
+  build-win-arm64:
+    runs-on: windows-11-arm
+    needs: release-info
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ needs.release-info.outputs.sdk-version }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Download FFmpeg static SDK [win-arm64]
+        shell: pwsh
+        run: |
+          $zipPath = Join-Path $env:RUNNER_TEMP 'ffmpeg-static-win-arm64.zip'
+          Invoke-WebRequest -Uri "$env:FFMPEG_RUNTIME_WIN_ARM64_URL" -OutFile $zipPath -MaximumRetryCount 5 -RetryIntervalSec 3
+          $sdkRoot = Join-Path $env:RUNNER_TEMP 'ffmpeg-static'
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $sdkRoot
+          "FFMPEG_STATIC_ROOT=$sdkRoot" >> $env:GITHUB_ENV
+          "FFMPEG_STATIC_SUPPORT_ROOT=$(Join-Path $env:RUNNER_TEMP 'ffmpeg-static-support')" >> $env:GITHUB_ENV
+
+      - name: Set up CLANGARM64 static link support
+        id: msys2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: CLANGARM64
+          release: false
+          update: true
+          install: >-
+            mingw-w64-clang-aarch64-clang
+            mingw-w64-clang-aarch64-libc++
+            mingw-w64-clang-aarch64-libiconv
+
+      - name: Prepare FFmpeg static libraries
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $clangarm64Root = Join-Path $env:MSYS2_LOCATION 'clangarm64'
+          python -m unittest discover -s tools/ffmpeg-static -p "test_*.py"
+          if ($LASTEXITCODE -ne 0) { throw "FFmpeg COFF normalization tests failed." }
+          python tools/ffmpeg-static/prepare.py --sdk "$env:FFMPEG_STATIC_ROOT" --mingw "$clangarm64Root" --rid win-arm64 --output "$env:FFMPEG_STATIC_SUPPORT_ROOT"
+          if ($LASTEXITCODE -ne 0) { throw "FFmpeg static library preparation failed." }
+
+      - name: Install zip
+        run: |
+          choco install zip --no-progress --yes
+
+      - name: Prepare native graphics SDK [win-arm64]
+        shell: pwsh
+        run: |
+          $zipPath = Join-Path $env:RUNNER_TEMP 'graphics-static.zip'
+          $sdkRoot = Join-Path $env:RUNNER_TEMP 'graphics-static'
+          $supportRoot = Join-Path $env:RUNNER_TEMP 'graphics-static-support'
+          Invoke-WebRequest -Uri "$env:GRAPHICS_SDK_WIN_ARM64_URL" -OutFile $zipPath -MaximumRetryCount 5 -RetryIntervalSec 3
+          Expand-Archive -LiteralPath $zipPath -DestinationPath $sdkRoot
+          python -m unittest discover -s tools/graphics-static -p "test_*.py"
+          if ($LASTEXITCODE -ne 0) { throw "Graphics SDK tests failed." }
+          python tools/graphics-static/prepare.py --rid win-arm64 --sdk "$sdkRoot" --output "$supportRoot"
+          if ($LASTEXITCODE -ne 0) { throw "Graphics SDK preparation failed." }
+
+      - name: Publish [win-arm64]
+        run: |
+          cd src/TSCutter.GUI
+          dotnet publish -r win-arm64 -c Release -o artifact -p:PublishProfile=Static
+          if ($LASTEXITCODE -ne 0) { throw "Windows ARM64 static publish failed." }
+
+      - name: Verify single EXE [win-arm64]
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $readobj = Join-Path $env:MSYS2_LOCATION 'clangarm64/bin/llvm-readobj.exe'
+          python tools/ffmpeg-static/verify.py --executable src/TSCutter.GUI/artifact/TSCutterGUI.exe --readobj "$readobj"
+          if ($LASTEXITCODE -ne 0) { throw "Windows ARM64 static runtime verification failed." }
+
+      - name: Verify static graphics [win-arm64]
+        shell: pwsh
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        run: |
+          $objdump = Join-Path $env:MSYS2_LOCATION 'clangarm64/bin/objdump.exe'
+          python tools/graphics-static/verify.py --executable src/TSCutter.GUI/artifact/TSCutterGUI.exe --objdump "$objdump"
+          if ($LASTEXITCODE -ne 0) { throw "Windows ARM64 graphics verification failed." }
+
+      - name: Download third-party notices [win-arm64]
+        uses: actions/download-artifact@v4
+        with:
+          name: third-party-notices
+          path: src/TSCutter.GUI/artifact
+
+      - name: Package [win-arm64]
+        run: |
+          cd src/TSCutter.GUI/artifact
+          zip ../../../TSCutter.GUI_${{ needs.release-info.outputs.stage }}_win-arm64_${{ needs.release-info.outputs.version }}.zip TSCutterGUI.exe THIRD_PARTY_NOTICES.txt
+
+      - name: Upload Artifact [win-arm64]
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSCutter.GUI_win-arm64
+          path: TSCutter.GUI_${{ needs.release-info.outputs.stage }}_win-arm64_${{ needs.release-info.outputs.version }}.zip
           retention-days: 1
 
   build-linux-x64:
@@ -229,6 +343,64 @@ jobs:
         with:
           name: TSCutter.GUI_linux-x64
           path: TSCutter.GUI_${{ needs.release-info.outputs.stage }}_linux-x64_${{ needs.release-info.outputs.version }}.zip
+          retention-days: 1
+
+  build-linux-arm64:
+    # Build the FFmpeg static SDK on Ubuntu 24.04 or older as well.
+    runs-on: ubuntu-24.04-arm
+    needs: release-info
+
+    steps:
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y build-essential clang binutils pkg-config curl wget unzip libicu-dev libcurl4-openssl-dev zlib1g-dev libkrb5-dev zip
+      - uses: actions/checkout@v4
+
+      - name: Set up dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ needs.release-info.outputs.sdk-version }}
+
+      - name: Prepare FFmpeg static SDK [linux-arm64]
+        run: |
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 "$FFMPEG_RUNTIME_LINUX_ARM64_URL" -o "$RUNNER_TEMP/ffmpeg-static.zip"
+          unzip -q "$RUNNER_TEMP/ffmpeg-static.zip" -d "$RUNNER_TEMP/ffmpeg-static"
+          python3 -m unittest discover -s tools/ffmpeg-static -p 'test_*.py'
+          python3 tools/ffmpeg-static/prepare.py --sdk "$RUNNER_TEMP/ffmpeg-static" --output "$RUNNER_TEMP/ffmpeg-static-support"
+
+      - name: Prepare native graphics SDK [linux-arm64]
+        run: |
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 "$GRAPHICS_SDK_LINUX_ARM64_URL" -o "$RUNNER_TEMP/graphics-static.zip"
+          unzip -q "$RUNNER_TEMP/graphics-static.zip" -d "$RUNNER_TEMP/graphics-static"
+          python3 -m unittest discover -s tools/graphics-static -p 'test_*.py'
+          python3 tools/graphics-static/prepare.py --rid linux-arm64 --sdk "$RUNNER_TEMP/graphics-static" --output "$RUNNER_TEMP/graphics-static-support" --ffmpeg-sdk "$RUNNER_TEMP/ffmpeg-static"
+
+      - name: Publish [linux-arm64]
+        run: |
+          dotnet publish src/TSCutter.GUI -r linux-arm64 -c Release -o artifact -p:PublishProfile=Static
+          test ! -e artifact/libtscutter_audio.so
+
+      - name: Verify FFmpeg static runtime [linux-arm64]
+        run: python3 tools/ffmpeg-static/verify.py --executable artifact/TSCutterGUI --sdk "$RUNNER_TEMP/ffmpeg-static"
+
+      - name: Verify static graphics [linux-arm64]
+        run: python3 tools/graphics-static/verify.py --executable artifact/TSCutterGUI
+
+      - name: Download third-party notices [linux-arm64]
+        uses: actions/download-artifact@v4
+        with:
+          name: third-party-notices
+          path: artifact
+
+      - name: Package [linux-arm64]
+        run: |
+          cd artifact
+          zip -r ../TSCutter.GUI_${{ needs.release-info.outputs.stage }}_linux-arm64_${{ needs.release-info.outputs.version }}.zip . -x "*.dbg"
+
+      - name: Upload Artifact [linux-arm64]
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSCutter.GUI_linux-arm64
+          path: TSCutter.GUI_${{ needs.release-info.outputs.stage }}_linux-arm64_${{ needs.release-info.outputs.version }}.zip
           retention-days: 1
 
   build-mac-arm64:
@@ -340,12 +512,121 @@ jobs:
           path: TSCutter.GUI_${{ needs.release-info.outputs.stage }}_osx-arm64_${{ needs.release-info.outputs.version }}.zip
           retention-days: 1
 
+  build-mac-x64:
+    runs-on: macos-15-intel
+    needs: release-info
+    env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up dotnet
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ needs.release-info.outputs.sdk-version }}
+
+      - name: Prepare FFmpeg static SDK [osx-x64]
+        run: |
+          brew install pkgconf
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 "$FFMPEG_RUNTIME_OSX_X64_URL" -o "$RUNNER_TEMP/ffmpeg-static.zip"
+          unzip -q "$RUNNER_TEMP/ffmpeg-static.zip" -d "$RUNNER_TEMP/ffmpeg-static"
+          python3 -m unittest discover -s tools/ffmpeg-static -p 'test_*.py'
+          python3 tools/ffmpeg-static/prepare.py --sdk "$RUNNER_TEMP/ffmpeg-static" --output "$RUNNER_TEMP/ffmpeg-static-support"
+
+      - name: Prepare native graphics SDK [osx-x64]
+        run: |
+          curl --fail --location --retry 5 --retry-delay 3 --connect-timeout 30 "$GRAPHICS_SDK_OSX_X64_URL" -o "$RUNNER_TEMP/graphics-static.zip"
+          unzip -q "$RUNNER_TEMP/graphics-static.zip" -d "$RUNNER_TEMP/graphics-static"
+          python3 -m unittest discover -s tools/graphics-static -p 'test_*.py'
+          python3 tools/graphics-static/prepare.py --rid osx-x64 --sdk "$RUNNER_TEMP/graphics-static" --output "$RUNNER_TEMP/graphics-static-support" --ffmpeg-sdk "$RUNNER_TEMP/ffmpeg-static"
+
+      - name: Publish [osx-x64]
+        run: |
+          dotnet publish src/TSCutter.GUI -r osx-x64 -c Release -o artifact -p:PublishProfile=Static
+          test ! -e artifact/libtscutter_audio.dylib
+
+      - name: Verify FFmpeg static runtime [osx-x64]
+        run: python3 tools/ffmpeg-static/verify.py --executable artifact/TSCutterGUI --sdk "$RUNNER_TEMP/ffmpeg-static"
+
+      - name: Assemble .app [osx-x64]
+        run: |
+          APP_NAME="TSCutter.GUI.app"
+          APP_ROOT="$RUNNER_TEMP/$APP_NAME"
+          CONTENTS_DIR="$APP_ROOT/Contents"
+          MACOS_DIR="$CONTENTS_DIR/MacOS"
+          RESOURCES_DIR="$CONTENTS_DIR/Resources"
+          ICON_SOURCE="$GITHUB_WORKSPACE/src/TSCutter.GUI/Assets/logo.icns"
+          APP_VERSION="${{ needs.release-info.outputs.version }}"
+
+          rm -rf "$APP_ROOT"
+          mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
+
+          cp -R artifact/. "$MACOS_DIR/"
+          find "$MACOS_DIR" -maxdepth 1 -name '*.dSYM' -prune -exec rm -rf {} +
+
+          cp "$ICON_SOURCE" "$RESOURCES_DIR/logo.icns"
+
+          cat > "$CONTENTS_DIR/Info.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleDevelopmentRegion</key>
+            <string>en</string>
+            <key>CFBundleDisplayName</key>
+            <string>TSCutter.GUI</string>
+            <key>CFBundleExecutable</key>
+            <string>TSCutterGUI</string>
+            <key>CFBundleIconFile</key>
+            <string>logo.icns</string>
+            <key>CFBundleIdentifier</key>
+            <string>com.nilaoda.tscuttergui</string>
+            <key>CFBundleInfoDictionaryVersion</key>
+            <string>6.0</string>
+            <key>CFBundleName</key>
+            <string>TSCutter.GUI</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>CFBundleShortVersionString</key>
+            <string>$APP_VERSION</string>
+            <key>CFBundleVersion</key>
+            <string>${{ needs.release-info.outputs.version }}</string>
+            <key>LSMinimumSystemVersion</key>
+            <string>$MACOSX_DEPLOYMENT_TARGET</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          EOF
+
+      - name: Verify static graphics [osx-x64]
+        run: python3 tools/graphics-static/verify.py --executable "$RUNNER_TEMP/TSCutter.GUI.app/Contents/MacOS/TSCutterGUI"
+
+      - name: Download third-party notices [osx-x64]
+        uses: actions/download-artifact@v4
+        with:
+          name: third-party-notices
+          path: ${{ runner.temp }}/TSCutter.GUI.app/Contents/MacOS
+
+      - name: Package [osx-x64]
+        run: |
+          cd "$RUNNER_TEMP"
+          ditto -c -k --sequesterRsrc --keepParent "TSCutter.GUI.app" "$GITHUB_WORKSPACE/TSCutter.GUI_${{ needs.release-info.outputs.stage }}_osx-x64_${{ needs.release-info.outputs.version }}.zip"
+
+      - name: Upload Artifact [osx-x64]
+        uses: actions/upload-artifact@v4
+        with:
+          name: TSCutter.GUI_osx-x64
+          path: TSCutter.GUI_${{ needs.release-info.outputs.stage }}_osx-x64_${{ needs.release-info.outputs.version }}.zip
+          retention-days: 1
+
   release:
     if: ${{ github.event.inputs.publish_release != 'false' }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
-    needs: [build-win-x64, build-linux-x64, build-mac-arm64, release-info]
+    needs: [build-win-x64, build-win-arm64, build-linux-x64, build-linux-arm64, build-mac-arm64, build-mac-x64, release-info]
 
     steps:
       - name: Fetch artifacts
@@ -359,7 +640,7 @@ jobs:
           tag: ${{ needs.release-info.outputs.tag }}
           commit: ${{ github.sha }}
           name: ${{ needs.release-info.outputs.stage }} ${{ needs.release-info.outputs.version }}
-          artifacts: "TSCutter.GUI_linux-x64/*,TSCutter.GUI_osx-arm64/*,TSCutter.GUI_win-x64/*"
+          artifacts: "TSCutter.GUI_linux-x64/*,TSCutter.GUI_linux-arm64/*,TSCutter.GUI_osx-arm64/*,TSCutter.GUI_osx-x64/*,TSCutter.GUI_win-x64/*,TSCutter.GUI_win-arm64/*"
           draft: false
           prerelease: false
           makeLatest: true

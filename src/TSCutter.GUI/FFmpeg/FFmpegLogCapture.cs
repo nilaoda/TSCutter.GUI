@@ -38,7 +38,10 @@ internal sealed unsafe class FFmpegLogCapture : IDisposable
             }
             byte* buffer = stackalloc byte[4096];
             var prefix = 1;
-            NativeMethods.av_log_format_line2(context, level, format, arguments, buffer, 4096, &prefix);
+            var length = NativeMethods.av_log_format_line2(context, level, format, arguments, buffer, 4096, &prefix);
+            if (length < 0)
+                return;
+            buffer[4095] = 0;
             var message = Marshal.PtrToStringUTF8((nint)buffer) ?? "";
             capture.messages.Append(message.AsSpan(0, Math.Min(message.Length, MaximumLength - capture.messages.Length)));
             // va_list 只能消费一次，格式化后直接输出文本，不能再调用默认回调复用参数。

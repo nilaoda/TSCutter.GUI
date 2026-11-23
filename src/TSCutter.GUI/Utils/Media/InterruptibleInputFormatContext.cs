@@ -11,6 +11,24 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
     private readonly AVIOInterruptCB_callback interruptCallback;
     private readonly double? dvdExportSeekAnchor;
 
+    internal static AVIOInterruptCB_callback CreateInterruptCallback(Func<bool> shouldInterrupt)
+    {
+        ArgumentNullException.ThrowIfNull(shouldInterrupt);
+        return _ =>
+        {
+            try
+            {
+                return shouldInterrupt() ? 1 : 0;
+            }
+            // A failing cancellation predicate must stop I/O, never unwind
+            // a managed exception across FFmpeg's native callback boundary.
+            catch
+            {
+                return 1;
+            }
+        };
+    }
+
     private InterruptibleInputFormatContext(AVFormatContext* context, AVIOInterruptCB_callback callback,
         double? dvdExportSeekAnchor = null, Discs.DvdTimeline? dvdTimeline = null) : base(context, isOwner: true)
     {
@@ -97,12 +115,12 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
 
     public static FormatContext Open(string path, Func<bool> shouldInterrupt, long tsSyncOffset = -1)
     {
+        var callback = CreateInterruptCallback(shouldInterrupt);
         AVFormatContext* context = FF.avformat_alloc_context();
         if (context == null)
             throw new OutOfMemoryException();
 
         AVDictionary* options = null;
-        AVIOInterruptCB_callback callback = _ => shouldInterrupt() ? 1 : 0;
         try
         {
             // The protocol layer copies this callback when opening the file.
@@ -144,12 +162,12 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
         if (disc.Kind == DiscKind.BluRay)
             return Discs.BlurayInputFormatContext.Open(disc, shouldInterrupt);
 
+        var callback = CreateInterruptCallback(shouldInterrupt);
         AVFormatContext* context = FF.avformat_alloc_context();
         if (context == null)
             throw new OutOfMemoryException();
 
         AVDictionary* options = null;
-        AVIOInterruptCB_callback callback = _ => shouldInterrupt() ? 1 : 0;
         try
         {
             // The protocol layer copies this callback when opening the file.
