@@ -50,6 +50,11 @@ features:
     details: 快速检查、包查看器、流过滤与编辑、时间轴修复、多源修复与二进制合并。
     link: /guide/ts-tools
     linkText: TS 工具
+  - icon: 🌐
+    title: 远程剪辑
+    details: 在宿主机上运行，其他设备用浏览器登录即可剪辑；多个账号各自独立，素材目录只读。
+    link: /guide/remote
+    linkText: 远程剪辑
 ---
 
 <div class="home-showcase">

@@ -40,6 +40,7 @@ const strings: Record<'root' | 'zh-tw' | 'en', Strings> = {
       ['remux-mux', '重封装与混流'],
       ['discs', 'DVD 与蓝光'],
       ['ts-tools', 'TS 工具'],
+      ['remote', '远程剪辑'],
       ['appearance', '外观与语言']
     ],
     footer: '基于 GPL-3.0 许可证发布',
@@ -70,6 +71,7 @@ const strings: Record<'root' | 'zh-tw' | 'en', Strings> = {
       ['remux-mux', '重新封裝與混流'],
       ['discs', 'DVD 與藍光'],
       ['ts-tools', 'TS 工具'],
+      ['remote', '遠端剪輯'],
       ['appearance', '外觀與語言']
     ],
     footer: '依 GPL-3.0 授權條款發布',
@@ -100,6 +102,7 @@ const strings: Record<'root' | 'zh-tw' | 'en', Strings> = {
       ['remux-mux', 'Remuxing and muxing'],
       ['discs', 'DVD and Blu-ray'],
       ['ts-tools', 'TS tools'],
+      ['remote', 'Remote editing'],
       ['appearance', 'Appearance and languages']
     ],
     footer: 'Released under the GPL-3.0 license',

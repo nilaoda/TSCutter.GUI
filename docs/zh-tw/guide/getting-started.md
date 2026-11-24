@@ -4,9 +4,9 @@ TSCutter.GUI 是一款跨平台影片剪輯工具，支援快速的關鍵影格�
 
 ## 下載
 
-從 [GitHub Releases](https://github.com/nilaoda/TSCutter.GUI/releases/latest) 下載對應平台的最新 Beta 版。
+從 [GitHub Releases](https://github.com/nilaoda/TSCutter.GUI/releases/latest) 下載對應平台的最新 Beta 版。釋出包涵蓋 Windows、macOS 和 Linux 的 x64 與 Arm64：Linux 版需要 glibc 2.39 或更新版本（例如 Ubuntu 24.04），macOS 版需要 macOS 14 或更新版本。
 
-官方釋出包已內建所需的 [FFmpeg 執行庫](https://github.com/nilaoda/FFmpegSharedLibraries)，無需另行安裝。
+官方釋出包已將 [FFmpeg](https://github.com/nilaoda/FFmpegSharedLibraries) 靜態連結進程式，無需另行安裝執行庫；Windows 版就是一個可執行檔，附帶第三方聲明。
 
 ::: warning 處理器需求
 x64 電腦的 CPU 需支援 SSE4.2 和 POPCNT（x86-64-v2）。不支援的有 Intel Core 2、2013 年以前的 Atom，以及 AMD Athlon 64、Phenom、Athlon II、A 系列 3000 和 E 系列（Bobcat）；在這些 CPU 上程式開啟後會直接結束，請使用 0.7.1 或更早的版本。Apple 晶片和 Arm64 裝置不受影響。

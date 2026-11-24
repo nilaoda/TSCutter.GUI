@@ -50,6 +50,11 @@ features:
     details: Quick Check, Packet Viewer, Stream Filter and Editor, Timeline Repair, Multi-source Repair and Binary Merge.
     link: /en/guide/ts-tools
     linkText: TS tools
+  - icon: 🌐
+    title: Remote editing
+    details: Run it on a host and edit from any browser, with separate accounts and read-only media folders.
+    link: /en/guide/remote
+    linkText: Remote editing
 ---
 
 <div class="home-showcase">

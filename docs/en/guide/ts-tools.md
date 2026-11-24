@@ -11,7 +11,7 @@ Open any utility directly from the **Tools** menu. Each tool opens in its own wi
 | **TS Packet Viewer** | Inspect 188-byte TS or 192-byte M2TS packets, navigate by packet number, offset or PID, and link parsed fields to highlighted Hex bytes. M2TS arrival headers and timestamps are also shown. |
 | **TS Elementary Stream Extractor** | Select one or more tracks and export their raw video, audio, subtitle or data payload after removing TS and PES encapsulation. |
 | **TS Stream Filter** | Keep selected PIDs or split selected services while rebuilding the required program and service tables. |
-| **TS Stream Editor** | Remove tracks or services, remap identifiers and PIDs, and edit service or language metadata while preserving the original encoded media. |
+| **TS Stream Editor** | Remove tracks or services, remap identifiers and PIDs, and edit service or language metadata while preserving the original encoded media. It can also rewrite the transfer characteristics already signaled in an HEVC stream to match what the media actually uses. |
 | **TS Timeline Repair** | Analyze and safely correct supported PCR and timestamp discontinuities without hiding transport or packet-loss errors. |
 | **TS Multi-source Repair** | Compare compatible recordings of the same feed and time period, then use healthy packet, PES or elementary-stream data to repair damaged regions and long gaps where safe. |
 | **TS Binary Merge** | Append ordered TS segments, remove byte-identical overlaps, or merge overlapping recordings from the same source when only TS continuity counters differ. |

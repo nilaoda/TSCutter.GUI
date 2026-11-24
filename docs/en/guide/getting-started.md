@@ -4,9 +4,9 @@ TSCutter.GUI is a cross-platform video editor with fast keyframe cutting, frame-
 
 ## Download
 
-Download the latest Beta for your platform from [GitHub Releases](https://github.com/nilaoda/TSCutter.GUI/releases/latest).
+Download the latest Beta for your platform from [GitHub Releases](https://github.com/nilaoda/TSCutter.GUI/releases/latest). Packages are built for x64 and Arm64 on Windows, macOS and Linux. Linux packages require glibc 2.39 or later (for example, Ubuntu 24.04), and macOS packages require macOS 14 or later.
 
-Official packages include the required [FFmpeg runtime](https://github.com/nilaoda/FFmpegSharedLibraries); no separate FFmpeg installation is needed.
+Official packages link [FFmpeg](https://github.com/nilaoda/FFmpegSharedLibraries) statically into the app, so no separate runtime is needed; on Windows the package is a single executable plus third-party notices.
 
 ::: warning CPU requirement
 On x64, the CPU must support SSE4.2 and POPCNT (x86-64-v2). Unsupported CPUs include Intel Core 2 and Atom models before 2013, and AMD Athlon 64, Phenom, Athlon II, A-series 3000 and E-series (Bobcat); on these the app exits right after launch, so use version 0.7.1 or earlier. Apple silicon and Arm64 are not affected.

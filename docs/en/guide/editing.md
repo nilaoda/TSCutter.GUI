@@ -80,6 +80,17 @@ After saving a clip, merging clips or exporting in remove mode, a result window 
 
 Click the **pencil icon** on a clip card to edit its name, notes, and color. Changes support undo/redo. Timeline bars use the assigned color, with names and notes in the hover tooltip. Queued clips keep the labels and boundaries they had when added.
 
+## Cut point transfer
+
+**File → Export cut points…** saves the current clip list as a `.tscutpoints` file, with names, notes, colors, boundaries and the keep/remove mode. After opening media, **File → Import cut points…** applies the marks. To save the full workspace, including export queue items and output settings, use a project file.
+
+- **Exact restoration**: when the media content and video track match the file and the offset is zero, the saved PTS, byte positions and cut mode are restored, even for renamed or moved copies. If the saved smart cut mode is not available for the media, exact restoration is not offered and the dialog explains why.
+- **Transfer by time**: for another recording, or with an offset, boundaries are located again in the target's current cut mode, in the background and with cancel. A positive offset moves points later and a negative one earlier: if the same picture is at `10:00.000` in the source and `10:02.400` in the target, enter `2.400` seconds. Or position the target at the picture of the first cut point and choose **Align first point to current picture**.
+
+The dialog shows a reference thumbnail and each clip's target times. Out-of-range clips are skipped in full rather than shortened. Transferred clips are marked for boundary review; keyframe cuts follow the target's keyframe spacing, and a clip shorter than that spacing is extended to the next keyframe. Missing sections or timing drift between recordings need individual adjustments.
+
+Clear **Replace the current clips** to append to the list. When the cut mode or keep/remove mode cannot be mixed, select Replace. A completed import can be undone in one step, including the cut mode and keep/remove mode it changed; export queue items are kept.
+
 ## Output filenames
 
 In **Tools → Settings → Export**, set the filename template used by single-clip saves, individual batch exports, and newly queued clips. The default is `{source}_({start}-{end})`; merged outputs are named separately.

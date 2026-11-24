@@ -50,6 +50,11 @@ features:
     details: 快速檢查、包檢視器、流過濾與編輯、時間軸修復、多源修復與二進位制合併。
     link: /zh-tw/guide/ts-tools
     linkText: TS 工具
+  - icon: 🌐
+    title: 遠端剪輯
+    details: 在主機上執行，其他裝置用瀏覽器登入即可剪輯；多個帳號各自獨立，素材目錄唯讀。
+    link: /zh-tw/guide/remote
+    linkText: 遠端剪輯
 ---
 
 <div class="home-showcase">
