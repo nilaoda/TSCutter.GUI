@@ -1,4 +1,3 @@
-using System.Reflection;
 using Avalonia.Headless;
 using Splat;
 using TSCutter.GUI.Models.Editing;
@@ -105,41 +104,22 @@ public sealed class ExportResultTests
             var target = Path.Combine(directory.FullName, "existing.bin");
             File.WriteAllBytes(source, new byte[1024 * 1024]);
             File.WriteAllBytes(target, [1, 2, 3]);
-            File.SetLastWriteTimeUtc(target, DateTime.UtcNow.AddDays(-1));
-            var output = new OutputWindowViewModel
+            using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+            await session.Dispatch<bool>(async () =>
             {
-                IsRawByteRange = true, SourceFilePath = source, OutputPath = target, StartPosition = 0, EndPosition = -1
-            };
-            output.CancelOutputCommand.Execute(null);
-            await output.OutputCommand.ExecuteAsync(null);
-            Assert.False(output.DialogResult);
+                using var resolver = new ModernDependencyResolver();
+                using var scope = resolver.WithResolver();
+                Locator.CurrentMutable.RegisterConstant<ILocalizationService>(new LocalizationService());
+                var output = new OutputWindowViewModel
+                {
+                    IsRawByteRange = true, SourceFilePath = source, OutputPath = target, StartPosition = 0, EndPosition = -1
+                };
+                output.CancelOutputCommand.Execute(null);
+                await output.OutputCommand.ExecuteAsync(null);
+                Assert.False(output.DialogResult);
+                return true;
+            }, CancellationToken.None);
             Assert.Equal(new byte[] { 1, 2, 3 }, File.ReadAllBytes(target));
-        }
-        finally
-        {
-            directory.Delete(recursive: true);
-        }
-    }
-
-    /// <summary>只删除本次导出开始后被写过的文件；导出前已存在、尚未改写的文件保留。</summary>
-    [Fact]
-    public void PartialOutputCleanupKeepsFilesThatWereNotWritten()
-    {
-        var directory = Directory.CreateTempSubdirectory("tscutter-export-partial-");
-        try
-        {
-            var delete = typeof(OutputWindowViewModel).GetMethod("DeletePartialOutput", BindingFlags.Static | BindingFlags.NonPublic)!;
-            var started = DateTime.UtcNow;
-            var written = Path.Combine(directory.FullName, "written.ts");
-            var untouched = Path.Combine(directory.FullName, "untouched.ts");
-            File.WriteAllBytes(written, [1]);
-            File.WriteAllBytes(untouched, [2]);
-            File.SetLastWriteTimeUtc(untouched, started.AddMinutes(-5));
-            delete.Invoke(null, [written, started]);
-            delete.Invoke(null, [untouched, started]);
-            delete.Invoke(null, [Path.Combine(directory.FullName, "absent.ts"), started]);
-            Assert.False(File.Exists(written));
-            Assert.True(File.Exists(untouched));
         }
         finally
         {

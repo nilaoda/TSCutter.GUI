@@ -1,6 +1,10 @@
 ﻿using Avalonia;
 using System;
 using Classic.CommonControls;
+using Avalonia.Headless;
+using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Files;
+using TSCutter.GUI.Web;
 
 namespace TSCutter.GUI;
 
@@ -10,23 +14,52 @@ sealed class Program
     // SynchronizationContext-reliant code before AppMain is called: things aren't initialized
     // yet and stuff might break.
     [STAThread]
-    public static void Main(string[] args)
+    public static int Main(string[] args)
     {
 #if TSCUTTER_GRAPHICS_STATIC
         if (args.Length == 1 && args[0] == "--verify-static-graphics")
-        {
-            Environment.ExitCode = Utils.Media.NativeGraphicsSmokeTest.Run();
-            return;
-        }
+            return Utils.Media.NativeGraphicsSmokeTest.Run();
 #endif
 #if TSCUTTER_FFMPEG_STATIC
         if (args.Length > 0 && args[0] == "--verify-static-ffmpeg")
-        {
-            Environment.ExitCode = args.Length == 2 ? FFmpeg.FFmpegStaticSmokeTest.Run(args[1]) : 2;
-            return;
-        }
+            return args.Length == 2 ? FFmpeg.FFmpegStaticSmokeTest.Run(args[1]) : 2;
 #endif
-        BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+        if (args is ["--web-ui", ..])
+        {
+            try
+            {
+                var session = WebUiSession.Configure(args);
+                MediaFileAccess.ConfigureForProcess(new MediaFileAccess(session.Workspace, LocalizeWorkspaceError));
+            }
+            catch (Exception error) when (error is ArgumentException or System.IO.IOException or UnauthorizedAccessException)
+            {
+                Console.Error.WriteLine(error.Message);
+                return 2;
+            }
+
+            return AppBuilder.Configure<App>()
+                .UseHeadless(new AvaloniaHeadlessPlatformOptions { UseHeadlessDrawing = false })
+                .UseSkia()
+                .UseWebUiRendering()
+                .WithInterFont()
+                .With(CreateFontManagerOptions())
+                .StartWithClassicDesktopLifetime([]);
+        }
+
+        return BuildAvaloniaApp().StartWithClassicDesktopLifetime(args);
+    }
+
+    private static string LocalizeWorkspaceError(MediaFileAccessError error)
+    {
+        var strings = LocalizationManager.Instance;
+        return error switch
+        {
+            MediaFileAccessError.InputOutsideWorkspace => strings.String_WebUi_MediaOutside,
+            MediaFileAccessError.OutputOutsideWorkspace => strings.String_WebUi_OutputOutside,
+            MediaFileAccessError.ProjectOutsideWorkspace => strings.String_WebUi_ProjectOutside,
+            MediaFileAccessError.OutputExists => strings.String_WebUi_OutputExists,
+            _ => throw new ArgumentOutOfRangeException(nameof(error))
+        };
     }
 
     // Avalonia configuration, don't remove; also used by visual designer.

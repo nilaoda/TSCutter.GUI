@@ -9,6 +9,7 @@ using System.Threading.Tasks;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Files;
+using TSCutter.GUI.Web;
 
 namespace TSCutter.GUI.Utils;
 
@@ -106,10 +107,14 @@ public static partial class CommonUtil
             // Final progress report (100%)
             progress?.Invoke(100, 0);
         }
-        catch (Exception exception) when (outputOpened && DiskSpaceUtil.IsDiskFull(exception))
+        catch (Exception exception) when (outputOpened &&
+            (exception is OperationCanceledException || DiskSpaceUtil.IsDiskFull(exception)))
         {
-            // 只清理由本次复制打开并截断的输出，保留尚未打开的旧文件。
-            try { File.Delete(destinationFile); }
+            // 取消或写满时只清理由本次复制打开的半成品。
+            try
+            {
+                File.Delete(destinationFile);
+            }
             catch (Exception cleanupError) when (cleanupError is IOException or UnauthorizedAccessException)
             {
                 Console.Error.WriteLine($"Partial output was not removed: {cleanupError.Message}");
@@ -150,6 +155,8 @@ public static partial class CommonUtil
     /// <summary>用系统默认程序打开文件；路径作为单独参数传递，含空格或引号的文件名无需转义。</summary>
     public static void OpenFile(string filePath)
     {
+        if (WebUiSession.Current is not null)
+            return;
         ProcessStartInfo startInfo;
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
             startInfo = new ProcessStartInfo(filePath) { UseShellExecute = true };
@@ -164,6 +171,8 @@ public static partial class CommonUtil
 
     public static void OpenFileLocation(string filePath)
     {
+        if (WebUiSession.Current is not null)
+            return;
         if (!File.Exists(filePath))
         {
             return;

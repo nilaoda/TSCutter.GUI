@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from generate_third_party_notices import generate_notices, SEPARATOR
 
@@ -42,17 +43,29 @@ class ThirdPartyNoticesTests(unittest.TestCase):
         generate_notices(self.root, self.output)
         self.assertEqual(first, self.output.read_bytes())
 
-    def test_resolved_runtime_is_appended_and_other_frameworks_are_ignored(self):
+    def test_resolved_runtimes_are_appended_and_unknown_frameworks_are_ignored(self):
         self.write("runtime pack/LICENSE.TXT", "Actual runtime license\r\n")
         self.write("runtime pack/THIRD-PARTY-NOTICES.TXT", "Actual runtime notices\n")
+        self.write("aspnet pack/LICENSE.txt", "ASP.NET Core license\n")
+        self.write("aspnet pack/THIRD-PARTY-NOTICES.TXT", "ASP.NET Core notices\n")
         metadata = self.metadata([
-            {"FrameworkName": "Microsoft.AspNetCore.App", "PackageDirectory": "unused"},
+            {"FrameworkName": "Custom.Framework", "PackageDirectory": "unused"},
+            {"FrameworkName": "Microsoft.AspNetCore.App", "PackageDirectory": str(self.root / "aspnet pack")},
             {"FrameworkName": "Microsoft.NETCore.App", "PackageDirectory": str(self.root / "runtime pack")},
         ])
-        generate_notices(self.root, self.output, metadata)
+        def open_case_sensitive(path, *args, **kwargs):
+            # Exercise Linux filename matching even on a case-insensitive host.
+            if path.name not in {entry.name for entry in path.parent.iterdir()}:
+                raise FileNotFoundError(path)
+            return open(path, *args, **kwargs)
+
+        with patch.object(Path, "open", open_case_sensitive):
+            generate_notices(self.root, self.output, metadata)
         result = self.output.read_bytes()
         self.assertIn(b"Actual runtime license\r\n", result)
         self.assertIn(b"Actual runtime notices\n", result)
+        self.assertIn(b"ASP.NET Core license\n", result)
+        self.assertIn(b"ASP.NET Core notices\n", result)
         self.assertIn(b"Consolidated licenses\r\n", result)
 
     def test_incomplete_runtime_fails_without_overwriting_output(self):

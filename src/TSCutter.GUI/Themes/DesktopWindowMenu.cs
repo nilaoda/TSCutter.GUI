@@ -139,6 +139,9 @@ internal sealed class DesktopWindowMenu : AvaloniaObject
     private static bool CanUse(CaptionButtons captions, string name) => captions.GetVisualDescendants().OfType<Button>()
         .Any(button => button.Name == name && button.IsEffectivelyVisible && button.IsEffectivelyEnabled);
 
+    internal static bool IsCaptionDragArea(ClassicWindow window, Point point) =>
+        FindCaption(window, point) is not null;
+
     private static CaptionButtons? FindCaption(ClassicWindow window, Point point)
     {
         if (window.WindowState == WindowState.FullScreen)

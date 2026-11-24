@@ -736,4 +736,102 @@
             </DrawingGroup>
         </DrawingImage.Drawing>
     </DrawingImage>
+    <DrawingImage x:Key="Icon.folder">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F1 M3 8V6a2 2 0 0 1 2-2h7l4 4h11a2 2 0 0 1 2 2v16H3Z">
+                    <GeometryDrawing.Brush>
+                        <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%" Opacity="1">
+                            <GradientStop Offset="0.0" Color="#FFF5BD" />
+                            <GradientStop Offset="1.0" Color="#E3AC3D" />
+                        </LinearGradientBrush>
+                    </GeometryDrawing.Brush>
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="1" LineCap="Flat" LineJoin="Round">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#9D742A" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 M4 13h25l-4 14H3Z">
+                    <GeometryDrawing.Brush>
+                        <LinearGradientBrush StartPoint="0%,0%" EndPoint="0%,100%" Opacity="1">
+                            <GradientStop Offset="0.0" Color="#FFF5BD" />
+                            <GradientStop Offset="1.0" Color="#E3AC3D" />
+                        </LinearGradientBrush>
+                    </GeometryDrawing.Brush>
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="1" LineCap="Flat" LineJoin="Round">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#9D742A" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 M5 14.5h22">
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="1" LineCap="Flat" LineJoin="Miter">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#FFF9E4" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.file">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F1 M7 3h13l7 7v19H7Z">
+                    <GeometryDrawing.Brush>
+                        <LinearGradientBrush StartPoint="0%,0%" EndPoint="100%,100%" Opacity="1">
+                            <GradientStop Offset="0.0" Color="#FFFFFF" />
+                            <GradientStop Offset="1.0" Color="#D8E7F0" />
+                        </LinearGradientBrush>
+                    </GeometryDrawing.Brush>
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="1" LineCap="Flat" LineJoin="Round">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#59788E" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 M20 3v7h7Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#BBD8E8" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="1" LineCap="Flat" LineJoin="Round">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#59788E" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 M9 5v22h16">
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="1" LineCap="Flat" LineJoin="Miter">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#FFFFFF" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 M12 15h10 M12 20h10 M12 25h7">
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="1.5" LineCap="Flat" LineJoin="Miter">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#6699B3" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
 </ResourceDictionary>

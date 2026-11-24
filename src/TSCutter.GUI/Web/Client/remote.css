@@ -1,0 +1,205 @@
+:root {
+    color-scheme: light dark;
+    font: 16px system-ui, sans-serif;
+    background: Canvas;
+    color: CanvasText;
+}
+
+body { margin: 0; }
+main { min-height: 100dvh; display: grid; align-content: center; justify-items: center; }
+form { display: grid; gap: 0.65rem; width: min(22rem, 85vw); }
+#browser-name-setting, #account-fields, #pair-fields { display: grid; gap: 0.65rem; }
+#login-hint { margin: 0 0 0.35rem; font-size: 0.875rem; line-height: 1.5; }
+h1 { margin: 0 0 0.75rem; font-size: 1.5rem; }
+input, button { font: inherit; padding: 0.65rem; }
+button { cursor: pointer; }
+#status { margin: 0.8rem; }
+#workspace { position: relative; width: 100%; height: 100dvh; background: Canvas; color: CanvasText; }
+#stage {
+    position: absolute;
+    inset: 0;
+    container-type: size;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    touch-action: none;
+    user-select: none;
+    outline: none;
+}
+
+#desktop, #stream-video {
+    display: block;
+    grid-area: 1 / 1;
+    width: min(100cqw, calc(100cqh * var(--frame-ratio, 1.6)));
+    height: auto;
+    transform: translate(var(--view-x, 0px), var(--view-y, 0px)) scale(var(--view-scale, 1));
+    touch-action: none;
+}
+
+#control-symbols { position: absolute; pointer-events: none; }
+#controls {
+    --controls-bg: light-dark(#fff, #242830);
+    --controls-text: light-dark(#252b34, #edf0f5);
+    --controls-muted: light-dark(#66717f, #acb6c3);
+    --controls-line: light-dark(#e4e8ed, #383f4a);
+    --controls-soft: light-dark(#f0f3f6, #303640);
+    --controls-accent: light-dark(#0876c9, #70bbff);
+    --controls-selected: light-dark(#e8f3ff, #223f58);
+    --controls-shadow: light-dark(#1a293726, #0007);
+    position: absolute;
+    z-index: 2;
+    right: max(1rem, env(safe-area-inset-right));
+    bottom: max(1rem, env(safe-area-inset-bottom));
+    color: var(--controls-text);
+    font-size: 0.875rem;
+}
+#controls *, #controls *::before, #controls *::after { box-sizing: border-box; }
+#controls button, #controls select { font: inherit; color: inherit; }
+.control-icon { width: 1.125rem; height: 1.125rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+#controls-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    min-height: 2.75rem;
+    padding: 0.5rem 0.9rem;
+    border: 1px solid var(--controls-line);
+    border-radius: 2rem;
+    background: var(--controls-bg);
+    box-shadow: 0 3px 12px var(--controls-shadow);
+    opacity: 0.85;
+}
+#controls-toggle:hover, #controls-toggle:focus-visible { opacity: 1; }
+/* 收起入口避开右下角的保存片段和播放控制。 */
+#controls[data-open="false"] { left: auto; right: env(safe-area-inset-right, 0px); bottom: 42%; }
+#controls[data-open="false"] #controls-toggle { margin: 0; padding-inline: 0.65rem; border-right: 0; border-radius: 0.8rem 0 0 0.8rem; }
+#controls-panel {
+    display: grid;
+    grid-template-rows: auto auto minmax(0, 1fr) auto;
+    width: min(28rem, calc(100vw - 2rem));
+    max-height: calc(100dvh - 2rem);
+    overflow: hidden;
+    border: 1px solid var(--controls-line);
+    border-radius: 1.125rem;
+    background: var(--controls-bg);
+    box-shadow: 0 14px 42px var(--controls-shadow), 0 2px 6px var(--controls-shadow);
+}
+#controls-grip { display: none; }
+#controls-header { display: flex; align-items: center; gap: 0.55rem; padding: 0.65rem 1rem 0.4rem; }
+#controls-header > .control-icon { color: var(--controls-accent); }
+#controls-title { flex: 1; margin: 0; font-size: 1rem; font-weight: 500; }
+#controls-close { display: grid; place-items: center; width: 2.75rem; height: 2.75rem; padding: 0; border: 0; border-radius: 0.6rem; background: transparent; }
+#controls-close:hover { background: var(--controls-soft); }
+#controls-tabs { display: flex; gap: 0.25rem; margin: 0 1rem 1rem; padding: 0.25rem; border-radius: 0.7rem; background: var(--controls-soft); }
+#controls-tabs button { flex: 1; min-width: 0; min-height: 2.5rem; padding: 0.4rem; border: 0; border-radius: 0.5rem; background: transparent; color: var(--controls-muted); }
+#controls-tabs button[aria-selected="true"] { background: var(--controls-bg); color: var(--controls-text); box-shadow: 0 1px 4px var(--controls-shadow); }
+#controls-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
+.controls-page { min-height: 14rem; padding: 0 1rem 1rem; }
+.controls-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem 0.75rem; }
+.controls-fields label { display: grid; gap: 0.4rem; min-width: 0; }
+.controls-fields label > span { color: var(--controls-muted); font-size: 0.8125rem; }
+.controls-fields select { width: 100%; min-width: 0; min-height: 2.75rem; padding: 0.5rem; border: 1px solid transparent; border-radius: 0.55rem; background: var(--controls-soft); font-size: 1rem; }
+.controls-fields select:hover { border-color: var(--controls-line); }
+#controls .controls-hint { margin: 1rem 0 0; color: var(--controls-muted); font-size: 0.8125rem; line-height: 1.5; }
+#input-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+#input-actions button { display: flex; align-items: center; justify-content: center; gap: 0.6rem; min-height: 3.25rem; padding: 0.7rem 0.5rem; border: 1px solid var(--controls-line); border-radius: 0.65rem; background: var(--controls-bg); }
+#input-actions button:hover { background: var(--controls-soft); }
+#input-actions button[aria-pressed="true"] { color: var(--controls-accent); background: var(--controls-selected); border-color: var(--controls-selected); }
+#touchpad-toggle { display: flex; align-items: center; gap: 0.6rem; width: 100%; min-height: 3rem; margin-top: 0.65rem; padding: 0.5rem 0; border: 0; border-top: 1px solid var(--controls-line); border-radius: 0; background: transparent; text-align: start; }
+#touchpad-toggle > .control-label { flex: 1; }
+#touchpad-toggle > .control-icon { color: var(--controls-muted); }
+.control-switch { display: block; flex: none; width: 2.25rem; height: 1.375rem; padding: 0.1875rem; border-radius: 1rem; background: var(--controls-line); }
+.control-switch::after { content: ""; display: block; width: 1rem; height: 1rem; border-radius: 50%; background: var(--controls-bg); box-shadow: 0 1px 3px var(--controls-shadow); transition: transform 120ms; }
+#touchpad-toggle[aria-pressed="true"] .control-switch { background: var(--controls-accent); }
+#touchpad-toggle[aria-pressed="true"] .control-switch::after { transform: translateX(0.875rem); }
+#controls-input #touchpad-hint { margin-top: 0; }
+#identity { margin: 0 0 1rem; overflow-wrap: anywhere; }
+#transport-detail { margin: 0 0 1rem; white-space: pre-line; font-size: 0.8125rem; line-height: 1.5; overflow-wrap: anywhere; }
+#retry-video, #logout { display: flex; align-items: center; justify-content: center; gap: 0.6rem; min-height: 2.75rem; width: 100%; margin-top: 0.75rem; padding: 0.6rem; border: 1px solid var(--controls-line); border-radius: 0.6rem; background: var(--controls-bg); }
+#retry-video:hover, #logout:hover { background: var(--controls-soft); }
+#controls #logout { color: light-dark(#b63c42, #ffa1a6); }
+#controls-status { margin: 0 1rem 1rem; color: light-dark(#b63c42, #ffa1a6); font-size: 0.8125rem; }
+#controls-footer { display: flex; align-items: center; gap: 0.5rem; padding: 0.8rem 1rem; border-top: 1px solid var(--controls-line); color: var(--controls-muted); font-size: 0.75rem; }
+#transport-status { margin: 0; overflow-wrap: anywhere; }
+#connection-indicator { width: 0.4rem; height: 0.4rem; flex: none; border-radius: 50%; background: var(--controls-muted); }
+#controls[data-video-state="active"] #connection-indicator { background: light-dark(#237857, #74d7ac); }
+#controls[data-video-state="error"] #connection-indicator { background: light-dark(#b63c42, #ffa1a6); }
+#controls button:disabled { opacity: 0.5; cursor: default; }
+#controls :is(button, select):focus-visible { outline: 2px solid var(--controls-accent); outline-offset: -2px; }
+@media (max-width: 600px) {
+    #controls { right: env(safe-area-inset-right, 0px); bottom: 0; left: env(safe-area-inset-left, 0px); }
+    #controls-toggle { margin: 0 0.9rem max(0.9rem, env(safe-area-inset-bottom)) auto; }
+    #controls-panel { width: 100%; max-height: calc(100dvh - env(safe-area-inset-top, 0px) - 0.5rem); grid-template-rows: auto auto auto minmax(0, 1fr) auto; border-radius: 1.125rem 1.125rem 0 0; }
+    #controls-grip { display: block; width: 2rem; height: 0.25rem; margin: 0.55rem auto 0; border-radius: 0.25rem; background: var(--controls-line); }
+    #controls-header { padding-top: 0.25rem; }
+    #controls-footer { padding-bottom: max(0.8rem, env(safe-area-inset-bottom)); }
+}
+@media (forced-colors: active) {
+    #controls { --controls-bg: Canvas; --controls-text: CanvasText; --controls-muted: CanvasText; --controls-line: ButtonBorder; --controls-soft: Canvas; --controls-accent: Highlight; --controls-selected: Canvas; }
+    #controls-panel, #controls-toggle { box-shadow: none; }
+    #controls-tabs button[aria-selected="true"] { border: 1px solid Highlight; }
+    .control-switch { border: 1px solid ButtonBorder; }
+}
+@media (prefers-reduced-motion: reduce) { .control-switch::after { transition: none; } }
+
+#stage video { object-fit: contain; }
+#stage video[data-pending] { opacity: 0; pointer-events: none; }
+
+#touchpad-cursor {
+    position: absolute;
+    width: 1.5rem;
+    height: 1.5rem;
+    pointer-events: none;
+    transform: translate(-8.33%, -8.33%);
+    filter: drop-shadow(0 1px 1px #0008);
+    --cursor-fill: #fff;
+}
+#touchpad-cursor svg { width: 100%; height: 100%; fill: var(--cursor-fill); stroke: #222; stroke-width: 1.25; stroke-linejoin: round; }
+#touchpad-cursor svg > :not(.cursor-arrow) { display: none; }
+#touchpad-cursor[data-shape="pointer"] { transform: translate(-37.5%, -8.33%); }
+#touchpad-cursor:is([data-shape="horizontal"], [data-shape="vertical"], [data-shape="diagonal"],
+    [data-shape="move"], [data-shape="text"], [data-shape="crosshair"], [data-shape="grab"],
+    [data-shape="wait"], [data-shape="not-allowed"]) { transform: translate(-50%, -50%); }
+#touchpad-cursor:is([data-shape="pointer"], [data-shape="horizontal"], [data-shape="vertical"],
+    [data-shape="diagonal"], [data-shape="move"], [data-shape="text"], [data-shape="crosshair"],
+    [data-shape="grab"], [data-shape="wait"], [data-shape="not-allowed"]) .cursor-arrow { display: none; }
+#touchpad-cursor[data-shape="pointer"] .cursor-pointer,
+#touchpad-cursor[data-shape="horizontal"] .cursor-horizontal,
+#touchpad-cursor[data-shape="vertical"] .cursor-vertical,
+#touchpad-cursor[data-shape="diagonal"] .cursor-diagonal,
+#touchpad-cursor[data-shape="move"] .cursor-move,
+#touchpad-cursor[data-shape="text"] .cursor-text,
+#touchpad-cursor[data-shape="crosshair"] .cursor-crosshair,
+#touchpad-cursor[data-shape="grab"] .cursor-grab,
+#touchpad-cursor[data-shape="wait"] .cursor-wait,
+#touchpad-cursor[data-shape="not-allowed"] .cursor-not-allowed,
+#touchpad-cursor:is([data-shape="copy"], [data-shape="help"]) .cursor-badge { display: block; }
+#touchpad-cursor[data-cursor="nesw-resize"] .cursor-diagonal { transform: rotate(90deg); transform-origin: center; }
+#touchpad-cursor .cursor-badge { stroke-width: 1; }
+#touchpad-cursor .cursor-help { display: none; font: bold 9px system-ui; fill: #222; stroke: none; }
+#touchpad-cursor[data-shape="help"] .cursor-help { display: block; }
+#touchpad-cursor[data-shape="help"] .cursor-copy { display: none; }
+#stage[data-touchpad-gesture="drag"] #touchpad-cursor { --cursor-fill: #ffcf4a; }
+.touchpad-indicator {
+    position: absolute;
+    z-index: 1;
+    top: max(0.65rem, env(safe-area-inset-top));
+    left: max(0.65rem, env(safe-area-inset-left));
+    display: none;
+    padding: 0.28rem 0.6rem;
+    border: 1px solid ButtonBorder;
+    border-radius: 0.35rem;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: 0 2px 6px #0004;
+    font-size: 0.8125rem;
+    pointer-events: none;
+}
+#touchpad-cursor-hint:not([hidden]) { display: block; }
+#stage[data-touchpad-gesture] #touchpad-cursor-hint { display: none; }
+#stage[data-touchpad-gesture="drag"] #touchpad-dragging,
+#stage[data-touchpad-gesture="scroll"] #touchpad-scrolling { display: block; }
+
+
+#keyboard { font-size: 16px; position: absolute; opacity: 0; top: 0; left: 0; width: 1px; height: 1px; pointer-events: none; }
+[hidden] { display: none !important; }

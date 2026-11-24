@@ -124,6 +124,7 @@ internal sealed class TsBinaryMergeService
             throw new TsBinaryMergeException(TsBinaryMergeErrorCode.TooFewSources);
 
         var fullOutputPath = Path.GetFullPath(outputPath);
+        MediaFileAccess.Current.DemandOutput(fullOutputPath);
         var fullSourcePaths = sourcePaths.Select(Path.GetFullPath).ToArray();
         if (fullSourcePaths.Any(path => PathsEqual(path, fullOutputPath)))
             throw new TsBinaryMergeException(TsBinaryMergeErrorCode.OutputMatchesSource);
@@ -237,7 +238,7 @@ internal sealed class TsBinaryMergeService
                 await output.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            File.Move(temporaryPath, fullOutputPath, true);
+            MediaFileAccess.Current.PublishExport(temporaryPath, fullOutputPath);
             progress?.Report(new TsBinaryMergeProgress(
                 TsBinaryMergeProgressPhase.Writing,
                 snapshots.Count - 1,

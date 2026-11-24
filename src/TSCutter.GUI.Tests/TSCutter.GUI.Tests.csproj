@@ -20,6 +20,7 @@
         <ProjectReference Include="../TSCutter.GUI/TSCutter.GUI.csproj" />
     </ItemGroup>
     <ItemGroup>
+        <None Update="Application/Fixtures/WebUiClip.mp4" CopyToOutputDirectory="PreserveNewest" />
         <None Include="../../artifacts/test-media/**/*"
               Link="TestAssets/%(RecursiveDir)%(Filename)%(Extension)"
               CopyToOutputDirectory="PreserveNewest" />

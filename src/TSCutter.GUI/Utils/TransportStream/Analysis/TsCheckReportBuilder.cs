@@ -5,6 +5,7 @@ using System.Text;
 using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils;
+using TSCutter.GUI.Utils.Files;
 
 namespace TSCutter.GUI.Utils.TransportStream.Analysis;
 
@@ -132,7 +133,9 @@ public sealed class TsCheckReportBuilder(TsCheckTextFormatter text)
     public async System.Threading.Tasks.Task WriteAsync(string path, TsCheckResult result)
     {
         // UTF-8 BOM 便于 Windows 记事本正确识别中英文报告。
-        await File.WriteAllTextAsync(path, Build(result), new UTF8Encoding(true));
+        var report = Build(result);
+        await using var writer = new StreamWriter(MediaFileAccess.Current.OpenOutput(path), new UTF8Encoding(true));
+        await writer.WriteAsync(report);
     }
 
     private static void AppendSection(StringBuilder builder, string title)

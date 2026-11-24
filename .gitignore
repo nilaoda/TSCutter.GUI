@@ -23,4 +23,5 @@
 
 # Generated build and test artifacts
 /artifacts/
+/src/TSCutter.GUI/artifact/
 /.build/

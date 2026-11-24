@@ -3,6 +3,7 @@ using System;
 using FFmpeg.AutoGen.Abstractions;
 using FF = TSCutter.GUI.FFmpeg.NativeMethods;
 using TSCutter.GUI.Models.Discs;
+using TSCutter.GUI.Utils.Files;
 
 namespace TSCutter.GUI.Utils.Media;
 
@@ -115,6 +116,8 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
 
     public static FormatContext Open(string path, Func<bool> shouldInterrupt, long tsSyncOffset = -1)
     {
+        var fileAccess = MediaFileAccess.Current;
+        fileAccess.DemandReadable(path);
         var callback = CreateInterruptCallback(shouldInterrupt);
         AVFormatContext* context = FF.avformat_alloc_context();
         if (context == null)
@@ -126,6 +129,11 @@ internal sealed unsafe class InterruptibleInputFormatContext : FormatContext
             // The protocol layer copies this callback when opening the file.
             // Setting only AVFormatContext.interrupt_callback after opening is too late.
             context->interrupt_callback = new AVIOInterruptCB { callback = callback };
+            if (fileAccess.IsRestricted)
+            {
+                FFmpegException.Check(FF.av_dict_set(&options, "protocol_whitelist", "file", 0));
+                FFmpegException.Check(FF.av_dict_set(&options, "format_whitelist", "mov,mp4,m4a,3gp,3g2,mj2,matroska,webm,mpegts,mpeg,avi,flv,asf,mp3,wav,flac,aac,ac3,eac3,ogg", 0));
+            }
             var result = FF.av_dict_set(&options, "scan_all_pmts", "1", 0);
             if (result < 0)
                 throw FFmpegException.FromErrorCode(result, null);

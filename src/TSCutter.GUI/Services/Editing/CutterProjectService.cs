@@ -86,6 +86,7 @@ internal static class CutterProjectService
     public static async Task<CutterProject> LoadAsync(string path, CancellationToken cancellationToken = default,
         IReadOnlyDictionary<string, string>? sourceLocations = null)
     {
+        MediaFileAccess.Current.DemandReadable(path);
         if (new FileInfo(path).Length > MaximumProjectBytes)
             throw new InvalidDataException("The project file is too large.");
         var json = await File.ReadAllTextAsync(path, cancellationToken).ConfigureAwait(false);
@@ -103,13 +104,25 @@ internal static class CutterProjectService
         IReadOnlyDictionary<string, string>? sourceLocations = null)
     {
         Validate(project, checkSourceFiles: false);
+        var fileAccess = MediaFileAccess.Current;
+        if (fileAccess.IsRestricted)
+        {
+            var sources = project.Queue.Select(item => item.Source.Path);
+            if (project.Source is not null)
+                sources = sources.Prepend(project.Source.Path);
+            if (sourceLocations is not null)
+                sources = sources.Concat(sourceLocations.Values);
+            var outputs = project.Queue.Select(item => item.OutputFilePath)
+                .Concat(project.Clips.Select(clip => clip.OutputFilePath).OfType<string>());
+            fileAccess.DemandProjectPaths(sources, outputs);
+        }
         ResolveSourceLocations(project, sourceLocations);
         Validate(project);
         return project;
     }
 
     public static async Task SaveAsync(string path, CutterProject project,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default, bool overwrite = true)
     {
         var json = await Task.Run(() =>
         {
@@ -119,6 +132,7 @@ internal static class CutterProjectService
         if (Encoding.UTF8.GetByteCount(json) > MaximumProjectBytes)
             throw new InvalidDataException("The project file is too large.");
         var fullPath = Path.GetFullPath(path);
+        MediaFileAccess.Current.DemandOutput(fullPath);
         if (!string.Equals(Path.GetExtension(fullPath), ".tscut", StringComparison.OrdinalIgnoreCase) ||
             project.Source is not null && PathsEqual(fullPath, project.Source.Path) ||
             project.Queue.Any(item => PathsEqual(fullPath, item.Source.Path) ||
@@ -130,7 +144,7 @@ internal static class CutterProjectService
         try
         {
             await File.WriteAllTextAsync(temporaryPath, json, cancellationToken).ConfigureAwait(false);
-            File.Move(temporaryPath, fullPath, overwrite: true);
+            MediaFileAccess.Current.PublishOutput(temporaryPath, fullPath, overwrite);
         }
         finally
         {

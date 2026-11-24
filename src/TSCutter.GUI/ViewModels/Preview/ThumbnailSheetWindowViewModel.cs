@@ -23,6 +23,7 @@ using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.ViewModels;
+using TSCutter.GUI.Utils.Files;
 
 namespace TSCutter.GUI.ViewModels.Preview;
 
@@ -1108,7 +1109,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
 
             await Task.Run(() =>
             {
-                using var stream = File.Create(targetPath);
+                using var stream = MediaFileAccess.Current.OpenOutput(targetPath);
                 if (isPng)
                     bitmap.Save(stream);
                 else

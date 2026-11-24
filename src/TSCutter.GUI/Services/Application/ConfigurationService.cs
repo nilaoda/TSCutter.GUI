@@ -15,63 +15,121 @@ namespace TSCutter.GUI.Services.Application;
 
 public class ConfigurationService : IConfigurationService
 {
-    // 配置文件路径
-    private readonly string _configPath = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-        "TSCutter.GUI", 
-        "config.json");
+    private readonly string _configPath;
+    private readonly string _remoteConfigPath;
+    private string _savedRemoteJson;
     
     private readonly ILocalizationService _locService;
+    private readonly bool _persistent;
 
     // 构造函数注入
-    public ConfigurationService(ILocalizationService locService)
+    public ConfigurationService(ILocalizationService locService, bool persistent = true, AppConfig? initialConfig = null)
+        : this(locService, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+            "TSCutter.GUI", "config.json"), persistent, initialConfig) { }
+
+    internal ConfigurationService(ILocalizationService locService, string configPath,
+        bool persistent = true, AppConfig? initialConfig = null)
     {
         _locService = locService;
+        _persistent = persistent;
+        _configPath = configPath;
+        _remoteConfigPath = Path.Combine(Path.GetDirectoryName(configPath)!, "remote-editing.json");
+        CurrentConfig = initialConfig ?? new AppConfig();
+        _savedRemoteJson = SerializeRemote();
     }
 
-    public AppConfig CurrentConfig { get; private set; } = new();
+    public AppConfig CurrentConfig { get; private set; }
 
-    // 加载配置
+    // 加载配置；远程设置单独读取，不依赖普通配置是否存在或完整。
     public void Load()
     {
-        if (!File.Exists(_configPath))
+        if (!_persistent)
         {
             ApplyAll();
             return;
         }
         try
         {
-            var json = File.ReadAllText(_configPath);
-            var config = JsonSerializer.Deserialize<AppConfig>(json, AppJsonContext.Default.AppConfig);
-            if (config != null)
+            if (File.Exists(_configPath))
             {
-                CurrentConfig = config;
+                var json = File.ReadAllText(_configPath);
+                CurrentConfig = JsonSerializer.Deserialize(json, AppJsonContext.Default.AppConfig) ?? CurrentConfig;
             }
-
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load config: {ex.Message}, use default config instead.");
+        }
+        try
+        {
+            if (File.Exists(_remoteConfigPath))
+            {
+                var json = File.ReadAllText(_remoteConfigPath);
+                var remote = JsonSerializer.Deserialize(json, AppJsonContext.Default.RemoteEditingConfig)
+                    ?? throw new InvalidDataException("The remote editing configuration is empty.");
+                remote.ApplyTo(CurrentConfig);
+            }
+            _savedRemoteJson = SerializeRemote();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to load remote editing config: {ex.Message}");
+        }
+        try
+        {
             ApplyAll();
             Console.WriteLine($"Loaded {_configPath}");
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Failed to load config: {ex.Message}, use default config instead.");
+            Console.WriteLine($"Failed to apply config: {ex.Message}");
         }
     }
 
     // 保存配置
     public void Save()
     {
+        if (!_persistent)
+            return;
+
         try
         {
             var dir = Path.GetDirectoryName(_configPath);
             if (!Directory.Exists(dir)) Directory.CreateDirectory(dir!);
 
+            var remote = SerializeRemote();
+            // 普通客户端保存其他偏好时，不用其启动时的旧快照覆盖远程宿主设置。
+            if (remote != _savedRemoteJson)
+            {
+                WriteConfig(_remoteConfigPath, remote);
+                _savedRemoteJson = remote;
+            }
             var json = JsonSerializer.Serialize(CurrentConfig, AppJsonContext.Default.AppConfig);
-            File.WriteAllText(_configPath, json);
+            WriteConfig(_configPath, json);
             Console.WriteLine($"Saved {_configPath}");
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Failed to save config: {ex.Message}");
+        }
+    }
+
+    private string SerializeRemote() =>
+        JsonSerializer.Serialize(RemoteEditingConfig.From(CurrentConfig), AppJsonContext.Default.RemoteEditingConfig);
+
+    private static void WriteConfig(string path, string json)
+    {
+        // 同目录临时文件写完后替换，其他客户端不会读到只写了一半的 JSON。
+        var temporary = path + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            File.WriteAllText(temporary, json);
+            File.Move(temporary, path, overwrite: true);
+        }
+        finally
+        {
+            if (File.Exists(temporary))
+                File.Delete(temporary);
         }
     }
 
@@ -115,6 +173,9 @@ public class ConfigurationService : IConfigurationService
         if (themeModel == null) return;
 
         Avalonia.Application.Current!.RequestedThemeVariant = themeModel.Variant;
+
+        if (_persistent)
+            Web.WebUiLauncher.UpdateTheme(theme);
 
         if (themeModel.IsDarkTheme)
         {

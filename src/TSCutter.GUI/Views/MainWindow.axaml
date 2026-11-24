@@ -317,6 +317,7 @@
                                       Command="{Binding TsBinaryMergeClickCommand}" />
                         </MenuItem>
                         <Separator />
+                        <MenuItem x:Name="WebUiMenu" Header="{DynamicResource String.WebUi.Menu}" Click="WebUiMenu_OnClick" />
                         <MenuItem Header="{DynamicResource String.Menu.Settings}"
                                   Command="{Binding SettingsClickCommand}" />
                     </MenuItem>
@@ -381,8 +382,19 @@
             </ClassicBorderDecorator>
         </Grid>
         <DockPanel Grid.Row="1">
+            <Border x:Name="WebUiRunningNotice" DockPanel.Dock="Top" IsVisible="False"
+                    BorderThickness="0,0,0,1"
+                    BorderBrush="{DynamicResource {x:Static commonControls:SystemColors.ControlDarkBrushKey}}"
+                    Padding="8,4">
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <Ellipse Width="8" Height="8" VerticalAlignment="Center"
+                             Fill="{DynamicResource AppStatusSuccessForegroundBrush}" />
+                    <TextBlock Text="{DynamicResource String.WebUi.Running}" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <Button Content="{DynamicResource String.WebUi.Manage}" Click="WebUiMenu_OnClick" MinWidth="72" />
+                </StackPanel>
+            </Border>
             <!-- 状态栏 -->
-            <commonControls:StatusBar DockPanel.Dock="Bottom"
+            <commonControls:StatusBar x:Name="EditorStatusBar" DockPanel.Dock="Bottom"
                                       VerticalAlignment="Center">
                 <commonControls:StatusBarItem>
                     <TextBlock Margin="4,0,0,0"
@@ -440,7 +452,7 @@
                 </commonControls:StatusBarItem>
             </commonControls:StatusBar>
             <!-- 主界面 -->
-            <ClassicBorderDecorator Classes="app-section-frame" BorderStyle="Etched">
+            <ClassicBorderDecorator x:Name="EditorControls" Classes="app-section-frame" BorderStyle="Etched">
                 <Grid RowDefinitions="Auto, *" Margin="0,2">
                     <commonControls:ToolBar Grid.Row="0" Margin="0,0,0,2" TextPlacement="Down" Size="Large">
                         <commonControls:RebarHandle />

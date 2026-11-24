@@ -17,6 +17,7 @@ using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Web;
 using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Preview;
 
@@ -47,6 +48,8 @@ public partial class MainWindow : ClassicWindow
     private bool _closePromptActive;
     private bool _closeApproved;
     private bool _playbackSpacePressed;
+    private KeyBinding[]? _suspendedEditorShortcuts;
+    private bool IsLocalEditorLocked => _suspendedEditorShortcuts is not null;
     private readonly DispatcherTimer _dropMaskWatchdog = new()
     {
         Interval = TimeSpan.FromMilliseconds(500)
@@ -56,8 +59,15 @@ public partial class MainWindow : ClassicWindow
     public MainWindow()
     {
         ToggleVideoFullScreenCommand = new(ToggleVideoFullScreen,
-            () => IsVideoFullScreen || DataContext is MainWindowViewModel { IsVideoInitialized: true });
+            () => IsVideoFullScreen || !IsLocalEditorLocked && DataContext is MainWindowViewModel { IsVideoInitialized: true });
         InitializeComponent();
+        WebUiMenu.IsVisible = WebUiSession.Current is null;
+        if (WebUiMenu.IsVisible)
+        {
+            UpdateWebUiRunningNotice();
+            WebUiLauncher.RunningChanged += UpdateWebUiRunningNotice;
+            Closed += (_, _) => WebUiLauncher.RunningChanged -= UpdateWebUiRunningNotice;
+        }
         InitializeFullScreenPlayback();
         // 缩略图大小改变时立即按新尺寸更新可见数量：主窗口随后按新尺寸重新解码，直接使用新数量，不必等到重新布局。
         KeyFrameStripView.PropertyChanged += (_, e) =>
@@ -71,7 +81,7 @@ public partial class MainWindow : ClassicWindow
             CustomTheme.IsWindows11(ActualThemeVariant))
             Height = 772;
 
-        if (OperatingSystem.IsMacOS())
+        if (OperatingSystem.IsMacOS() && WebUiSession.Current is null)
         {
             var menuBar = new MacOSMenuBar(this, AppMenu, AppMenuFrame);
             Closed += (_, _) => menuBar.Dispose();
@@ -119,6 +129,42 @@ public partial class MainWindow : ClassicWindow
             if (DateTime.UtcNow - _lastDragActivityUtc > TimeSpan.FromSeconds(3))
                 HideDropMask();
         };
+    }
+
+    private void UpdateWebUiRunningNotice()
+    {
+        var running = WebUiLauncher.IsRunning;
+        if (running == IsLocalEditorLocked)
+            return;
+
+        if (running)
+        {
+            // Avalonia 在路由 KeyDown 前处理窗口级快捷键，停用菜单和编辑区时也要移除这些绑定。
+            _suspendedEditorShortcuts = KeyBindings.ToArray();
+            KeyBindings.Clear();
+            _playbackSpacePressed = false;
+            HideDropMask();
+            if (IsVideoFullScreen)
+                ToggleVideoFullScreen();
+            _boundViewModel?.PauseWebUiPreview();
+        }
+        else
+        {
+            foreach (var binding in _suspendedEditorShortcuts!)
+                KeyBindings.Add(binding);
+            _suspendedEditorShortcuts = null;
+        }
+
+        AppMenu.IsEnabled = EditorControls.IsEnabled = EditorStatusBar.IsEnabled = FullScreenSurface.IsEnabled = !running;
+        DragDrop.SetAllowDrop(this, !running);
+        WebUiRunningNotice.IsVisible = running;
+        ToggleVideoFullScreenCommand.NotifyCanExecuteChanged();
+    }
+
+    private async void WebUiMenu_OnClick(object? sender, RoutedEventArgs e)
+    {
+        if (WebUiSession.Current is null)
+            await WebUiLauncher.ShowAsync(this);
     }
 
     private Avalonia.PixelSize GetPlaybackTargetSize() => new(
@@ -201,6 +247,8 @@ public partial class MainWindow : ClassicWindow
 
     private void MainWindow_OnPreviewKeyDown(object? sender, KeyEventArgs e)
     {
+        if (IsLocalEditorLocked)
+            return;
         if (e.Key == Key.Space && _playbackSpacePressed)
         {
             e.Handled = true;
@@ -251,6 +299,9 @@ public partial class MainWindow : ClassicWindow
 
     private void DropSurface_OnDragActive(object? sender, DragEventArgs e)
     {
+        if (RejectDropDuringWebEditing(e))
+            return;
+
         ViewModel.DragOverCommand.Execute(e);
         if (e.DragEffects == DragDropEffects.None)
         {
@@ -272,7 +323,18 @@ public partial class MainWindow : ClassicWindow
     private void DropSurface_OnDrop(object? sender, DragEventArgs e)
     {
         HideDropMask();
-        ViewModel.DropCommand.Execute(e);
+        if (!RejectDropDuringWebEditing(e))
+            ViewModel.DropCommand.Execute(e);
+    }
+
+    private bool RejectDropDuringWebEditing(DragEventArgs e)
+    {
+        if (!IsLocalEditorLocked)
+            return false;
+
+        e.DragEffects = DragDropEffects.None;
+        e.Handled = true;
+        return true;
     }
 
     private void HideDropMask()
@@ -295,21 +357,26 @@ public partial class MainWindow : ClassicWindow
     private async void Window_OnClosing(object? sender, WindowClosingEventArgs e)
     {
         HideDropMask();
-        if (!_closeApproved && ViewModel.HasUnsavedProjectChanges)
+        var remoteRunning = WebUiLauncher.IsRunning;
+        if (!_closeApproved && (_closePromptActive || remoteRunning || ViewModel.HasUnsavedProjectChanges))
         {
             e.Cancel = true;
-            if (_closePromptActive) return;
+            if (_closePromptActive)
+                return;
             _closePromptActive = true;
             try
             {
-                if (await ViewModel.ConfirmProjectReplacementAsync())
-                {
-                    _closeApproved = true;
-                    Close();
-                }
+                if (remoteRunning && !await WebUiLauncher.ConfirmOwnerCloseAsync(this))
+                    return;
+                if (!await ViewModel.ConfirmProjectReplacementAsync())
+                    return;
+
+                _closeApproved = true;
+                Close();
             }
             finally
             {
+                _closeApproved = false;
                 _closePromptActive = false;
             }
             return;

@@ -31,6 +31,10 @@ public static unsafe partial class NativeMethods
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int av_opt_set(void* obj, string name, string value, int searchFlags);
 
+    [LibraryImport("tscutter.avutil", EntryPoint = "av_frame_make_writable")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_frame_make_writable(AVFrame* frame);
+
     /// <summary>flags 为 AV_FRAME_CROP_UNALIGNED（1）时允许裁剪后的数据指针不对齐。</summary>
     [LibraryImport("tscutter.avutil", EntryPoint = "av_frame_apply_cropping")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
@@ -56,6 +60,10 @@ public static unsafe partial class NativeMethods
     [LibraryImport("tscutter.avutil", EntryPoint = "av_frame_side_data_clone")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial int av_frame_side_data_clone(AVFrameSideData*** sideData, int* count, AVFrameSideData* source, uint flags);
+
+    [LibraryImport("tscutter.avformat")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_write_frame(AVFormatContext* context, AVPacket* packet);
 
     [LibraryImport("tscutter.avutil", EntryPoint = "av_malloc")]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]

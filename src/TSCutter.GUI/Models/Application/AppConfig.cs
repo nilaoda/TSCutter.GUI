@@ -108,6 +108,21 @@ public class AppConfig : ObservableObject
     // 硬件解码使用的设备 Id；null 表示自动选择。设备已移除时解码沿用自动选择，保留原值以便设备恢复后继续使用。
     public string? HardwareDecodingDevice { get; set; }
     public string? FFmpegRootPath { get; set; }
+    // 网页剪辑的工作区目录和桌面端打开、导出对话框的记忆目录各自保存。
+    [JsonIgnore]
+    public string? WebUiInputDirectory { get; set; }
+    [JsonIgnore]
+    public string? WebUiOutputDirectory { get; set; }
+    [JsonIgnore]
+    public int WebUiPort { get; set; } = 5360;
+    [JsonIgnore]
+    public bool WebUiAllowLan { get; set; } = true;
+    [JsonIgnore]
+    public bool WebUiEnableIpv6 { get; set; }
+    [JsonIgnore]
+    public int WebUiMaxWorkers { get; set; } = 4;
+    [JsonIgnore]
+    public List<WebUiAccount> WebUiAccounts { get; set; } = [];
     public ThumbnailSheetPreferences ThumbnailSheetPreferences { get; set; } = new();
     // 最近打开的视频、光盘和工程；关闭记录时同时清空。
     public bool RememberRecentItems { get; set; } = true;

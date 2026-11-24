@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Utils.TransportStream.Packets;
+using TSCutter.GUI.Utils.Files;
 
 namespace TSCutter.GUI.Services.TransportStream.Analysis;
 
@@ -41,8 +42,7 @@ internal static class TsEpgReader
     public static Task<EpgGuide> ReadAsync(string path, int videoPid, int? serviceId, long firstFramePts,
         double durationSeconds, long anchorOffset, CancellationToken token) => Task.Run(() =>
     {
-        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete,
-            1, FileOptions.RandomAccess);
+        using var stream = MediaFileUtil.OpenRead(path, 1, FileOptions.RandomAccess, allowConcurrentWrite: true);
         return Read(stream, videoPid, serviceId, firstFramePts, durationSeconds, anchorOffset, token);
     }, token);
 

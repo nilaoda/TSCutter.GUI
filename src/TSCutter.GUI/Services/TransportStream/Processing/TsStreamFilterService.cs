@@ -174,6 +174,8 @@ public sealed class TsStreamFilterService
         var hasWrittenContinuity = new bool[8192];
         var continuityTrackedLength = 0;
 
+        var outputOpened = false;
+
         void CompletePacket(
             long referenceFileOffset,
             bool applyPcrCorrection,
@@ -193,9 +195,10 @@ public sealed class TsStreamFilterService
             await using var input = MediaFileUtil.OpenRead(
                 sourcePath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            await using var output = new FileStream(
+            await using var output = MediaFileAccess.Current.OpenOutput(
                 outputPath, FileMode.Create, FileAccess.Write, FileShare.None,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            outputOpened = true;
             input.Position = Math.Max(0, catalog.SyncOffset);
 
             async ValueTask FlushAsync()
@@ -840,7 +843,8 @@ public sealed class TsStreamFilterService
         }
         catch
         {
-            TryDelete(outputPath);
+            if (outputOpened)
+                TryDelete(outputPath);
             throw;
         }
         finally

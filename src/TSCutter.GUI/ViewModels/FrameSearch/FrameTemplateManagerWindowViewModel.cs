@@ -20,7 +20,9 @@ namespace TSCutter.GUI.ViewModels.FrameSearch;
 
 public sealed partial class FrameTemplateManagerWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
-    private readonly SavedFrameStore store = new();
+    private readonly SavedFrameStore store;
+
+    internal FrameTemplateManagerWindowViewModel(SavedFrameStore store) => this.store = store;
     private readonly CancellationTokenSource cancellation = new();
     private SavedFrameLibrary library = new();
     private bool initialized;

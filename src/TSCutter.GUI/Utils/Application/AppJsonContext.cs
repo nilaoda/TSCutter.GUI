@@ -10,6 +10,7 @@ namespace TSCutter.GUI.Utils.Application;
     Converters = [typeof(JsonStringEnumConverter)] // 让 enum 输出为字符串
 )]
 [JsonSerializable(typeof(AppConfig))]
+[JsonSerializable(typeof(RemoteEditingConfig))]
 [JsonSerializable(typeof(GitHubVersionInfo))]
 [JsonSerializable(typeof(CutterProject))]
 [JsonSerializable(typeof(ProjectRecoveryFile))]

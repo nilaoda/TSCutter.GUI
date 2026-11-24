@@ -18,7 +18,7 @@ public partial class MainWindowViewModel
 {
     private ClipCutMode? _cutMode;
 
-    private ClipCutMode CutMode => _cutMode ??= _configService.CurrentConfig.ClipCutMode;
+    internal ClipCutMode CutMode => _cutMode ??= _configService.CurrentConfig.ClipCutMode;
 
     private FrameAccurateSupport CurrentFrameAccurateSupport => _videoInstance is { Inited: true } video
         ? video.FrameAccurateSupport : FrameAccurateSupport.Supported;

@@ -47,7 +47,7 @@ public sealed class TsEsExtractorService
             for (var index = 0; index < outputs.Count; index++)
             {
                 var output = outputs[index];
-                var fileStream = new FileStream(
+                var fileStream = MediaFileAccess.Current.OpenOutput(
                     output.OutputPath, FileMode.CreateNew, FileAccess.Write, FileShare.Read,
                     OutputBufferSize, FileOptions.SequentialScan);
                 createdPaths.Add(output.OutputPath);

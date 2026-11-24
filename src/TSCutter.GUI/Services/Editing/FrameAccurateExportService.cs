@@ -207,6 +207,7 @@ internal sealed unsafe class FrameAccurateExportService
         var sourceLength = source?.Length ?? 0;
         var sourceModified = source?.LastWriteTimeUtc ?? default;
         var discSource = disc is null ? null : RemuxExportService.CaptureSource(sourcePath, disc);
+        MediaFileAccess.Current.DemandOutput(request.OutputPath);
         var temporary = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(request.OutputPath))!,
             $".tscutter-{Guid.NewGuid():N}.tmp");
         AVIOInterruptCB_callback interrupt = _ => token.IsCancellationRequested ? 1 : 0;
@@ -544,7 +545,7 @@ internal sealed unsafe class FrameAccurateExportService
                 : !discSource!.SequenceEqual(RemuxExportService.CaptureSource(sourcePath, disc)))
                 throw new FrameAccurateExportException(FrameAccurateExportError.SourceChanged, sourcePath);
             token.ThrowIfCancellationRequested();
-            File.Move(temporary, request.OutputPath, overwrite: true);
+            MediaFileAccess.Current.PublishExport(temporary, request.OutputPath);
             done = total;
             Report(100, FrameAccuratePhase.Finishing, encodedBefore, copiedBefore);
         }

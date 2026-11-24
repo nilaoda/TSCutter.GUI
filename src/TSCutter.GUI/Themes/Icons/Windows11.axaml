@@ -330,4 +330,45 @@
             </DrawingGroup>
         </DrawingImage.Drawing>
     </DrawingImage>
+    <DrawingImage x:Key="Icon.folder">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F1 M3 11V8a2 2 0 0 1 2-2h7l3 3h12a2 2 0 0 1 2 2v3">
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="2" LineCap="Round" LineJoin="Round">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#1A1A1A" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 M5 14h24l-5 12H3V12">
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="2" LineCap="Round" LineJoin="Round">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#1A1A1A" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.file">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F1 M8 3h12l7 7v17a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Z M20 3v7h7 M11 16h11 M11 21h11">
+                    <GeometryDrawing.Pen>
+                        <Pen Thickness="2" LineCap="Round" LineJoin="Round">
+                            <Pen.Brush>
+                                <SolidColorBrush Color="#1A1A1A" Opacity="1" />
+                            </Pen.Brush>
+                        </Pen>
+                    </GeometryDrawing.Pen>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
 </ResourceDictionary>

@@ -9,10 +9,13 @@
         <OutputType>WinExe</OutputType>
         <ApplicationIcon>Assets/logo.ico</ApplicationIcon>
         <TargetFramework>net11.0</TargetFramework>
+        <DefaultItemExcludes>$(DefaultItemExcludes);artifact/**</DefaultItemExcludes>
         <Nullable>enable</Nullable>
         <BuiltInComInteropSupport>true</BuiltInComInteropSupport>
         <ApplicationManifest>app.manifest</ApplicationManifest>
         <AvaloniaUseCompiledBindingsByDefault>true</AvaloniaUseCompiledBindingsByDefault>
+        <!-- 远程绘图后端使用 Avalonia 的平台接口；升级固定版本时需验证这些接口。 -->
+        <AvaloniaAccessUnstablePrivateApis>true</AvaloniaAccessUnstablePrivateApis>
         <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
         <LangVersion>preview</LangVersion>
         <!-- 运行时原生 async（.NET 11 预览）：由运行时管理挂起与恢复，不再生成状态机，减少 await 的开销与内存分配。 -->
@@ -33,6 +36,7 @@
     <ItemGroup>
         <PackageReference Include="Avalonia" Version="11.3.23" />
         <PackageReference Include="Avalonia.Desktop" Version="11.3.23" />
+        <PackageReference Include="Avalonia.Headless" Version="11.3.23" />
         <PackageReference Include="Avalonia.Fonts.Inter" Version="11.3.23" />
         <PackageReference Include="Avalonia.Controls.ColorPicker" Version="11.3.23" />
         <PackageReference Condition="'$(Configuration)' == 'Debug'" Include="Avalonia.Diagnostics" Version="11.3.23" />
@@ -67,5 +71,18 @@
         <!-- 将语言文件作为附加文件暴露给生成器 -->
         <AdditionalFiles Include="Lang\en-US.axaml" />
     </ItemGroup>
+
+    <ItemGroup>
+        <FrameworkReference Include="Microsoft.AspNetCore.App" />
+        <EmbeddedResource Include="Web/Client/*" LogicalName="TSCutter.GUI.Web.Client.%(Filename)%(Extension)" />
+        <EmbeddedResource Include="Web/Client/locales/*.json" LogicalName="TSCutter.GUI.Web.Client.Locales.%(Filename)%(Extension)" />
+    </ItemGroup>
+
+    <!-- 内置服务使用 Kestrel，无需随 NativeAOT 产物分发 IIS 托管模块。 -->
+    <Target Name="ExcludeIisHostingModule" AfterTargets="ComputeResolvedFilesToPublishList" Condition="'$(PublishAot)' == 'true'">
+        <ItemGroup>
+            <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)" Condition="'%(Filename)%(Extension)' == 'aspnetcorev2_inprocess.dll'" />
+        </ItemGroup>
+    </Target>
 
 </Project>

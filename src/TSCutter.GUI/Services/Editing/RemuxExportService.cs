@@ -52,6 +52,7 @@ internal sealed unsafe class RemuxExportService
         M2tsAvioWriteContext? avioWriter = null;
         HevcMp4PacketConverter?[] hevc = [];
         AVIOInterruptCB_callback interrupt = _ => token.IsCancellationRequested ? 1 : 0;
+        MediaFileAccess.Current.DemandOutput(request.OutputPath);
         var temporary = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(request.OutputPath))!,
             $".tscutter-{Guid.NewGuid():N}.tmp");
         // M2TS 输出按顺序写出，可通过自定义 AVIO 写回调把封装器生成的最终字节交给检测会话；
@@ -192,7 +193,7 @@ internal sealed unsafe class RemuxExportService
                 FFmpegException.Check(FF.avio_closep(&output->pb));
             }
             token.ThrowIfCancellationRequested();
-            File.Move(temporary, request.OutputPath, overwrite: true);
+            MediaFileAccess.Current.PublishExport(temporary, request.OutputPath);
             progress?.Report(new RemuxExportProgress(100, bytes / Math.Max(timer.Elapsed.TotalSeconds, 0.001), 0));
         }
         catch (FFmpegException) when (token.IsCancellationRequested)

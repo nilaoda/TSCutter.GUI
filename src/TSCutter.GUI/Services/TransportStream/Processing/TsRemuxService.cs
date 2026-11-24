@@ -306,6 +306,7 @@ public sealed class TsRemuxService
     {
         if (string.Equals(Path.GetFullPath(sourcePath), Path.GetFullPath(outputPath), StringComparison.OrdinalIgnoreCase))
             throw new TsRemuxException(TsRemuxErrorCode.SameFile);
+        MediaFileAccess.Current.DemandOutput(outputPath);
         var sourceLayout = await Task.Run(() => TsPacketLayout.Detect(sourcePath, cancellationToken, Math.Max(0, catalog.SyncOffset)), cancellationToken).ConfigureAwait(false);
         sourceLayout.RequireSupported(standardOnly: true);
         var plan = BuildPlan(catalog, configuration);
@@ -321,7 +322,7 @@ public sealed class TsRemuxService
             var result = await RemuxCoreAsync(sourcePath, temporaryPath, plan, editor, progress, cancellationToken)
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            File.Move(temporaryPath, outputPath, overwrite: true);
+            MediaFileAccess.Current.PublishExport(temporaryPath, outputPath);
             return result;
         }
         finally
@@ -363,16 +364,18 @@ public sealed class TsRemuxService
         var continuityErrors = 0L;
         var transportErrors = 0L;
         var validator = new ContinuityValidator();
+        var outputOpened = false;
 
         try
         {
             await using var input = MediaFileUtil.OpenRead(
                 sourcePath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            var output = new FileStream(
+            var output = MediaFileAccess.Current.OpenOutput(
                 outputPath, transferEditor is null ? FileMode.Create : FileMode.CreateNew,
                 FileAccess.Write, FileShare.None, transferEditor is null ? ReadBufferSize : 1,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
+            outputOpened = true;
             await using (output.ConfigureAwait(false))
             {
                 // 使用应用层缓冲批量写入。仅当待改写的数据跨过保留范围时，才回写已落盘字节。
@@ -629,7 +632,8 @@ public sealed class TsRemuxService
         }
         catch
         {
-            TryDelete(outputPath);
+            if (outputOpened)
+                TryDelete(outputPath);
             throw;
         }
         finally

@@ -121,14 +121,16 @@ public sealed class TsTimelineRepairService
         var remainingErrors = 0;
         var remainingWarnings = 0;
         var buffered = 0;
+        var outputOpened = false;
         try
         {
             await using var input = MediaFileUtil.OpenRead(
                 sourcePath,
                 buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan);
-            await using var output = new FileStream(
+            await using var output = MediaFileAccess.Current.OpenOutput(
                 targetPath, FileMode.Create, FileAccess.Write, FileShare.None,
                 buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            outputOpened = true;
 
             if (analysis.SyncOffset > 0)
             {
@@ -203,7 +205,8 @@ public sealed class TsTimelineRepairService
         }
         catch
         {
-            TryDelete(targetPath);
+            if (outputOpened)
+                TryDelete(targetPath);
             throw;
         }
         finally

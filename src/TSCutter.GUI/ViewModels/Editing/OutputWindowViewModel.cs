@@ -91,7 +91,6 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     /// <summary>单个 DVD 片段的起止画面签名（关键帧剪辑为切点关键帧，智能剪辑为附近关键帧与偏移）；其他来源为 null。</summary>
     public string? StartSignature { get; set; }
     public string? EndSignature { get; set; }
-    private bool UsesManagedOutput => ProgramId is not null || RemuxSettings is not null || FrameAccurate is not null;
     public double StartSeconds { get; set; }
     public double? EndSeconds { get; set; }
 
@@ -544,7 +543,6 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     private async Task RunSingleAsync()
     {
-        var startedUtc = DateTime.UtcNow;
         try
         {
             CurrentFileName = Path.GetFileName(OutputPath!);
@@ -563,9 +561,6 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         catch (OperationCanceledException)
         {
             Console.WriteLine("File copy was canceled.");
-            // 重新封装、按节目过滤和补充节目表的服务取消后自行删除半成品；按字节复制由这里清理。
-            if (!UsesManagedOutput && !AddsProgramTablesTo(OutputPath!))
-                DeletePartialOutput(OutputPath!, startedUtc);
             DialogResult = false;
             RequestClose?.Invoke();
         }
@@ -574,23 +569,6 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             Exception = e;
             DialogResult = false;
             RequestClose?.Invoke();
-        }
-    }
-
-    /// <summary>
-    /// 删除取消后留下的按字节复制半成品：只删除本次导出开始后被写过的文件，开始前已存在且尚未改写的文件保留。
-    /// 修改时间放宽 2 秒，兼容 FAT 类文件系统的时间精度。
-    /// </summary>
-    private static void DeletePartialOutput(string path, DateTime startedUtc)
-    {
-        try
-        {
-            if (File.Exists(path) && File.GetLastWriteTimeUtc(path) >= startedUtc.AddSeconds(-2))
-                File.Delete(path);
-        }
-        catch (Exception exception) when (exception is IOException or UnauthorizedAccessException)
-        {
-            Console.Error.WriteLine($"Partial output was not removed: {exception.Message}");
         }
     }
 

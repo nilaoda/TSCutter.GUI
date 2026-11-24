@@ -1,0 +1,180 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:web="using:TSCutter.GUI.Web"
+        x:Class="TSCutter.GUI.Web.WebUiSettingsWindow" x:ClassModifier="internal"
+        Title="{DynamicResource String.WebUi.Title}" Width="820" Height="650" MinWidth="680" MinHeight="480"
+        WindowStartupLocation="CenterOwner" CanMaximize="False" CanMinimize="False" ShowInTaskbar="False">
+    <Window.Styles>
+        <Style Selector="TextBlock.section-title">
+            <Setter Property="FontSize" Value="14"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+        </Style>
+        <Style Selector="TextBlock.hint">
+            <Setter Property="Foreground" Value="{DynamicResource AppSecondaryTextBrush}"/>
+            <Setter Property="TextWrapping" Value="Wrap"/>
+        </Style>
+        <Style Selector="TextBlock#Status.error">
+            <Setter Property="Foreground" Value="{DynamicResource AppStatusErrorForegroundBrush}"/>
+        </Style>
+        <Style Selector=":is(Control).form-field">
+            <Setter Property="MinHeight" Value="32"/>
+            <Setter Property="HorizontalAlignment" Value="Stretch"/>
+            <Setter Property="VerticalAlignment" Value="Stretch"/>
+        </Style>
+        <Style Selector="ListBox#Accounts ListBoxItem">
+            <Setter Property="Padding" Value="10,10"/>
+            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+        </Style>
+    </Window.Styles>
+    <Grid RowDefinitions="*,Auto">
+        <TabControl Name="SettingsTabs" Margin="20,16,20,12">
+            <TabItem Header="{DynamicResource String.WebUi.Connection}">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                    <StackPanel Margin="12,16" Spacing="16">
+                        <TextBlock Classes="hint" Text="{DynamicResource String.WebUi.Description}"/>
+                        <StackPanel Name="Configuration" Spacing="12">
+                            <StackPanel Spacing="5">
+                                <TextBlock Name="SourceLabel" Text="{DynamicResource String.WebUi.DefaultInputFolder}"/>
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBox Name="SourcePath" Classes="form-field" AutomationProperties.LabeledBy="{Binding #SourceLabel}"/>
+                                    <Button Grid.Column="1" Name="BrowseSource" MinWidth="90" Classes="form-field" Content="{DynamicResource String.WebUi.Browse}"/>
+                                </Grid>
+                            </StackPanel>
+                            <StackPanel Spacing="5">
+                                <TextBlock Name="DestinationLabel" Text="{DynamicResource String.WebUi.OutputRoot}"/>
+                                <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                    <TextBox Name="DestinationPath" Classes="form-field" AutomationProperties.LabeledBy="{Binding #DestinationLabel}"/>
+                                    <Button Grid.Column="1" Name="BrowseDestination" MinWidth="90" Classes="form-field" Content="{DynamicResource String.WebUi.Browse}"/>
+                                </Grid>
+                                <TextBlock Classes="hint" Text="{DynamicResource String.WebUi.UserOutputHint}"/>
+                            </StackPanel>
+                            <Grid ColumnDefinitions="160,160,*" ColumnSpacing="16" Margin="0,4,0,0">
+                                <StackPanel Spacing="5">
+                                    <TextBlock Name="PortLabel" Text="{DynamicResource String.WebUi.Port}"/>
+                                    <NumericUpDown Name="ListenPort" Classes="form-field" Minimum="1024" Maximum="65535" Increment="1" FormatString="0" ParsingNumberStyle="Integer" AutomationProperties.LabeledBy="{Binding #PortLabel}"/>
+                                </StackPanel>
+                                <StackPanel Grid.Column="1" Spacing="5">
+                                    <TextBlock Name="WorkersLabel" Text="{DynamicResource String.WebUi.MaxWorkers}"/>
+                                    <NumericUpDown Name="MaxWorkers" Classes="form-field" Minimum="1" Maximum="16" Increment="1" FormatString="0" ParsingNumberStyle="Integer" AutomationProperties.LabeledBy="{Binding #WorkersLabel}"/>
+                                </StackPanel>
+                            </Grid>
+                            <Border BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}" Padding="0,14,0,0" Margin="0,4,0,0">
+                                <StackPanel Spacing="8">
+                                    <TextBlock Classes="section-title" Text="{DynamicResource String.WebUi.NetworkAccess}"/>
+                                    <Grid ColumnDefinitions="*,*" ColumnSpacing="16">
+                                        <CheckBox Name="AllowLan" MinHeight="32" VerticalAlignment="Top" VerticalContentAlignment="Center">
+                                            <TextBlock Text="{DynamicResource String.WebUi.AllowLan}" TextWrapping="Wrap"/>
+                                        </CheckBox>
+                                        <CheckBox Grid.Column="1" Name="EnableIpv6" MinHeight="32" VerticalAlignment="Top" VerticalContentAlignment="Center" ToolTip.Tip="{DynamicResource String.WebUi.Ipv6Hint}">
+                                            <TextBlock Text="{DynamicResource String.WebUi.EnableIpv6}" TextWrapping="Wrap"/>
+                                        </CheckBox>
+                                    </Grid>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                        <StackPanel Name="Sharing" IsVisible="False" Spacing="8">
+                            <TextBlock Classes="section-title" Text="{DynamicResource String.WebUi.BrowserAccess}"/>
+                            <TextBlock Classes="hint" Text="{DynamicResource String.WebUi.AccountAccessHint}"/>
+                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                <ComboBox Name="Addresses" Classes="form-field" AutomationProperties.Name="{DynamicResource String.WebUi.AccessLink}"/>
+                                <Button Grid.Column="1" Name="CopyLink" MinWidth="90" Classes="form-field" Content="{DynamicResource String.WebUi.CopyLink}"/>
+                            </Grid>
+                        </StackPanel>
+                        <TextBlock Classes="hint" Text="{DynamicResource String.WebUi.WorkspaceLifetimeHint}"/>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+            <TabItem Header="{DynamicResource String.WebUi.Accounts}">
+                <Grid Margin="12,16" ColumnDefinitions="160,*" ColumnSpacing="22">
+                    <Grid RowDefinitions="Auto,*,Auto" RowSpacing="10">
+                        <TextBlock Classes="hint" Text="{DynamicResource String.WebUi.AccountsShort}"/>
+                        <ListBox Grid.Row="1" Name="Accounts" MinHeight="90" AutomationProperties.Name="{DynamicResource String.WebUi.Accounts}">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="web:WebUiAccountRow">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="6">
+                                        <StackPanel Spacing="4">
+                                            <TextBlock Text="{Binding UserName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                            <TextBlock FontSize="12" Opacity="0.75" Text="{Binding Status}" TextTrimming="CharacterEllipsis"/>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="●" FontSize="10" Foreground="{DynamicResource AppAccentBrush}" IsVisible="{Binding HasChanges}"/>
+                                    </Grid>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <Button Grid.Row="2" Name="AddAccount" Classes="form-field" Content="{DynamicResource String.WebUi.AddAccountTitle}"/>
+                    </Grid>
+                    <Border Grid.Column="1" BorderThickness="1,0,0,0" BorderBrush="{DynamicResource AppBorderBrush}" Padding="20,0,0,0">
+                        <Grid>
+                            <TextBlock Name="NoAccountSelected" Classes="hint" Text="{DynamicResource String.WebUi.SelectAccountHint}"/>
+                            <Grid Name="AccountDetails" RowDefinitions="*,Auto" RowSpacing="16" IsVisible="False">
+                                <ScrollViewer HorizontalScrollBarVisibility="Disabled" VerticalScrollBarVisibility="Auto">
+                                    <StackPanel Spacing="18">
+                                        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+                                            <StackPanel Spacing="6">
+                                                <TextBlock Name="SelectedUserName" FontSize="18" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Name="SelectedUserState" Classes="hint" FontSize="12"/>
+                                                <TextBlock Name="SelectedUserFile" Classes="hint" FontSize="12" TextTrimming="CharacterEllipsis"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="1" Name="StopWorker" Classes="form-field" VerticalAlignment="Top" Content="{DynamicResource String.WebUi.StopWorker}"/>
+                                        </Grid>
+                                        <StackPanel Spacing="7">
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                <TextBlock Name="UserSourceLabel" VerticalAlignment="Center" Text="{DynamicResource String.WebUi.UserInputFolder}"/>
+                                                <CheckBox Grid.Column="1" Name="UseDefaultSource" MinHeight="24" Content="{DynamicResource String.WebUi.UseDefaultSource}"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                <TextBox Name="UserSourcePath" Classes="form-field" AutomationProperties.LabeledBy="{Binding #UserSourceLabel}"/>
+                                                <Button Grid.Column="1" Name="BrowseUserSource" Classes="form-field" MinWidth="76" Content="{DynamicResource String.WebUi.Browse}"/>
+                                            </Grid>
+                                            <TextBlock Name="UserSourceHint" Classes="hint" FontSize="12"/>
+                                        </StackPanel>
+                                        <StackPanel Spacing="7">
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                <TextBlock Name="UserOutputLabel" VerticalAlignment="Center" Text="{DynamicResource String.WebUi.UserOutput}"/>
+                                                <CheckBox Grid.Column="1" Name="UseDefaultOutput" MinHeight="24" Content="{DynamicResource String.WebUi.UseDefaultSource}"/>
+                                            </Grid>
+                                            <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                                <TextBox Name="UserOutput" Classes="form-field" AutomationProperties.LabeledBy="{Binding #UserOutputLabel}"/>
+                                                <Button Grid.Column="1" Name="BrowseUserOutput" Classes="form-field" MinWidth="76" Content="{DynamicResource String.WebUi.Browse}"/>
+                                            </Grid>
+                                            <TextBlock Name="UserOutputHint" Classes="hint" FontSize="12"/>
+                                        </StackPanel>
+                                        <Border Name="DirectoryNotice" IsVisible="False" Background="{DynamicResource AppStatusWarningBackgroundBrush}" Padding="10">
+                                            <TextBlock Name="DirectoryNoticeText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource AppStatusWarningForegroundBrush}"/>
+                                        </Border>
+                                        <TextBlock Name="DirectoryError" Classes="hint" Foreground="{DynamicResource AppStatusErrorForegroundBrush}" IsVisible="False"/>
+                                        <Border Height="1" Background="{DynamicResource AppBorderBrush}"/>
+                                        <WrapPanel Orientation="Horizontal">
+                                            <Button Name="ResetPassword" Margin="0,0,8,8" Content="{DynamicResource String.WebUi.ResetPassword}"/>
+                                            <Button Name="ToggleAccount" Margin="0,0,8,8"/>
+                                            <Button Name="RemoveAccount" Margin="0,0,0,8" Content="{DynamicResource String.WebUi.RemoveAccount}"/>
+                                        </WrapPanel>
+                                    </StackPanel>
+                                </ScrollViewer>
+                                <Border Grid.Row="1" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}" Padding="0,12,0,0">
+                                    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
+                                        <TextBlock Name="DirectoryDirtyState" Classes="hint" FontSize="12" VerticalAlignment="Center"/>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                            <Button Name="CancelUserDirectory" MinWidth="80" Content="{DynamicResource String.WebUi.CancelDirectoryChanges}"/>
+                                            <Button Name="SaveUserDirectory" Classes="accent" MinWidth="90" Content="{DynamicResource String.WebUi.SaveDirectory}"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </Grid>
+                        </Grid>
+                    </Border>
+                </Grid>
+            </TabItem>
+        </TabControl>
+        <Border Grid.Row="1" Padding="22,12,22,14" BorderThickness="0,1,0,0" BorderBrush="{DynamicResource AppBorderBrush}">
+            <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="14">
+                <Button Name="StartStop" Classes="form-field" Content="{DynamicResource String.WebUi.Start}" MinWidth="116" VerticalAlignment="Center" IsDefault="True"/>
+                <StackPanel Grid.Column="1" VerticalAlignment="Center" Spacing="6">
+                    <TextBlock Name="Status" Classes="hint" MaxLines="3" TextTrimming="CharacterEllipsis" ToolTip.Tip="{Binding Text, RelativeSource={RelativeSource Self}}" IsVisible="False"/>
+                    <ProgressBar Name="ServiceProgress" Width="100" Height="8" HorizontalAlignment="Left" IsVisible="False"/>
+                </StackPanel>
+                <Button Grid.Column="2" Name="CloseDialog" Classes="form-field" Content="{DynamicResource String.Window.Close}" MinWidth="80" VerticalAlignment="Center" IsCancel="True"/>
+            </Grid>
+        </Border>
+    </Grid>
+</Window>

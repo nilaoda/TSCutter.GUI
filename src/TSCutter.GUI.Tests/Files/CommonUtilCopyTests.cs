@@ -75,8 +75,7 @@ public sealed class CommonUtilCopyTests
                     progress: (_, _) => cancellation.Cancel(), cancellationToken: cancellation.Token, checkSession: session));
             session.Abort();
             Assert.Equal(TsExportCheckState.Aborted, session.State);
-            Assert.Equal(4 * 1024 * 1024, new FileInfo(output).Length);
-            Assert.Equal(data[..(4 * 1024 * 1024)], await File.ReadAllBytesAsync(output));
+            Assert.False(File.Exists(output));
             Assert.Equal(4 * 1024 * 1024, session.Result!.FileSize);
         }
         finally

@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models.Media;
 using TSCutter.GUI.Services.TransportStream.Analysis;
+using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.TransportStream.Packets;
 
 namespace TSCutter.GUI.Services.Editing.AudioRebuild;
@@ -63,7 +64,7 @@ internal sealed class AudioRebuildSetup(AudioRebuildPlan? plan, string sourcePat
         var result = new List<string>();
         foreach (var (temporary, final) in SideFiles)
         {
-            File.Move(temporary, final, overwrite: true);
+            MediaFileAccess.Current.PublishExport(temporary, final);
             result.Add(final);
         }
         SideFiles.Clear();
@@ -115,11 +116,20 @@ internal static class TsOutputFile
     public static FileStream Create(string path, FileMode mode, FileAccess access, FileShare share, int bufferSize,
         FileOptions options)
     {
+        var fileAccess = MediaFileAccess.Current;
         if (CurrentSetup.Value is not { } setup)
-            return new FileStream(path, mode, access, share, bufferSize, options);
-        if (setup.StreamCount++ > 0)
-            throw new InvalidOperationException("Audio rebuilding supports a single output stream per export.");
-        return new AudioRebuildTsStream(path, mode, access, share, bufferSize, options, setup);
+            return fileAccess.OpenOutput(path, mode, access, share, bufferSize, options);
+        mode = fileAccess.PrepareOutput(path, mode);
+        try
+        {
+            if (setup.StreamCount++ > 0)
+                throw new InvalidOperationException("Audio rebuilding supports a single output stream per export.");
+            return new AudioRebuildTsStream(path, mode, access, share, bufferSize, options, setup);
+        }
+        catch (IOException error) when (mode == FileMode.CreateNew && fileAccess.IsOutputConflict(path))
+        {
+            throw fileAccess.OutputConflict(path, error);
+        }
     }
 
     /// <summary>
@@ -130,6 +140,7 @@ internal static class TsOutputFile
     {
         if (CurrentSetup.Value is not { Processing: not TsOutputProcessing.None } setup)
             return null;
+        MediaFileAccess.Current.DemandOutput(path);
         return new AudioRebuildTsStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096,
             FileOptions.SequentialScan, setup, packetSize);
     }

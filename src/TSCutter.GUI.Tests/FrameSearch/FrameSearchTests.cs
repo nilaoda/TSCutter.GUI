@@ -14,7 +14,7 @@ public sealed class FrameSearchTests
     public async Task BothDialogViewModelsResolveToTheirWindowTypes()
     {
         var locator = new TestViewLocator();
-        var manager = new FrameTemplateManagerWindowViewModel();
+        var manager = new FrameTemplateManagerWindowViewModel(new SavedFrameStore());
         var search = new FrameSearchWindowViewModel();
         try
         {
@@ -42,6 +42,13 @@ public sealed class FrameSearchTests
             var loaded = await store.LoadAsync();
             Assert.Equal(frame.Id, Assert.Single(loaded.Templates).Id);
             Assert.Equal(frame.Jpeg, loaded.Templates[0].Jpeg);
+            frame.Name = "Renamed advertisement";
+            await store.SaveAsync(new SavedFrameLibrary { Templates = [frame] });
+            Assert.Equal(frame.Name, Assert.Single((await new SavedFrameStore(path).LoadAsync()).Templates).Name);
+            var saved = await File.ReadAllTextAsync(path);
+            await Assert.ThrowsAsync<InvalidDataException>(() => store.SaveAsync(new SavedFrameLibrary { Version = 2 }));
+            Assert.Equal(saved, await File.ReadAllTextAsync(path));
+            Assert.Single(Directory.GetFiles(directory));
 
             await File.WriteAllTextAsync(path, "{ damaged json");
             await Assert.ThrowsAnyAsync<Exception>(() => store.LoadAsync());
@@ -51,6 +58,29 @@ public sealed class FrameSearchTests
         {
             Directory.Delete(directory, recursive: true);
         }
+    }
+
+    [Fact]
+    public async Task MemoryStoreReusesSerializedStateAndRejectsInvalidOrCancelledWrites()
+    {
+        var store = SavedFrameStore.CreateInMemory();
+        Assert.Empty((await store.LoadAsync()).Templates);
+        var frame = new SavedFrameTemplate { Name = "Remote template", Jpeg = [1, 2, 3] };
+        var library = new SavedFrameLibrary { Templates = [frame] };
+        await store.SaveAsync(library);
+        frame.Name = "Unsaved change";
+        frame.Jpeg[0] = 99;
+        var loaded = await store.LoadAsync();
+        Assert.Equal("Remote template", Assert.Single(loaded.Templates).Name);
+        Assert.Equal(new byte[] { 1, 2, 3 }, loaded.Templates[0].Jpeg);
+        loaded.Templates.Clear();
+        Assert.Single((await store.LoadAsync()).Templates);
+        await Assert.ThrowsAsync<InvalidDataException>(() => store.SaveAsync(new SavedFrameLibrary { Version = 2 }));
+        using var cancelled = new CancellationTokenSource();
+        cancelled.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.SaveAsync(new SavedFrameLibrary(), cancelled.Token));
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => store.LoadAsync(cancelled.Token));
+        Assert.Equal("Remote template", Assert.Single((await store.LoadAsync()).Templates).Name);
     }
 
     [Fact]

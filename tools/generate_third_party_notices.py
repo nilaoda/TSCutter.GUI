@@ -13,14 +13,17 @@ ROOT = Path(__file__).resolve().parents[1]
 SEPARATOR = "============================================================"
 
 
-def runtime_pack_directory(metadata_file):
-    # ResolveFrameworkReferences supplies the exact package used by this publish.
+def runtime_pack_directories(metadata_file):
+    # 使用 ResolveFrameworkReferences 提供的实际发布包版本。
     metadata = json.loads(metadata_file.read_text(encoding="utf-8-sig"))
-    packs = [pack for pack in metadata["Items"]["ResolvedRuntimePack"]
-             if pack.get("FrameworkName") == "Microsoft.NETCore.App"]
-    if len(packs) != 1 or not packs[0].get("PackageDirectory"):
-        raise ValueError("Expected exactly one resolved Microsoft.NETCore.App runtime pack")
-    return Path(packs[0]["PackageDirectory"])
+    resolved = metadata["Items"]["ResolvedRuntimePack"]
+    for name, title in [("Microsoft.NETCore.App", "dotnet"), ("Microsoft.AspNetCore.App", "aspnetcore")]:
+        packs = [pack for pack in resolved if pack.get("FrameworkName") == name]
+        if not packs and name == "Microsoft.AspNetCore.App":
+            continue
+        if len(packs) != 1 or not packs[0].get("PackageDirectory"):
+            raise ValueError(f"Expected exactly one resolved {name} runtime pack")
+        yield title, Path(packs[0]["PackageDirectory"])
 
 
 def generate_notices(repository, output, runtime_packs=None):
@@ -30,11 +33,12 @@ def generate_notices(repository, output, runtime_packs=None):
     ]
 
     if runtime_packs is not None:
-        runtime = runtime_pack_directory(runtime_packs)
-        notices.extend([
-            ("dotnet/LICENSE.txt", runtime / "LICENSE.TXT"),
-            ("dotnet/THIRD-PARTY-NOTICES.txt", runtime / "THIRD-PARTY-NOTICES.TXT"),
-        ])
+        for title, runtime in runtime_pack_directories(runtime_packs):
+            notices.extend([
+                # ASP.NET Core uses LICENSE.txt; .NET uses LICENSE.TXT. Linux is case-sensitive.
+                (f"{title}/LICENSE.txt", runtime / ("LICENSE.txt" if title == "aspnetcore" else "LICENSE.TXT")),
+                (f"{title}/THIRD-PARTY-NOTICES.txt", runtime / "THIRD-PARTY-NOTICES.TXT"),
+            ])
 
     summary = repository / "THIRD_PARTY_NOTICES.md"
     for path in [summary, *(path for _, path in notices)]:

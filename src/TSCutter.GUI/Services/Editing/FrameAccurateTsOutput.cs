@@ -7,6 +7,7 @@ using TSCutter.GUI.Services.TransportStream.Processing;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils.TransportStream.Packets;
+using TSCutter.GUI.Utils.Files;
 
 namespace TSCutter.GUI.Services.Editing;
 
@@ -144,8 +145,7 @@ internal sealed class FrameAccurateTsOutput : IDisposable
         this.hevc = hevc;
         this.h264 = h264;
         this.checkSession = checkSession;
-        source = new FileStream(sourcePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete, 1,
-            FileOptions.RandomAccess);
+        source = MediaFileUtil.OpenRead(sourcePath, 1, FileOptions.RandomAccess, allowConcurrentWrite: true);
         try
         {
             if (filter is not null)

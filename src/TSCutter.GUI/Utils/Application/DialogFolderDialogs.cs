@@ -7,6 +7,7 @@ using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.FileSystem;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Utils.Files;
 
 namespace TSCutter.GUI.Utils.Application;
 
@@ -49,7 +50,9 @@ internal static class DialogFolderDialogs
     public static async Task<IDialogStorageFolder?> ShowOpenFolderAtExportFolderAsync(
         this IDialogService dialogs, INotifyPropertyChanged owner, OpenFolderDialogSettings settings, string? defaultFolder)
     {
-        settings.SuggestedStartLocation = await DialogFolderMemory.Shared.ExportStartAsync(defaultFolder);
+        settings.SuggestedStartLocation = MediaFileAccess.Current.DefaultOutputDirectory is { } outputDirectory
+            ? new DesktopDialogStorageFolder(outputDirectory)
+            : await DialogFolderMemory.Shared.ExportStartAsync(defaultFolder);
         var folder = await ShowAsync(() => dialogs.ShowOpenFolderDialogAsync(owner, settings), null);
         DialogFolderMemory.Shared.RememberExportFolder(folder?.LocalPath);
         return folder;

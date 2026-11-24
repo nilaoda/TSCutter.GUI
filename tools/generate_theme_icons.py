@@ -11,7 +11,7 @@ SVG = "{http://www.w3.org/2000/svg}"
 NS = "https://github.com/avaloniaui"
 X = "http://schemas.microsoft.com/winfx/2006/xaml"
 ICONS = ("open", "zoom-in", "zoom-out", "original", "fit", "keyframes",
-         "thumbnails", "snapshot", "tools", "info", "save", "cut-frame", "cut-remove")
+         "thumbnails", "snapshot", "tools", "info", "save", "cut-frame", "cut-remove", "folder", "file")
 PALETTES = {
     "Xp": ("xp", None),
     "Aero": ("aero", None),
@@ -113,6 +113,13 @@ def generate(check):
         result = ("<!-- 此文件由 tools/generate_theme_icons.py 生成，请修改 design/icons 中的源稿。 -->\n"
                   + ET.tostring(dictionary, encoding="unicode") + "\n").encode()
         target = ROOT / "src/TSCutter.GUI/Themes/Icons" / f"{palette}.axaml"
+        if target.exists():
+            # 保留工作区已有的换行格式和文件末尾状态，避免生成无关的整文件差异。
+            previous = target.read_bytes()
+            if b"\r\n" in previous and previous.count(b"\r\n") == previous.count(b"\n"):
+                result = result.replace(b"\n", b"\r\n")
+            if not previous.endswith(b"\n"):
+                result = result.rstrip(b"\r\n")
         if check:
             if not target.exists() or target.read_bytes() != result:
                 mismatched.append(str(target.relative_to(ROOT)))

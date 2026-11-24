@@ -11,6 +11,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Player;
+using TSCutter.GUI.Web;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Media;
 
@@ -190,6 +191,8 @@ public partial class MainWindowViewModel
             }
         }
     }
+
+    internal void PauseWebUiPreview() => PausePlaybackForNavigation(navigation: false);
 
     private async Task PausePlaybackForNavigationAsync()
     {
@@ -392,6 +395,9 @@ public partial class MainWindowViewModel
                     TsSyncOffset = instance.TsSyncOffset,
                     EnableSdrToneMapping = EnableSdrToneMapping, Volume = EffectivePreviewVolume,
                     PreferHardwareDecoding = preferHardwareDecodingForPreview,
+                    // 无头截图需要系统内存中的画面。硬解可用时先解码，再把帧回读给截图。
+                    EnableGpuPresentation = WebUiSession.Current is null,
+                    EnableHardwareSurfacePresentation = WebUiSession.Current is null,
                     HardwareDecodingDevice = hardwareDevice,
                     MaxPresentWidth = targetSize.Width, MaxPresentHeight = targetSize.Height,
                 }, uiPost: null, cancellationToken: cancellation.Token, initialize: owner =>
@@ -402,7 +408,7 @@ public partial class MainWindowViewModel
                     owner.Ended += () => OnPlaybackEnded(owner);
                     owner.Failed += exception => OnPlaybackFailed(owner, exception);
                     owner.AudioStatusChanged += status => OnPlaybackAudioStatusChanged(owner, status);
-                });
+                }, audioOutputFactory: WebUiSession.Current is { } webSession ? webSession.CreateAudioOutput : null);
             }
             if (!ReferenceEquals(_videoInstance, instance) || cancellation.IsCancellationRequested ||
                 Interlocked.Read(ref playbackRequestGeneration) != requestGeneration)

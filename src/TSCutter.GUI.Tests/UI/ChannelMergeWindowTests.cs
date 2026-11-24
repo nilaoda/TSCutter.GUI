@@ -27,7 +27,7 @@ public sealed class ChannelMergeWindowTests
     public async Task WindowShowsMappingAnalysisAndOutputsInEveryLanguage()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
-        await session.Dispatch(async () =>
+        await session.Dispatch<bool>(async () =>
         {
             var languages = new LocalizationService();
             Locator.CurrentMutable.RegisterConstant<ILocalizationService>(languages);
@@ -88,6 +88,7 @@ public sealed class ChannelMergeWindowTests
                     window.Close();
                 }
             }
+            return true;
         }, CancellationToken.None);
     }
 

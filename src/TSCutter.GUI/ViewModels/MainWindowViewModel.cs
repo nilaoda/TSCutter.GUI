@@ -39,6 +39,7 @@ using TSCutter.GUI.Utils.Discs;
 using TSCutter.GUI.Utils.Editing;
 using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.Media;
+using TSCutter.GUI.Web;
 using TSCutter.GUI.Utils.TransportStream.Packets;
 using TSCutter.GUI.ViewModels.Application;
 using TSCutter.GUI.ViewModels.Editing;
@@ -75,6 +76,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     }
     private VideoInstance? _videoInstance;
     private bool _isLoadingVideo;
+    internal bool IsLoadingMedia => _isLoadingVideo;
     private bool _currentFileSupportsTsTools;
     private DiscInput? _discInput;
     private DiscTitleInfo? _discTitleInfo;
@@ -508,6 +510,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     [RelayCommand]
     private async Task ProcessCommandLineAsync()
     {
+        if (WebUiSession.Current is not null)
+            return;
         _ = RefreshRecentItemsAsync();
         // 先处理上次未正常退出留下的工作；恢复后不再打开命令行指定的文件，以免覆盖恢复的内容。
         var recovered = await OfferProjectRecoveryAsync();
@@ -1377,7 +1381,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 using var correctedBitmap = ImageUtil.CreateSampleAspectRatioCorrectedBitmap(
                     snapshot, sourceSize, correctAspectRatio);
                 var bitmapToSave = correctedBitmap ?? snapshot;
-                using var stream = File.Create(outputPath);
+                using var stream = MediaFileAccess.Current.OpenOutput(outputPath);
                 if (isPng)
                     bitmapToSave.Save(stream);
                 else
@@ -1567,7 +1571,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     [RelayCommand]
     private void CheckUpdate()
     {
-        Process.Start(new ProcessStartInfo("https://github.com/nilaoda/TSCutter.GUI/releases") { UseShellExecute = true });
+        if (WebUiSession.Current is null)
+            Process.Start(new ProcessStartInfo("https://github.com/nilaoda/TSCutter.GUI/releases") { UseShellExecute = true });
     }
     
     [RelayCommand]
@@ -1823,6 +1828,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             return false;
         }
         var path = saveAs ? null : _projectPath;
+        var overwrite = path is not null || MediaFileAccess.Current.OverwriteExports;
         if (path is null)
         {
             var settings = new SaveFileDialogSettings
@@ -1872,7 +1878,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                     }
                     CutterProjectService.PopulateSources(project);
                 });
-                await CutterProjectService.SaveAsync(path, project);
+                await CutterProjectService.SaveAsync(path, project, overwrite: overwrite);
             }
             finally
             {
@@ -2003,7 +2009,14 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     private async Task OpenVideoPathAsync(string path)
     {
-        if (_isLoadingVideo) return;
+        if (_isLoadingVideo)
+            return;
+        if (!MediaFileAccess.Current.AllowsInput(path))
+        {
+            await ShowMessageAsync(LocalizationManager.Instance.String_WebUi_MediaOutside,
+                LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
+            return;
+        }
         if (DiscScanService.IsDiscPath(path))
         {
             await OpenDiscAsync(path);
@@ -2026,6 +2039,12 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     // 用户选择标题后再打开预览。光盘来源与标题选择不写入工程文件。
     private async Task OpenDiscAsync(string sourcePath, RecentItem? previous = null)
     {
+        if (WebUiSession.Current is not null)
+        {
+            await ShowMessageAsync(LocalizationManager.Instance.String_WebUi_DiscUnavailable,
+                LocalizationManager.Instance.String_Error, MessageBoxIcon.Error);
+            return;
+        }
         if (_isLoadingVideo)
             return;
         if (!await ConfirmProjectReplacementAsync() || _isLoadingVideo)

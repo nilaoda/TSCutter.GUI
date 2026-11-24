@@ -45,7 +45,7 @@ public sealed class TsRemuxWindowTests
             TsProgramTablePacketizer.Create(tables, TsPacketLayout.FromPacketOffset(188, 0), 0, new int[8192]));
 
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
-        await session.Dispatch(async () =>
+        await session.Dispatch<bool>(async () =>
         {
             using var resolver = new ModernDependencyResolver();
             using var scope = resolver.WithResolver();
@@ -78,6 +78,8 @@ public sealed class TsRemuxWindowTests
                 foreach (var theme in new[] { ClassicTheme.Standard, CustomTheme.MacOS })
                 {
                     window.RequestedThemeVariant = theme;
+                    Flush(window);
+                    viewModel.SelectedService = service;
                     viewModel.SelectedTrack = video;
                     Flush(window);
                     Assert.True(transfer.IsEffectivelyVisible);
@@ -106,6 +108,7 @@ public sealed class TsRemuxWindowTests
             {
                 window.Close();
             }
+            return true;
         }, CancellationToken.None);
     }
 

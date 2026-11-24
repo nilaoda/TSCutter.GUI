@@ -13,6 +13,7 @@ Multiple NuGet packages from the same project are grouped below. Versions are sp
 | 项目 / Project | 许可 / License |
 | --- | --- |
 | [Avalonia](https://github.com/AvaloniaUI/Avalonia) | MIT |
+| [ASP.NET Core](https://github.com/dotnet/aspnetcore) | MIT |
 | [Avalonia.Xaml.Behaviors](https://github.com/wieslawsoltes/Xaml.Behaviors) | MIT |
 | [Classic.Avalonia](https://github.com/BAndysc/Classic.Avalonia) | MIT |
 | [CommunityToolkit.Mvvm](https://github.com/CommunityToolkit/dotnet) | MIT |

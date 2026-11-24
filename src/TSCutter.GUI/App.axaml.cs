@@ -1,7 +1,10 @@
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
 using Avalonia.Styling;
 using Classic.CommonControls.Dialogs;
@@ -13,8 +16,10 @@ using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.Editing;
+using TSCutter.GUI.Services.FrameSearch;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Media;
+using TSCutter.GUI.Web;
 using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Application;
 using TSCutter.GUI.ViewModels.Discs;
@@ -34,13 +39,23 @@ public partial class App : Application
     public override void Initialize()
     {
         AvaloniaXamlLoader.Load(this);
+        if (WebUiSession.Current is not null)
+        {
+            // 离屏弹出的悬停提示只负责显示，鼠标点击应落到提示下方的控件。
+            Styles.Add(new Style(selector => selector.OfType<ToolTip>())
+            {
+                Setters = { new Setter(InputElement.IsHitTestVisibleProperty, false) }
+            });
+        }
         
         var build = Locator.CurrentMutable;
 
         build.RegisterLazySingleton(() => (IDialogService)new DialogService(
             new DialogManager(
                 viewLocator: new ViewLocator(),
-                dialogFactory: new DialogFactory()),
+                dialogFactory: WebUiSession.Current is { } webSession
+                    ? new WebUiDialogFactory(webSession.Workspace)
+                    : new DialogFactory()),
             viewModelFactory: x => Locator.Current.GetService(x)));
 
         SplatRegistrations.Register<MainWindowViewModel>();
@@ -59,7 +74,9 @@ public partial class App : Application
         SplatRegistrations.Register<TsBinaryMergeWindowViewModel>();
         SplatRegistrations.Register<TsPacketViewerWindowViewModel>();
         SplatRegistrations.Register<KeyFrameOverviewWindowViewModel>();
-        SplatRegistrations.Register<FrameTemplateManagerWindowViewModel>();
+        // 存储方式由宿主选择，模板窗口不感知远程会话。
+        var savedFrames = WebUiSession.Current?.SavedFrames ?? new SavedFrameStore();
+        build.Register(() => new FrameTemplateManagerWindowViewModel(savedFrames));
         SplatRegistrations.Register<FrameSearchWindowViewModel>();
         SplatRegistrations.Register<ThumbnailSheetWindowViewModel>();
         SplatRegistrations.Register<MediaMuxWindowViewModel>();
@@ -81,7 +98,9 @@ public partial class App : Application
         // --- 注册单例服务 ---
         var localizationService = new LocalizationService();
         SplatRegistrations.RegisterConstant<ILocalizationService>(localizationService);
-        var configurationService = new ConfigurationService(localizationService);
+        var remoteEditor = WebUiSession.Current is not null;
+        var configurationService = new ConfigurationService(localizationService, persistent: !remoteEditor,
+            initialConfig: remoteEditor ? WebUiPreferences.ReadSnapshot() : null);
         SplatRegistrations.RegisterConstant<IConfigurationService>(configurationService);
         SplatRegistrations.RegisterConstant<ExportRecordRegistry>(new ExportRecordRegistry());
         SplatRegistrations.SetupIOC();
@@ -114,13 +133,40 @@ public partial class App : Application
 
         // 加载配置
         configService.Load();
+        if (WebUiSession.Current is not null)
+        {
+            if (Environment.GetEnvironmentVariable("TSCUTTER_WEB_THEME") is { } hostTheme)
+                configService.ApplyTheme(hostTheme);
+            configService.CurrentConfig.AutoCheckForUpdates = false;
+            configService.CurrentConfig.RememberRecentItems = false;
+            if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(WebUiPreferences.EnvironmentVariable)))
+            {
+                if (bool.TryParse(Environment.GetEnvironmentVariable("TSCUTTER_WEB_HW_DECODE"), out var hardwareDecode))
+                    configService.CurrentConfig.PreferHardwareDecoding = hardwareDecode;
+                configService.CurrentConfig.HardwareDecodingDevice = Environment.GetEnvironmentVariable("TSCUTTER_WEB_HW_DEVICE");
+            }
+        }
         DialogFolderMemory.Shared = new DialogFolderMemory(configService, BusyCursor.ShowOnActiveWindow);
         FFmpegNativeBootstrapper.Configure(configService.CurrentConfig);
 
         GC.KeepAlive(typeof(DialogService));
         DialogService.Show(null, MainWindow);
+        if (WebUiSession.Current is { } webSession &&
+            ApplicationLifetime is IClassicDesktopStyleApplicationLifetime webDesktop)
+        {
+            var mainWindow = webDesktop.Windows.OfType<Views.MainWindow>().FirstOrDefault()
+                ?? throw new InvalidOperationException("The remote editor window did not open.");
+            webDesktop.MainWindow = mainWindow;
+            webDesktop.ShutdownMode = Avalonia.Controls.ShutdownMode.OnMainWindowClose;
+            webSession.Start(webDesktop, mainWindow);
+            base.OnFrameworkInitializationCompleted();
+            return;
+        }
         if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime progressDesktop)
+        {
             SystemProgressService.Initialize(progressDesktop, () => configService.CurrentConfig.ShowSystemProgress);
+            progressDesktop.Exit += (_, _) => WebUiLauncher.StopWithOwner();
+        }
 
         // 后台静默检查更新
         if (configService.CurrentConfig.AutoCheckForUpdates)

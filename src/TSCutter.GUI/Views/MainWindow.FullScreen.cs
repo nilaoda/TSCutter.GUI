@@ -226,7 +226,7 @@ public partial class MainWindow
 
     private void EnterVideoFullScreenLayout()
     {
-        if (IsVideoFullScreen || DataContext is not MainWindowViewModel { IsVideoInitialized: true })
+        if (IsVideoFullScreen || IsLocalEditorLocked || DataContext is not MainWindowViewModel { IsVideoInitialized: true })
             return;
         fullScreenRestoreFocus = FocusManager?.GetFocusedElement();
         fullScreenRestoreView = (ImageViewer.Zoom, ImageViewer.OffsetX, ImageViewer.OffsetY, ImageViewer.AutoFit);

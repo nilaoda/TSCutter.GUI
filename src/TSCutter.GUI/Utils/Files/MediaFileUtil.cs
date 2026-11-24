@@ -57,6 +57,7 @@ internal static class MediaFileUtil
     public static FileStream OpenRead(string path, int bufferSize = 4096,
         FileOptions options = FileOptions.None, bool allowConcurrentWrite = false)
     {
+        MediaFileAccess.Current.DemandReadable(path);
         var share = FileShare.Read | FileShare.Delete;
         if (allowConcurrentWrite)
             share |= FileShare.Write;

@@ -189,6 +189,7 @@ internal sealed unsafe class MediaMuxService
         var cursors = new Dictionary<string, InputCursor>(MediaFileUtil.PathComparer);
         AVFormatContext* output = null;
         AVIOInterruptCB_callback interrupt = _ => token.IsCancellationRequested ? 1 : 0;
+        MediaFileAccess.Current.DemandOutput(request.OutputPath);
         var temporary = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(request.OutputPath))!, $".tscutter-mux-{Guid.NewGuid():N}.tmp");
         try
         {
@@ -422,7 +423,7 @@ internal sealed unsafe class MediaMuxService
             foreach (var cursor in cursors.Values)
                 EnsureUnchanged(cursor.Source);
             token.ThrowIfCancellationRequested();
-            File.Move(temporary, request.OutputPath, overwrite: true);
+            MediaFileAccess.Current.PublishExport(temporary, request.OutputPath);
             progress?.Report(new(100, bytes, bytes / Math.Max(timer.Elapsed.TotalSeconds, 0.001)));
         }
         catch (FFmpegException) when (token.IsCancellationRequested)

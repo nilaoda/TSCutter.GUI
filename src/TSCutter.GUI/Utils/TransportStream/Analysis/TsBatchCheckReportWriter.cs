@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 using System.Threading.Tasks;
+using TSCutter.GUI.Utils.Files;
 
 namespace TSCutter.GUI.Utils.TransportStream.Analysis;
 
@@ -9,12 +10,13 @@ internal static class TsBatchCheckReportWriter
 {
     public static async Task<string> SaveLogAsync(string sourcePath, string? outputFolder, string text)
     {
-        var folder = outputFolder ?? Path.GetDirectoryName(sourcePath)!;
+        var folder = outputFolder ?? MediaFileAccess.Current.DefaultOutputDirectory ?? Path.GetDirectoryName(sourcePath)!;
         var name = Path.GetFileName(sourcePath) + ".check";
         // CreateNew 同时保护已有报告和原始文件，多个批量窗口也不会互相覆盖。
         for (var index = 0; ; index++)
         {
             var path = Path.Combine(folder, name + (index == 0 ? "" : $".{index}") + ".log");
+            MediaFileAccess.Current.DemandOutput(path);
             FileStream stream;
             try { stream = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None, 4096, true); }
             catch (IOException) when (File.Exists(path)) { continue; }

@@ -185,4 +185,33 @@
             </DrawingGroup>
         </DrawingImage.Drawing>
     </DrawingImage>
+    <DrawingImage x:Key="Icon.folder">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F1 M3 9V6h10l3 3h13v4H9l-5 14H2V9Z M10 15h20l-5 12H6Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#0078D7" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
+    <DrawingImage x:Key="Icon.file">
+        <DrawingImage.Drawing>
+            <DrawingGroup>
+                <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                <GeometryDrawing Geometry="F0 M6 2h14l8 8v20H6Z M9 5v22h16V12h-7V5Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#0078D7" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+                <GeometryDrawing Geometry="F1 M11 16h12v2H11Z M11 21h12v2H11Z">
+                    <GeometryDrawing.Brush>
+                        <SolidColorBrush Color="#0078D7" Opacity="1" />
+                    </GeometryDrawing.Brush>
+                </GeometryDrawing>
+            </DrawingGroup>
+        </DrawingImage.Drawing>
+    </DrawingImage>
 </ResourceDictionary>

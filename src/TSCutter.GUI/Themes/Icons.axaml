@@ -23,6 +23,38 @@
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
         <ResourceDictionary x:Key="Default">
+            <DrawingImage x:Key="Icon.folder">
+                <DrawingImage.Drawing>
+                    <DrawingGroup>
+                        <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                        <GeometryDrawing Brush="#FFFF80" Geometry="M2,8 H12 L16,12 H30 V28 H2 Z">
+                            <GeometryDrawing.Pen><Pen Brush="Black" Thickness="2" /></GeometryDrawing.Pen>
+                        </GeometryDrawing>
+                        <GeometryDrawing Brush="#FFFF00" Geometry="M2,14 H30 V28 H2 Z">
+                            <GeometryDrawing.Pen><Pen Brush="Black" Thickness="2" /></GeometryDrawing.Pen>
+                        </GeometryDrawing>
+                        <GeometryDrawing Geometry="M4,16 H28">
+                            <GeometryDrawing.Pen><Pen Brush="White" Thickness="2" /></GeometryDrawing.Pen>
+                        </GeometryDrawing>
+                    </DrawingGroup>
+                </DrawingImage.Drawing>
+            </DrawingImage>
+            <DrawingImage x:Key="Icon.file">
+                <DrawingImage.Drawing>
+                    <DrawingGroup>
+                        <GeometryDrawing Brush="Transparent" Geometry="M0,0 H32 V32 H0 Z" />
+                        <GeometryDrawing Brush="White" Geometry="M6,2 H20 L28,10 V30 H6 Z">
+                            <GeometryDrawing.Pen><Pen Brush="Black" Thickness="2" /></GeometryDrawing.Pen>
+                        </GeometryDrawing>
+                        <GeometryDrawing Brush="#C0C0C0" Geometry="M20,2 V10 H28 Z">
+                            <GeometryDrawing.Pen><Pen Brush="Black" Thickness="2" /></GeometryDrawing.Pen>
+                        </GeometryDrawing>
+                        <GeometryDrawing Geometry="M10,16 H24 M10,22 H24">
+                            <GeometryDrawing.Pen><Pen Brush="#606060" Thickness="2" /></GeometryDrawing.Pen>
+                        </GeometryDrawing>
+                    </DrawingGroup>
+                </DrawingImage.Drawing>
+            </DrawingImage>
             <Bitmap x:Key="Icon.open">avares://TSCutterGUI/Assets/directory_movie-3.png</Bitmap>
             <Bitmap x:Key="Icon.zoom-in">avares://TSCutterGUI/Assets/magnifying_glass_4-zoom-in.png</Bitmap>
             <Bitmap x:Key="Icon.zoom-out">avares://TSCutterGUI/Assets/magnifying_glass_4-zoom-out.png</Bitmap>

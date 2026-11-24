@@ -31,6 +31,50 @@ Settings → Export has two extra processing options for TS exports. Both are of
 
 After saving a clip, merging clips or exporting in remove mode, a result window shows the output location, size, elapsed time and average speed, the clip content, the Smart cut re-encoding share and the TS check result, with buttons to open the file, show it in its folder or copy a summary. Failed exports show the error in the same window; cancelled exports show nothing and remove the unfinished file. After choosing “Don't show again” or turning the option off in Settings, successful exports no longer open the window, while failures still do. The export queue and other batch exports do not use this window; see Export records for their results.
 
+## Remote editing
+
+### Start and sign in
+
+1. On the host, open **Tools → Remote Editing**. Select existing default media and output folders. They must be separate and neither can contain the other.
+2. Add usernames and passwords under **User accounts**. Each account can use the default folders or have its own locations.
+3. Start the service, copy an access link, and give it to the user along with their account credentials. Users open the link in a browser and sign in. Each account allows one controlling browser at a time.
+
+**Allow access from this local network** is enabled by default. Turn it off to accept connections only from this computer. The host's local editor is locked while the service runs. Closing the remote settings window keeps the service running; **Stop remote editing** or confirming that you want to close the host stops all its workspaces.
+
+### Folders, login and workspaces
+
+Under **User accounts**, clear **Use default folder** for the media or output folder, choose a location, and save. Media folders are read-only. Output folders cannot overlap any configured media folder. Accounts using the same output folder share its files; for separate access, choose output folders that neither overlap nor contain one another. Existing export files are not overwritten: choose another filename or folder on a conflict. **New folder** in save and export-folder dialogs creates and opens a subfolder inside the assigned output folder. Remote workspaces support media files and projects; open disc sources in the desktop app.
+
+Changing a running workspace's media or output folder requires confirmation and discards its unsaved editing state. Only that account's workspace is stopped; its browser can reconnect with the same login. Finish exports or media loading and close workspace dialogs before applying a folder change.
+
+Each account has its own editing process, state and preferences. Disconnecting or signing out retains the workspace. Resetting a password revokes that account's logins and disconnects its browser while retaining the workspace. Stopping a workspace, disabling or deleting its account, stopping the service or exiting the host discards unsaved edits and remote saved-frame templates. Saved projects and exported files remain on disk.
+
+Workspaces start on demand, with a default limit of four retained processes configurable before starting. Empty disconnected workspaces are reclaimed after 30 minutes. Workspaces with loaded media, clips, queued exports or open dialogs are retained until stopped. Stop unused workspaces to free capacity.
+
+The same browser can reconnect from a bookmark while the host stays open, the access address is unchanged and its login remains valid. Stopping and restarting the service also retains login when the default media and output folders and access address are unchanged. Restarting the host requires signing in again.
+
+Default folders, connection settings, accounts and account preferences are saved in `TSCutter.GUI/remote-editing.json` under the application data directory. Passwords are stored as salted hashes. Closing the settings window saves the default folders even before starting the service; use the save button to apply per-account folder changes. Desktop preferences use `config.json`.
+
+### Browser controls
+
+Use **Open** to select media. Mark cuts and save clips as in the desktop app; results go to the account's assigned output folder. The floating **Controls** panel has **Picture**, **Input** and **Connection** tabs. It opens from the bottom on phones and floats at the bottom-right on desktop. Closing it leaves a small button. Clicking outside or pressing Escape closes the panel without clicking the editor underneath. Enable sound or show the phone keyboard in **Input**; audio is transmitted only while sound is enabled.
+
+**Quality** defaults to **Sharp** and **Resolution** to **Automatic**. Automatic uses the device's pixel density within the quality preset's size limit. If text looks blurred, try Sharp or select a higher resolution explicitly. The 720p, 1080p, 1440p and 4K options set output pixel limits while preserving the workspace aspect ratio; with a fixed resolution, Quality controls encoding quality and bitrate rather than output dimensions. The maximum is 3840 × 2160, or 2160 × 3840 in portrait orientation. **Aspect ratio** defaults to **Automatic (follow screen)**; choose **16:9** for a widescreen workspace. Interface scaling follows the browser device's display density and page zoom. Lower resolution to reduce encoding load, or lower quality to reduce bandwidth requirements.
+
+Phones start in **Touchpad mode**: slide one finger to move the cursor, tap to left-click, tap with two fingers to right-click, or slide two fingers in parallel to scroll. Hold one finger, then slide to drag. The virtual cursor and desktop mouse cursor reflect text, link and resize shapes; draggable areas show a hold-to-drag hint in the upper-left corner. Pinch to zoom, and use **Fit picture to window** to restore the full picture. Touching the workspace does not open the keyboard automatically; choose **Show keyboard** in **Controls → Input**. Turning off Touchpad mode enables direct touch; sliding one finger pans a zoomed picture.
+
+### Video and network
+
+Video uses WebSocket transport with software-encoded H.264 selected by default, at up to 60 fps. In **Controls → Picture**, select AV1 for screen-optimized AV1 encoding or JPEG for image transmission. The selected video mode must be supported by the host and browser. Actual frame rate and clarity depend on resolution, host performance, browser and network conditions. H.264 adjusts bitrate and capture frequency using playback feedback; congestion does not change the selected video mode or resolution option. In H.264 and AV1 modes, capture pauses while the page is hidden and refreshes when you return.
+
+For recoverable playback or delivery errors, the browser retains the last picture and retries the selected video stream up to three consecutive times. The workspace and edits remain intact. If playback cannot recover, **Controls → Connection** shows the reason. Choose **Retry selected video mode** or select another mode manually.
+
+The service uses HTTP. Allow inbound TCP traffic on the configured web port for other devices to connect. IPv4 is enabled by default. To add IPv6, allow LAN access and select **Enable IPv6 listening**, which is off by default. Both address families use the same port, and the address list includes available IPv6 addresses when enabled. IPv6 URLs need square brackets, for example `http://[2001:db8::1]:5360/`.
+
+### Single-user command line
+
+`TSCutterGUI --web-ui <port> <media-folder> <export-folder> [--lan [--ipv6]]` starts a single-user service using the pairing code printed in the terminal. It does not use desktop accounts. Without `--lan`, it listens only on the IPv4 loopback address; `--lan` allows IPv4 LAN access, and `--lan --ipv6` enables IPv4 and IPv6. Enter `pair` to generate a new code, revoke paired browser access and disconnect the current browser. In a development environment with the .NET 11 SDK installed, the same arguments can be passed to `dotnet TSCutterGUI.dll`.
+
 ## Remove mode
 
 1. Turn on **Remove** in the toolbar, to the left of **Smart cut**. The setting is remembered across launches.
