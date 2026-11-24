@@ -364,6 +364,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     private void NotifyClipSelectionChanged()
     {
+        ImportClipPointsCommand.NotifyCanExecuteChanged();
+        ExportClipPointsCommand.NotifyCanExecuteChanged();
         PlaySelectedClipCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(SelectedClipCount));
         OnPropertyChanged(nameof(ClipOutputCommand));
@@ -735,8 +737,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             AddClipCore();
     }
 
-    private bool CanUndo => _undoHistory.Count > 0;
-    private bool CanRedo => _redoHistory.Count > 0;
+    private bool CanUndo => !clipPointTransferActive && _undoHistory.Count > 0;
+    private bool CanRedo => !clipPointTransferActive && _redoHistory.Count > 0;
 
     [RelayCommand(CanExecute = nameof(CanUndo))]
     private void Undo()
@@ -744,8 +746,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         if (!_undoHistory.TryPop(out var previousState))
             return;
 
-        _redoHistory.Push(CaptureEditorState());
-        RestoreEditorState(previousState);
+        var current = CaptureEditorState(includeModes: previousState.CutMode is not null);
+        _redoHistory.Push(current);
+        RestoreEditorState(previousState, current);
         NotifyHistoryChanged();
     }
 
@@ -755,31 +758,52 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         if (!_redoHistory.TryPop(out var nextState))
             return;
 
-        _undoHistory.Push(CaptureEditorState());
-        RestoreEditorState(nextState);
+        var current = CaptureEditorState(includeModes: nextState.CutMode is not null);
+        _undoHistory.Push(current);
+        RestoreEditorState(nextState, current);
         NotifyHistoryChanged();
     }
 
-    private void RecordHistory()
+    private void RecordHistory() => PushHistory(includeModes: false);
+
+    /// <summary>
+    /// 整批操作（导入剪辑点）的撤销记录：同时记录剪辑模式与保留／删除模式，撤销时一并恢复；
+    /// 移出列表的片段保留在返回的记录中，撤销或重做时连同缩略图恢复。
+    /// </summary>
+    private EditorStateSnapshot? RecordBulkHistory()
+    {
+        if (!PushHistory(includeModes: true))
+            return null;
+        var entry = _undoHistory.Peek();
+        entry.DetachedClips = [];
+        return entry;
+    }
+
+    private bool PushHistory(bool includeModes)
     {
         if (_restoringHistory)
-            return;
+            return false;
 
-        _undoHistory.Push(CaptureEditorState());
+        _undoHistory.Push(CaptureEditorState(includeModes));
+        ReleaseDetachedClips(_redoHistory);
         _redoHistory.Clear();
         if (_undoHistory.Count > MaximumHistoryEntries)
         {
             var retained = _undoHistory.Take(MaximumHistoryEntries).ToArray();
+            ReleaseDetachedClips(_undoHistory.Skip(MaximumHistoryEntries));
             _undoHistory.Clear();
             for (var index = retained.Length - 1; index >= 0; index--)
                 _undoHistory.Push(retained[index]);
         }
 
         NotifyHistoryChanged();
+        return true;
     }
 
     private void ClearHistory()
     {
+        ReleaseDetachedClips(_undoHistory);
+        ReleaseDetachedClips(_redoHistory);
         _undoHistory.Clear();
         _redoHistory.Clear();
         foreach (var thumbnail in _historyThumbnails.Values)
@@ -795,13 +819,28 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         RedoCommand.NotifyCanExecuteChanged();
     }
 
-    private EditorStateSnapshot CaptureEditorState()
+    /// <summary>撤销记录被丢弃时，释放其中保留的、已不在列表中的片段。</summary>
+    private static void ReleaseDetachedClips(IEnumerable<EditorStateSnapshot> entries)
+    {
+        foreach (var entry in entries)
+        {
+            if (entry.DetachedClips is not { } clips)
+                continue;
+            foreach (var clip in clips)
+                clip.Dispose();
+            entry.DetachedClips = null;
+        }
+    }
+
+    private EditorStateSnapshot CaptureEditorState(bool includeModes = false)
     {
         var snapshot = new EditorStateSnapshot(
             Clips.Select(ClipStateSnapshot.Create).ToArray(),
             SelectedClip?.ClipID,
             _clipSelectionAnchor?.ClipID,
-            _exportSettingsRevision);
+            _exportSettingsRevision,
+            includeModes ? CutMode : null,
+            includeModes ? ClipMode : null);
         CacheSelectedClipThumbnails(snapshot);
         return snapshot;
     }
@@ -881,17 +920,36 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         }
     }
 
-    private void RestoreEditorState(EditorStateSnapshot snapshot)
+    /// <param name="counterpart">撤销或重做时为对方记录的当前状态；整批操作移出列表的片段转存到其中，再次撤销或重做时连同缩略图恢复。</param>
+    private void RestoreEditorState(EditorStateSnapshot snapshot, EditorStateSnapshot? counterpart = null)
     {
         // 撤销/重做已取代当前编辑，旧结尾扫描不能再写回复用的片段对象。
         CancelClipEndScan();
         _restoringHistory = true;
         try
         {
-            var existing = Clips.ToDictionary(clip => clip.ClipID);
+            // 只有整批操作的记录带有模式；普通编辑的撤销不改变工具栏上的模式开关。
+            if (snapshot.CutMode is { } cutMode && cutMode != CutMode)
+            {
+                ApplyCutMode(cutMode);
+                _exportSettingsRevision++;
+            }
+            if (snapshot.ClipMode is { } clipMode)
+                ClipMode = clipMode;
+            var detached = snapshot.DetachedClips;
+            snapshot.DetachedClips = null;
+            var existing = Clips.Concat(detached ?? []).ToDictionary(clip => clip.ClipID);
             var targetIds = snapshot.Clips.Select(state => state.ClipId).ToHashSet();
             foreach (var clip in Clips.Where(clip => !targetIds.Contains(clip.ClipID)))
-                clip.Dispose();
+            {
+                if (detached is not null && counterpart is not null)
+                    (counterpart.DetachedClips ??= []).Add(clip);
+                else
+                    clip.Dispose();
+            }
+            foreach (var clip in detached ?? [])
+                if (!targetIds.Contains(clip.ClipID))
+                    clip.Dispose();
 
             var restored = new List<PickedClip>(snapshot.Clips.Count);
             foreach (var state in snapshot.Clips)
@@ -1641,6 +1699,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     /// </summary>
     private async Task<bool> OpenProjectCoreAsync(string? projectPath, string? recoveryPath)
     {
+        if (clipPointTransferActive)
+            return false;
         if (_isLoadingVideo) return false;
         CutterProject? project;
         var sourceLocations = new Dictionary<string, string>(MediaFileUtil.PathComparer);
@@ -2016,6 +2076,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     private async Task OpenVideoPathAsync(string path)
     {
+        if (clipPointTransferActive)
+            return;
         if (_isLoadingVideo)
             return;
         if (!MediaFileAccess.Current.AllowsInput(path))
@@ -2673,6 +2735,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     private void ClearVars()
     {
+        clipPointCancellation?.Cancel();
         StopPlaybackSession();
         timelineScrubActive = false;
         scrubResumePlayback = false;
@@ -2951,6 +3014,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     public void Close()
     {
+        clipPointCancellation?.Cancel();
         timestampCheckCancellation?.Cancel();
         StopPlaybackSession();
         ResetKeyFrameStrip();
@@ -3031,7 +3095,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     public bool IsPreviewOnly => IsVideoInitialized && !CanEditVideo;
 
-    private bool CanEditVideo => !_isLoadingVideo && _videoInstance is { Inited: true, CanClip: true };
+    private bool CanEditVideo => !_isLoadingVideo && !clipPointTransferActive && _videoInstance is { Inited: true, CanClip: true };
     private bool CanEditSelectedClip => CanEditVideo && HasSelectedClip;
     // 标记取已显示帧的快照，后台 seek 不影响可用状态；加载、边界扫描和无效帧仍需禁用。
     private bool CanMarkVideo => CanEditVideo && !_isResolvingClipEnd
@@ -3071,6 +3135,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         ShowMediaInfoClickCommand.NotifyCanExecuteChanged();
         OnPropertyChanged(nameof(IsPreviewOnly));
         EditClipDetailsCommand.NotifyCanExecuteChanged();
+        ImportClipPointsCommand.NotifyCanExecuteChanged();
+        ExportClipPointsCommand.NotifyCanExecuteChanged();
         RemuxExportOptionsCommand.NotifyCanExecuteChanged();
         ConfigureDolbyECommand.NotifyCanExecuteChanged();
         ConfigureChannelMergeCommand.NotifyCanExecuteChanged();
@@ -3568,7 +3634,13 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         IReadOnlyList<ClipStateSnapshot> Clips,
         long? SelectedClipId,
         long? SelectionAnchorId,
-        long ExportSettingsRevision);
+        long ExportSettingsRevision,
+        ClipCutMode? CutMode = null,
+        ClipListMode? ClipMode = null)
+    {
+        /// <summary>整批操作移出列表的片段对象，保留到撤销或重做时连同缩略图恢复；记录被丢弃时释放。</summary>
+        public List<PickedClip>? DetachedClips { get; set; }
+    }
 
     private sealed record ClipStateSnapshot(
         long ClipId,

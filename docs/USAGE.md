@@ -31,6 +31,16 @@ Settings → Export has two extra processing options for TS exports. Both are of
 
 After saving a clip, merging clips or exporting in remove mode, a result window shows the output location, size, elapsed time and average speed, the clip content, the Smart cut re-encoding share and the TS check result, with buttons to open the file, show it in its folder or copy a summary. Failed exports show the error in the same window; cancelled exports show nothing and remove the unfinished file. After choosing “Don't show again” or turning the option off in Settings, successful exports no longer open the window, while failures still do. The export queue and other batch exports do not use this window; see Export records for their results.
 
+## Cut point transfer
+
+Use **File → Export cut points…** to save the current clip list as a `.tscutpoints` file, including names, notes, colors, boundaries and keep/remove mode. Open media and use **File → Import cut points…** to apply the marks. Use a project file to save the full workspace, including export queue items and output settings.
+
+When media content and the video track match and the offset is zero, the dialog shows **Exact restoration**. It restores the saved PTS, byte positions and cut mode; renamed or moved copies can also match. Frame-accurate output follows the Smart cut support available for the media.
+
+For another recording, the dialog shows **Transfer by time** and locates boundaries using the target's current cut mode. A positive offset moves points later; a negative offset moves them earlier. If the same picture appears at `10:00.000` in the source and `10:02.400` in the target, enter `2.400` seconds. Alternatively, position the target at the picture corresponding to the first cut point before opening the dialog, then choose **Align first point to current picture**. The dialog shows a reference thumbnail and target times. Out-of-range clips are skipped in full rather than shortened. Transfers to different media or with an offset are marked for boundary review. Keyframe cutting follows the target's keyframe spacing; missing sections or timing drift between recordings need individual adjustments.
+
+Clear **Replace the current clips** to append to the list. When the modes cannot be mixed, select Replace. Boundary lookup runs in the background and can be cancelled. A completed import can be undone once, including changes to cut mode and keep/remove mode. Existing export queue items are kept.
+
 ## Remote editing
 
 ### Start and sign in

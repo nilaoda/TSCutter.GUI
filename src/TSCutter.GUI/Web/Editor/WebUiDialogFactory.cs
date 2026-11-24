@@ -34,7 +34,8 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
         switch (settings)
         {
             case OpenFileDialogSettings open:
-                var showProjects = open.Filters.Any(filter => filter.Extensions?.Contains("tscut", StringComparer.OrdinalIgnoreCase) == true);
+                var showProjects = open.Filters.Any(filter => filter.Extensions?.Any(extension => string.Equals(extension, "tscut", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(extension, "tscutpoints", StringComparison.OrdinalIgnoreCase)) == true);
                 return (await PickAsync(window, open.Title, workspace.InputDirectory, PickerKind.Open,
                     open.AllowMultiple == true, open.Filters, showProjects: showProjects))
                     .Select(path => (IDialogStorageFile)new DesktopDialogStorageFile(path)).ToArray();

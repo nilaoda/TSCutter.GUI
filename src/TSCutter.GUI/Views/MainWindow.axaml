@@ -258,6 +258,8 @@
                                   Command="{Binding MergeSelectedClipsCommand}" />
                         <MenuItem Header="{DynamicResource String.RemuxExport.Options}"
                                   IsVisible="{Binding ShowsExportSettings}" Command="{Binding RemuxExportOptionsCommand}" />
+                        <MenuItem Header="{DynamicResource String.ClipPoints.Export}" Command="{Binding ExportClipPointsCommand}"/>
+                        <MenuItem Header="{DynamicResource String.ClipPoints.Import}" Command="{Binding ImportClipPointsCommand}"/>
                         <MenuItem Header="{DynamicResource String.Menu.ExportQueue}"
                                   Command="{Binding BatchExportQueueCommand}" />
                         <MenuItem Header="{DynamicResource String.Menu.ExportRecords}"
@@ -904,8 +906,8 @@
                                                                                         <TextBlock Text="{Binding Notes}" MaxWidth="320" TextWrapping="Wrap" MaxLines="8" TextTrimming="CharacterEllipsis" />
                                                                                     </ToolTip.Tip>
                                                                                 </TextBlock>
-                                                                                <!-- 按 EPG 时间添加的片段在核对起止前提示。 -->
-                                                                                <TextBlock Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="3" Text="{DynamicResource String.Epg.ReviewBoundaries}"
+                                                                                <!-- 按时间生成的片段在核对起止前提示。 -->
+                                                                                <TextBlock Grid.Row="2" Grid.Column="2" Grid.ColumnSpan="3" Text="{DynamicResource String.Clips.ReviewBoundaries}"
                                                                                            IsVisible="{Binding NeedsBoundaryReview}" MaxLines="1" TextTrimming="CharacterEllipsis"
                                                                                            Foreground="{DynamicResource AppStatusWarningForegroundBrush}" Margin="0,0,0,3" />
                                                                             </Grid>

@@ -254,6 +254,7 @@ public sealed class TsExportWarningTests
             Assert.NotNull(App.DialogService.CreateViewModel<TsTimestampWarningViewModel>());
             Assert.NotNull(App.DialogService.CreateViewModel<OutputWindowViewModel>());
             Assert.NotNull(App.DialogService.CreateViewModel<ExportPreparationWindowViewModel>());
+            Assert.NotNull(App.DialogService.CreateViewModel<ClipPointImportViewModel>());
             return Task.CompletedTask;
         });
     }

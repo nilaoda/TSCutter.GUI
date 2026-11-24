@@ -47,7 +47,7 @@ public partial class MainWindowViewModel
     }
 
     /// <summary>当前素材不支持智能剪辑时禁用开关（悬停仍显示原因）；加载过程中保持可用，避免闪烁。</summary>
-    private bool CanToggleFrameAccurate => !HasFrameAccurateUnavailableText;
+    private bool CanToggleFrameAccurate => !clipPointTransferActive && !HasFrameAccurateUnavailableText;
 
     /// <summary>已开启智能剪辑但当前素材不支持：开关旁显示警告图标，说明原因并提示改用关键帧剪辑。</summary>
     public bool ShowFrameAccurateWarning => CutMode == ClipCutMode.FrameAccurate && HasFrameAccurateUnavailableText;

@@ -18,7 +18,7 @@ namespace TSCutter.GUI.Services.Editing;
 internal static class CutterProjectService
 {
     internal const int MaximumProjectBytes = 16 * 1024 * 1024;
-    private const int MaximumItems = 10_000;
+    internal const int MaximumItems = 10_000;
     private const int MaximumCapturedAnchorsPerSource = 32;
 
     public static void PopulateSources(CutterProject project)
@@ -186,22 +186,7 @@ internal static class CutterProjectService
         }
 
         foreach (var clip in project.Clips)
-        {
-            if (clip is null || !ClipLabels.IsValid(clip.Name, clip.Notes, clip.Color) || !ValidRange(clip.StartTime, clip.EndTime,
-                    clip.StartPosition, clip.EndPosition, project.Source!.Length, project.RemuxSettings is not null))
-                throw new InvalidDataException("A saved clip has invalid labels or boundaries.");
-            if (!IsValidSignature(clip.StartSignature) || !IsValidSignature(clip.EndSignature))
-                throw new InvalidDataException("A saved clip has invalid labels or boundaries.");
-            // 合并导出至少两个片段；删除模式导出可以只删除一个范围。
-            if (clip.MergedOutput is { } merged && (merged.ClipCount < (merged.Removed ? 1 : 2) || merged.ClipCount > MaximumItems ||
-                !Guid.TryParseExact(merged.GroupId, "N", out _) || clip.OutputFilePath is null))
-                throw new InvalidDataException("Invalid merged export result.");
-            if (clip.StartThumbnailJpeg?.Length > 512 * 1024 ||
-                clip.EndThumbnailJpeg?.Length > 512 * 1024)
-                throw new InvalidDataException("A saved clip thumbnail is too large.");
-            if (clip.OutputFilePath is not null && !IsValidProjectPath(clip.OutputFilePath, checkSourceFiles))
-                throw new InvalidDataException("A saved output path is invalid.");
-        }
+            ValidateClip(clip, project.Source!.Length, project.RemuxSettings is not null, checkSourceFiles);
 
         var paths = new HashSet<string>(MediaFileUtil.PathComparer);
         foreach (var item in project.Queue)
@@ -309,7 +294,25 @@ internal static class CutterProjectService
             ValidateSourceContents(source);
     }
 
-    private static void ValidateSourceShape(ProjectSource source, bool checkSourceFiles)
+    internal static void ValidateClip(ProjectClip clip, long sourceLength, bool timeBased, bool checkSourceFiles)
+    {
+        if (clip is null || !ClipLabels.IsValid(clip.Name, clip.Notes, clip.Color) || !ValidRange(clip.StartTime, clip.EndTime,
+                clip.StartPosition, clip.EndPosition, sourceLength, timeBased))
+            throw new InvalidDataException("A saved clip has invalid labels or boundaries.");
+        if (!IsValidSignature(clip.StartSignature) || !IsValidSignature(clip.EndSignature))
+            throw new InvalidDataException("A saved clip has invalid labels or boundaries.");
+        // 合并导出至少两个片段；删除模式导出可以只删除一个范围。
+        if (clip.MergedOutput is { } merged && (merged.ClipCount < (merged.Removed ? 1 : 2) || merged.ClipCount > MaximumItems ||
+            !Guid.TryParseExact(merged.GroupId, "N", out _) || clip.OutputFilePath is null))
+            throw new InvalidDataException("Invalid merged export result.");
+        if (clip.StartThumbnailJpeg?.Length > 512 * 1024 ||
+            clip.EndThumbnailJpeg?.Length > 512 * 1024)
+            throw new InvalidDataException("A saved clip thumbnail is too large.");
+        if (clip.OutputFilePath is not null && !IsValidProjectPath(clip.OutputFilePath, checkSourceFiles))
+            throw new InvalidDataException("A saved output path is invalid.");
+    }
+
+    internal static void ValidateSourceShape(ProjectSource source, bool checkSourceFiles)
     {
         if (string.IsNullOrWhiteSpace(source.Path) || !IsValidProjectPath(source.Path, checkSourceFiles) ||
             source.Length < 0 || source.AnchorOffsets is null ||

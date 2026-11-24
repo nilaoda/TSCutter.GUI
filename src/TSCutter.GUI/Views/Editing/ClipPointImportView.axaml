@@ -1,0 +1,70 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:TSCutter.GUI.ViewModels.Editing"
+        x:Class="TSCutter.GUI.Views.Editing.ClipPointImportView" x:DataType="vm:ClipPointImportViewModel"
+        Title="{DynamicResource String.ClipPoints.Title}" Width="720" Height="620" MinWidth="620" MinHeight="500"
+        CanMinimize="False" CanMaximize="False" ShowInTaskbar="False" WindowStartupLocation="CenterOwner">
+    <Grid Margin="18" RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" RowSpacing="12">
+        <Grid ColumnDefinitions="Auto,*">
+            <Image Source="{Binding ReferenceImage}" IsVisible="{Binding HasReferenceImage}" Margin="0,0,14,0" Width="160" Height="90" Stretch="Uniform"/>
+            <StackPanel Grid.Column="1" Spacing="6" VerticalAlignment="Center">
+                <TextBlock Text="{Binding SourceName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis"/>
+                <TextBlock Text="{Binding RangeType}"/>
+                <StackPanel Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="{DynamicResource String.ClipPoints.Reference}"/>
+                    <TextBlock Text="{Binding ReferenceTime}"/>
+                </StackPanel>
+            </StackPanel>
+        </Grid>
+        <StackPanel Grid.Row="1" Spacing="5">
+            <TextBlock Text="{Binding MethodText}" FontWeight="SemiBold"/>
+            <TextBlock Text="{Binding MethodHint}" Foreground="{DynamicResource AppSecondaryTextBrush}" TextWrapping="Wrap"/>
+        </StackPanel>
+        <Grid Grid.Row="2" ColumnDefinitions="Auto,160,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="6">
+            <TextBlock Name="OffsetLabel" Text="{DynamicResource String.ClipPoints.Offset}" VerticalAlignment="Center"/>
+            <NumericUpDown Grid.Column="1" Name="Offset" Value="{Binding OffsetSeconds}" Minimum="-1000000000000" Maximum="1000000000000"
+                           Increment="0.1" FormatString="0.000" MinHeight="32" AutomationProperties.LabeledBy="{Binding #OffsetLabel}"/>
+            <Button Grid.Column="2" Content="{DynamicResource String.ClipPoints.Align}" Command="{Binding AlignCurrentCommand}" MinHeight="32"/>
+            <TextBlock Grid.Row="1" Grid.ColumnSpan="3" Text="{DynamicResource String.ClipPoints.OffsetHint}" FontSize="12"
+                       Foreground="{DynamicResource AppSecondaryTextBrush}" TextWrapping="Wrap"/>
+        </Grid>
+        <Grid Grid.Row="3" RowDefinitions="Auto,*" RowSpacing="6">
+            <Grid ColumnDefinitions="160,116,116,*" ColumnSpacing="8" Margin="9,0,9,0">
+                <TextBlock Text="{DynamicResource String.ClipPoints.Clip}"/>
+                <TextBlock Grid.Column="1" Text="{DynamicResource String.ClipPoints.Start}"/>
+                <TextBlock Grid.Column="2" Text="{DynamicResource String.ClipPoints.End}"/>
+                <TextBlock Grid.Column="3" Text="{DynamicResource String.ClipPoints.Status}"/>
+            </Grid>
+            <ListBox Grid.Row="1" ItemsSource="{Binding Entries}" SelectionMode="Single" Padding="0" BorderThickness="1">
+                <ListBox.Styles>
+                    <Style Selector="ListBoxItem">
+                        <Setter Property="Padding" Value="0"/>
+                        <Setter Property="Margin" Value="0"/>
+                        <Setter Property="BorderThickness" Value="0"/>
+                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                    </Style>
+                </ListBox.Styles>
+                <ListBox.ItemTemplate>
+                    <DataTemplate x:DataType="vm:ClipPointPreview">
+                        <Grid ColumnDefinitions="160,116,116,*" ColumnSpacing="8" Margin="8,5">
+                            <TextBlock Text="{Binding Name}" ToolTip.Tip="{Binding Name}" TextTrimming="CharacterEllipsis"/>
+                            <TextBlock Grid.Column="1" Text="{Binding Start}"/>
+                            <TextBlock Grid.Column="2" Text="{Binding End}"/>
+                            <TextBlock Grid.Column="3" Text="{Binding Status}" TextWrapping="Wrap"/>
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+        <StackPanel Grid.Row="4" Spacing="6">
+            <CheckBox Content="{DynamicResource String.ClipPoints.Replace}" IsChecked="{Binding Replace}"/>
+            <TextBlock Text="{DynamicResource String.ClipPoints.AppendHint}" Foreground="{DynamicResource AppSecondaryTextBrush}" TextWrapping="Wrap" FontSize="12"/>
+            <TextBlock Text="{Binding ConflictText}" Foreground="{DynamicResource AppStatusWarningForegroundBrush}" TextWrapping="Wrap"/>
+        </StackPanel>
+        <Grid Grid.Row="5" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="8">
+            <TextBlock Text="{Binding Summary}" VerticalAlignment="Center" TextWrapping="Wrap" Margin="0,0,10,0"/>
+            <Button Grid.Column="1" Content="{DynamicResource String.Cancel}" Command="{Binding CancelCommand}" IsCancel="True" MinWidth="80"/>
+            <Button Grid.Column="2" Content="{DynamicResource String.ClipPoints.Apply}" Command="{Binding ConfirmCommand}" IsDefault="True" MinWidth="90"/>
+        </Grid>
+    </Grid>
+</Window>

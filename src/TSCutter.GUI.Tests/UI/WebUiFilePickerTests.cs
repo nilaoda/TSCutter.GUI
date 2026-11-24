@@ -35,6 +35,7 @@ public sealed class WebUiFilePickerTests
                 File.WriteAllText(Path.Combine(input, file), "test");
             File.WriteAllText(Path.Combine(nested, "nested.MP4"), "test");
             File.WriteAllText(Path.Combine(nested, "notes.txt"), "test");
+            File.WriteAllText(Path.Combine(output, "points.tscutpoints"), "test");
             await session.Dispatch<bool>(async () =>
             {
                 using var resolver = new ModernDependencyResolver();
@@ -105,6 +106,24 @@ public sealed class WebUiFilePickerTests
                             Assert.Equal(new[] { "nested.MP4" }, Names());
                         }
                         finally { dialog.Close(); await showing; }
+                        var pointSelection = factory.ShowDialogAsync(view, new OpenFileDialogSettings
+                        {
+                            Filters = [new(languages.GetString("String.ClipPoints.Files"), ["TSCUTPOINTS"])]
+                        });
+                        var pointDialog = owner.OwnedWindows.Single(window => window.IsVisible);
+                        try
+                        {
+                            pointDialog.GetVisualDescendants().OfType<Button>().Single(button =>
+                                Equals(button.Content, languages.GetString("String.WebUi.OutputFolder"))).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                            var pointList = pointDialog.GetVisualDescendants().OfType<ListBox>().Single();
+                            Assert.Equal("points.tscutpoints", Assert.Single(pointList.ItemsSource!.Cast<object>()).ToString());
+                            pointList.SelectedIndex = 0;
+                            pointDialog.GetVisualDescendants().OfType<Button>().Single(button =>
+                                Equals(button.Content, languages.GetString("String.WebUi.Select"))).RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                            var picked = Assert.IsAssignableFrom<IEnumerable<IDialogStorageFile>>(await pointSelection);
+                            Assert.Equal(Path.Combine(output, "points.tscutpoints"), Assert.Single(picked).LocalPath);
+                        }
+                        finally { pointDialog.Close(); await pointSelection; }
                     }
                     return true;
                 }

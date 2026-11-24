@@ -91,6 +91,7 @@ public partial class App : Application
         SplatRegistrations.Register<UpdatesInfoWindowViewModel>();
         SplatRegistrations.Register<CaptureFrameViewModel>();
         SplatRegistrations.Register<ClipDetailsViewModel>();
+        SplatRegistrations.Register<ClipPointImportViewModel>();
         SplatRegistrations.Register<RemuxExportOptionsViewModel>();
         SplatRegistrations.Register<TSCutter.GUI.ViewModels.Media.DolbyEOutputWindowViewModel>();
         SplatRegistrations.Register<TSCutter.GUI.ViewModels.Media.ChannelMergeWindowViewModel>();

@@ -85,6 +85,8 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         new Dictionary<int, Utils.Media.DolbyE.DolbyETrackInfo>();
     internal int AudioTrackCount => inFc.Streams.Count(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO);
     internal double TimelineOriginSeconds => firstFrameTimestamp * timeBase.num / (double)timeBase.den;
+    internal int TimeBaseNumerator => timeBase.num;
+    internal int TimeBaseDenominator => timeBase.den;
     /// <summary>
     /// 首个关键帧在时间轴上的时间。普通文件以首个关键帧为原点，恒为 0；光盘标题以标题起点为原点，
     /// 首帧可能略晚于 0。

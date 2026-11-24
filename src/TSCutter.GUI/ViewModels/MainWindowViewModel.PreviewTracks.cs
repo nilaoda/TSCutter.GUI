@@ -50,8 +50,8 @@ public partial class MainWindowViewModel
     public bool ShowRawClipSizeEstimate => !IsProgramExportFiltered && !HasTsTrackSelection;
     public string FilteredClipSizeStr => LocalizationManager.Instance.String_SizePrefix
         + LocalizationManager.Instance.String_PreviewTrack_SizeAfterExport;
-    private bool CanLoadVideo => !_isLoadingVideo;
-    private bool CanUsePreview => IsVideoInitialized && !_isLoadingVideo;
+    private bool CanLoadVideo => !_isLoadingVideo && !clipPointTransferActive;
+    private bool CanUsePreview => IsVideoInitialized && !_isLoadingVideo && !clipPointTransferActive;
     private int? SelectedOutputProgramId => ExportCurrentProgramOnly && CanChooseProgramExport
         ? _activePreviewSelection?.ProgramId : null;
 

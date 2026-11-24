@@ -43,7 +43,7 @@ public partial class PickedClip : ObservableObject, IDisposable
 
     public bool RequiresRemux { get; init; }
 
-    /// <summary>起止按 EPG 时间自动标记，需要核对；重新标记起点或终点后清除。</summary>
+    /// <summary>按时间自动生成的起止需要核对；重新标记起点或终点后清除。</summary>
     [ObservableProperty]
     private bool _needsBoundaryReview;
 

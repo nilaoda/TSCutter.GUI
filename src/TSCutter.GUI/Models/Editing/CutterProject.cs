@@ -57,7 +57,7 @@ public sealed class ProjectClip
     public string? EndSignature { get; set; }
     public bool IsSelected { get; set; }
     public bool FrameAccurate { get; set; }
-    /// <summary>起止按 EPG 时间标记、尚未核对。</summary>
+    /// <summary>按时间自动生成的起止尚未核对。</summary>
     public bool NeedsBoundaryReview { get; set; }
     public byte[]? StartThumbnailJpeg { get; set; }
     public byte[]? EndThumbnailJpeg { get; set; }
