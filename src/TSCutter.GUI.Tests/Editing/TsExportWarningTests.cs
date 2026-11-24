@@ -283,7 +283,7 @@ public sealed class TsExportWarningTests
             var clip = new PickedClip { InFileInfo = new FileInfo(files.Source), Name = mode == "unnamed" ? " " : "片段一",
                 StartPosition = mode == "complete" ? 0 : 2 * 188, EndPosition = 6 * 188, StartTime = 1, EndTime = 2 };
             stub.ExpectedClipLabel = mode == "unnamed"
-                ? $"#{clip.ClipID} · [ 00:00:01.000 – 00:00:02.000 ]" : clip.DisplayName;
+                ? "#1 · [ 00:00:01.000 – 00:00:02.000 ]" : clip.DisplayName;
             main.Clips.Add(clip);
             main.SelectedClip = clip;
             try

@@ -54,7 +54,11 @@ public partial class PickedClip : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(EstimatedSizeStr))]
     private bool _usesFrameAccurateExport;
 
-    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? $"#{ClipID}" : $"#{ClipID} · {Name}";
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(DisplayName))]
+    private int _displayNumber = 1;
+
+    public string DisplayName => string.IsNullOrWhiteSpace(Name) ? $"#{DisplayNumber}" : $"#{DisplayNumber} · {Name}";
     public bool HasNotes => !string.IsNullOrWhiteSpace(Notes);
     public bool HasColor => !string.IsNullOrEmpty(Color);
     public Avalonia.Media.IBrush LabelBrush => ClipLabels.Brush(Color);

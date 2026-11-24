@@ -154,7 +154,7 @@ public partial class MainWindowViewModel
             NotifyCutModeChanged();
             RestoreCutModeToggles();
             await ShowMessageAsync(string.Format(LocalizationManager.Instance.String_CutMode_SwitchBlocked,
-                    string.Join(", ", blocked.Select(clip => $"#{clip.ClipID}"))),
+                    string.Join(", ", blocked.Select(clip => $"#{clip.DisplayNumber}"))),
                 LocalizationManager.Instance.String_CutMode_KeyFrame, MessageBoxIcon.Warning);
             return;
         }

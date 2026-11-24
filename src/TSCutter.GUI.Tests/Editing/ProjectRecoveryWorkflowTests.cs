@@ -77,6 +77,7 @@ public sealed class ProjectRecoveryWorkflowTests
                 Assert.True(await RestoreAsync(second, entry.ProjectPath, restartedStore.OwnFilePath));
                 await RemoveModeWorkflowTests.Settle();
                 var recovered = Assert.Single(second.Clips);
+                Assert.Equal(1, recovered.DisplayNumber);
                 Assert.Equal(marked.StartPosition, recovered.StartPosition);
                 Assert.Equal(marked.EndPosition, recovered.EndPosition);
                 Assert.Equal(marked.StartThumbnail is not null, recovered.StartThumbnail is not null);
@@ -139,6 +140,15 @@ public sealed class ProjectRecoveryWorkflowTests
                     .Invoke(author, [false])!;
                 CutterProjectService.PopulateSources(project);
                 await CutterProjectService.SaveAsync(projectPath, project);
+                var previousId = Assert.Single(author.Clips).ClipID;
+                var otherSource = Path.Combine(directory, "other.ts");
+                File.Copy(source, otherSource);
+                author.VideoPath = otherSource;
+                Assert.True(await LoadVideoAsync(author));
+                Assert.Empty(author.Clips);
+                await author.AddClipCommand.ExecuteAsync(null);
+                Assert.Equal("#1", Assert.Single(author.Clips).DisplayName);
+                Assert.True(author.Clips[0].ClipID > previousId);
                 author.Close();
 
                 var editor = RemoveModeWorkflowTests.CreateViewModel(new RemoveModeWorkflowTests.MemoryConfiguration());
@@ -146,7 +156,7 @@ public sealed class ProjectRecoveryWorkflowTests
                 await (Task)typeof(MainWindowViewModel).GetMethod("OpenProjectPathAsync", Private)!
                     .Invoke(editor, [projectPath])!;
                 await RemoveModeWorkflowTests.Settle();
-                Assert.Single(editor.Clips);
+                Assert.Equal(1, Assert.Single(editor.Clips).DisplayNumber);
                 Assert.False(editor.HasUnsavedProjectChanges);
                 // 工程没有修改：不写恢复文件。
                 await editor.SaveRecoveryAsync();
@@ -168,7 +178,7 @@ public sealed class ProjectRecoveryWorkflowTests
                 Assert.True(restartedStore.Claim(entry));
                 Assert.True(await RestoreAsync(restarted, entry.ProjectPath, restartedStore.OwnFilePath));
                 await RemoveModeWorkflowTests.Settle();
-                Assert.Equal(2, restarted.Clips.Count);
+                Assert.Equal(new[] { 1, 2 }, restarted.Clips.Select(clip => clip.DisplayNumber));
                 Assert.True(restarted.HasUnsavedProjectChanges);
                 Assert.Contains("[project.tscut] (", restarted.WindowTitle);
                 // 工程文件本身没有被改写。

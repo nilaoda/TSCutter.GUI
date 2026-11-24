@@ -207,7 +207,7 @@ public sealed class ClipEndHistoryCancellationTests
     }
 
     [Fact]
-    public void ClipOutputNamesUseListPositionsAndDisplayedEndTimes()
+    public void ClipDisplayNumbersAndOutputNamesFollowListPositions()
     {
         using var resolver = new ModernDependencyResolver();
         using var resolverScope = resolver.WithResolver();
@@ -230,15 +230,73 @@ public sealed class ClipEndHistoryCancellationTests
             .GetMethod("CreateClipOutputName", PrivateMembers)!.Invoke(vm, [clip])!;
         Assert.Equal("001_clip001_00.01.00.000.ts", OutputName(first));
         Assert.Equal("002_Opening_00.00.20.500.ts", OutputName(second));
+        Assert.Equal("#1", first.DisplayName);
+        Assert.Equal("#2 · Opening", second.DisplayName);
+        var secondId = second.ClipID;
+        var notifications = new List<string?>();
+        second.PropertyChanged += (_, args) => notifications.Add(args.PropertyName);
+        vm.Clips.Move(1, 0);
+        Assert.Equal("#1 · Opening", second.DisplayName);
+        Assert.Equal("#2", first.DisplayName);
+        vm.Clips.Move(0, 1);
+        notifications.Clear();
         vm.Clips.Remove(first);
+        Assert.Equal("#1 · Opening", second.DisplayName);
+        Assert.Equal(secondId, second.ClipID);
+        Assert.Contains(nameof(PickedClip.DisplayName), notifications);
         Assert.Equal("001_Opening_00.00.20.500.ts", OutputName(second));
         config.CurrentConfig.ClipOutputTemplate = ClipOutputNaming.DefaultTemplate;
         vm.Clips.Insert(0, first);
+        Assert.Equal("#2 · Opening", second.DisplayName);
         Assert.Equal($"Recording_({CommonUtil.FormatSeconds(first.StartTime, true)}-" +
                      $"{CommonUtil.FormatSeconds(first.EndTime, true)}).ts", OutputName(first));
         vm.Clips.Remove(first);
         first.Dispose();
         vm.Close();
+    }
+
+    [Fact]
+    public void ClipDisplayNumbersFollowUndoRedoAndStartAtOneAfterClearing()
+    {
+        using var resolver = new ModernDependencyResolver();
+        using var resolverScope = resolver.WithResolver();
+        var app = new Avalonia.Application();
+        using var scope = BindApplication(app);
+        app.RegisterServices();
+        var locale = new LocalizationService();
+        Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+        var vm = new MainWindowViewModel(null!, new ConfigurationService(locale, persistent: false));
+        var file = new FileInfo(typeof(ClipEndHistoryCancellationTests).Assembly.Location);
+        var first = new PickedClip { InFileInfo = file, EndTime = 1, EndPosition = 188 };
+        var second = new PickedClip { InFileInfo = file, Name = "Opening", EndTime = 2, EndPosition = 376 };
+        try
+        {
+            vm.Clips.Add(first);
+            vm.Clips.Add(second);
+            vm.SelectedClip = second;
+            var ids = vm.Clips.Select(clip => clip.ClipID).ToArray();
+            typeof(MainWindowViewModel).GetMethod("RecordHistory", PrivateMembers)!.Invoke(vm, null);
+            vm.Clips.Remove(first);
+            first.Dispose();
+            Assert.Equal("#1 · Opening", second.DisplayName);
+
+            vm.UndoCommand.Execute(null);
+            Assert.Equal(ids, vm.Clips.Select(clip => clip.ClipID));
+            Assert.Equal(new[] { 1, 2 }, vm.Clips.Select(clip => clip.DisplayNumber));
+            Assert.Same(second, vm.SelectedClip);
+            Assert.Equal("#2 · Opening", second.DisplayName);
+
+            vm.RedoCommand.Execute(null);
+            Assert.Same(second, Assert.Single(vm.Clips));
+            Assert.Equal("#1 · Opening", second.DisplayName);
+            vm.Clips.Clear();
+            second.Dispose();
+            var next = new PickedClip { InFileInfo = file };
+            vm.Clips.Add(next);
+            Assert.Equal("#1", next.DisplayName);
+            Assert.True(next.ClipID > ids[1]);
+        }
+        finally { vm.Close(); }
     }
 
     private const BindingFlags PrivateMembers = BindingFlags.Instance | BindingFlags.NonPublic;

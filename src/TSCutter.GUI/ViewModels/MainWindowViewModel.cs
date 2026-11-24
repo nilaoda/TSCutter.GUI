@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Collections.Specialized;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
@@ -117,7 +118,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 item.SizeIsUpperBound = removesNulls && item.IsTsSource;
             NotifyQueueChanged();
         };
-        // 新增、撤销恢复或从工程载入的片段都按当前模式显示。
+        // 片段的模式和显示序号由当前工作区列表统一维护。
         Clips.CollectionChanged += (_, e) =>
         {
             var upperBound = RawSizeIsUpperBound;
@@ -126,6 +127,12 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 clip.IsRemoval = IsRemoveMode;
                 clip.SizeIsUpperBound = upperBound;
             }
+            var startIndex = e.Action == NotifyCollectionChangedAction.Move
+                ? Math.Min(e.OldStartingIndex, e.NewStartingIndex)
+                : Math.Max(e.OldStartingIndex, e.NewStartingIndex);
+            for (var index = Math.Max(0, startIndex); index < Clips.Count; index++)
+                Clips[index].DisplayNumber = index + 1;
+            OnPropertyChanged(nameof(SelectedClipRanges));
         };
         // 沿用上次的删除模式选择；打开工程时再按工程记录的模式恢复。
         ClipMode = configService.CurrentConfig.ClipListMode;

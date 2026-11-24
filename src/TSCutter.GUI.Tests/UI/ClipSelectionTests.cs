@@ -68,6 +68,14 @@ public sealed class ClipSelectionTests
                     window.MouseUp(point, MouseButton.Left, modifiers);
                     Flush();
                 }
+                vm.SelectClip(clips[2]);
+                Flush();
+                var timeline = window.GetVisualDescendants().OfType<TSCutter.GUI.Controls.TimelineControl>().Single();
+                Assert.Equal("#3 · 片段 3", Assert.Single(timeline.Ranges!).Name);
+                vm.Clips.Move(2, 0);
+                Flush();
+                Assert.Equal("#1 · 片段 3", Assert.Single(timeline.Ranges!).Name);
+                vm.Clips.Move(0, 2);
                 foreach (var theme in new[]
                          {
                              ClassicTheme.Standard, CustomTheme.DarkStandard,
