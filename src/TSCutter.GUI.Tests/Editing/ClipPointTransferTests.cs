@@ -91,9 +91,11 @@ public sealed class ClipPointTransferTests
             await ClipPointService.SaveAsync(path, file);
             Assert.NotNull(await ClipPointService.LoadAsync(path));
             file.Clips[0].Name = "Updated clip";
+            await Assert.ThrowsAsync<IOException>(() => ClipPointService.SaveAsync(path, file));
+            MediaFileAccess.Current.GrantOverwrite(path);
             await ClipPointService.SaveAsync(path, file);
             Assert.Equal("Updated clip", Assert.Single((await ClipPointService.LoadAsync(path)).Clips).Name);
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => ClipPointService.SaveAsync(Path.Combine(media.FullName, "points.tscutpoints"), file));
+            await ClipPointService.SaveAsync(Path.Combine(media.FullName, "points.tscutpoints"), file);
             Assert.Throws<UnauthorizedAccessException>(() => Matches(file, files.Source));
         }
         finally { MediaFileAccess.ConfigureForProcess(policy); }

@@ -965,7 +965,7 @@ public sealed class RemuxExportServiceTests
     }
 
     [RemuxExportFact]
-    public async Task CancellationLeavesExistingOutputIntact()
+    public async Task CancellationBeforeWritingKeepsExistingOutputAndCancellationDuringWritingRemovesIt()
     {
         using var target = new TemporaryOutput("mp4");
         await File.WriteAllTextAsync(target.Path, "existing");
@@ -980,7 +980,7 @@ public sealed class RemuxExportServiceTests
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => new RemuxExportService().ExportAsync(
             new RemuxExportRequest(target.Path, [new(Fixture("multi.mp4"), 0, 2, Settings("mp4", 0))]),
             progress, duringExport.Token));
-        Assert.Equal("existing", await File.ReadAllTextAsync(target.Path));
+        Assert.False(File.Exists(target.Path));
         Assert.Empty(Directory.GetFiles(Path.GetDirectoryName(target.Path)!, ".tscutter-*.tmp"));
     }
 

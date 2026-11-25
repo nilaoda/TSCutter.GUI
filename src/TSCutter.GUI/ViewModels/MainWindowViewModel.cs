@@ -1446,11 +1446,14 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 using var correctedBitmap = ImageUtil.CreateSampleAspectRatioCorrectedBitmap(
                     snapshot, sourceSize, correctAspectRatio);
                 var bitmapToSave = correctedBitmap ?? snapshot;
-                using var stream = MediaFileAccess.Current.OpenOutput(outputPath);
-                if (isPng)
-                    bitmapToSave.Save(stream);
-                else
-                    ImageUtil.SaveAsJpeg(bitmapToSave, stream);
+                return MediaFileAccess.Current.WriteOutputAsync(outputPath, stream =>
+                {
+                    if (isPng)
+                        bitmapToSave.Save(stream);
+                    else
+                        ImageUtil.SaveAsJpeg(bitmapToSave, stream);
+                    return Task.CompletedTask;
+                }, sources: [sourcePath]);
             });
         }
         else
@@ -1897,6 +1900,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         var path = saveAs ? null : _projectPath;
         if (path is not null && !MediaFileAccess.Current.AllowsOutput(path))
             path = null;
+        var overwrite = path is not null || !MediaFileAccess.Current.IsRestricted;
         if (path is null)
         {
             var settings = new SaveFileDialogSettings
@@ -1946,7 +1950,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                     }
                     CutterProjectService.PopulateSources(project);
                 });
-                await CutterProjectService.SaveAsync(path, project);
+                await CutterProjectService.SaveAsync(path, project, overwrite: overwrite);
             }
             finally
             {

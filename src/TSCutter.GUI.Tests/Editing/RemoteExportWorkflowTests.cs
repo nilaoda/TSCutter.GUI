@@ -22,6 +22,10 @@ using TSCutter.GUI.ViewModels;
 using TSCutter.GUI.ViewModels.Editing;
 using TSCutter.GUI.ViewModels.Media;
 using TSCutter.GUI.ViewModels.TransportStream.Processing;
+using TSCutter.GUI.ViewModels.TransportStream.Repair;
+using TSCutter.GUI.Services.TransportStream.Analysis;
+using TSCutter.GUI.Services.TransportStream.Processing;
+using TSCutter.GUI.Models.TransportStream.Processing;
 using Xunit;
 
 namespace TSCutter.GUI.Tests.Editing;
@@ -109,8 +113,37 @@ public sealed class RemoteExportWorkflowTests
                     Assert.Equal(directory, filter.OutputFolder);
                     Assert.Equal(directory, extractor.OutputFolder);
                     Assert.Equal(directory, Path.GetDirectoryName(mux.OutputPath));
+                    var timelinePath = (string)typeof(TsTimelineRepairWindowViewModel)
+                        .GetMethod("BuildDefaultOutputPath", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [source])!;
+                    Assert.Equal(directory, Path.GetDirectoryName(timelinePath));
+                    File.WriteAllText(timelinePath, "existing repair");
+                    var nextTimelinePath = (string)typeof(TsTimelineRepairWindowViewModel)
+                        .GetMethod("BuildDefaultOutputPath", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [source])!;
+                    Assert.Equal(Path.Combine(directory, "source_timeline_fixed_2.ts"), nextTimelinePath);
+                    var mergePath = (string)typeof(TsBinaryMergeWindowViewModel)
+                        .GetMethod("BuildDefaultOutputPath", BindingFlags.Static | BindingFlags.NonPublic)!.Invoke(null, [source])!;
+                    Assert.Equal(directory, Path.GetDirectoryName(mergePath));
                     if (restricted)
                     {
+                        var catalog = await new TsStreamAnalyzer().AnalyzeAsync(source);
+                        var program = catalog.Programs.Values.First();
+                        await Assert.ThrowsAsync<TsFilterException>(() => new TsServiceFilterService().FilterAsync(source, catalog,
+                            [new TsServiceFilterOutput { ServiceId = program.ProgramNumber, OutputPath = existing }]));
+                        await Assert.ThrowsAsync<TsEsExtractionException>(() => new TsEsExtractorService().ExtractAsync(source,
+                            [new TsEsExtractionOutput { Pid = program.Streams.Keys.First(), OutputPath = existing }], catalog.SyncOffset));
+                        Assert.Equal("existing", File.ReadAllText(existing));
+                        var exported = Assert.IsType<string>(main.Clips[0].OutputFilePathStr);
+                        await CloseAsync(main);
+                        main = new MainWindowViewModel(dialogs, config) { RecoveryStore = recovery };
+                        await (Task)typeof(MainWindowViewModel).GetMethod("OpenVideoPathAsync", Private)!.Invoke(main, [exported])!;
+                        Assert.Equal(exported, main.VideoPath);
+                        Assert.True(main.DurationMax > 0);
+                        foreach (var _ in new[] { 1, 2 })
+                            main.Clips.Add(new PickedClip
+                            {
+                                InFileInfo = new FileInfo(exported), StartPosition = 0, EndPosition = new FileInfo(exported).Length,
+                                StartTime = 0, EndTime = main.DurationMax
+                            });
                         var project = (CutterProject)typeof(MainWindowViewModel).GetMethod("CaptureProject", Private)!
                             .Invoke(main, [false])!;
                         CutterProjectService.PopulateSources(project);
@@ -123,7 +156,12 @@ public sealed class RemoteExportWorkflowTests
                         var saved = Path.Combine(output, "editable.tscut");
                         var stub = (BatchDialogs)(object)manager;
                         stub.SavePath = saved;
+                        main.UpdateClipDetails(main.Clips[0], "Saved in media folder", "", "");
                         await main.SaveProjectCommand.ExecuteAsync(null);
+                        Assert.Equal(0, stub.SaveDialogCount);
+                        Assert.Equal("Saved in media folder", (await CutterProjectService.LoadAsync(imported)).Clips[0].Name);
+                        var updatedProject = File.ReadAllText(imported);
+                        await main.SaveProjectAsCommand.ExecuteAsync(null);
                         Assert.Equal(1, stub.SaveDialogCount);
                         await CloseAsync(main);
                         main = new MainWindowViewModel(dialogs, config) { RecoveryStore = recovery };
@@ -133,7 +171,7 @@ public sealed class RemoteExportWorkflowTests
                         await main.SaveProjectCommand.ExecuteAsync(null);
                         Assert.Equal(1, stub.SaveDialogCount);
                         Assert.Equal("Edited after reopening", (await CutterProjectService.LoadAsync(saved)).Clips[0].Name);
-                        Assert.Equal(originalProject, File.ReadAllText(imported));
+                        Assert.Equal(updatedProject, File.ReadAllText(imported));
                     }
                 }
                 finally

@@ -40,7 +40,8 @@ internal static class DialogFolderDialogs
     public static async Task<IDialogStorageFile?> ShowSaveFileAtExportFolderAsync(
         this IDialogService dialogs, INotifyPropertyChanged owner, SaveFileDialogSettings settings, string? defaultFolder)
     {
-        settings.SuggestedStartLocation = await DialogFolderMemory.Shared.ExportStartAsync(defaultFolder);
+        settings.SuggestedStartLocation = await DialogFolderMemory.Shared.ExportStartAsync(
+            MediaFileAccess.Current.DefaultOutputDirectory ?? defaultFolder);
         var file = await ShowAsync(() => dialogs.ShowSaveFileDialogAsync(owner, settings), null);
         DialogFolderMemory.Shared.RememberExport(file?.LocalPath);
         return file;
@@ -50,9 +51,8 @@ internal static class DialogFolderDialogs
     public static async Task<IDialogStorageFolder?> ShowOpenFolderAtExportFolderAsync(
         this IDialogService dialogs, INotifyPropertyChanged owner, OpenFolderDialogSettings settings, string? defaultFolder)
     {
-        settings.SuggestedStartLocation = MediaFileAccess.Current.DefaultOutputDirectory is { } outputDirectory
-            ? new DesktopDialogStorageFolder(outputDirectory)
-            : await DialogFolderMemory.Shared.ExportStartAsync(defaultFolder);
+        settings.SuggestedStartLocation = await DialogFolderMemory.Shared.ExportStartAsync(
+            MediaFileAccess.Current.DefaultOutputDirectory ?? defaultFolder);
         var folder = await ShowAsync(() => dialogs.ShowOpenFolderDialogAsync(owner, settings), null);
         DialogFolderMemory.Shared.RememberExportFolder(folder?.LocalPath);
         return folder;

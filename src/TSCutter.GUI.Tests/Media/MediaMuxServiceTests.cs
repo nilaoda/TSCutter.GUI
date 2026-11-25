@@ -572,7 +572,7 @@ public sealed class MediaMuxServiceTests
     }
 
     [RemuxExportFact]
-    public async Task FailuresAndCancellationKeepExistingOutputAndRemoveTemporaryFiles()
+    public async Task ValidationFailureKeepsExistingOutputAndCancellationDuringWritingRemovesIt()
     {
         using var directory = new TemporaryDirectory();
         var service = new MediaMuxService();
@@ -581,10 +581,11 @@ public sealed class MediaMuxServiceTests
         await File.WriteAllTextAsync(path, "original");
         var changed = source with { Size = source.Size + 1 };
         await Assert.ThrowsAsync<MediaMuxException>(() => service.ExportAsync(new(path, "mkv", [Select(changed, 0)])));
+        Assert.Equal("original", await File.ReadAllTextAsync(path));
         using var cancellation = new CancellationTokenSource();
         await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.ExportAsync(
             new(path, "mkv", [Select(source, 0)]), new InlineProgress<MediaMuxProgress>(_ => cancellation.Cancel()), cancellation.Token));
-        Assert.Equal("original", await File.ReadAllTextAsync(path));
+        Assert.False(File.Exists(path));
         Assert.Empty(Directory.GetFiles(directory.Path, ".tscutter-mux-*.tmp"));
     }
 

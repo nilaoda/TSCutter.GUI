@@ -396,8 +396,11 @@ public partial class TsBatchCheckWindowViewModel : ViewModelBase, IModalDialogVi
             var output = Path.GetFullPath(selected.Path.LocalPath);
             if (Files.Any(item => TsFileDropHelper.PathComparer.Equals(item.FilePath, output)))
                 throw new IOException(strings.String_TsFilter_Error_SameFile);
-            await using (var writer = new StreamWriter(MediaFileAccess.Current.OpenOutput(output), new UTF8Encoding(true)))
+            await MediaFileAccess.Current.WriteOutputAsync(output, async stream =>
+            {
+                await using var writer = new StreamWriter(stream, new UTF8Encoding(true), leaveOpen: true);
                 await writer.WriteAsync(csv.ToString());
+            }, sources: Files.Select(item => item.FilePath));
             OperationMessage = string.Format(strings.String_TsCheck_Status_Exported, selected.Path.LocalPath);
         }
         catch (Exception exception)

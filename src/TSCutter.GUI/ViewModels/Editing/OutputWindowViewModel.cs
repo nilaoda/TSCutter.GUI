@@ -273,7 +273,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 ? ranges
                 : media.Segments.Select(item => new ExportSizeSegment(-1, -1, item.StartSeconds, item.EndSeconds)).ToArray();
             return [new ExportSizeTask(media.OutputPath, media.Segments[0].SourcePath, segments,
-                ExportSizeAccuracy.Approximate, settings.Container == "m2ts", settings.Disc)];
+                ExportSizeAccuracy.Approximate, settings.Container == "m2ts", settings.Disc,
+                Sources: media.Segments.Select(segment => segment.SourcePath).ToArray())];
         }
         if (_mergeRequest is { } merge)
             return [new ExportSizeTask(merge.OutputPath, merge.SourcePath,

@@ -187,7 +187,7 @@ internal sealed partial class WebUiServer(WebUiServerOptions options, WebUiLogin
                     await previous.DisposeAsync();
                 }
                 // 目录权限由宿主配置，浏览器只能在所分配的工作区内选择路径。
-                var workspace = CreateWorkspace(options.Workspace, account, logins.GetAccounts());
+                var workspace = CreateWorkspace(options.Workspace, account);
                 worker = new WebUiWorker(workspace, account.Preferences ?? options.Preferences, theme,
                     () => UsersChanged?.Invoke(), preferences =>
                     {

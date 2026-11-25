@@ -69,7 +69,7 @@ public sealed class WebUiTests
     }
 
     [Fact]
-    public void WorkspaceSeparatesInputsAndOutputsAndRejectsTraversal()
+    public void WorkspaceAllowsBothDirectoriesAndRejectsTraversal()
     {
         var root = Directory.CreateTempSubdirectory();
         try
@@ -84,9 +84,8 @@ public sealed class WebUiTests
             Assert.Equal(Path.Combine(workspace.OutputDirectory, "clip.ts"), workspace.ResolveOutput("clip.ts"));
             Assert.Null(workspace.ResolveOutput("../media/source.ts"));
             Assert.Null(workspace.ResolveInput(source));
-            Assert.False(workspace.AllowsOutput(source));
-            var overlap = Assert.Throws<MediaWorkspaceException>(() => new MediaWorkspace(root.FullName, output.FullName));
-            Assert.Equal(MediaWorkspaceError.OverlappingDirectories, overlap.Error);
+            Assert.True(workspace.AllowsOutput(source));
+            Assert.True(workspace.AllowsInput(Path.Combine(output.FullName, "repaired.ts")));
 
             var temporary = Path.Combine(workspace.OutputDirectory, "clip.partial");
             var destination = Path.Combine(workspace.OutputDirectory, "clip.ts");
@@ -108,25 +107,55 @@ public sealed class WebUiTests
             }
             Assert.Throws<UnauthorizedAccessException>(() => restrictedAccess.DemandReadable(outside));
             Assert.Throws<InvalidDataException>(() => restrictedAccess.DemandProjectPaths([outside], [destination]));
-            Assert.Throws<UnauthorizedAccessException>(() => restrictedAccess.DemandOutput(Path.Combine(input.FullName, "new.ts")));
+            restrictedAccess.DemandOutput(Path.Combine(input.FullName, "new.ts"));
+            restrictedAccess.DemandProjectPaths([destination], [Path.Combine(input.FullName, "new.ts")]);
+            Assert.Throws<UnauthorizedAccessException>(() => restrictedAccess.DemandOutput(outside));
             Assert.Throws<IOException>(() => restrictedAccess.OpenOutput(destination, FileMode.CreateNew));
             Assert.Throws<IOException>(() => restrictedAccess.PublishOutput(temporary, destination, overwrite: false));
             Assert.Equal("existing", File.ReadAllText(destination));
             Assert.Equal("new", File.ReadAllText(temporary));
 
-            Assert.Throws<UnauthorizedAccessException>(() => restrictedAccess.OpenOutput(source));
+            Assert.Throws<IOException>(() => restrictedAccess.OpenOutput(source));
+            restrictedAccess.GrantOverwrite(destination);
             using (var writer = new StreamWriter(restrictedAccess.OpenOutput(destination)))
                 writer.Write("updated");
             Assert.Equal("updated", File.ReadAllText(destination));
             Assert.Equal("source", File.ReadAllText(source));
 
+            Assert.Throws<IOException>(() => restrictedAccess.OpenOutput(destination));
+            Assert.Throws<IOException>(() => restrictedAccess.PublishExport(temporary, destination));
+            Assert.Equal("updated", File.ReadAllText(destination));
+            restrictedAccess.GrantOverwrite(destination);
             restrictedAccess.PublishExport(temporary, destination);
             Assert.Equal("new", File.ReadAllText(destination));
+            Assert.False(restrictedAccess.CanOverwrite(destination));
         }
         finally
         {
             root.Delete(recursive: true);
         }
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void WorkspaceAcceptsSameAndNestedDefaultFolders(bool nested)
+    {
+        var root = Directory.CreateTempSubdirectory("tscutter-workspace-roots-");
+        try
+        {
+            var child = root.CreateSubdirectory("nested").FullName;
+            var workspace = new MediaWorkspace(root.FullName, nested ? child : root.FullName);
+            var path = Path.Combine(child, "repaired.ts");
+            Assert.True(workspace.AllowsInput(path));
+            Assert.True(workspace.AllowsOutput(path));
+            Assert.True(workspace.AllowsDirectory(root.FullName));
+            var access = new MediaFileAccess(workspace, error => error.ToString());
+            using (var stream = access.OpenOutput(path))
+                stream.WriteByte(1);
+            access.DemandReadable(path);
+        }
+        finally { root.Delete(recursive: true); }
     }
 
     [Fact]

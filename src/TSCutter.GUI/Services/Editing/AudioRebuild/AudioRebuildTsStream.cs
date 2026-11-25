@@ -64,7 +64,7 @@ internal sealed class AudioRebuildSetup(AudioRebuildPlan? plan, string sourcePat
         var result = new List<string>();
         foreach (var (temporary, final) in SideFiles)
         {
-            MediaFileAccess.Current.PublishExport(temporary, final);
+            MediaFileAccess.Current.PublishOutput(temporary, final, overwrite: false);
             result.Add(final);
         }
         SideFiles.Clear();
@@ -114,16 +114,16 @@ internal static class TsOutputFile
     }
 
     public static FileStream Create(string path, FileMode mode, FileAccess access, FileShare share, int bufferSize,
-        FileOptions options)
+        FileOptions options, IEnumerable<string>? sources = null)
     {
         var fileAccess = MediaFileAccess.Current;
         if (CurrentSetup.Value is not { } setup)
-            return fileAccess.OpenOutput(path, mode, access, share, bufferSize, options);
-        mode = fileAccess.PrepareOutput(path, mode);
+            return fileAccess.OpenOutput(path, mode, access, share, bufferSize, options, sources);
+        if (setup.StreamCount++ > 0)
+            throw new InvalidOperationException("Audio rebuilding supports a single output stream per export.");
+        mode = fileAccess.PrepareOutput(path, mode, sources ?? [setup.SourcePath]);
         try
         {
-            if (setup.StreamCount++ > 0)
-                throw new InvalidOperationException("Audio rebuilding supports a single output stream per export.");
             return new AudioRebuildTsStream(path, mode, access, share, bufferSize, options, setup);
         }
         catch (IOException error) when (mode == FileMode.CreateNew && fileAccess.IsOutputConflict(path))
@@ -508,7 +508,7 @@ internal sealed class AudioRebuildTsStream : FileStream
                     spec.SourcePids.All(pid => program.Streams.Any(stream => stream.Pid == pid))).ToArray();
                 if (containing.Length == 0 || spec.SourcePids.Any(claimed.Contains))
                     continue;
-                var track = CreateTrack(spec, containing, usedPids, atsc, setup.OutputPath, work.Count > 1);
+                var track = CreateTrack(spec, containing, usedPids, atsc, setup.OutputPath, work.Count > 1, setup.SourcePath);
                 tracks.Add(track);
                 claimed.UnionWith(spec.SourcePids);
                 setup.SideFiles.AddRange(track.SideFiles);
@@ -706,7 +706,7 @@ internal sealed class AudioRebuildTsStream : FileStream
     }
 
     private static Track CreateTrack(AudioRebuildTrack spec, IReadOnlyList<PmtInfo> containing, HashSet<int> usedPids,
-        bool atsc, string outputPath, bool multipleTracks)
+        bool atsc, string outputPath, bool multipleTracks, string sourcePath)
     {
         var pcr = spec.SourcePids.Where(pid => containing.Any(program => program.PcrPid == pid)).ToHashSet();
         var chains = new List<AudioOutputChain>();
@@ -727,6 +727,7 @@ internal sealed class AudioRebuildTsStream : FileStream
                     for (var n = 2; !flacNames.Add(name); n++)
                         name = $"{baseName}{flacSuffix}-{n}.flac";
                     flacPath = Path.Combine(Path.GetDirectoryName(name)!, $".tscutter-{Guid.NewGuid():N}.flac.tmp");
+                    MediaFileAccess.Current.BeginMediaOutput(name, [sourcePath]);
                     sideFiles.Add((flacPath, name));
                 }
                 var index = chains.Count;

@@ -381,6 +381,8 @@ internal sealed unsafe class FrameAccurateExportService
             if (isTsOutput && !native && FrameAccurateVideoEncoder.DolbyVisionConfiguration(video->codecpar) != null)
                 throw new FrameAccurateExportException(FrameAccurateExportError.Unsupported, settings.Container,
                     FrameAccurateSupport.DolbyVisionContainer);
+            token.ThrowIfCancellationRequested();
+            MediaFileAccess.Current.BeginMediaOutput(request.OutputPath, request.Segments.Select(segment => segment.SourcePath));
             if (native)
             {
                 // TSCutter 按源传输包写出：ffmpeg 复用器只用来建立输出流（时间基等），头部写入丢弃的内存缓冲。
@@ -545,7 +547,7 @@ internal sealed unsafe class FrameAccurateExportService
                 : !discSource!.SequenceEqual(RemuxExportService.CaptureSource(sourcePath, disc)))
                 throw new FrameAccurateExportException(FrameAccurateExportError.SourceChanged, sourcePath);
             token.ThrowIfCancellationRequested();
-            MediaFileAccess.Current.PublishExport(temporary, request.OutputPath);
+            MediaFileAccess.Current.PublishOutput(temporary, request.OutputPath, overwrite: false);
             done = total;
             Report(100, FrameAccuratePhase.Finishing, encodedBefore, copiedBefore);
         }

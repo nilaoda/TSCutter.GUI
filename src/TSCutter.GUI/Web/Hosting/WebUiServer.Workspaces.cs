@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -29,22 +28,8 @@ internal sealed partial class WebUiServer
 {
     private readonly ConcurrentDictionary<string, byte> awaitingReconnect = [];
 
-    internal static MediaWorkspace CreateWorkspace(MediaWorkspace defaults, WebUiAccount account, IEnumerable<WebUiAccount> accounts)
-    {
-        var workspace = new MediaWorkspace(account.InputDirectory ?? defaults.InputDirectory,
-            account.OutputDirectory ?? defaults.OutputDirectory);
-        // 输出目录不得与任何账号已配置的素材目录重叠。
-        MediaWorkspace.DemandSeparateDirectories(defaults.InputDirectory, workspace.OutputDirectory);
-        MediaWorkspace.DemandSeparateDirectories(workspace.InputDirectory, defaults.OutputDirectory);
-        foreach (var other in accounts)
-        {
-            if (other.Id == account.Id)
-                continue;
-            MediaWorkspace.DemandSeparateDirectories(other.InputDirectory ?? defaults.InputDirectory, workspace.OutputDirectory);
-            MediaWorkspace.DemandSeparateDirectories(workspace.InputDirectory, other.OutputDirectory ?? defaults.OutputDirectory);
-        }
-        return workspace;
-    }
+    internal static MediaWorkspace CreateWorkspace(MediaWorkspace defaults, WebUiAccount account) =>
+        new(account.InputDirectory ?? defaults.InputDirectory, account.OutputDirectory ?? defaults.OutputDirectory);
 
     internal async Task<WebUiDirectoryChange> UpdateDirectoriesAsync(string id, string? inputDirectory, string? outputDirectory,
         CancellationToken token = default)
@@ -64,7 +49,7 @@ internal sealed partial class WebUiServer
                 InputDirectory = string.IsNullOrWhiteSpace(inputDirectory) ? null : inputDirectory,
                 OutputDirectory = string.IsNullOrWhiteSpace(outputDirectory) ? null : outputDirectory
             };
-            var resolved = await Task.Run(() => CreateWorkspace(options.Workspace, requested, logins.GetAccounts()), token);
+            var resolved = await Task.Run(() => CreateWorkspace(options.Workspace, requested), token);
             var input = requested.InputDirectory is null ? null : resolved.InputDirectory;
             var output = requested.OutputDirectory is null ? null : resolved.OutputDirectory;
             if (MediaFileUtil.PathsEqual(account.InputDirectory ?? options.Workspace.InputDirectory, resolved.InputDirectory) &&

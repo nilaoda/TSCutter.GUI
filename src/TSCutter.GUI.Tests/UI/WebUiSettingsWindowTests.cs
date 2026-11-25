@@ -259,7 +259,6 @@ public sealed class WebUiSettingsWindowTests
                     WebUiAccounts = [new WebUiAccount { UserName = "alice", PasswordHash = "unused" }]
                 }));
                 var input = root.CreateSubdirectory("media").FullName;
-                var nested = root.CreateSubdirectory("media/export").FullName;
                 var owner = new ClassicWindow();
                 owner.Show();
                 try
@@ -273,9 +272,6 @@ public sealed class WebUiSettingsWindowTests
                         {
                             foreach (var (source, output, key) in new[]
                             {
-                                (input, input, "SeparateWorkspaceFolders"),
-                                (input, nested, "SeparateWorkspaceFolders"),
-                                (nested, input, "SeparateWorkspaceFolders"),
                                 (input, Path.Combine(root.FullName, "missing"), "WorkspaceFolderUnavailable")
                             })
                             {

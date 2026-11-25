@@ -166,6 +166,9 @@ internal sealed class TsBinaryMergeService
             if (string.IsNullOrWhiteSpace(outputDirectory) || !Directory.Exists(outputDirectory))
                 throw new DirectoryNotFoundException(outputDirectory);
 
+            cancellationToken.ThrowIfCancellationRequested();
+            MediaFileAccess.Current.BeginMediaOutput(fullOutputPath, fullSourcePaths);
+
             await using (var output = new FileStream(
                              temporaryPath,
                              FileMode.CreateNew,
@@ -238,7 +241,7 @@ internal sealed class TsBinaryMergeService
                 await output.FlushAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            MediaFileAccess.Current.PublishExport(temporaryPath, fullOutputPath);
+            MediaFileAccess.Current.PublishOutput(temporaryPath, fullOutputPath, overwrite: false);
             progress?.Report(new TsBinaryMergeProgress(
                 TsBinaryMergeProgressPhase.Writing,
                 snapshots.Count - 1,

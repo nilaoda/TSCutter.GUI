@@ -686,7 +686,7 @@ public partial class TsBinaryMergeWindowViewModel : ViewModelBase, IModalDialogV
     }
 
     private static string BuildDefaultOutputPath(string firstPath) => Path.Combine(
-        Path.GetDirectoryName(firstPath)!,
+        MediaFileAccess.Current.DefaultOutputDirectory ?? Path.GetDirectoryName(firstPath)!,
         Path.GetFileNameWithoutExtension(firstPath) + "_merged.ts");
 
     private static StringComparer GetPathComparer() => OperatingSystem.IsLinux()

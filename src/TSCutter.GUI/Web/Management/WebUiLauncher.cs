@@ -117,12 +117,10 @@ internal static partial class WebUiLauncher
                 window.UserSourcePath.IsReadOnly = draft.UseDefaultSource;
                 if (!keepInput && window.UserSourcePath.Text != input)
                     window.UserSourcePath.Text = input;
-                window.UserSourceHint.Text = draft.UseDefaultSource ? string.Format(strings.String_WebUi_InheritedSourceHint, DefaultInput()) : strings.String_WebUi_CustomSourceHint;
                 window.UseDefaultOutput.IsChecked = draft.UseDefaultOutput;
                 window.UserOutput.IsReadOnly = draft.UseDefaultOutput;
                 if (!keepOutput && window.UserOutput.Text != output)
                     window.UserOutput.Text = output;
-                window.UserOutputHint.Text = draft.UseDefaultOutput ? string.Format(strings.String_WebUi_InheritedOutputHint, DefaultOutput()) : strings.String_WebUi_CustomOutputHint;
                 window.StopWorker.IsEnabled = !busy && selected.Running;
                 window.ResetPassword.IsEnabled = window.ToggleAccount.IsEnabled = window.RemoveAccount.IsEnabled = !busy;
                 window.UseDefaultSource.IsEnabled = window.UserSourcePath.IsEnabled = window.BrowseUserSource.IsEnabled = !busy;
@@ -206,7 +204,6 @@ internal static partial class WebUiLauncher
 
         string WorkspaceErrorText(Exception error) => error switch
         {
-            MediaWorkspaceException { Error: MediaWorkspaceError.OverlappingDirectories } => strings.String_WebUi_SeparateWorkspaceFolders,
             MediaWorkspaceException { Error: MediaWorkspaceError.UnsafeDirectory } => strings.String_WebUi_UnsafeWorkspaceFolder,
             DirectoryNotFoundException => strings.String_WebUi_WorkspaceFolderUnavailable,
             UnauthorizedAccessException => strings.String_WebUi_WorkspaceFolderAccessDenied,
@@ -402,8 +399,7 @@ internal static partial class WebUiLauncher
                 try
                 {
                     var defaults = await CreateWorkspaceAsync(DefaultInput(), DefaultOutput());
-                    var accounts = config.WebUiAccounts.ToArray();
-                    resolved = await Task.Run(() => WebUiServer.CreateWorkspace(defaults, requested, accounts));
+                    resolved = await Task.Run(() => WebUiServer.CreateWorkspace(defaults, requested));
                 }
                 catch (Exception error) when (error is IOException or ArgumentException or UnauthorizedAccessException)
                 {
