@@ -3435,9 +3435,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             DefaultExtension = extension
         };
         var result = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings, sourceDirectory);
-        if (result?.Path is null || !ReferenceEquals(SelectedClip, clip) || !CanEditSelectedClip) return;
-
+        if (result?.Path is null) return;
         var outputPath = result.Path.LocalPath;
+        var overwriteApproval = MediaFileAccess.Current.TryConsumeOverwrite(outputPath)
+            ? new OverwriteApproval(outputPath) : null;
+        if (!ReferenceEquals(SelectedClip, clip) || !CanEditSelectedClip) return;
         if (MediaFileUtil.ConflictsWithSource(outputPath, clip.InFileInfo.FullName) || ExportQueue.Any(item =>
                 MediaFileUtil.ConflictsWithSource(outputPath, item.SourceFilePath) ||
                 MediaFileUtil.ConflictsWithSource(item.OutputFilePath, clip.InFileInfo.FullName)))
@@ -3476,6 +3478,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             ExcludedPids = CurrentExcludedPids,
             RemuxSettings = frameAccurate is null ? CurrentRemuxSettings?.Snapshot() : null,
             OutputFilePath = outputPath,
+            OverwriteApproval = overwriteApproval,
             StartPosition = clip.StartPosition,
             EndPosition = clip.EndPosition,
             StartSignature = clip.StartSignature,
@@ -3533,6 +3536,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 item.RemuxSettings?.Snapshot(), item.StartTimeSeconds, item.EndPosition < 0 ? null : item.EndTimeSeconds,
                 item.FrameAccurate?.Snapshot(), item.StartPts, item.EndPts, item.StartSignature, item.EndSignature,
                 item.AudioDelayMs, item.AudioDelayProgramId, item.AudioRebuild?.Snapshot(), item.ExcludedPids)
+            { OverwriteApproval = item.OverwriteApproval }
         ).ToList();
 
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();

@@ -3,6 +3,7 @@ using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Headless;
+using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
 using Avalonia.VisualTree;
 using Classic.Avalonia.Theme;
 using Classic.CommonControls.Dialogs;
@@ -26,6 +27,7 @@ using TSCutter.GUI.ViewModels.TransportStream.Repair;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Services.TransportStream.Processing;
 using TSCutter.GUI.Models.TransportStream.Processing;
+using TSCutter.GUI.Web;
 using Xunit;
 
 namespace TSCutter.GUI.Tests.Editing;
@@ -144,6 +146,32 @@ public sealed class RemoteExportWorkflowTests
                                 InFileInfo = new FileInfo(exported), StartPosition = 0, EndPosition = new FileInfo(exported).Length,
                                 StartTime = 0, EndTime = main.DurationMax
                             });
+                        var stub = (BatchDialogs)(object)manager;
+                        var queuedPath = Path.Combine(output, "queued.ts");
+                        File.WriteAllText(queuedPath, "old queue output");
+                        stub.SavePath = queuedPath;
+                        stub.ConfirmOverwrite = true;
+                        main.SelectedClip = main.Clips[0];
+                        await main.AddToQueueCommand.ExecuteAsync(null);
+                        var queued = Assert.Single(main.ExportQueue);
+                        Assert.True(queued.OverwriteApproval!.Allows(queuedPath));
+                        Assert.False(MediaFileAccess.Current.CanOverwrite(queuedPath));
+                        var view = new ViewWrapper();
+                        view.InitializeExisting(main, owner);
+                        var unusedSave = new WebUiDialogFactory(new MediaWorkspace(input, output)).ShowDialogAsync(view,
+                            new SaveFileDialogSettings { SuggestedFileName = "unused.ts", DefaultExtension = "ts" });
+                        owner.OwnedWindows.Single(window => window.IsVisible).Close();
+                        await unusedSave;
+                        Assert.True(queued.OverwriteApproval.Allows(queuedPath));
+                        var queueExport = main.BatchExportQueueCommand.ExecuteAsync(null);
+                        owner.OwnedWindows.Single(window => window.IsVisible).Close(MessageBoxResult.Yes);
+                        await queueExport.WaitAsync(TimeSpan.FromSeconds(15));
+                        Assert.Equal(ClipExportStatus.Done, queued.Status);
+                        Assert.True(new FileInfo(queuedPath).Length > "old queue output".Length);
+                        Assert.False(queued.OverwriteApproval.Allows(queuedPath));
+                        Assert.False(MediaFileAccess.Current.CanOverwrite(queuedPath));
+                        Assert.Empty(main.ExportQueue);
+                        var queueDialogCount = stub.SaveDialogCount;
                         var project = (CutterProject)typeof(MainWindowViewModel).GetMethod("CaptureProject", Private)!
                             .Invoke(main, [false])!;
                         CutterProjectService.PopulateSources(project);
@@ -154,22 +182,21 @@ public sealed class RemoteExportWorkflowTests
                         main = new MainWindowViewModel(dialogs, config) { RecoveryStore = recovery };
                         await (Task)typeof(MainWindowViewModel).GetMethod("OpenProjectPathAsync", Private)!.Invoke(main, [imported])!;
                         var saved = Path.Combine(output, "editable.tscut");
-                        var stub = (BatchDialogs)(object)manager;
                         stub.SavePath = saved;
                         main.UpdateClipDetails(main.Clips[0], "Saved in media folder", "", "");
                         await main.SaveProjectCommand.ExecuteAsync(null);
-                        Assert.Equal(0, stub.SaveDialogCount);
+                        Assert.Equal(queueDialogCount, stub.SaveDialogCount);
                         Assert.Equal("Saved in media folder", (await CutterProjectService.LoadAsync(imported)).Clips[0].Name);
                         var updatedProject = File.ReadAllText(imported);
                         await main.SaveProjectAsCommand.ExecuteAsync(null);
-                        Assert.Equal(1, stub.SaveDialogCount);
+                        Assert.Equal(queueDialogCount + 1, stub.SaveDialogCount);
                         await CloseAsync(main);
                         main = new MainWindowViewModel(dialogs, config) { RecoveryStore = recovery };
                         await (Task)typeof(MainWindowViewModel).GetMethod("OpenProjectPathAsync", Private)!.Invoke(main, [saved])!;
                         Assert.Equal(2, main.Clips.Count);
                         main.UpdateClipDetails(main.Clips[0], "Edited after reopening", "", "");
                         await main.SaveProjectCommand.ExecuteAsync(null);
-                        Assert.Equal(1, stub.SaveDialogCount);
+                        Assert.Equal(queueDialogCount + 1, stub.SaveDialogCount);
                         Assert.Equal("Edited after reopening", (await CutterProjectService.LoadAsync(saved)).Clips[0].Name);
                         Assert.Equal(updatedProject, File.ReadAllText(imported));
                     }
@@ -216,12 +243,17 @@ public sealed class RemoteExportWorkflowTests
     {
         public string SavePath { get; set; } = "";
         public int SaveDialogCount { get; private set; }
+        public bool ConfirmOverwrite { get; set; }
 
         protected override object? Invoke(MethodInfo? method, object?[]? args)
         {
             if (method!.Name == "ShowFrameworkDialogAsync")
             {
                 SaveDialogCount++;
+                MediaFileAccess.Current.ClearOverwriteGrants();
+                if (ConfirmOverwrite)
+                    MediaFileAccess.Current.GrantOverwrite(SavePath);
+                ConfirmOverwrite = false;
                 return Task.FromResult<object?>(new DesktopDialogStorageFile(SavePath));
             }
             if (method.Name == "ShowDialogAsync" && args![1] is OutputWindowViewModel output)

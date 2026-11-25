@@ -3,6 +3,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Files;
 
 namespace TSCutter.GUI.Models.Editing;
 
@@ -43,6 +44,8 @@ public partial class ExportQueueItem : ObservableObject
     public string SourceFilePath { get; init; } = "";
 
     public string OutputFilePath { get; init; } = "";
+
+    internal OverwriteApproval? OverwriteApproval { get; init; }
 
     public long StartPosition { get; init; }
 

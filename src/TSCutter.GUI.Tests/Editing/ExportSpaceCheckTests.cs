@@ -403,10 +403,11 @@ public sealed class ExportSpaceWarningTests
             Merges = [new ChannelMergeSettings { Merge = true, Sources = [new() { Pid = 0x101 }, new() { Pid = 0x102 }, new() { Pid = 0x103 }],
                 Outputs = [new AudioOutput()] }]
         };
+        var approval = new OverwriteApproval(Output("1.ts"));
         var batch = new OutputWindowViewModel();
         batch.SetBatchTasks(
         [
-            new BatchTask("a.ts", Output("1.ts"), 0, 100, AudioRebuild: plan),
+            new BatchTask("a.ts", Output("1.ts"), 0, 100, AudioRebuild: plan) { OverwriteApproval = approval },
             new BatchTask("a.ts", Output("2.mkv"), 0, 100, RemuxSettings: new RemuxExportSettings { Container = "mkv" },
                 AudioRebuild: plan),
             new BatchTask("a.ts", Output("3.m2ts"), 0, 100, FrameAccurate: new FrameAccurateExportSettings { Container = "m2ts" },
@@ -416,6 +417,7 @@ public sealed class ExportSpaceWarningTests
         Assert.Equal(3, described.Count);
         Assert.Equal(ExportSizeAccuracy.Exact, described[0].Accuracy);
         Assert.Same(plan, described[0].AudioRebuild);
+        Assert.Same(approval, described[0].OverwriteApproval);
         // 重新封装为 MKV 不经过音轨重组。
         Assert.Null(described[1].AudioRebuild);
         Assert.Equal(ExportSizeAccuracy.Approximate, described[2].Accuracy);

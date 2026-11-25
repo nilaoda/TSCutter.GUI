@@ -315,6 +315,20 @@ public sealed class WebUiFilePickerTests
                         saveDialog.OwnedWindows.Single(window => window.IsVisible).Close(MessageBoxResult.Yes);
                         var selected = Assert.IsType<DesktopDialogStorageFile>(await overwrite.WaitAsync(TimeSpan.FromSeconds(3))).LocalPath;
                         Assert.Equal(Path.Combine(output, "old.name.ts"), selected);
+                        Assert.True(access.CanOverwrite(selected));
+                        var discarded = factory.ShowDialogAsync(view, new SaveFileDialogSettings
+                        {
+                            SuggestedFileName = "another.ts", DefaultExtension = "ts", Filters = [new("TS", "ts")]
+                        });
+                        var discardedDialog = owner.OwnedWindows.Single(window => window.IsVisible);
+                        try
+                        {
+                            Assert.False(access.CanOverwrite(selected));
+                            Assert.Throws<IOException>(() => access.OpenOutput(selected));
+                            Assert.Equal("existing", File.ReadAllText(selected));
+                        }
+                        finally { discardedDialog.Close(); await discarded; }
+                        access.GrantOverwrite(selected);
                         using (var writer = new StreamWriter(access.OpenOutput(selected)))
                             writer.Write("updated");
                         Assert.Throws<IOException>(() => access.OpenOutput(selected));

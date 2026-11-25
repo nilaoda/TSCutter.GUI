@@ -39,6 +39,7 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
                     open.AllowMultiple == true, open.Filters, suggestedDirectory: open.SuggestedStartLocation?.LocalPath))
                     .Select(path => (IDialogStorageFile)new DesktopDialogStorageFile(path)).ToArray();
             case SaveFileDialogSettings save:
+                MediaFileAccess.Current.ClearOverwriteGrants();
                 var destination = await PickAsync(window, save.Title, workspace.OutputDirectory, PickerKind.Save,
                     false, save.Filters, save.SuggestedFileName, save.DefaultExtension, save.SuggestedStartLocation?.LocalPath);
                 return destination.Length == 0 ? null : new DesktopDialogStorageFile(destination[0]);

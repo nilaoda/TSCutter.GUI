@@ -57,6 +57,18 @@ public sealed class MediaOutputTests : IDisposable
     }
 
     [Fact]
+    public void ClearingOverwriteGrantsRevokesEveryRegisteredPath()
+    {
+        restricted.GrantOverwrite(source);
+        restricted.GrantOverwrite(target);
+        restricted.ClearOverwriteGrants();
+        Assert.False(restricted.CanOverwrite(source));
+        Assert.False(restricted.CanOverwrite(target));
+        Assert.Throws<IOException>(() => restricted.OpenOutput(target));
+        Assert.Equal("old", File.ReadAllText(target));
+    }
+
+    [Fact]
     public void TemporaryMediaOutputReleasesOldFileBeforeWritingAndRejectsRacingOutput()
     {
         restricted.GrantOverwrite(target);
@@ -118,6 +130,12 @@ public sealed class MediaOutputTests : IDisposable
             restricted.GrantOverwrite(target);
             Assert.Empty(ExportSpaceCheck.FindShortages([task], null, Probe, _ => "A"));
             Assert.True(restricted.CanOverwrite(target));
+            Assert.True(restricted.TryConsumeOverwrite(target));
+            var approval = new OverwriteApproval(target);
+            restricted.ClearOverwriteGrants();
+            Assert.Empty(ExportSpaceCheck.FindShortages([task with { OverwriteApproval = approval }], null, Probe, _ => "A"));
+            Assert.True(approval.Allows(target));
+            Assert.False(restricted.CanOverwrite(target));
         }
         finally { MediaFileAccess.ConfigureForProcess(previous); }
     }

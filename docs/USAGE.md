@@ -45,7 +45,7 @@ Clear **Replace the current clips** to append to the list. When the modes cannot
 
 ### Start and sign in
 
-1. On the host, open **Tools → Remote Editing**. Select existing default media and output folders. They must be separate and neither can contain the other.
+1. On the host, open **Tools → Remote Editing**. Select existing default open and save folders. They can be the same or contain one another.
 2. Add usernames and passwords under **User accounts**. Each account can use the default folders or have its own locations.
 3. Start the service, copy an access link, and give it to the user along with their account credentials. Users open the link in a browser and sign in. Each account allows one controlling browser at a time.
 
@@ -69,7 +69,7 @@ Default folders, connection settings, accounts and account preferences are saved
 
 ### Browser controls
 
-Use **Open** to select media. Mark cuts and save clips as in the desktop app; results go to the account's assigned output folder. The floating **Controls** panel has **Picture**, **Input** and **Connection** tabs. It opens from the bottom on phones and floats at the bottom-right on desktop. Closing it leaves a small button. Clicking outside or pressing Escape closes the panel without clicking the editor underneath. Enable sound or show the phone keyboard in **Input**; audio is transmitted only while sound is enabled.
+Use **Open** to select media. Mark cuts and save clips as in the desktop app; results default to the account's default save folder, and the save dialog can select either assigned folder. The floating **Controls** panel has **Picture**, **Input** and **Connection** tabs. It opens from the bottom on phones and floats at the bottom-right on desktop. Closing it leaves a small button. Clicking outside or pressing Escape closes the panel without clicking the editor underneath. Enable sound or show the phone keyboard in **Input**; audio is transmitted only while sound is enabled.
 
 **Quality** defaults to **Sharp** and **Resolution** to **Automatic**. Automatic uses the device's pixel density within the quality preset's size limit. If text looks blurred, try Sharp or select a higher resolution explicitly. The 720p, 1080p, 1440p and 4K options set output pixel limits while preserving the workspace aspect ratio; with a fixed resolution, Quality controls encoding quality and bitrate rather than output dimensions. The maximum is 3840 × 2160, or 2160 × 3840 in portrait orientation. **Aspect ratio** defaults to **Automatic (follow screen)**; choose **16:9** for a widescreen workspace. Interface scaling follows the browser device's display density and page zoom. Lower resolution to reduce encoding load, or lower quality to reduce bandwidth requirements.
 

@@ -70,6 +70,12 @@ internal sealed class MediaFileAccess
             overwriteGrants.Add(MediaFileUtil.CanonicalPath(path));
     }
 
+    internal void ClearOverwriteGrants()
+    {
+        lock (overwriteGrants)
+            overwriteGrants.Clear();
+    }
+
     internal bool TryConsumeOverwrite(string path)
     {
         lock (overwriteGrants)

@@ -30,7 +30,8 @@ internal sealed record ExportSizeTask(
     bool M2tsOutput = false,
     DiscInput? Disc = null,
     AudioRebuildPlan? AudioRebuild = null,
-    IReadOnlyList<string>? Sources = null);
+    IReadOnlyList<string>? Sources = null,
+    OverwriteApproval? OverwriteApproval = null);
 
 /// <summary>一个输出文件的估算大小与为估算误差预留的余量。</summary>
 internal readonly record struct ExportSpaceDemand(long Bytes, long MarginBytes)
@@ -210,7 +211,7 @@ internal static class ExportSpaceCheck
                 var path = MediaFileUtil.CanonicalPath(task.OutputPath);
                 if (File.Exists(task.OutputPath) &&
                     !File.GetAttributes(task.OutputPath).HasFlag(FileAttributes.ReparsePoint) &&
-                    MediaFileAccess.Current.CanOverwrite(task.OutputPath) &&
+                    (task.OverwriteApproval?.Allows(task.OutputPath) == true || MediaFileAccess.Current.CanOverwrite(task.OutputPath)) &&
                     sources.All(source => !MediaFileUtil.ConflictsWithSource(task.OutputPath, source)) &&
                     MediaFileUtil.PathComparer.Equals(existingFileVolume(task.OutputPath), info.VolumeId) &&
                     reclaimed.Add(path))
