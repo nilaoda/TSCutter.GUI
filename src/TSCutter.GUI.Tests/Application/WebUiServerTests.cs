@@ -242,10 +242,10 @@ public sealed class WebUiServerTests
                 Assert.Equal(bobPid, after.Single(item => item.Id == bob.Id).ProcessId);
                 Assert.True(after.Single(item => item.Id == bob.Id).Connected);
             }
-            await Assert.ThrowsAsync<MediaWorkspaceException>(() => server.UpdateDirectoriesAsync(alice.Id, defaults.OutputDirectory, null, token));
-            await Assert.ThrowsAsync<MediaWorkspaceException>(() => server.UpdateDirectoriesAsync(alice.Id, alternative, privateMedia, token));
-            Assert.Equal(customOutput, store.FindAccount(alice.Id)!.OutputDirectory);
             await server.StopWorkerAsync(alice.Id);
+            Assert.Equal(WebUiDirectoryChange.Applied, await server.UpdateDirectoriesAsync(alice.Id, defaults.OutputDirectory, null, token));
+            Assert.Equal(WebUiDirectoryChange.Applied, await server.UpdateDirectoriesAsync(alice.Id, alternative, privateMedia, token));
+            Assert.Equal(privateMedia, store.FindAccount(alice.Id)!.OutputDirectory);
             Assert.Equal(WebUiDirectoryChange.Applied, await server.UpdateDirectoriesAsync(alice.Id, null, null, token));
             Assert.Null(store.FindAccount(alice.Id)!.InputDirectory);
             Assert.Null(store.FindAccount(alice.Id)!.OutputDirectory);

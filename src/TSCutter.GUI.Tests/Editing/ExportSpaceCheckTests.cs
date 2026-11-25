@@ -176,6 +176,47 @@ public sealed class ExportSpaceCheckTests : IDisposable
     }
 
     [Fact]
+    public void ReplacingAnExistingOutputCreditsOnlyItsOwnVolume()
+    {
+        var source = CreateSource(400 * Mb);
+        var old = CreateSource(400 * Mb);
+        var task = new ExportSizeTask(old, source, [new ExportSizeSegment(0, 100 * Mb, 0, 1)], ExportSizeAccuracy.Exact);
+        // 删除旧输出释放的空间也可以满足保留余量，不能额外要求当前空闲空间达到保留量。
+        DiskSpaceInfo? Probe(string _) => new("A", "A:", 10 * Mb);
+        Assert.Empty(ExportSpaceCheck.FindShortages([task], null, Probe, _ => "A"));
+        Assert.Single(ExportSpaceCheck.FindShortages([task], null, Probe, _ => "B"));
+        Assert.True(File.Exists(old));
+    }
+
+    [Fact]
+    public void LaterReplacementCannotPayForAnEarlierOutput()
+    {
+        var source = CreateSource(20 * Mb);
+        var old = CreateSource(20 * Mb);
+        ExportSizeTask Task(string path, long bytes) => new(path, source,
+            [new ExportSizeSegment(0, bytes, 0, 1)], ExportSizeAccuracy.Exact);
+        var tasks = new[] { Task(Output(), 15 * Mb), Task(old, 5 * Mb) };
+        DiskSpaceInfo? Probe(string _) => new("A", "A:", ExportSpaceCheck.ReserveBytes + 10 * Mb);
+        var shortage = Assert.Single(ExportSpaceCheck.FindShortages(tasks, null, Probe, _ => "A"));
+        Assert.Equal(ExportSpaceCheck.ReserveBytes + 15 * Mb, shortage.RequiredBytes);
+        Assert.Empty(ExportSpaceCheck.FindShortages(tasks.Reverse(), null, Probe, _ => "A"));
+    }
+
+    [Fact]
+    public void AnyTaskSourceIsExcludedFromReplacementCredit()
+    {
+        var source = CreateSource(20 * Mb);
+        var laterSource = CreateSource(20 * Mb);
+        var tasks = new[]
+        {
+            new ExportSizeTask(laterSource, source, [new ExportSizeSegment(0, 20 * Mb, 0, 1)], ExportSizeAccuracy.Exact),
+            new ExportSizeTask(Output(), laterSource, [new ExportSizeSegment(0, 1, 0, 1)], ExportSizeAccuracy.Exact)
+        };
+        Assert.Single(ExportSpaceCheck.FindShortages(tasks, null,
+            _ => new DiskSpaceInfo("A", "A:", ExportSpaceCheck.ReserveBytes + Mb), _ => "A"));
+    }
+
+    [Fact]
     public void UnreadableSourcesAreSkippedInsteadOfFailingTheCheck()
     {
         var missing = Path.Combine(_directory, "missing.ts");
@@ -362,10 +403,11 @@ public sealed class ExportSpaceWarningTests
             Merges = [new ChannelMergeSettings { Merge = true, Sources = [new() { Pid = 0x101 }, new() { Pid = 0x102 }, new() { Pid = 0x103 }],
                 Outputs = [new AudioOutput()] }]
         };
+        var approval = new OverwriteApproval(Output("1.ts"));
         var batch = new OutputWindowViewModel();
         batch.SetBatchTasks(
         [
-            new BatchTask("a.ts", Output("1.ts"), 0, 100, AudioRebuild: plan),
+            new BatchTask("a.ts", Output("1.ts"), 0, 100, AudioRebuild: plan) { OverwriteApproval = approval },
             new BatchTask("a.ts", Output("2.mkv"), 0, 100, RemuxSettings: new RemuxExportSettings { Container = "mkv" },
                 AudioRebuild: plan),
             new BatchTask("a.ts", Output("3.m2ts"), 0, 100, FrameAccurate: new FrameAccurateExportSettings { Container = "m2ts" },
@@ -375,6 +417,7 @@ public sealed class ExportSpaceWarningTests
         Assert.Equal(3, described.Count);
         Assert.Equal(ExportSizeAccuracy.Exact, described[0].Accuracy);
         Assert.Same(plan, described[0].AudioRebuild);
+        Assert.Same(approval, described[0].OverwriteApproval);
         // 重新封装为 MKV 不经过音轨重组。
         Assert.Null(described[1].AudioRebuild);
         Assert.Equal(ExportSizeAccuracy.Approximate, described[2].Accuracy);

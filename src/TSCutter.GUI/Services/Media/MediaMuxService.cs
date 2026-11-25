@@ -294,6 +294,8 @@ internal sealed unsafe class MediaMuxService
             logs.Clear();
             operation = MediaMuxOperation.CreateOutput;
             context = "";
+            token.ThrowIfCancellationRequested();
+            MediaFileAccess.Current.BeginMediaOutput(request.OutputPath, request.Tracks.Select(track => track.Source.Path));
             using (new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None)) { }
             FFmpegException.Check(FF.avio_open2(&output->pb, temporary, 2, &output->interrupt_callback, null));
             AVDictionary* options = null;
@@ -423,7 +425,7 @@ internal sealed unsafe class MediaMuxService
             foreach (var cursor in cursors.Values)
                 EnsureUnchanged(cursor.Source);
             token.ThrowIfCancellationRequested();
-            MediaFileAccess.Current.PublishExport(temporary, request.OutputPath);
+            MediaFileAccess.Current.PublishOutput(temporary, request.OutputPath, overwrite: false);
             progress?.Report(new(100, bytes, bytes / Math.Max(timer.Elapsed.TotalSeconds, 0.001)));
         }
         catch (FFmpegException) when (token.IsCancellationRequested)

@@ -2,6 +2,7 @@ using System;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
+using TSCutter.GUI.Utils.Files;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -419,7 +420,7 @@ public partial class TsTimelineRepairWindowViewModel : ViewModelBase, IModalDial
 
     private static string BuildDefaultOutputPath(string sourcePath)
     {
-        var directory = Path.GetDirectoryName(sourcePath)!;
+        var directory = MediaFileAccess.Current.DefaultOutputDirectory ?? Path.GetDirectoryName(sourcePath)!;
         var name = Path.GetFileNameWithoutExtension(sourcePath);
         var candidate = Path.Combine(directory, name + "_timeline_fixed.ts");
         for (var suffix = 2; File.Exists(candidate); suffix++)

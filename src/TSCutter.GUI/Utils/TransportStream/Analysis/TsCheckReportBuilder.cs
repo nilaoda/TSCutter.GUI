@@ -134,8 +134,11 @@ public sealed class TsCheckReportBuilder(TsCheckTextFormatter text)
     {
         // UTF-8 BOM 便于 Windows 记事本正确识别中英文报告。
         var report = Build(result);
-        await using var writer = new StreamWriter(MediaFileAccess.Current.OpenOutput(path), new UTF8Encoding(true));
-        await writer.WriteAsync(report);
+        await MediaFileAccess.Current.WriteOutputAsync(path, async stream =>
+        {
+            await using var writer = new StreamWriter(stream, new UTF8Encoding(true), leaveOpen: true);
+            await writer.WriteAsync(report);
+        }, sources: [result.FilePath]);
     }
 
     private static void AppendSection(StringBuilder builder, string title)

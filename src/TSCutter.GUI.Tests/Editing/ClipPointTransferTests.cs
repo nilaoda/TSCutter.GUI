@@ -74,7 +74,7 @@ public sealed class ClipPointTransferTests
     }
 
     [Fact]
-    public async Task RestrictedAccessUsesOnlyTheCurrentMediaAndProtectsExistingOutputs()
+    public async Task RestrictedAccessUsesOnlyTheCurrentMediaAndUpdatesChosenOutputs()
     {
         using var files = new Files();
         var file = files.Points();
@@ -90,10 +90,12 @@ public sealed class ClipPointTransferTests
             var path = Path.Combine(output.FullName, "points.tscutpoints");
             await ClipPointService.SaveAsync(path, file);
             Assert.NotNull(await ClipPointService.LoadAsync(path));
-            var original = File.ReadAllBytes(path);
+            file.Clips[0].Name = "Updated clip";
             await Assert.ThrowsAsync<IOException>(() => ClipPointService.SaveAsync(path, file));
-            Assert.Equal(original, File.ReadAllBytes(path));
-            await Assert.ThrowsAsync<UnauthorizedAccessException>(() => ClipPointService.SaveAsync(Path.Combine(media.FullName, "points.tscutpoints"), file));
+            MediaFileAccess.Current.GrantOverwrite(path);
+            await ClipPointService.SaveAsync(path, file);
+            Assert.Equal("Updated clip", Assert.Single((await ClipPointService.LoadAsync(path)).Clips).Name);
+            await ClipPointService.SaveAsync(Path.Combine(media.FullName, "points.tscutpoints"), file);
             Assert.Throws<UnauthorizedAccessException>(() => Matches(file, files.Source));
         }
         finally { MediaFileAccess.ConfigureForProcess(policy); }

@@ -5,7 +5,7 @@ namespace TSCutter.GUI.Utils.Files;
 
 internal enum MediaWorkspaceError
 {
-    OverlappingDirectories, UnsafeDirectory
+    UnsafeDirectory
 }
 
 // 文件规则只报告错误类型，由调用界面选择对应语言的提示。
@@ -20,7 +20,6 @@ internal sealed class MediaWorkspace
     {
         InputDirectory = GetRoot(inputDirectory);
         OutputDirectory = GetRoot(outputDirectory);
-        DemandSeparateDirectories(InputDirectory, OutputDirectory);
     }
 
     public string InputDirectory
@@ -32,24 +31,21 @@ internal sealed class MediaWorkspace
         get;
     }
 
-    internal static void DemandSeparateDirectories(string input, string output)
-    {
-        if (MediaFileUtil.PathsEqual(input, output) || MediaFileUtil.IsWithinDirectory(input, output) ||
-            MediaFileUtil.IsWithinDirectory(output, input))
-            throw new MediaWorkspaceException(MediaWorkspaceError.OverlappingDirectories, "Choose separate input and output directories.");
-    }
-
     public string? ResolveInput(string relativePath) => Resolve(InputDirectory, relativePath, mustExist: true);
 
     public string? ResolveOutput(string relativePath) => Resolve(OutputDirectory, relativePath, mustExist: false);
 
-    // 文件缺失交给读取方处理，工程才能提示用户重新定位共享目录内的来源。
-    public bool AllowsInput(string path) => AllowsPath(InputDirectory, path, mustExist: false);
+    public string? ResolvePath(string root, string relativePath) =>
+        root == InputDirectory || root == OutputDirectory ? Resolve(root, relativePath, mustExist: false) : null;
 
-    public bool AllowsOutput(string path) => AllowsPath(OutputDirectory, path, mustExist: false);
+    // 两个默认目录共同限定访问范围；缺失来源交给工程重新定位流程处理。
+    public bool AllowsInput(string path) => AllowsPath(InputDirectory, path, mustExist: false) ||
+        AllowsPath(OutputDirectory, path, mustExist: false);
 
-    public bool AllowsOutputDirectory(string path) => Directory.Exists(path) &&
-        (string.Equals(path, OutputDirectory, StringComparison.Ordinal) ? IsSafeDirectory(path) : AllowsOutput(path));
+    public bool AllowsOutput(string path) => AllowsInput(path);
+
+    public bool AllowsDirectory(string path) => Directory.Exists(path) &&
+        (path == InputDirectory || path == OutputDirectory ? IsSafeDirectory(path) : AllowsInput(path));
 
     private static bool AllowsPath(string root, string path, bool mustExist)
     {

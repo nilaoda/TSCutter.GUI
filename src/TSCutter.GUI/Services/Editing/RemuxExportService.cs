@@ -100,6 +100,8 @@ internal sealed unsafe class RemuxExportService
                         stream->codecpar->codec_tag = RemuxCodecTag.Select("mp4", stream->codecpar);
                 }
             }
+            token.ThrowIfCancellationRequested();
+            MediaFileAccess.Current.BeginMediaOutput(request.OutputPath, request.Segments.Select(segment => segment.SourcePath));
             if (first.Segment.Settings.Container == "m2ts" && AudioRebuild.TsOutputFile.CreateProcessedOnly(temporary,
                     TSCutter.GUI.Utils.TransportStream.Packets.TsPacketLayout.M2tsPacketSize) is { } processed)
             {
@@ -193,7 +195,7 @@ internal sealed unsafe class RemuxExportService
                 FFmpegException.Check(FF.avio_closep(&output->pb));
             }
             token.ThrowIfCancellationRequested();
-            MediaFileAccess.Current.PublishExport(temporary, request.OutputPath);
+            MediaFileAccess.Current.PublishOutput(temporary, request.OutputPath, overwrite: false);
             progress?.Report(new RemuxExportProgress(100, bytes / Math.Max(timer.Elapsed.TotalSeconds, 0.001), 0));
         }
         catch (FFmpegException) when (token.IsCancellationRequested)

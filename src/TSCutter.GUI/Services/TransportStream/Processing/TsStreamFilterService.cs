@@ -175,6 +175,10 @@ public sealed class TsStreamFilterService
         var continuityTrackedLength = 0;
 
         var outputOpened = false;
+        var sources = new[] { sourcePath }
+            .Concat(insertions?.Values.SelectMany(items => items).Select(item => item.SourcePath) ?? [])
+            .Concat(largeGapInsertions?.Values.SelectMany(items => items).Select(item => item.SourcePath) ?? [])
+            .Concat(replacements?.Select(item => item.SourcePath) ?? []);
 
         void CompletePacket(
             long referenceFileOffset,
@@ -195,9 +199,10 @@ public sealed class TsStreamFilterService
             await using var input = MediaFileUtil.OpenRead(
                 sourcePath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            cancellationToken.ThrowIfCancellationRequested();
             await using var output = MediaFileAccess.Current.OpenOutput(
                 outputPath, FileMode.Create, FileAccess.Write, FileShare.None,
-                ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan, sources: sources);
             outputOpened = true;
             input.Position = Math.Max(0, catalog.SyncOffset);
 

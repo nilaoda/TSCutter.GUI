@@ -127,9 +127,10 @@ public sealed class TsTimelineRepairService
             await using var input = MediaFileUtil.OpenRead(
                 sourcePath,
                 buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            cancellationToken.ThrowIfCancellationRequested();
             await using var output = MediaFileAccess.Current.OpenOutput(
                 targetPath, FileMode.Create, FileAccess.Write, FileShare.None,
-                buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan, sources: [sourcePath]);
             outputOpened = true;
 
             if (analysis.SyncOffset > 0)

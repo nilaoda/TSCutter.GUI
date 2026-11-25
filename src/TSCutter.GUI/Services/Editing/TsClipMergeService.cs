@@ -106,6 +106,7 @@ internal sealed class TsClipMergeService
         var audioBoundary = new TsClipMergeAudioBoundary(ranges.Count > 1 ? audioPids : [], request.VideoPid);
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
             await using var programOutput = request.ProgramId is { } programId
                 ? await TsProgramClipExportService.OpenWriterAsync(sourcePath, outputPath, programId, cancellationToken, checkSession)
                     .ConfigureAwait(false)
@@ -114,9 +115,9 @@ internal sealed class TsClipMergeService
             await using var output = programOutput is null
                 ? checkSession is null
                     ? (Stream)TSCutter.GUI.Services.Editing.AudioRebuild.TsOutputFile.Create(outputPath, FileMode.Create, FileAccess.Write, FileShare.None,
-                        buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan)
+                        buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan, sources: [sourcePath])
                     : new TsDetectingWriteStream(TSCutter.GUI.Services.Editing.AudioRebuild.TsOutputFile.Create(outputPath, FileMode.Create, FileAccess.Write,
-                        FileShare.None, buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan), checkSession)
+                        FileShare.None, buffer.Length, FileOptions.Asynchronous | FileOptions.SequentialScan, sources: [sourcePath]), checkSession)
                 : null;
             outputCreated = true;
             programOutput?.WriteInitialTables();

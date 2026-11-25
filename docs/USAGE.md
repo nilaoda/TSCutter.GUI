@@ -45,7 +45,7 @@ Clear **Replace the current clips** to append to the list. When the modes cannot
 
 ### Start and sign in
 
-1. On the host, open **Tools → Remote Editing**. Select existing default media and output folders. They must be separate and neither can contain the other.
+1. On the host, open **Tools → Remote Editing**. Select existing default open and save folders. They can be the same or contain one another.
 2. Add usernames and passwords under **User accounts**. Each account can use the default folders or have its own locations.
 3. Start the service, copy an access link, and give it to the user along with their account credentials. Users open the link in a browser and sign in. Each account allows one controlling browser at a time.
 
@@ -53,7 +53,9 @@ Clear **Replace the current clips** to append to the list. When the modes cannot
 
 ### Folders, login and workspaces
 
-Under **User accounts**, clear **Use default folder** for the media or output folder, choose a location, and save. Media folders are read-only. Output folders cannot overlap any configured media folder. Accounts using the same output folder share its files; for separate access, choose output folders that neither overlap nor contain one another. Existing export files are not overwritten: choose another filename or folder on a conflict. **New folder** in save and export-folder dialogs creates and opens a subfolder inside the assigned output folder. Remote workspaces support media files and projects; open disc sources in the desktop app.
+Under **User accounts**, clear **Use global default** for **Default open folder** or **Default save folder**, choose a location, and save. Accounts can only access these two folders and their subfolders, with read and write access throughout. The folders can be the same or contain one another. Administrators control isolation between accounts: accounts sharing a folder can modify its files; use separate, non-overlapping folders when independent access is required.
+
+Open, save and folder dialogs allow switching between the media and output folders. When both locations are the same, only **Workspace folder** is shown. Reopen repaired or exported files to continue editing, and save updates directly to projects in either folder. Manual saves ask before replacing an existing file; automatically generated outputs choose another name or report a conflict instead of silently overwriting. Media exports delete the old output after validation and before writing, so a failed export cannot restore it. Projects, cut points, reports and images are fully written to a temporary file before replacement. Select an existing file in the save dialog to reuse and edit its name; **New folder** in save and folder dialogs creates a subfolder in the current location. Remote workspaces support media files and projects; open disc sources in the desktop app.
 
 Changing a running workspace's media or output folder requires confirmation and discards its unsaved editing state. Only that account's workspace is stopped; its browser can reconnect with the same login. Finish exports or media loading and close workspace dialogs before applying a folder change.
 
@@ -67,7 +69,7 @@ Default folders, connection settings, accounts and account preferences are saved
 
 ### Browser controls
 
-Use **Open** to select media. Mark cuts and save clips as in the desktop app; results go to the account's assigned output folder. The floating **Controls** panel has **Picture**, **Input** and **Connection** tabs. It opens from the bottom on phones and floats at the bottom-right on desktop. Closing it leaves a small button. Clicking outside or pressing Escape closes the panel without clicking the editor underneath. Enable sound or show the phone keyboard in **Input**; audio is transmitted only while sound is enabled.
+Use **Open** to select media. Mark cuts and save clips as in the desktop app; results default to the account's default save folder, and the save dialog can select either assigned folder. The floating **Controls** panel has **Picture**, **Input** and **Connection** tabs. It opens from the bottom on phones and floats at the bottom-right on desktop. Closing it leaves a small button. Clicking outside or pressing Escape closes the panel without clicking the editor underneath. Enable sound or show the phone keyboard in **Input**; audio is transmitted only while sound is enabled.
 
 **Quality** defaults to **Sharp** and **Resolution** to **Automatic**. Automatic uses the device's pixel density within the quality preset's size limit. If text looks blurred, try Sharp or select a higher resolution explicitly. The 720p, 1080p, 1440p and 4K options set output pixel limits while preserving the workspace aspect ratio; with a fixed resolution, Quality controls encoding quality and bitrate rather than output dimensions. The maximum is 3840 × 2160, or 2160 × 3840 in portrait orientation. **Aspect ratio** defaults to **Automatic (follow screen)**; choose **16:9** for a widescreen workspace. Interface scaling follows the browser device's display density and page zoom. Lower resolution to reduce encoding load, or lower quality to reduce bandwidth requirements.
 

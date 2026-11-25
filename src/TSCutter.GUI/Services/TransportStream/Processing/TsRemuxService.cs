@@ -319,10 +319,10 @@ public sealed class TsRemuxService
         try
         {
             var editor = new TsHevcTransferEditor(plan.TransferCharacteristicsByOutputPid);
-            var result = await RemuxCoreAsync(sourcePath, temporaryPath, plan, editor, progress, cancellationToken)
+            var result = await RemuxCoreAsync(sourcePath, temporaryPath, plan, editor, progress, cancellationToken, outputPath)
                 .ConfigureAwait(false);
             cancellationToken.ThrowIfCancellationRequested();
-            MediaFileAccess.Current.PublishExport(temporaryPath, outputPath);
+            MediaFileAccess.Current.PublishOutput(temporaryPath, outputPath, overwrite: false);
             return result;
         }
         finally
@@ -337,7 +337,8 @@ public sealed class TsRemuxService
         TsRemuxPlan plan,
         TsHevcTransferEditor? transferEditor,
         IProgress<TsRemuxProgress>? progress,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string? finalOutputPath = null)
     {
         var inputBuffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize + PacketSize);
         var outputBuffer = ArrayPool<byte>.Shared.Rent(ReadBufferSize + PacketSize * 16);
@@ -371,10 +372,13 @@ public sealed class TsRemuxService
             await using var input = MediaFileUtil.OpenRead(
                 sourcePath,
                 ReadBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (finalOutputPath is not null)
+                MediaFileAccess.Current.BeginMediaOutput(finalOutputPath, [sourcePath]);
             var output = MediaFileAccess.Current.OpenOutput(
                 outputPath, transferEditor is null ? FileMode.Create : FileMode.CreateNew,
                 FileAccess.Write, FileShare.None, transferEditor is null ? ReadBufferSize : 1,
-                FileOptions.Asynchronous | FileOptions.SequentialScan);
+                FileOptions.Asynchronous | FileOptions.SequentialScan, sources: [sourcePath]);
             outputOpened = true;
             await using (output.ConfigureAwait(false))
             {

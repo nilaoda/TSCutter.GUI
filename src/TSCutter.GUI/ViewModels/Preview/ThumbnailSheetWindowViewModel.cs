@@ -1109,11 +1109,14 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
 
             await Task.Run(() =>
             {
-                using var stream = MediaFileAccess.Current.OpenOutput(targetPath);
-                if (isPng)
-                    bitmap.Save(stream);
-                else
-                    ImageUtil.SaveAsJpeg(bitmap, stream, quality);
+                return MediaFileAccess.Current.WriteOutputAsync(targetPath, stream =>
+                {
+                    if (isPng)
+                        bitmap.Save(stream);
+                    else
+                        ImageUtil.SaveAsJpeg(bitmap, stream, quality);
+                    return Task.CompletedTask;
+                }, sources: string.IsNullOrEmpty(filePath) ? [] : [filePath]);
             }).ConfigureAwait(true);
 
             StatusText = string.Format(

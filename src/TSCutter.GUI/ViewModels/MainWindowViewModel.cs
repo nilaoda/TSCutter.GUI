@@ -1446,11 +1446,14 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 using var correctedBitmap = ImageUtil.CreateSampleAspectRatioCorrectedBitmap(
                     snapshot, sourceSize, correctAspectRatio);
                 var bitmapToSave = correctedBitmap ?? snapshot;
-                using var stream = MediaFileAccess.Current.OpenOutput(outputPath);
-                if (isPng)
-                    bitmapToSave.Save(stream);
-                else
-                    ImageUtil.SaveAsJpeg(bitmapToSave, stream);
+                return MediaFileAccess.Current.WriteOutputAsync(outputPath, stream =>
+                {
+                    if (isPng)
+                        bitmapToSave.Save(stream);
+                    else
+                        ImageUtil.SaveAsJpeg(bitmapToSave, stream);
+                    return Task.CompletedTask;
+                }, sources: [sourcePath]);
             });
         }
         else
@@ -1895,7 +1898,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             return false;
         }
         var path = saveAs ? null : _projectPath;
-        var overwrite = path is not null || MediaFileAccess.Current.OverwriteExports;
+        if (path is not null && !MediaFileAccess.Current.AllowsOutput(path))
+            path = null;
+        var overwrite = path is not null || !MediaFileAccess.Current.IsRestricted;
         if (path is null)
         {
             var settings = new SaveFileDialogSettings
@@ -3243,8 +3248,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     [RelayCommand(CanExecute = nameof(CanExportAll))]
     private async Task ExportAllAsync()
     {
-        var sourceDir = Path.GetDirectoryName(Clips[0].InFileInfo.FullName)!;
-        var confirmMsg = string.Format(LocalizationManager.Instance.String_ExportAllConfirm, Clips.Count, sourceDir);
+        var outputDirectory = MediaFileAccess.Current.DefaultOutputDirectory ?? Path.GetDirectoryName(Clips[0].InFileInfo.FullName)!;
+        var confirmMsg = string.Format(LocalizationManager.Instance.String_ExportAllConfirm, Clips.Count, outputDirectory);
         if (!await ShowConfirmAsync(confirmMsg)) return;
 
         var clips = Clips.ToArray();
@@ -3255,7 +3260,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         foreach (var clip in clips)
         {
             var fileName = GenerateClipFileName(clip);
-            var destPath = ClipOutputNaming.UniquePath(sourceDir, fileName, reservedPaths);
+            var destPath = ClipOutputNaming.UniquePath(outputDirectory, fileName, reservedPaths);
             var task = new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition, SelectedOutputProgramId,
                 CurrentRemuxSettings?.Snapshot(), clip.StartTime, clip.EndPosition < 0 ? null : clip.EndTime,
                 StartSignature: clip.StartSignature, EndSignature: clip.EndPosition < 0 ? null : clip.EndSignature,
@@ -3430,9 +3435,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             DefaultExtension = extension
         };
         var result = await _dialogService.ShowSaveFileAtExportFolderAsync(this, settings, sourceDirectory);
-        if (result?.Path is null || !ReferenceEquals(SelectedClip, clip) || !CanEditSelectedClip) return;
-
+        if (result?.Path is null) return;
         var outputPath = result.Path.LocalPath;
+        var overwriteApproval = MediaFileAccess.Current.TryConsumeOverwrite(outputPath)
+            ? new OverwriteApproval(outputPath) : null;
+        if (!ReferenceEquals(SelectedClip, clip) || !CanEditSelectedClip) return;
         if (MediaFileUtil.ConflictsWithSource(outputPath, clip.InFileInfo.FullName) || ExportQueue.Any(item =>
                 MediaFileUtil.ConflictsWithSource(outputPath, item.SourceFilePath) ||
                 MediaFileUtil.ConflictsWithSource(item.OutputFilePath, clip.InFileInfo.FullName)))
@@ -3471,6 +3478,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             ExcludedPids = CurrentExcludedPids,
             RemuxSettings = frameAccurate is null ? CurrentRemuxSettings?.Snapshot() : null,
             OutputFilePath = outputPath,
+            OverwriteApproval = overwriteApproval,
             StartPosition = clip.StartPosition,
             EndPosition = clip.EndPosition,
             StartSignature = clip.StartSignature,
@@ -3528,6 +3536,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 item.RemuxSettings?.Snapshot(), item.StartTimeSeconds, item.EndPosition < 0 ? null : item.EndTimeSeconds,
                 item.FrameAccurate?.Snapshot(), item.StartPts, item.EndPts, item.StartSignature, item.EndSignature,
                 item.AudioDelayMs, item.AudioDelayProgramId, item.AudioRebuild?.Snapshot(), item.ExcludedPids)
+            { OverwriteApproval = item.OverwriteApproval }
         ).ToList();
 
         var dialogViewModel = _dialogService.CreateViewModel<OutputWindowViewModel>();

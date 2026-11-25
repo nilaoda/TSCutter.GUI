@@ -497,7 +497,7 @@ public sealed class TsRemuxServiceTests
     }
 
     [Fact]
-    public async Task TruncatedMetadataPesPreservesExistingOutput()
+    public async Task TruncatedMetadataPesRemovesReplacedOutputAndTemporaryFile()
     {
         var directory = Directory.CreateTempSubdirectory("ts-remux-transfer-");
         try
@@ -526,8 +526,8 @@ public sealed class TsRemuxServiceTests
                 sourcePath, outputPath, catalog, CreateConfiguration(videoTransfer: TsRemuxTransferCharacteristic.Hlg)));
 
             Assert.Equal(TsRemuxErrorCode.TransferCharacteristicRewriteFailed, exception.Code);
-            Assert.Equal(previousOutput, await File.ReadAllBytesAsync(outputPath));
-            Assert.Equal(2, directory.GetFiles().Length);
+            Assert.False(File.Exists(outputPath));
+            Assert.Single(directory.GetFiles());
         }
         finally
         {

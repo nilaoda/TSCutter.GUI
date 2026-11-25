@@ -58,6 +58,7 @@ sealed class Program
             MediaFileAccessError.OutputOutsideWorkspace => strings.String_WebUi_OutputOutside,
             MediaFileAccessError.ProjectOutsideWorkspace => strings.String_WebUi_ProjectOutside,
             MediaFileAccessError.OutputExists => strings.String_WebUi_OutputExists,
+            MediaFileAccessError.OutputMatchesSource => strings.String_TsFilter_Error_SameFile,
             _ => throw new ArgumentOutOfRangeException(nameof(error))
         };
     }

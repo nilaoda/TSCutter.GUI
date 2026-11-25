@@ -9,6 +9,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
 using Classic.Avalonia.Theme;
+using Classic.CommonControls.Dialogs;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -34,19 +35,17 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
         switch (settings)
         {
             case OpenFileDialogSettings open:
-                var showProjects = open.Filters.Any(filter => filter.Extensions?.Any(extension => string.Equals(extension, "tscut", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(extension, "tscutpoints", StringComparison.OrdinalIgnoreCase)) == true);
                 return (await PickAsync(window, open.Title, workspace.InputDirectory, PickerKind.Open,
-                    open.AllowMultiple == true, open.Filters, showProjects: showProjects))
+                    open.AllowMultiple == true, open.Filters, suggestedDirectory: open.SuggestedStartLocation?.LocalPath))
                     .Select(path => (IDialogStorageFile)new DesktopDialogStorageFile(path)).ToArray();
             case SaveFileDialogSettings save:
+                MediaFileAccess.Current.ClearOverwriteGrants();
                 var destination = await PickAsync(window, save.Title, workspace.OutputDirectory, PickerKind.Save,
-                    false, save.Filters, save.SuggestedFileName, save.DefaultExtension);
+                    false, save.Filters, save.SuggestedFileName, save.DefaultExtension, save.SuggestedStartLocation?.LocalPath);
                 return destination.Length == 0 ? null : new DesktopDialogStorageFile(destination[0]);
             case OpenFolderDialogSettings folder:
-                var exporting = folder.SuggestedStartLocation?.LocalPath is { } path && workspace.AllowsOutputDirectory(path);
-                var root = exporting ? workspace.OutputDirectory : workspace.InputDirectory;
-                return (await PickAsync(window, folder.Title, root, PickerKind.Folder, false, []))
+                return (await PickAsync(window, folder.Title, workspace.InputDirectory, PickerKind.Folder, false, [],
+                    suggestedDirectory: folder.SuggestedStartLocation?.LocalPath))
                     .Select(path => (IDialogStorageFolder)new DesktopDialogStorageFolder(path)).ToArray();
             default:
                 return await base.ShowDialogAsync(owner, settings);
@@ -63,6 +62,11 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
         public override string ToString() => IsDirectory ? Name + "/" : Name;
     }
 
+    private sealed record Location(string Name, string Path)
+    {
+        public override string ToString() => Name;
+    }
+
     private sealed record FileType(string Name, string[] Extensions)
     {
         public bool Matches(string name) => Extensions.Length == 0 || Extensions.Any(extension =>
@@ -72,21 +76,30 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
 
     private async Task<string[]> PickAsync(Window owner, string? title, string root, PickerKind kind,
         bool multiple, IList<FileFilter> filters, string? suggestedName = null, string? defaultExtension = null,
-        bool showProjects = false)
+        string? suggestedDirectory = null)
     {
         var strings = new LocalizationManager(App.LocalizationService);
-        var extensions = filters.SelectMany(filter => filter.Extensions ?? []).Select(ext => ext.TrimStart('.')).ToArray();
-        var unrestricted = extensions.Length == 0 || extensions.Contains("*");
         var types = filters.Select(filter => new FileType(filter.Name,
             (filter.Extensions ?? []).Select(extension => extension.Trim().TrimStart('*', '.')).ToArray())).ToArray();
+        var outputExtensions = string.IsNullOrWhiteSpace(defaultExtension)
+            ? types.SelectMany(type => type.Extensions).Where(extension => extension.Length > 0)
+                .Distinct(StringComparer.OrdinalIgnoreCase).ToArray()
+            : [defaultExtension.Trim().TrimStart('.')];
         var fileType = new ComboBox
         {
+            Name = "FileType",
             ItemsSource = types,
             SelectedIndex = 0,
             HorizontalAlignment = HorizontalAlignment.Stretch,
-            IsVisible = kind == PickerKind.Open && types.Length > 0
+            IsVisible = kind != PickerKind.Folder && types.Length > 0
         };
         var directory = root;
+        if (suggestedDirectory is not null && workspace.AllowsDirectory(suggestedDirectory))
+        {
+            directory = suggestedDirectory;
+            if (directory != root && !MediaFileUtil.IsWithinDirectory(directory, root))
+                root = root == workspace.InputDirectory ? workspace.OutputDirectory : workspace.InputDirectory;
+        }
         var saving = kind == PickerKind.Save;
         var pathLabel = new TextBlock { TextTrimming = TextTrimming.CharacterEllipsis };
         var error = new TextBlock { TextWrapping = global::Avalonia.Media.TextWrapping.Wrap };
@@ -116,12 +129,24 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
             ToolTip.SetTip(row, entry.Name);
             return row;
         });
-        var name = new TextBox { Text = Path.GetFileName(suggestedName), IsVisible = saving };
+        var name = new TextBox { Name = "FileName", Text = Path.GetFileName(suggestedName), IsVisible = saving };
         var up = new Button { Content = strings.String_WebUi_Up };
-        var switchFolder = new Button { Content = strings.String_WebUi_OutputFolder, IsVisible = showProjects };
+        var sameDirectory = MediaFileUtil.PathsEqual(workspace.InputDirectory, workspace.OutputDirectory);
+        var locations = sameDirectory
+            ? new[] { new Location(strings.String_WebUi_WorkspaceFolder, workspace.InputDirectory) }
+            : new[] { new Location(strings.String_WebUi_InputFolder, workspace.InputDirectory),
+                new Location(strings.String_WebUi_OutputFolder, workspace.OutputDirectory) };
+        var location = new ComboBox
+        {
+            Name = "WorkspaceLocation", ItemsSource = locations,
+            SelectedIndex = sameDirectory || root == workspace.InputDirectory ? 0 : 1,
+            MinWidth = 140, IsEnabled = !sameDirectory
+        };
+        global::Avalonia.Automation.AutomationProperties.SetName(location, strings.String_WebUi_Location);
+        var locationLabel = new TextBlock { Text = strings.String_WebUi_Location, VerticalAlignment = VerticalAlignment.Center };
         var accept = new Button { Content = saving ? strings.String_WebUi_Save : strings.String_WebUi_Select, IsDefault = true };
         var cancel = new Button { Content = strings.String_WebUi_Cancel, IsCancel = true };
-        var newFolder = new Button { Name = "NewFolder", Content = strings.String_WebUi_NewFolder, Margin = new Thickness(8, 0, 0, 0) };
+        var newFolder = new Button { Name = "NewFolder", Content = strings.String_WebUi_NewFolder };
         var folderName = new TextBox { Name = "NewFolderName", Watermark = strings.String_WebUi_FolderName };
         global::Avalonia.Automation.AutomationProperties.SetName(folderName, strings.String_WebUi_FolderName);
         var createFolder = new Button { Name = "CreateFolder", Content = strings.String_WebUi_CreateFolder, Margin = new Thickness(8, 0, 0, 0) };
@@ -140,13 +165,9 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
             WindowStartupLocation = WindowStartupLocation.CenterOwner
         };
 
-        string? Resolve(string path) => root == workspace.OutputDirectory
-            ? workspace.ResolveOutput(Path.GetRelativePath(root, path))
-            : workspace.ResolveInput(Path.GetRelativePath(root, path));
+        string? Resolve(string path) => workspace.ResolvePath(root, Path.GetRelativePath(root, path));
 
-        bool MatchesFile(string fileName) => kind == PickerKind.Open && fileType.SelectedItem is FileType selected
-            ? selected.Matches(fileName)
-            : unrestricted || extensions.Contains(Path.GetExtension(fileName).TrimStart('.'), StringComparer.OrdinalIgnoreCase);
+        bool MatchesFile(string fileName) => fileType.SelectedItem is not FileType selected || selected.Matches(fileName);
 
         void SetCreatingFolder(bool visible)
         {
@@ -166,7 +187,7 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
         void ShowDirectory()
         {
             error.Text = null;
-            newFolder.IsVisible = kind != PickerKind.Open && root == workspace.OutputDirectory;
+            newFolder.IsVisible = kind != PickerKind.Open;
             entries.SelectedItems?.Clear();
             var relative = Path.GetRelativePath(root, directory);
             pathLabel.Text = relative == "." ? "/" : "/" + relative;
@@ -190,11 +211,11 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
         void CreateFolder()
         {
             var folder = folderName.Text?.Trim() ?? string.Empty;
-            // 每次只创建当前输出目录下的一层，复用工作区校验拒绝越界、链接及非法名称。
+            // 每次只在当前目录创建一层，复用工作区校验拒绝越界、链接及非法名称。
             var target = folder.Length == 0 || folder.Contains('/') || folder.Contains('\\') || folder.StartsWith('.') ||
                 folder.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
-                ? null : workspace.ResolveOutput(Path.GetRelativePath(workspace.OutputDirectory, Path.Combine(directory, folder)));
-            if (root != workspace.OutputDirectory || !workspace.AllowsOutputDirectory(directory) || target is null)
+                ? null : Resolve(Path.Combine(directory, folder));
+            if (!workspace.AllowsDirectory(directory) || target is null)
             {
                 error.Text = strings.String_WebUi_InvalidFolderName;
                 return;
@@ -207,7 +228,7 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
             try
             {
                 Directory.CreateDirectory(target);
-                if (!workspace.AllowsOutputDirectory(target))
+                if (!workspace.AllowsDirectory(target))
                     throw new UnauthorizedAccessException();
                 directory = target;
                 SetCreatingFolder(false);
@@ -219,7 +240,7 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
             }
         }
 
-        void Choose()
+        async Task ChooseAsync()
         {
             if (entries.SelectedItem is Entry { IsDirectory: true } selected)
             {
@@ -234,15 +255,39 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
 
             if (saving)
             {
+                error.Text = null;
                 var fileName = name.Text?.Trim() ?? string.Empty;
                 if (fileName.Length != 0 && !fileName.Contains('/') && !fileName.Contains('\\'))
                 {
-                    var extension = defaultExtension ?? extensions.FirstOrDefault(value => value != "*");
+                    var extension = outputExtensions.FirstOrDefault();
                     if (!Path.HasExtension(fileName) && !string.IsNullOrEmpty(extension))
-                        fileName += "." + extension.TrimStart('.');
-                    var target = Resolve(Path.Combine(directory, fileName));
-                    if (target is not null && !File.Exists(target) && !Directory.Exists(target))
+                        fileName += "." + extension;
+                    // 文件列表可切换过滤项，输出格式仍由导出任务决定，保存前必须校验完整文件名。
+                    if (outputExtensions.Length > 0 && !outputExtensions.Any(value =>
+                            fileName.EndsWith("." + value, StringComparison.OrdinalIgnoreCase)))
                     {
+                        error.Text = string.Format(strings.String_WebUi_InvalidFileExtension,
+                            string.Join(", ", outputExtensions.Select(value => "." + value)));
+                        return;
+                    }
+                    var target = Resolve(Path.Combine(directory, fileName));
+                    if (target is not null && !Directory.Exists(target))
+                    {
+                        if (File.Exists(target))
+                        {
+                            var answer = await MessageBox.ShowDialog(dialog,
+                                string.Format(strings.String_WebUi_ConfirmOverwrite, fileName),
+                                strings.String_WebUi_Save, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                            if (answer != MessageBoxResult.Yes)
+                                return;
+                            target = Resolve(target);
+                            if (target is null || Directory.Exists(target))
+                            {
+                                error.Text = strings.String_WebUi_InvalidFileName;
+                                return;
+                            }
+                            MediaFileAccess.Current.GrantOverwrite(target);
+                        }
                         dialog.Close(new[] { target });
                         return;
                     }
@@ -253,7 +298,7 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
 
             if (kind == PickerKind.Folder)
             {
-                if (directory == root || Resolve(directory) is not null)
+                if (workspace.AllowsDirectory(directory))
                     dialog.Close(new[] { directory });
                 return;
             }
@@ -282,23 +327,42 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
                 directory = Path.GetDirectoryName(directory)!;
             ShowDirectory();
         };
-        switchFolder.Click += (_, _) =>
+        location.SelectionChanged += (_, _) =>
         {
-            root = root == workspace.OutputDirectory ? workspace.InputDirectory : workspace.OutputDirectory;
+            if (location.SelectedItem is not Location selected)
+                return;
+            SetCreatingFolder(false);
+            root = selected.Path;
             directory = root;
-            switchFolder.Content = root == workspace.OutputDirectory ? strings.String_WebUi_InputFolder : strings.String_WebUi_OutputFolder;
             ShowDirectory();
         };
         // 各过滤项独立生效，只有用户切换到“所有文件”时才放开后缀限制。
         fileType.SelectionChanged += (_, _) => ShowDirectory();
-        entries.DoubleTapped += (_, _) => Choose();
-        accept.Click += (_, _) => Choose();
+        entries.SelectionChanged += (_, _) =>
+        {
+            if (saving && entries.SelectedItem is Entry { IsDirectory: false } file)
+            {
+                name.Text = file.Name;
+                name.SelectionStart = 0;
+                name.SelectionEnd = Path.GetFileNameWithoutExtension(file.Name).Length;
+                error.Text = null;
+            }
+        };
+        async void ChooseSafely(object? sender, RoutedEventArgs args)
+        {
+            try { await ChooseAsync(); }
+            catch (Exception exception) { error.Text = exception.Message; }
+        }
+        entries.DoubleTapped += ChooseSafely;
+        accept.Click += ChooseSafely;
         cancel.Click += (_, _) => dialog.Close();
-        var navigation = new DockPanel { LastChildFill = true, Children = { up, switchFolder, newFolder, pathLabel } };
+        var navigation = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,Auto,Auto,Auto,*"), ColumnSpacing = 8,
+            Children = { locationLabel, location, up, newFolder, pathLabel } };
+        Grid.SetColumn(location, 1);
+        Grid.SetColumn(up, 2);
+        Grid.SetColumn(newFolder, 3);
+        Grid.SetColumn(pathLabel, 4);
         var header = new StackPanel { Spacing = 8, Children = { navigation, creation } };
-        DockPanel.SetDock(up, Dock.Left);
-        DockPanel.SetDock(switchFolder, Dock.Right);
-        DockPanel.SetDock(newFolder, Dock.Right);
         pathLabel.Margin = new Thickness(8, 0, 0, 0);
         pathLabel.VerticalAlignment = VerticalAlignment.Center;
         var actions = new StackPanel
@@ -321,7 +385,11 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
             Children = { typeLabel, fileType }
         };
         Grid.SetColumn(fileType, 1);
-        var footer = new StackPanel { Spacing = 6, Children = { name, typeRow, error, actions } };
+        var nameLabel = new TextBlock { Text = strings.String_WebUi_FileName, VerticalAlignment = VerticalAlignment.Center };
+        var nameRow = new Grid { ColumnDefinitions = new ColumnDefinitions("Auto,*"), ColumnSpacing = 8,
+            IsVisible = saving, Children = { nameLabel, name } };
+        Grid.SetColumn(name, 1);
+        var footer = new StackPanel { Spacing = 6, Children = { nameRow, typeRow, error, actions } };
         DockPanel.SetDock(header, Dock.Top);
         DockPanel.SetDock(footer, Dock.Bottom);
         header.Margin = new Thickness(0, 0, 0, 8);
@@ -342,6 +410,15 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
             var size = viewport.ClientSize;
             dialog.Width = size.Width > 16 ? Math.Min(640, size.Width - 16) : 640;
             dialog.Height = size.Height > 16 ? Math.Min(460, size.Height - 16) : 460;
+            var narrow = dialog.Width < 520;
+            navigation.ColumnDefinitions = new ColumnDefinitions(narrow ? "Auto,*,Auto" : "Auto,Auto,Auto,Auto,*");
+            navigation.RowDefinitions = new RowDefinitions(narrow ? "Auto,Auto" : "Auto");
+            navigation.RowSpacing = narrow ? 6 : 0;
+            Grid.SetRow(newFolder, narrow ? 1 : 0);
+            Grid.SetColumn(newFolder, narrow ? 2 : 3);
+            Grid.SetRow(pathLabel, narrow ? 1 : 0);
+            Grid.SetColumn(pathLabel, narrow ? 0 : 4);
+            Grid.SetColumnSpan(pathLabel, narrow ? 2 : 1);
         }
         FitViewport(null, null);
         ShowDirectory();

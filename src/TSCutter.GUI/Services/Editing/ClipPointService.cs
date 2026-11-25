@@ -72,7 +72,7 @@ internal static class ClipPointService
         {
             await File.WriteAllTextAsync(temporary, json, token).ConfigureAwait(false);
             token.ThrowIfCancellationRequested();
-            access.PublishOutput(temporary, fullPath, access.OverwriteExports);
+            access.PublishExport(temporary, fullPath);
         }
         finally
         {

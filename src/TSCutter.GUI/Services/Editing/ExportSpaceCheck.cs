@@ -29,7 +29,9 @@ internal sealed record ExportSizeTask(
     ExportSizeAccuracy Accuracy,
     bool M2tsOutput = false,
     DiscInput? Disc = null,
-    AudioRebuildPlan? AudioRebuild = null);
+    AudioRebuildPlan? AudioRebuild = null,
+    IReadOnlyList<string>? Sources = null,
+    OverwriteApproval? OverwriteApproval = null);
 
 /// <summary>一个输出文件的估算大小与为估算误差预留的余量。</summary>
 internal readonly record struct ExportSpaceDemand(long Bytes, long MarginBytes)
@@ -41,9 +43,9 @@ internal readonly record struct ExportSpaceDemand(long Bytes, long MarginBytes)
 internal sealed record ExportSpaceShortage(string VolumeRoot, long RequiredBytes, long AvailableBytes, int OutputCount);
 
 /// <summary>
-/// 导出前按卷汇总各输出文件的估算大小，与卷上的可用空间比较。
-/// 临时文件与 FLAC 附带文件都写在输出目录，所以只需检查输出所在的卷；
-/// 覆盖已有文件时，先写临时文件的导出方式要到最后才释放旧文件，因此不把旧文件计入可用空间。
+/// 导出前按卷估算顺序执行时的峰值占用，与卷上的可用空间比较。
+/// 允许覆盖且在写入前删除的旧输出计入对应任务的空间释放量；
+/// 后续任务尚未删除的旧文件不能抵扣当前任务的空间需求。
 /// 估算不出或读取不到可用空间的输出不参与比较，不阻止导出。
 /// </summary>
 internal static class ExportSpaceCheck
@@ -162,16 +164,22 @@ internal static class ExportSpaceCheck
     }
 
     /// <summary>
-    /// 按卷汇总估算值并与可用空间比较，返回空间不足的卷。每个卷另加 <see cref="ReserveBytes"/>。
+    /// 按执行顺序计算各卷累计占用的最大值，返回空间不足的卷。每个卷另加 <see cref="ReserveBytes"/>。
     /// 读取可用空间与来源文件长度都会访问磁盘，应在后台线程调用。
     /// </summary>
     public static IReadOnlyList<ExportSpaceShortage> FindShortages(IEnumerable<ExportSizeTask> tasks,
-        Func<string, double?>? sourceDuration, Func<string, DiskSpaceInfo?> probe)
+        Func<string, double?>? sourceDuration, Func<string, DiskSpaceInfo?> probe,
+        Func<string, string?>? existingFileVolume = null)
     {
+        existingFileVolume ??= DiskSpaceUtil.TryGetVolumeId;
+        var orderedTasks = tasks.ToArray();
+        var sources = orderedTasks.SelectMany(task => task.Sources ?? [task.SourcePath])
+            .Concat(orderedTasks.Where(task => task.Disc is not null).Select(task => task.Disc!.SourcePath)).ToArray();
+        var reclaimed = new HashSet<string>(MediaFileUtil.PathComparer);
         var spaceByDirectory = new Dictionary<string, DiskSpaceInfo?>(MediaFileUtil.PathComparer);
-        var volumes = new Dictionary<string, (string Root, long Required, long Available, int Count)>(MediaFileUtil.PathComparer);
+        var volumes = new Dictionary<string, (string Root, long Required, long Peak, long Available, int Count)>(MediaFileUtil.PathComparer);
         var order = new List<string>();
-        foreach (var task in tasks)
+        foreach (var task in orderedTasks)
         {
             ExportSpaceDemand? demand;
             string directory;
@@ -195,13 +203,34 @@ internal static class ExportSpaceCheck
             if (!volumes.TryGetValue(info.VolumeId, out var volume))
             {
                 order.Add(info.VolumeId);
-                volume = (info.VolumeRoot, 0, info.AvailableBytes, 0);
+                volume = (info.VolumeRoot, 0, long.MinValue, info.AvailableBytes, 0);
             }
-            volumes[info.VolumeId] = volume with { Required = volume.Required + demand.Value.RequiredBytes, Count = volume.Count + 1 };
+            long released = 0;
+            try
+            {
+                var path = MediaFileUtil.CanonicalPath(task.OutputPath);
+                if (File.Exists(task.OutputPath) &&
+                    !File.GetAttributes(task.OutputPath).HasFlag(FileAttributes.ReparsePoint) &&
+                    (task.OverwriteApproval?.Allows(task.OutputPath) == true || MediaFileAccess.Current.CanOverwrite(task.OutputPath)) &&
+                    sources.All(source => !MediaFileUtil.ConflictsWithSource(task.OutputPath, source)) &&
+                    MediaFileUtil.PathComparer.Equals(existingFileVolume(task.OutputPath), info.VolumeId) &&
+                    reclaimed.Add(path))
+                    released = new FileInfo(task.OutputPath).Length;
+            }
+            catch (Exception exception) when (exception is IOException or UnauthorizedAccessException or ArgumentException)
+            {
+                // 无法确认将释放的文件和卷时，只计算新输出所需空间。
+            }
+            var required = volume.Required + demand.Value.RequiredBytes - released;
+            volumes[info.VolumeId] = volume with
+            {
+                Required = required, Peak = Math.Max(volume.Peak, required),
+                Available = Math.Min(volume.Available, info.AvailableBytes), Count = volume.Count + 1
+            };
         }
         return order.Select(id => volumes[id])
-            .Where(volume => volume.Required + ReserveBytes > volume.Available)
-            .Select(volume => new ExportSpaceShortage(volume.Root, volume.Required + ReserveBytes, volume.Available,
+            .Where(volume => volume.Peak + ReserveBytes > volume.Available)
+            .Select(volume => new ExportSpaceShortage(volume.Root, volume.Peak + ReserveBytes, volume.Available,
                 volume.Count))
             .ToArray();
     }

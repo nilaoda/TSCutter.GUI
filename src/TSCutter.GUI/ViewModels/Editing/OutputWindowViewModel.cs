@@ -26,7 +26,10 @@ public record BatchTask(string SourcePath, string DestinationPath, long StartPos
     RemuxExportSettings? RemuxSettings = null, double StartSeconds = 0, double? EndSeconds = null,
     FrameAccurateExportSettings? FrameAccurate = null, long StartPts = 0, long? EndPts = null,
     string? StartSignature = null, string? EndSignature = null, int AudioDelayMs = 0, int? AudioDelayProgramId = null,
-    AudioRebuildPlan? AudioRebuild = null, IReadOnlyList<int>? ExcludedPids = null);
+    AudioRebuildPlan? AudioRebuild = null, IReadOnlyList<int>? ExcludedPids = null)
+{
+    internal OverwriteApproval? OverwriteApproval { get; init; }
+}
 
 public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewModel
 {
@@ -273,7 +276,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 ? ranges
                 : media.Segments.Select(item => new ExportSizeSegment(-1, -1, item.StartSeconds, item.EndSeconds)).ToArray();
             return [new ExportSizeTask(media.OutputPath, media.Segments[0].SourcePath, segments,
-                ExportSizeAccuracy.Approximate, settings.Container == "m2ts", settings.Disc)];
+                ExportSizeAccuracy.Approximate, settings.Container == "m2ts", settings.Disc,
+                Sources: media.Segments.Select(segment => segment.SourcePath).ToArray())];
         }
         if (_mergeRequest is { } merge)
             return [new ExportSizeTask(merge.OutputPath, merge.SourcePath,
@@ -295,7 +299,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             [new ExportSizeSegment(task.StartPosition, task.EndPosition, task.StartSeconds, task.EndSeconds)],
             byteCopy ? ExportSizeAccuracy.Exact : ExportSizeAccuracy.Approximate, container == "m2ts",
             task.FrameAccurate?.Disc ?? task.RemuxSettings?.Disc,
-            producesTs && !IsRawByteRange ? task.AudioRebuild : null);
+            producesTs && !IsRawByteRange ? task.AudioRebuild : null,
+            OverwriteApproval: task.OverwriteApproval);
     }
 
     [RelayCommand]
@@ -809,8 +814,24 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 _lastUpdateTime = _startTime;
                 _bytesCopied = 0;
 
-                await (RunBatchTaskAsync ?? CopyClipAsync)(task);
-                CompletedTaskIndices.Add(i);
+                var fileAccess = MediaFileAccess.Current;
+                var approved = task.OverwriteApproval?.TryConsume(task.DestinationPath) == true;
+                var grantRegistered = false;
+                try
+                {
+                    if (approved)
+                    {
+                        fileAccess.GrantOverwrite(task.DestinationPath);
+                        grantRegistered = true;
+                    }
+                    await (RunBatchTaskAsync ?? CopyClipAsync)(task);
+                    CompletedTaskIndices.Add(i);
+                }
+                finally
+                {
+                    if (approved && (!grantRegistered || fileAccess.TryConsumeOverwrite(task.DestinationPath)))
+                        task.OverwriteApproval!.Restore();
+                }
             }
             catch (OperationCanceledException)
             {

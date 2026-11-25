@@ -298,7 +298,7 @@ public sealed class TsServiceFilterService
                 // CreateNew 与界面预检查共同避免静默覆盖；即使检查后文件才出现也会安全失败。
                 stream = TSCutter.GUI.Services.Editing.AudioRebuild.TsOutputFile.Create(
                     output.OutputPath, overwrite ? FileMode.Create : FileMode.CreateNew, FileAccess.Write, FileShare.None,
-                    OutputBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan);
+                    OutputBufferSize, FileOptions.Asynchronous | FileOptions.SequentialScan, sources: [catalog.FilePath]);
             }
             catch (IOException) when (!overwrite && File.Exists(output.OutputPath))
             {

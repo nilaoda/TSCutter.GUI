@@ -126,7 +126,6 @@
                                                 <TextBox Name="UserSourcePath" Classes="form-field" AutomationProperties.LabeledBy="{Binding #UserSourceLabel}"/>
                                                 <Button Grid.Column="1" Name="BrowseUserSource" Classes="form-field" MinWidth="76" Content="{DynamicResource String.WebUi.Browse}"/>
                                             </Grid>
-                                            <TextBlock Name="UserSourceHint" Classes="hint" FontSize="12"/>
                                         </StackPanel>
                                         <StackPanel Spacing="7">
                                             <Grid ColumnDefinitions="*,Auto" ColumnSpacing="8">
@@ -137,8 +136,8 @@
                                                 <TextBox Name="UserOutput" Classes="form-field" AutomationProperties.LabeledBy="{Binding #UserOutputLabel}"/>
                                                 <Button Grid.Column="1" Name="BrowseUserOutput" Classes="form-field" MinWidth="76" Content="{DynamicResource String.WebUi.Browse}"/>
                                             </Grid>
-                                            <TextBlock Name="UserOutputHint" Classes="hint" FontSize="12"/>
                                         </StackPanel>
+                                        <TextBlock Classes="hint" FontSize="12" Text="{DynamicResource String.WebUi.DirectoryScopeHint}"/>
                                         <Border Name="DirectoryNotice" IsVisible="False" Background="{DynamicResource AppStatusWarningBackgroundBrush}" Padding="10">
                                             <TextBlock Name="DirectoryNoticeText" TextWrapping="Wrap" FontSize="12" Foreground="{DynamicResource AppStatusWarningForegroundBrush}"/>
                                         </Border>
