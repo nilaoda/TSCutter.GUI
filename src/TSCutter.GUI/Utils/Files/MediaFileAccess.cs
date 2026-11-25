@@ -34,10 +34,11 @@ internal sealed class MediaFileAccess
     internal static void ConfigureForProcess(MediaFileAccess access) => Current = access;
 
     internal bool IsRestricted => workspace is not null;
-    internal bool OverwriteExports => !IsRestricted;
     internal string? DefaultOutputDirectory => workspace?.OutputDirectory;
 
     internal bool AllowsInput(string path) => workspace?.AllowsInput(path) ?? true;
+
+    internal bool AllowsOutput(string path) => workspace?.AllowsOutput(path) ?? true;
 
     internal void DemandReadable(string path)
     {
@@ -61,7 +62,7 @@ internal sealed class MediaFileAccess
     internal FileMode PrepareOutput(string path, FileMode mode)
     {
         DemandOutput(path);
-        return IsRestricted && mode == FileMode.Create ? FileMode.CreateNew : mode;
+        return mode;
     }
 
     internal FileStream OpenOutput(string path, FileMode mode = FileMode.Create, FileAccess access = FileAccess.Write,
@@ -84,7 +85,7 @@ internal sealed class MediaFileAccess
         new(string.Format(message!(MediaFileAccessError.OutputExists), Path.GetFileName(path)), error);
 
     internal void PublishExport(string temporaryPath, string outputPath) =>
-        PublishOutput(temporaryPath, outputPath, overwrite: OverwriteExports);
+        PublishOutput(temporaryPath, outputPath, overwrite: true);
 
     internal void PublishOutput(string temporaryPath, string outputPath, bool overwrite)
     {

@@ -109,12 +109,18 @@ public sealed class WebUiTests
             Assert.Throws<UnauthorizedAccessException>(() => restrictedAccess.DemandReadable(outside));
             Assert.Throws<InvalidDataException>(() => restrictedAccess.DemandProjectPaths([outside], [destination]));
             Assert.Throws<UnauthorizedAccessException>(() => restrictedAccess.DemandOutput(Path.Combine(input.FullName, "new.ts")));
-            Assert.Throws<IOException>(() => restrictedAccess.OpenOutput(destination));
-            Assert.Throws<IOException>(() => restrictedAccess.PublishExport(temporary, destination));
+            Assert.Throws<IOException>(() => restrictedAccess.OpenOutput(destination, FileMode.CreateNew));
+            Assert.Throws<IOException>(() => restrictedAccess.PublishOutput(temporary, destination, overwrite: false));
             Assert.Equal("existing", File.ReadAllText(destination));
             Assert.Equal("new", File.ReadAllText(temporary));
 
-            MediaFileAccess.Current.PublishExport(temporary, destination);
+            Assert.Throws<UnauthorizedAccessException>(() => restrictedAccess.OpenOutput(source));
+            using (var writer = new StreamWriter(restrictedAccess.OpenOutput(destination)))
+                writer.Write("updated");
+            Assert.Equal("updated", File.ReadAllText(destination));
+            Assert.Equal("source", File.ReadAllText(source));
+
+            restrictedAccess.PublishExport(temporary, destination);
             Assert.Equal("new", File.ReadAllText(destination));
         }
         finally

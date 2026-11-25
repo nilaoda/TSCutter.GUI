@@ -5,6 +5,7 @@ using Avalonia.Headless;
 using Avalonia.Interactivity;
 using Avalonia.VisualTree;
 using Classic.Avalonia.Theme;
+using Classic.CommonControls.Dialogs;
 using CommunityToolkit.Mvvm.ComponentModel;
 using HanumanInstitute.MvvmDialogs.Avalonia;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
@@ -212,6 +213,88 @@ public sealed class WebUiFilePickerTests
 
                 static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
             }, CancellationToken.None);
+        }
+        finally { root.Delete(recursive: true); }
+    }
+
+    [Fact]
+    public async Task SavingUsesListedNamesAndConfirmsOverwrite()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        var root = Directory.CreateTempSubdirectory("tscutter-save-name-");
+        try
+        {
+            var input = root.CreateSubdirectory("media").FullName;
+            var output = root.CreateSubdirectory("output").FullName;
+            var nested = root.CreateSubdirectory("output/nested").FullName;
+            File.WriteAllText(Path.Combine(output, "old.name.mp4"), "existing");
+            File.WriteAllText(Path.Combine(nested, "reference.mp4"), "reference");
+            await session.Dispatch<bool>(async () =>
+            {
+                using var resolver = new ModernDependencyResolver();
+                using var scope = resolver.WithResolver();
+                var languages = new LocalizationService();
+                Locator.CurrentMutable.RegisterConstant<ILocalizationService>(languages);
+                languages.SwitchLanguage("zh-CN");
+                var owner = new ClassicWindow();
+                owner.Show();
+                var view = new ViewWrapper();
+                view.InitializeExisting(new Model(), owner);
+                var factory = new WebUiDialogFactory(new MediaWorkspace(input, output));
+                try
+                {
+                    var showing = factory.ShowDialogAsync(view, new SaveFileDialogSettings
+                    {
+                        SuggestedFileName = "suggested.mp4", DefaultExtension = "mp4", Filters = [new("MP4", "mp4")]
+                    });
+                    var dialog = owner.OwnedWindows.Single(window => window.IsVisible);
+                    try
+                    {
+                        var list = dialog.GetVisualDescendants().OfType<ListBox>().Single();
+                        var name = dialog.GetVisualDescendants().OfType<TextBox>().Single(box => box.Name == "FileName");
+                        var save = dialog.GetVisualDescendants().OfType<Button>().Single(button =>
+                            Equals(button.Content, languages.GetString("String.WebUi.Save")));
+                        list.SelectedItem = list.ItemsSource!.Cast<object>().Single(item => item.ToString() == "old.name.mp4");
+                        Assert.Equal("old.name.mp4", name.Text);
+                        Click(save);
+                        var confirmation = dialog.OwnedWindows.Single(window => window.IsVisible);
+                        Assert.Contains(confirmation.GetVisualDescendants().OfType<TextBlock>(), text =>
+                            text.Text == string.Format(languages.GetString("String.WebUi.ConfirmOverwrite"), "old.name.mp4"));
+                        confirmation.Close(MessageBoxResult.No);
+                        await Task.Delay(1);
+                        Dispatcher.UIThread.RunJobs();
+                        Assert.False(showing.IsCompleted);
+                        list.SelectedItem = list.ItemsSource!.Cast<object>().Single(item => item.ToString() == "nested/");
+                        Click(save);
+                        Assert.Equal("old.name.mp4", name.Text);
+                        list.SelectedItem = list.ItemsSource!.Cast<object>().Single(item => item.ToString() == "reference.mp4");
+                        Assert.Equal("reference.mp4", name.Text);
+                        name.Text = "renamed";
+                        Click(save);
+                        Assert.Equal(Path.Combine(nested, "renamed.mp4"),
+                            Assert.IsType<DesktopDialogStorageFile>(await showing).LocalPath);
+                    }
+                    finally { dialog.Close(); await showing; }
+                    var overwrite = factory.ShowDialogAsync(view, new SaveFileDialogSettings
+                    {
+                        SuggestedFileName = "old.name.mp4", DefaultExtension = "mp4", Filters = [new("MP4", "mp4")]
+                    });
+                    var saveDialog = owner.OwnedWindows.Single(window => window.IsVisible);
+                    try
+                    {
+                        Click(saveDialog.GetVisualDescendants().OfType<Button>().Single(button =>
+                            Equals(button.Content, languages.GetString("String.WebUi.Save"))));
+                        saveDialog.OwnedWindows.Single(window => window.IsVisible).Close(MessageBoxResult.Yes);
+                        Assert.Equal(Path.Combine(output, "old.name.mp4"),
+                            Assert.IsType<DesktopDialogStorageFile>(await overwrite.WaitAsync(TimeSpan.FromSeconds(3))).LocalPath);
+                    }
+                    finally { saveDialog.Close(); await overwrite; }
+                    return true;
+                }
+                finally { owner.Close(); }
+                static void Click(Button button) => button.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+            }, CancellationToken.None);
+            Assert.Equal("existing", File.ReadAllText(Path.Combine(output, "old.name.mp4")));
         }
         finally { root.Delete(recursive: true); }
     }

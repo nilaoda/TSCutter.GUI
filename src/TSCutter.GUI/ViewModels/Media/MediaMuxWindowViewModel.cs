@@ -299,7 +299,7 @@ public partial class MediaMuxWindowViewModel : ViewModelBase, IModalDialogViewMo
                     RefreshCommands();
                     if (string.IsNullOrWhiteSpace(OutputPath))
                     {
-                        _defaultOutputPath = Path.Combine(Path.GetDirectoryName(fullPath)!, Path.GetFileNameWithoutExtension(fullPath) + "_mux." + Container);
+                        _defaultOutputPath = Path.Combine(MediaFileAccess.Current.DefaultOutputDirectory ?? Path.GetDirectoryName(fullPath)!, Path.GetFileNameWithoutExtension(fullPath) + "_mux." + Container);
                         OutputPath = _defaultOutputPath;
                     }
                 }

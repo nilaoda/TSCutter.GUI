@@ -20,6 +20,7 @@ using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Services.TransportStream.Processing;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.TransportStream.Analysis;
 using TSCutter.GUI.Utils.TransportStream.Packets;
 using TSCutter.GUI.ViewModels;
@@ -110,7 +111,7 @@ public partial class TsEsExtractorWindowViewModel : ViewModelBase, IModalDialogV
         Percent = 0;
         ReleaseRows();
         _catalog = null;
-        OutputFolder = Path.GetDirectoryName(FilePath) ?? string.Empty;
+        OutputFolder = MediaFileAccess.Current.DefaultOutputDirectory ?? Path.GetDirectoryName(FilePath) ?? string.Empty;
         SetStatus(StatusKind.Probing);
 
         using var systemProgress = SystemProgressService.Begin(this);

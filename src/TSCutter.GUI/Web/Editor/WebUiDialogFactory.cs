@@ -9,6 +9,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Markup.Xaml.MarkupExtensions;
 using Avalonia.Media;
 using Classic.Avalonia.Theme;
+using Classic.CommonControls.Dialogs;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Input;
 using Avalonia.Interactivity;
@@ -116,7 +117,7 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
             ToolTip.SetTip(row, entry.Name);
             return row;
         });
-        var name = new TextBox { Text = Path.GetFileName(suggestedName), IsVisible = saving };
+        var name = new TextBox { Name = "FileName", Text = Path.GetFileName(suggestedName), IsVisible = saving };
         var up = new Button { Content = strings.String_WebUi_Up };
         var switchFolder = new Button { Content = strings.String_WebUi_OutputFolder, IsVisible = showProjects };
         var accept = new Button { Content = saving ? strings.String_WebUi_Save : strings.String_WebUi_Select, IsDefault = true };
@@ -219,7 +220,7 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
             }
         }
 
-        void Choose()
+        async Task ChooseAsync()
         {
             if (entries.SelectedItem is Entry { IsDirectory: true } selected)
             {
@@ -234,6 +235,7 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
 
             if (saving)
             {
+                error.Text = null;
                 var fileName = name.Text?.Trim() ?? string.Empty;
                 if (fileName.Length != 0 && !fileName.Contains('/') && !fileName.Contains('\\'))
                 {
@@ -241,8 +243,22 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
                     if (!Path.HasExtension(fileName) && !string.IsNullOrEmpty(extension))
                         fileName += "." + extension.TrimStart('.');
                     var target = Resolve(Path.Combine(directory, fileName));
-                    if (target is not null && !File.Exists(target) && !Directory.Exists(target))
+                    if (target is not null && !Directory.Exists(target))
                     {
+                        if (File.Exists(target))
+                        {
+                            var answer = await MessageBox.ShowDialog(dialog,
+                                string.Format(strings.String_WebUi_ConfirmOverwrite, fileName),
+                                strings.String_WebUi_Save, MessageBoxButtons.YesNo, MessageBoxIcon.Question);
+                            if (answer != MessageBoxResult.Yes)
+                                return;
+                            target = Resolve(Path.Combine(directory, fileName));
+                            if (target is null || Directory.Exists(target))
+                            {
+                                error.Text = strings.String_WebUi_InvalidFileName;
+                                return;
+                            }
+                        }
                         dialog.Close(new[] { target });
                         return;
                     }
@@ -291,8 +307,18 @@ internal sealed class WebUiDialogFactory(MediaWorkspace workspace) : DialogFacto
         };
         // 各过滤项独立生效，只有用户切换到“所有文件”时才放开后缀限制。
         fileType.SelectionChanged += (_, _) => ShowDirectory();
-        entries.DoubleTapped += (_, _) => Choose();
-        accept.Click += (_, _) => Choose();
+        entries.SelectionChanged += (_, _) =>
+        {
+            if (saving && entries.SelectedItem is Entry { IsDirectory: false } file)
+            {
+                name.Text = file.Name;
+                name.SelectionStart = 0;
+                name.SelectionEnd = Path.GetFileNameWithoutExtension(file.Name).Length;
+                error.Text = null;
+            }
+        };
+        entries.DoubleTapped += async (_, _) => await ChooseAsync();
+        accept.Click += async (_, _) => await ChooseAsync();
         cancel.Click += (_, _) => dialog.Close();
         var navigation = new DockPanel { LastChildFill = true, Children = { up, switchFolder, newFolder, pathLabel } };
         var header = new StackPanel { Spacing = 8, Children = { navigation, creation } };

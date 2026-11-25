@@ -169,7 +169,7 @@
     <x:String x:Key="String.SaveClip">Save Clip</x:String>
     <x:String x:Key="String.ExportAll">Export Separately</x:String>
     <x:String x:Key="String.ExportAllTip">Export every clip as a separate file to the source directory</x:String>
-    <x:String x:Key="String.ExportAllConfirm">Export {0} clips as separate files to the source directory?&#10;&#10;Output: {1}</x:String>
+    <x:String x:Key="String.ExportAllConfirm">Export {0} clips as separate files?&#10;&#10;Output: {1}</x:String>
     <x:String x:Key="String.Clips.SelectAll">Select All</x:String>
     <x:String x:Key="String.Clips.SelectAllTip">Select all clips</x:String>
     <x:String x:Key="String.Clips.Select">Select clip</x:String>
@@ -1913,7 +1913,8 @@
     <x:String x:Key="String.WebUi.Cancel">Cancel</x:String>
     <x:String x:Key="String.WebUi.FolderUnreadable">This folder could not be read.</x:String>
     <x:String x:Key="String.WebUi.OutputExists">“{0}” already exists. Choose a new filename.</x:String>
-    <x:String x:Key="String.WebUi.InvalidFileName">Enter a valid, unused filename.</x:String>
+    <x:String x:Key="String.WebUi.ConfirmOverwrite">Replace the existing file “{0}”?</x:String>
+    <x:String x:Key="String.WebUi.InvalidFileName">Enter a valid file name.</x:String>
     <x:String x:Key="String.WebUi.MediaOutside">The file is outside the shared media folder.</x:String>
     <x:String x:Key="String.WebUi.DiscUnavailable">Disc sources are unavailable in a remote workspace.</x:String>
     <x:String x:Key="String.WebUi.ProjectOutside">The project references paths outside the shared workspace.</x:String>

@@ -1913,7 +1913,8 @@
     <x:String x:Key="String.WebUi.Cancel">取消</x:String>
     <x:String x:Key="String.WebUi.FolderUnreadable">無法讀取此資料夾。</x:String>
     <x:String x:Key="String.WebUi.OutputExists">「{0}」已存在，請變更檔名。</x:String>
-    <x:String x:Key="String.WebUi.InvalidFileName">請輸入有效且未使用的檔名。</x:String>
+    <x:String x:Key="String.WebUi.ConfirmOverwrite">「{0}」已存在，是否覆寫？</x:String>
+    <x:String x:Key="String.WebUi.InvalidFileName">請輸入有效的檔案名稱。</x:String>
     <x:String x:Key="String.WebUi.MediaOutside">檔案不在共用素材資料夾中。</x:String>
     <x:String x:Key="String.WebUi.DiscUnavailable">遠端工作區目前不支援光碟來源。</x:String>
     <x:String x:Key="String.WebUi.ProjectOutside">專案參照了共用工作區以外的路徑。</x:String>

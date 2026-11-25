@@ -1895,7 +1895,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             return false;
         }
         var path = saveAs ? null : _projectPath;
-        var overwrite = path is not null || MediaFileAccess.Current.OverwriteExports;
+        if (path is not null && !MediaFileAccess.Current.AllowsOutput(path))
+            path = null;
         if (path is null)
         {
             var settings = new SaveFileDialogSettings
@@ -1945,7 +1946,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                     }
                     CutterProjectService.PopulateSources(project);
                 });
-                await CutterProjectService.SaveAsync(path, project, overwrite: overwrite);
+                await CutterProjectService.SaveAsync(path, project);
             }
             finally
             {
@@ -3243,8 +3244,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     [RelayCommand(CanExecute = nameof(CanExportAll))]
     private async Task ExportAllAsync()
     {
-        var sourceDir = Path.GetDirectoryName(Clips[0].InFileInfo.FullName)!;
-        var confirmMsg = string.Format(LocalizationManager.Instance.String_ExportAllConfirm, Clips.Count, sourceDir);
+        var outputDirectory = MediaFileAccess.Current.DefaultOutputDirectory ?? Path.GetDirectoryName(Clips[0].InFileInfo.FullName)!;
+        var confirmMsg = string.Format(LocalizationManager.Instance.String_ExportAllConfirm, Clips.Count, outputDirectory);
         if (!await ShowConfirmAsync(confirmMsg)) return;
 
         var clips = Clips.ToArray();
@@ -3255,7 +3256,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         foreach (var clip in clips)
         {
             var fileName = GenerateClipFileName(clip);
-            var destPath = ClipOutputNaming.UniquePath(sourceDir, fileName, reservedPaths);
+            var destPath = ClipOutputNaming.UniquePath(outputDirectory, fileName, reservedPaths);
             var task = new BatchTask(clip.InFileInfo.FullName, destPath, clip.StartPosition, clip.EndPosition, SelectedOutputProgramId,
                 CurrentRemuxSettings?.Snapshot(), clip.StartTime, clip.EndPosition < 0 ? null : clip.EndTime,
                 StartSignature: clip.StartSignature, EndSignature: clip.EndPosition < 0 ? null : clip.EndSignature,
