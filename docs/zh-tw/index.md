@@ -52,7 +52,7 @@ features:
     linkText: TS 工具
   - icon: 🌐
     title: 遠端剪輯
-    details: 在主機上執行，其他裝置用瀏覽器登入即可剪輯；多個帳號各自獨立，素材目錄唯讀。
+    details: 在主機上執行，其他裝置用瀏覽器登入即可剪輯；多個帳號各自獨立，只能存取分配的資料夾。
     link: /zh-tw/guide/remote
     linkText: 遠端剪輯
 ---

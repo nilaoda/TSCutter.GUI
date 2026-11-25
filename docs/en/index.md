@@ -52,7 +52,7 @@ features:
     linkText: TS tools
   - icon: 🌐
     title: Remote editing
-    details: Run it on a host and edit from any browser, with separate accounts and read-only media folders.
+    details: Run it on a host and edit from any browser, with separate accounts limited to their assigned folders.
     link: /en/guide/remote
     linkText: Remote editing
 ---
