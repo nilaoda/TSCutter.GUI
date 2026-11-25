@@ -501,7 +501,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         return string.Join("; ", parts);
     }
 
-    private Task ExportRemuxAsync(RemuxExportRequest request, int generation, ExportTsCheckSession? checkSession = null)
+    private async Task ExportRemuxAsync(RemuxExportRequest request, int generation, ExportTsCheckSession? checkSession = null)
     {
         var progress = new Progress<RemuxExportProgress>(value =>
         {
@@ -511,10 +511,11 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             Speed = value.BytesPerSecond;
             RemainingSeconds = value.RemainingSeconds;
         });
-        return new RemuxExportService().ExportAsync(request, progress, _cts.Token, checkSession);
+        var modifiers = await new RemuxExportService().ExportAsync(request, progress, _cts.Token, checkSession);
+        _rebuildModifiers |= modifiers;
     }
 
-    private Task ExportFrameAccurateAsync(FrameAccurateExportRequest request, int generation,
+    private async Task ExportFrameAccurateAsync(FrameAccurateExportRequest request, int generation,
         ExportTsCheckSession? checkSession = null)
     {
         var progress = new Progress<FrameAccurateExportProgress>(value =>
@@ -528,7 +529,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         });
         var source = request.Segments[0].SourcePath;
         request = request with { NormalizeTimestamps = timestampNormalizationApprovedSources.Contains(source) };
-        return new FrameAccurateExportService().ExportAsync(request, progress, _cts.Token, checkSession);
+        var modifiers = await new FrameAccurateExportService().ExportAsync(request, progress, _cts.Token, checkSession);
+        _rebuildModifiers |= modifiers;
     }
 
     private Task ExportTsAsync(TsClipMergeRequest request, int generation, bool addTables,

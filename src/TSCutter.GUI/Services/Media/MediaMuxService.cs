@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.FFmpeg;
+using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Media;
 using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.Media;
@@ -23,7 +24,7 @@ internal sealed unsafe class MediaMuxService
     public Task<MediaMuxSource> ProbeAsync(string path, CancellationToken token = default) =>
         Task.Run(() => Probe(path, token), token);
 
-    public Task ExportAsync(MediaMuxRequest request, IProgress<MediaMuxProgress>? progress = null,
+    public Task<ExportModifiers> ExportAsync(MediaMuxRequest request, IProgress<MediaMuxProgress>? progress = null,
         CancellationToken token = default) => Task.Run(() => Export(request, progress, token), token);
 
     private static MediaMuxSource Probe(string path, CancellationToken token)
@@ -179,11 +180,12 @@ internal sealed unsafe class MediaMuxService
             throw new MediaMuxException(MediaMuxError.SourceChanged, source.Path);
     }
 
-    private static void Export(MediaMuxRequest request, IProgress<MediaMuxProgress>? progress, CancellationToken token)
+    private static ExportModifiers Export(MediaMuxRequest request, IProgress<MediaMuxProgress>? progress, CancellationToken token)
     {
         Validate(request);
         token.ThrowIfCancellationRequested();
         using var logs = new FFmpegLogCapture();
+        var configurationRecovered = false;
         var operation = MediaMuxOperation.OpenInput;
         var context = "";
         var cursors = new Dictionary<string, InputCursor>(MediaFileUtil.PathComparer);
@@ -199,9 +201,25 @@ internal sealed unsafe class MediaMuxService
                 EnsureUnchanged(source);
                 context = source.Name;
                 logs.Clear();
+                operation = MediaMuxOperation.OpenInput;
                 var cursor = new InputCursor(source, token);
                 cursors.Add(group.Key, cursor);
                 cursor.Open();
+                if (request.Container == "mp4")
+                {
+                    operation = MediaMuxOperation.PrepareTracks;
+                    var indices = group.Select(track => track.Stream.Index).ToArray();
+                    if (indices.Any(index => index < 0 || index >= cursor.Input.Streams.Count))
+                        throw new MediaMuxException(MediaMuxError.SourceChanged, source.Path);
+                    if (Av3aConfiguration.Recover(cursor.Input, indices, token,
+                            static index => new MediaMuxException(MediaMuxError.UnsupportedTrack, $"#{index}: AV3A")))
+                    {
+                        configurationRecovered = true;
+                        // 配置预读会移动输入位置，混流从容器的时间轴起点重新读取所有选中轨道。
+                        AVFormatContext* raw = cursor.Input;
+                        cursor.Input.SeekFrame(raw->start_time == FF.AV_NOPTS_VALUE ? 0 : raw->start_time, -1);
+                    }
+                }
             }
             logs.Clear();
             operation = MediaMuxOperation.CreateOutput;
@@ -427,6 +445,7 @@ internal sealed unsafe class MediaMuxService
             token.ThrowIfCancellationRequested();
             MediaFileAccess.Current.PublishOutput(temporary, request.OutputPath, overwrite: false);
             progress?.Report(new(100, bytes, bytes / Math.Max(timer.Elapsed.TotalSeconds, 0.001)));
+            return configurationRecovered ? ExportModifiers.Av3aConfigurationRecovered : ExportModifiers.None;
         }
         catch (FFmpegException) when (token.IsCancellationRequested)
         {

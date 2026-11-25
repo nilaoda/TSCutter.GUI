@@ -26,7 +26,7 @@ internal sealed unsafe class RemuxExportService
 {
     private static readonly AVRational Microseconds = new() { num = 1, den = FF.AV_TIME_BASE };
 
-    public Task ExportAsync(RemuxExportRequest request, IProgress<RemuxExportProgress>? progress = null,
+    public Task<ExportModifiers> ExportAsync(RemuxExportRequest request, IProgress<RemuxExportProgress>? progress = null,
         CancellationToken cancellationToken = default, ExportTsCheckSession? checkSession = null) =>
         Task.Run(() => Export(request, progress, cancellationToken, checkSession), cancellationToken);
 
@@ -42,7 +42,7 @@ internal sealed unsafe class RemuxExportService
             language, title, raw->disposition);
     }).ToArray();
 
-    private static void Export(RemuxExportRequest request, IProgress<RemuxExportProgress>? progress,
+    private static ExportModifiers Export(RemuxExportRequest request, IProgress<RemuxExportProgress>? progress,
         CancellationToken token, ExportTsCheckSession? checkSession = null)
     {
         Validate(request);
@@ -197,6 +197,7 @@ internal sealed unsafe class RemuxExportService
             token.ThrowIfCancellationRequested();
             MediaFileAccess.Current.PublishOutput(temporary, request.OutputPath, overwrite: false);
             progress?.Report(new RemuxExportProgress(100, bytes / Math.Max(timer.Elapsed.TotalSeconds, 0.001), 0));
+            return prepared.Any(item => item.ConfigurationRecovered) ? ExportModifiers.Av3aConfigurationRecovered : ExportModifiers.None;
         }
         catch (FFmpegException) when (token.IsCancellationRequested)
         {
@@ -252,7 +253,7 @@ internal sealed unsafe class RemuxExportService
     }
 
     private sealed record PreparedSegment(RemuxExportSegment Segment, FormatContext Input, int[] Streams,
-        double Start, double End, long[] StartDts, long[] EndPts, long[] EndDurations, SourceStamp[] Source, bool[] EndHasLeading);
+        double Start, double End, long[] StartDts, long[] EndPts, long[] EndDurations, SourceStamp[] Source, bool[] EndHasLeading, bool ConfigurationRecovered);
 
     internal sealed record SourceStamp(string Path, long Length, DateTime Modified);
 
@@ -322,8 +323,9 @@ internal sealed unsafe class RemuxExportService
                 input = null!;
                 return Prepare(segment, token, 0);
             }
-            if (segment.Settings.Container == "mp4")
-                RecoverAv3aConfiguration(input, indices, token);
+            var configurationRecovered = segment.Settings.Container == "mp4" &&
+                Av3aConfiguration.Recover(input, indices, token,
+                    static index => new RemuxExportException(RemuxExportError.UnsupportedTrack, $"#{index}: AV3A"));
             var startBoundary = startBySignature
                 ?? FindBoundary(input, reference->index, requestedStart, false, token, firstIfNone: segment.StartSeconds <= 0);
             var endBoundary = toEnd
@@ -384,7 +386,7 @@ internal sealed unsafe class RemuxExportService
             }
             ReopenAfterDvdEof();
             var result = new PreparedSegment(segment, input, indices, startBoundary.Time, endTime,
-                starts, ends, endDurations, source, endHasLeading);
+                starts, ends, endDurations, source, endHasLeading, configurationRecovered);
             input = null!;
             return result;
         }
@@ -396,72 +398,6 @@ internal sealed unsafe class RemuxExportService
           (stream->start_time == FF.AV_NOPTS_VALUE ? origin : Seconds(stream->start_time, stream->time_base))
         : input->duration / (double)FF.AV_TIME_BASE +
           (input->start_time == FF.AV_NOPTS_VALUE ? 0 : input->start_time / (double)FF.AV_TIME_BASE);
-
-    private static void RecoverAv3aConfiguration(FormatContext input, int[] indices, CancellationToken token)
-    {
-        foreach (var index in indices)
-        {
-            AVStream* stream = input.Streams[index];
-            var parameters = stream->codecpar;
-            if (parameters->extradata_size > 0 || input.Streams[index].Codecpar is not
-                { IsAv3a: true, HasReliableCodecParameters: true })
-                continue;
-            token.ThrowIfCancellationRequested();
-            var discards = input.Streams.Select(item => ((AVStream*)item)->discard).ToArray();
-            var parser = FF.av_parser_init((int)parameters->codec_id);
-            var context = FF.avcodec_alloc_context3(null);
-            try
-            {
-                if (parser == null)
-                    throw new RemuxExportException(RemuxExportError.UnsupportedTrack, $"#{index}: AV3A");
-                if (context == null)
-                    throw new OutOfMemoryException();
-                FFmpegException.Check(FF.avcodec_parameters_to_context(context, parameters));
-                // 只读取缺少配置的音轨，从完整帧头取得配置，不解码音频，也不扫描视频负载。
-                foreach (var item in input.Streams)
-                    ((AVStream*)item)->discard = item.Index == index ? AVDiscard.AVDISCARD_DEFAULT : AVDiscard.AVDISCARD_ALL;
-                input.SeekFrame(stream->start_time == FF.AV_NOPTS_VALUE ? 0 : stream->start_time, index);
-                var count = 0;
-                foreach (var packet in input.ReadPackets())
-                {
-                    token.ThrowIfCancellationRequested();
-                    if (++count > 256)
-                        break;
-                    AVPacket* raw = packet;
-                    if (raw->stream_index != index)
-                        continue;
-                    var data = raw->data;
-                    var remaining = raw->size;
-                    while (remaining > 0 && context->extradata_size == 0)
-                    {
-                        byte* parsed = null;
-                        var parsedSize = 0;
-                        var used = FF.av_parser_parse2(parser, context, &parsed, &parsedSize,
-                            data, remaining, raw->pts, raw->dts, raw->pos);
-                        FFmpegException.Check(used);
-                        if (used == 0)
-                            break;
-                        data += used;
-                        remaining -= used;
-                    }
-                    if (context->extradata_size > 0)
-                        break;
-                }
-                if (context->extradata_size == 0)
-                    throw new RemuxExportException(RemuxExportError.UnsupportedTrack, $"#{index}: AV3A");
-                FFmpegException.Check(FF.avcodec_parameters_from_context(parameters, context));
-            }
-            finally
-            {
-                for (var i = 0; i < discards.Length; i++)
-                    ((AVStream*)input.Streams[i])->discard = discards[i];
-                if (parser != null)
-                    FF.av_parser_close(parser);
-                if (context != null)
-                    FF.avcodec_free_context(&context);
-            }
-        }
-    }
 
     /// <summary>
     /// DVD 起止画面一起按签名查找，避免两次完整遍历。重复内容取离标记时间最近的一次；

@@ -93,6 +93,58 @@ public sealed class ExportResultTests
         }
     }
 
+    [Fact]
+    public async Task RecoveredConfigurationIsNormalInformationInResultsAndRecordSummaries()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(() =>
+        {
+            using var resolver = new ModernDependencyResolver();
+            using var scope = resolver.WithResolver();
+            var locale = new LocalizationService();
+            Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+            foreach (var language in new[] { "en-US", "zh-CN", "zh-TW" })
+            {
+                locale.SwitchLanguage(language);
+                var strings = LocalizationManager.Instance;
+                var information = strings.String_Export_Av3aConfigurationRecovered;
+                Assert.False(string.IsNullOrWhiteSpace(information));
+                var record = new ExportRecord
+                {
+                    OutputPath = "output.mp4", Kind = ExportKind.Mp4Remux,
+                    Modifiers = ExportModifiers.Av3aConfigurationRecovered
+                };
+                var result = new ExportResultWindowViewModel(null!);
+                result.Initialize(new ExportResultInfo { OutputPath = record.OutputPath, Success = true, Record = record });
+                Assert.True(result.HasInformation);
+                Assert.Equal(information, result.InformationText);
+                Assert.Contains(information, result.BuildSummaryText());
+                Assert.Equal(ExportRecordsWindowViewModel.BuildSummaryText(record), result.BuildSummaryText());
+                Assert.Equal(new[] { strings.String_Export_Kind_Mp4Remux }, result.Tags);
+                Assert.Empty(result.ErrorText);
+
+                // 没有记录时仍使用本次导出的说明；失败和没有补齐配置的导出不显示说明。
+                foreach (var (success, modifiers) in new[]
+                         {
+                             (true, ExportModifiers.Av3aConfigurationRecovered),
+                             (true, ExportModifiers.None),
+                             (false, ExportModifiers.Av3aConfigurationRecovered)
+                         })
+                {
+                    var fallback = new ExportResultWindowViewModel(null!);
+                    fallback.Initialize(new ExportResultInfo
+                    {
+                        OutputPath = "output.mp4", Success = success, Modifiers = modifiers
+                    });
+                    var visible = success && modifiers != ExportModifiers.None;
+                    Assert.Equal(visible, fallback.HasInformation);
+                    Assert.Equal(visible, fallback.BuildSummaryText().Contains(information));
+                }
+            }
+            return Task.FromResult(true);
+        }, CancellationToken.None);
+    }
+
     /// <summary>导出开始前取消：以前按字节复制会被报告为完成，主界面随即把残留文件标成已导出。</summary>
     [Fact]
     public async Task CancelledByteCopyIsNotReportedAsCompleted()

@@ -69,6 +69,9 @@ public sealed class ExportRecordView
         return tags;
     }
 
+    public static string FormatInformation(ExportModifiers modifiers, LocalizationManager strings) =>
+        modifiers.HasFlag(ExportModifiers.Av3aConfigurationRecovered) ? strings.String_Export_Av3aConfigurationRecovered : "";
+
     public static string FormatKind(ExportKind kind, LocalizationManager strings) => kind switch
     {
         ExportKind.TsCopy => strings.String_Export_Kind_TsCopy,
@@ -274,6 +277,9 @@ public partial class ExportRecordsWindowViewModel : ViewModelBase, IModalDialogV
         builder.AppendLine($"{strings.String_Export_Records_Column_Clips}: {record.ClipCount}");
         if (record.ClipRangeSummary.Length > 0)
             builder.AppendLine(record.ClipRangeSummary);
+        var information = ExportRecordView.FormatInformation(record.Modifiers, strings);
+        if (information.Length > 0)
+            builder.AppendLine(information);
         var status = ExportRecordView.BuildCheckStatus(record, strings, out var detail, out _);
         builder.AppendLine($"{strings.String_Export_Check_Title}: {status}");
         if (detail != status)

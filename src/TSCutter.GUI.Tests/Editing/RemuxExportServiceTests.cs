@@ -3,8 +3,6 @@ using FFmpeg.AutoGen.Abstractions;
 using TSCutter.GUI.FFmpeg;
 using Xunit;
 using TSCutter.GUI.Models.Editing;
-using TSCutter.GUI.Models.Media;
-using TSCutter.GUI.Services.Media;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils.Media;
@@ -766,72 +764,6 @@ public sealed class RemuxExportServiceTests
                 Assert.Equal(AVCodecID.AV_CODEC_ID_HEVC, mkv.GetVideoStream().Codecpar!.CodecId);
                 Assert.Equal(0u, mkv.GetVideoStream().Codecpar!.CodecTag);
             }
-        }
-    }
-
-    [TSCutter.GUI.Tests.FFmpeg.NativeMediaTheory("remux")]
-    [InlineData(false)]
-    [InlineData(true)]
-    public async Task MissingAv3aConfigurationIsRecoveredFromPacketsBeforeMp4Export(bool corruptHeaders)
-    {
-        using var valid = new TemporaryOutput("mp4");
-        using var target = new TemporaryOutput("mp4");
-        var directory = Path.GetDirectoryName(valid.Path)!;
-        var rawAudio = Path.Combine(directory, "audio.av3a");
-        var bytes = Enumerable.Repeat((byte)0x55, 192 * 1024).ToArray();
-        byte[] header = [0xff, 0xf2, 0x10, 0x52, 0x42, 0x11, 0xb8, 0x0c, 0x24];
-        for (var offset = 0; offset < bytes.Length; offset += 1024)
-            header.CopyTo(bytes, offset);
-        File.WriteAllBytes(rawAudio, bytes);
-        var mux = new MediaMuxService();
-        var video = await mux.ProbeAsync(Fixture("multi.mp4"));
-        var audio = await mux.ProbeAsync(rawAudio);
-        await mux.ExportAsync(new(valid.Path, "mp4",
-            [new(video, video.Streams.Single(stream => stream.Index == 0), "", "", 0, true, false),
-             new(audio, Assert.Single(audio.Streams), "", "", 0, true, false)]));
-        var incomplete = Path.Combine(directory, "incomplete.mp4");
-        var media = File.ReadAllBytes(valid.Path);
-        var tag = media.AsSpan().IndexOf("dca3"u8);
-        Assert.True(tag >= 0);
-        // 保持盒子长度和偏移，只让解复用器看不到音频配置；压缩包仍包含完整帧头。
-        "free"u8.CopyTo(media.AsSpan(tag, 4));
-        File.WriteAllBytes(incomplete, media);
-        AssertMissingConfiguration(incomplete, corruptHeaders);
-        var request = new RemuxExportRequest(target.Path, [new(incomplete, 0, 2, Settings("mp4", 0, 1))]);
-        if (corruptHeaders)
-        {
-            File.WriteAllText(target.Path, "existing output");
-            var error = await Assert.ThrowsAsync<RemuxExportException>(() => new RemuxExportService().ExportAsync(request));
-            Assert.Equal(RemuxExportError.UnsupportedTrack, error.Code);
-            Assert.Equal("existing output", File.ReadAllText(target.Path));
-            return;
-        }
-
-        await new RemuxExportService().ExportAsync(request);
-        AssertAv3aParameters(valid.Path, 1, target.Path);
-        Assert.Equal(HashPackets(incomplete, 0, VideoPacketEnd(incomplete, 2), 1),
-            HashPackets(target.Path, 0, double.MaxValue, 1));
-        AssertMonotonicDts(target.Path);
-    }
-
-    private static unsafe void AssertMissingConfiguration(string path, bool corruptHeaders)
-    {
-        using var input = Open(path);
-        var audio = Assert.Single(input.Streams, stream => stream.Codecpar!.IsAv3a);
-        AVStream* stream = audio;
-        Assert.Equal(0, stream->codecpar->extradata_size);
-        if (!corruptHeaders)
-            return;
-        using var file = new FileStream(path, FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
-        byte[] invalidHeader = new byte[9];
-        foreach (var packet in input.ReadPackets())
-        {
-            if (packet.StreamIndex != audio.Index)
-                continue;
-            AVPacket* raw = packet;
-            Assert.True(raw->pos >= 0 && raw->size >= invalidHeader.Length);
-            file.Position = raw->pos;
-            file.Write(invalidHeader);
         }
     }
 

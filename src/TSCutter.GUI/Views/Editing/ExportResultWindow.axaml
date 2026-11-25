@@ -114,6 +114,14 @@
                 <TextBlock Classes="label" Text="{DynamicResource String.ExportResult.Reencode}" />
                 <TextBlock Grid.Column="1" Text="{Binding ReencodeText}" TextWrapping="Wrap" />
             </Grid>
+            <Grid Classes="row" IsVisible="{Binding HasInformation}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <TextBlock Classes="label" Text="{DynamicResource String.Export.Information}" />
+                <SelectableTextBlock Grid.Column="1" Text="{Binding InformationText}" TextWrapping="Wrap" />
+            </Grid>
             <Grid Classes="row" IsVisible="{Binding HasCheck}">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" SharedSizeGroup="Label" />

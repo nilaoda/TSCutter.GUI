@@ -19,7 +19,7 @@ public enum ExportKind
     FrameAccurate
 }
 
-/// <summary>导出时在基本类型之外做过的改动，在导出记录与结果中作为附加标签显示。</summary>
+/// <summary>导出时在基本类型之外做过的改动，在导出记录与结果中作为附加标签或详情显示。</summary>
 [Flags]
 public enum ExportModifiers
 {
@@ -39,7 +39,9 @@ public enum ExportModifiers
     /// <summary>整体平移了 PCR/PTS/DTS，输出从 0 开始。</summary>
     StartTimeZeroed = 64,
     /// <summary>删去了空包（PID 0x1FFF）。</summary>
-    NullPacketsRemoved = 128
+    NullPacketsRemoved = 128,
+    /// <summary>从音频帧头补齐了 AV3A 封装配置，在导出详情中记录。</summary>
+    Av3aConfigurationRecovered = 256
 }
 
 public enum TsExportCheckState
