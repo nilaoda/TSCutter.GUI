@@ -136,6 +136,8 @@ public sealed class KeyFrameStripControl : Control
     public override void Render(DrawingContext context)
     {
         base.Render(context);
+        // 透明背景让缩略图和波形的空白部分也能接收点击。
+        context.FillRectangle(Brushes.Transparent, new Rect(Bounds.Size));
         var tiles = GetTiles();
         foreach (var (item, bounds) in tiles)
         {
@@ -354,9 +356,13 @@ public sealed class KeyFrameStripControl : Control
         base.OnPointerPressed(e);
         if (!IsEffectivelyEnabled || !e.GetCurrentPoint(this).Properties.IsLeftButtonPressed)
             return;
+        var position = e.GetPosition(this);
         foreach (var (item, bounds) in GetTiles())
         {
-            if (item.IsPlaceholder || !bounds.Contains(e.GetPosition(this)))
+            // 波形占满每格宽度，点击时定位到上方对应的缩略图。
+            var waveformBounds = new Rect(bounds.X - 2, Layout.Height + WaveformGap,
+                bounds.Width + 4, WaveformLaneHeight);
+            if (item.IsPlaceholder || !(bounds.Contains(position) || HasWaveform && waveformBounds.Contains(position)))
                 continue;
             SeekRequested?.Invoke(this, item);
             e.Handled = true;

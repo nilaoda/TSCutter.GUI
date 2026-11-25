@@ -1,6 +1,9 @@
 using System.Reflection;
+using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Data;
 using Avalonia.Headless;
+using Avalonia.Input;
 using Avalonia.Threading;
 using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.Avalonia;
@@ -26,6 +29,67 @@ namespace TSCutter.GUI.Tests.UI;
 [Collection("Avalonia UI")]
 public sealed class StripWaveformTests
 {
+    [Theory]
+    [InlineData(KeyFrameStripThumbnailSize.Small)]
+    [InlineData(KeyFrameStripThumbnailSize.Medium)]
+    [InlineData(KeyFrameStripThumbnailSize.Large)]
+    public async Task WaveformClicksSeekToTheThumbnailAbove(KeyFrameStripThumbnailSize size)
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var strip = new KeyFrameStripControl
+            {
+                ThumbnailSize = size, ShowWaveform = true, Waveform = new StripWaveformViewModel(),
+                Items = [new(long.MinValue, default, null, false),
+                    new(90000, TimeSpan.FromSeconds(1), null, true),
+                    new(180000, TimeSpan.FromSeconds(2), null, false)]
+            };
+            var window = new Window { Width = 600, Height = 200, Content = strip };
+            var selected = new List<KeyFrameStripItem>();
+            strip.SeekRequested += (_, item) => selected.Add(item);
+            void Click(Point point, MouseButton button = MouseButton.Left)
+            {
+                var position = strip.TranslatePoint(point, window)!.Value;
+                window.MouseDown(position, button);
+                window.MouseUp(position, button);
+            }
+            try
+            {
+                window.Show();
+                Dispatcher.UIThread.RunJobs();
+                window.UpdateLayout();
+                AvaloniaHeadlessPlatform.ForceRenderTimerTick(2);
+                var tiles = strip.GetTiles();
+                var waveY = strip.Height - 9;
+                foreach (var (item, bounds) in tiles.Where(tile => !tile.Item.IsPlaceholder))
+                {
+                    Click(bounds.Center);
+                    Click(new Point(bounds.Center.X, waveY));
+                    // 波形包含缩略图之间的缝隙，两端仍属于同一格。
+                    Click(new Point(bounds.Left - 1, waveY));
+                    Click(new Point(bounds.Right + 1, waveY));
+                    Assert.Equal(4, selected.Count);
+                    Assert.All(selected, frame => Assert.Same(item, frame));
+                    selected.Clear();
+                }
+                var x = tiles[1].Bounds.Center.X;
+                Click(new Point(tiles[0].Bounds.Center.X, waveY));
+                Click(new Point(0, waveY));
+                Click(new Point(x, strip.Layout.Height + 1));
+                Click(new Point(x, waveY), MouseButton.Right);
+                strip.IsEnabled = false;
+                Click(new Point(x, waveY));
+                strip.IsEnabled = true;
+                strip.ShowWaveform = false;
+                window.UpdateLayout();
+                Click(new Point(x, waveY));
+                Assert.Empty(selected);
+            }
+            finally { window.Close(); }
+        }, CancellationToken.None);
+    }
+
     [Fact]
     public void ReadAudioGapsUseTheBaselineWhileUnloadedRangesStayEmpty()
     {
