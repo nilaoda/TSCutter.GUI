@@ -33,7 +33,6 @@ public sealed class KeyFrameStripViewModel : ObservableObject
     private readonly Dictionary<long, long> previousFrames = new();
     private readonly Dictionary<long, long> nextFrames = new();
     private long? firstPts, lastPts;
-    private long? windowAnchorPts;
     private KeyFrameStripSource? source;
     private KeyFrameStripSource? serviceSource;
     private IKeyFrameStripService? service;
@@ -64,7 +63,6 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         source = value;
         sourceGeneration++;
         targetTime = null;
-        windowAnchorPts = null;
         Items = [];
         if (IsSuspended && source is not null)
             PublishEmpty();
@@ -84,7 +82,6 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         if (VisibleCount == count)
             return;
         VisibleCount = count;
-        windowAnchorPts = null;
         if (IsSuspended)
         {
             PublishEmpty();
@@ -131,16 +128,8 @@ public sealed class KeyFrameStripViewModel : ObservableObject
             RequestAt(frame.Timestamp.TotalSeconds, currentPts: pts);
             return true;
         }
-        // 连续单步快于补图时仍可移动已有槽位；未知位置只显示占位，不伪造时间或 PTS。
-        var index = Items.ToList().FindIndex(item => item.IsCurrent);
-        var target = index + direction;
-        if (index < 0 || target < 0 || target >= Items.Count || !Items[target].IsPlaceholder)
-            return false;
-        Cancel();
-        var shifted = Items.Select(item => item with { IsCurrent = false }).ToList();
-        shifted[target] = shifted[target] with { IsCurrent = true };
-        Items = shifted;
-        return true;
+        // 相邻 PTS 尚未知时保留当前帧，等主预览确认后再居中，不提前高亮占位图。
+        return false;
     }
 
     public void RequestAt(double time, bool immediate = false, long? currentPts = null)
@@ -169,7 +158,6 @@ public sealed class KeyFrameStripViewModel : ObservableObject
 
     private void PublishEmpty()
     {
-        windowAnchorPts = null;
         var empty = Enumerable.Range(0, VisibleCount)
             .Select(_ => new KeyFrameStripItem(long.MinValue, default, null, false)).ToArray();
         if (!Items.SequenceEqual(empty))
@@ -232,7 +220,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
                     if (knownPts is { } cachedPts)
                     {
                         PublishCached(cachedPts);
-                        if (Items.All(item => !item.IsPlaceholder) && !NeedsPrefetch(request, cachedPts))
+                        if (Items.All(item => !item.IsPlaceholder) && !NeedsPrefetch(request))
                             continue;
                     }
                     if (knownPts is null)
@@ -255,7 +243,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
                     }
                     // 缓存只覆盖目标及右侧时，从整屏左边界一次向右读取，避免逐张向前 seek。
                     if (request.Started == 0 && !requestedSource.EveryFrame && knownPts is { } partial &&
-                        BuildWindow(partial).Items.TakeWhile(item => item.IsPlaceholder).Count() > 1)
+                        BuildCenteredWindow(partial).TakeWhile(item => item.IsPlaceholder).Count() > 1)
                     {
                         await ReadWindowAsync(request, generation, cancellation.Token);
                     }
@@ -277,8 +265,8 @@ public sealed class KeyFrameStripViewModel : ObservableObject
                         await ReadWindowAsync(request, generation, cancellation.Token);
                     }
                     if (IsCurrent(request, generation, cancellation.Token) &&
-                        Items.FirstOrDefault(item => item.IsCurrent && !item.IsPlaceholder) is { } selected)
-                        await PrefetchEdgeAsync(request, selected.Pts, generation, cancellation.Token);
+                        Items.Any(item => item.IsCurrent && !item.IsPlaceholder))
+                        await PrefetchEdgeAsync(request, generation, cancellation.Token);
                 }
                 catch (OperationCanceledException) when (cancellation.IsCancellationRequested) { }
                 catch (Exception exception)
@@ -306,14 +294,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
             frame => Receive(frame, generation), token,
             range => PublishProgress(range, request, generation, token), request.Count);
         if (IsCurrent(request, generation, token))
-        {
             PublishProgress(range, request, generation, token);
-            // 扫描窗口以新目标居中，界面可能仍沿用之前的窗口锚点，边缘因此还差一张。
-            // 按实际显示的窗口补齐，保留窗口内移动时只切换高亮的行为。
-            if (Items.FirstOrDefault(item => item.IsCurrent && !item.IsPlaceholder) is { } current &&
-                windowAnchorPts != current.Pts && Items.Any(item => item.IsPlaceholder))
-                await FillEdgesAsync(request, current.Pts, generation, token);
-        }
     }
 
     private void PublishProgress(KeyFrameStripRange range, Request request, long generation, CancellationToken token)
@@ -344,7 +325,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         for (var count = 0; count < request.Count + 1; count++)
         {
             token.ThrowIfCancellationRequested();
-            var window = BuildWindow(current).Items;
+            var window = BuildCenteredWindow(current);
             if (window.All(item => !item.IsPlaceholder))
                 return;
             var direction = window[0].IsPlaceholder ? -1 : 1;
@@ -369,17 +350,17 @@ public sealed class KeyFrameStripViewModel : ObservableObject
 
     private int PrefetchCount => Math.Min((VisibleCount + 1) / 2, CacheLimit - VisibleCount);
 
-    private bool NeedsPrefetch(Request request, long current)
+    // 窗口外沿导航方向的缓存少于余量时再补图，每次补满 PrefetchCount 张。
+    private int PrefetchMargin => Math.Min(2, Math.Max(1, PrefetchCount - 1));
+
+    private bool NeedsPrefetch(Request request)
     {
         if (request.Direction == 0 || Items.Any(item => item.IsPlaceholder))
             return false;
-        var index = Items.ToList().FindIndex(item => item.Pts == current);
-        var margin = Math.Min(2, (VisibleCount - 1) / 2);
-        if (index < 0 || (request.Direction < 0 ? index > margin : index < Items.Count - 1 - margin))
-            return false;
+        // 当前帧固定居中；缓存低于余量时批量补满，向后逐帧无需每步都从关键帧解码整个 GOP。
         var cursor = request.Direction < 0 ? Items[0].Pts : Items[^1].Pts;
         var links = request.Direction < 0 ? previousFrames : nextFrames;
-        for (var count = 0; count < PrefetchCount; count++)
+        for (var count = 0; count < PrefetchMargin; count++)
         {
             if (request.Direction < 0 ? firstPts == cursor : lastPts == cursor)
                 return false;
@@ -390,9 +371,9 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         return false;
     }
 
-    private async Task PrefetchEdgeAsync(Request request, long current, long generation, CancellationToken token)
+    private async Task PrefetchEdgeAsync(Request request, long generation, CancellationToken token)
     {
-        if (!NeedsPrefetch(request, current))
+        if (!NeedsPrefetch(request))
             return;
         var direction = request.Direction;
         var cursor = direction < 0 ? Items[0].Pts : Items[^1].Pts;
@@ -483,19 +464,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
         previousFrames[next] = previous;
     }
 
-    private (IReadOnlyList<KeyFrameStripItem> Items, long Anchor) BuildWindow(long current)
-    {
-        var anchor = windowAnchorPts ?? current;
-        var window = cache.ContainsKey(anchor) ? BuildCenteredWindow(anchor) : [];
-        // 当前帧仍在原窗口内时只移动高亮；越界或远距离跳转才重新居中，形成半屏左右的平移。
-        if (!window.Any(item => !item.IsPlaceholder && item.Pts == current))
-        {
-            anchor = current;
-            window = BuildCenteredWindow(current);
-        }
-        return (window.Select(item => item with { IsCurrent = !item.IsPlaceholder && item.Pts == current }).ToArray(), anchor);
-    }
-
+    // 当前帧居中；接近片头、片尾时向另一侧补满，短视频只显示实际帧。
     private IReadOnlyList<KeyFrameStripItem> BuildCenteredWindow(long current)
     {
         var before = new List<long>();
@@ -534,8 +503,7 @@ public sealed class KeyFrameStripViewModel : ObservableObject
 
     private void PublishCached(long current)
     {
-        var (updated, anchor) = BuildWindow(current);
-        windowAnchorPts = anchor;
+        var updated = BuildCenteredWindow(current);
         if (!Items.SequenceEqual(updated))
             Items = updated;
         foreach (var item in Items.Where(item => !item.IsPlaceholder))
