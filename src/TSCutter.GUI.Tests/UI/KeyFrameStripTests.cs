@@ -840,7 +840,7 @@ public sealed class KeyFrameStripTests
                 await vm.IdleTask;
                 Assert.Equal(Enumerable.Range(8, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
                 Assert.Single(fake.Targets);
-                Assert.InRange(fake.NeighborRequests.Count, 2, 8);
+                Assert.Equal(7, fake.NeighborRequests.Count);
                 Assert.Equal(1, fake.MaximumConcurrency);
                 fake.Gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 for (var index = 0; index < 7; index++)
@@ -1085,9 +1085,49 @@ public sealed class KeyFrameStripTests
                 Assert.Contains((64L, 1, 5), fake.BatchRequests);
                 Assert.True(vm.PreviewStep(1));
                 await vm.IdleTask;
-                Assert.Equal((70L, 1, 1), fake.BatchRequests[^1]);
+                Assert.Equal((64L, 1, 5), fake.BatchRequests[^1]);
+                Assert.Equal(2, fake.BatchRequests.Count);
                 Assert.Equal(Enumerable.Range(58, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
                 Assert.Equal(62, vm.Items[4].Pts);
+                Assert.Empty(fake.SingleRequests);
+            }
+            finally { vm.SetSource(null); await vm.IdleTask; }
+            return true;
+        }, CancellationToken.None);
+    }
+
+    [Theory]
+    [InlineData(-1)]
+    [InlineData(1)]
+    public async Task ContinuousCenteredStepsRefillThePrefetchMarginInBatches(int direction)
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            var fake = new BatchFakeService();
+            var vm = new KeyFrameStripViewModel(() => fake);
+            vm.SetVisibleCount(9);
+            vm.SetSource(new("one.ts", null, true, EveryFrame: true));
+            try
+            {
+                vm.RequestAt(100, immediate: true);
+                await vm.IdleTask;
+                for (var step = 1; step <= 30; step++)
+                {
+                    Assert.True(vm.PreviewStep(direction));
+                    Assert.Equal(100 + step * direction, vm.Items[4].Pts);
+                    // 首步建立窗口外缓存后，每步都已有边缘图片，不先显示占位图。
+                    if (step > 1)
+                        Assert.DoesNotContain(vm.Items, item => item.IsPlaceholder);
+                    await vm.IdleTask;
+                    Assert.DoesNotContain(vm.Items, item => item.IsPlaceholder);
+                }
+                Assert.Equal(direction < 0 ? (96L, -1, 9) : (104L, 1, 1), fake.BatchRequests[0]);
+                // 向后首批为 FillEdgesAsync 多读一屏；向前首批只补窗口边缘缺少的一帧。
+                // 其余批次均为窗口外预取，不能退化成每步补一帧。
+                var prefetch = fake.BatchRequests.Skip(1).ToArray();
+                Assert.All(prefetch, request => Assert.True(request.Count >= 2));
+                Assert.InRange(fake.BatchRequests.Count, 1, direction < 0 ? 8 : 9);
                 Assert.Empty(fake.SingleRequests);
             }
             finally { vm.SetSource(null); await vm.IdleTask; }

@@ -350,14 +350,17 @@ public sealed class KeyFrameStripViewModel : ObservableObject
 
     private int PrefetchCount => Math.Min((VisibleCount + 1) / 2, CacheLimit - VisibleCount);
 
+    // 窗口外沿导航方向的缓存少于余量时再补图，每次补满 PrefetchCount 张。
+    private int PrefetchMargin => Math.Min(2, Math.Max(1, PrefetchCount - 1));
+
     private bool NeedsPrefetch(Request request)
     {
         if (request.Direction == 0 || Items.Any(item => item.IsPlaceholder))
             return false;
-        // 当前帧固定居中，沿导航方向在窗口外预取，供下一次移动直接复用。
+        // 当前帧固定居中；缓存低于余量时批量补满，向后逐帧无需每步都从关键帧解码整个 GOP。
         var cursor = request.Direction < 0 ? Items[0].Pts : Items[^1].Pts;
         var links = request.Direction < 0 ? previousFrames : nextFrames;
-        for (var count = 0; count < PrefetchCount; count++)
+        for (var count = 0; count < PrefetchMargin; count++)
         {
             if (request.Direction < 0 ? firstPts == cursor : lastPts == cursor)
                 return false;
