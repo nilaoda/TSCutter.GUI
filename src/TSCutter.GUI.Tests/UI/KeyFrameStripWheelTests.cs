@@ -6,10 +6,7 @@ using Xunit;
 
 namespace TSCutter.GUI.Tests.UI;
 
-/// <summary>
-/// 导航条的滚轮换算与图片预览的滚轮缩放一致：每个滚轮事件按方向移动一格，与增量大小无关；
-/// 距上一次移动不足 16 毫秒的事件（触控板、平滑滚动的连续事件流）忽略。
-/// </summary>
+/// <summary>普通滚轮按事件步进，精细滚动累计到一格后步进。</summary>
 [Collection("Avalonia UI")]
 public sealed class KeyFrameStripWheelTests
 {
@@ -40,7 +37,7 @@ public sealed class KeyFrameStripWheelTests
     }
 
     [Fact]
-    public async Task ContinuousStreamsAreThrottled()
+    public async Task DiscreteWheelBurstsRespectTheMinimumInterval()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
         await session.Dispatch(() =>
@@ -48,13 +45,75 @@ public sealed class KeyFrameStripWheelTests
             var strip = new KeyFrameStripControl();
             var steps = new List<int>();
             strip.WheelStepRequested += (_, step) => steps.Add(step);
-            // 触控板滑动：每 4 毫秒一个很小的增量，持续 100 毫秒；每 16 毫秒内最多移动一格。
+            // 普通滚轮的密集事件仍受最小间隔限制。
             for (ulong time = 0; time < 100; time += 4)
                 Assert.True(strip.ApplyWheel(new Vector(0, -0.02), KeyModifiers.None, 5000 + time));
-            Assert.InRange(steps.Count, 6, 7);
+            Assert.Equal(7, steps.Count);
             Assert.All(steps, step => Assert.Equal(1, step));
             // 增量为 0 的事件不处理。
             Assert.False(strip.ApplyWheel(default, KeyModifiers.None, 9000));
+        }, CancellationToken.None);
+    }
+
+    [Theory]
+    [InlineData(-0.02, 50, 1)]
+    [InlineData(0.1, 10, -1)]
+    public async Task PreciseScrollingAccumulatesSmallEventsBeforeMoving(double amount, int count, int expected)
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var strip = new KeyFrameStripControl();
+            var steps = new List<int>();
+            strip.WheelStepRequested += (_, step) => steps.Add(step);
+            for (var index = 0; index < count - 1; index++)
+                Assert.True(strip.ApplyWheel(new Vector(0, amount), KeyModifiers.None, (ulong)(1000 + index * 4), precise: true));
+            Assert.Empty(steps);
+            strip.ApplyWheel(new Vector(0, amount), KeyModifiers.None, (ulong)(1000 + (count - 1) * 4), precise: true);
+            Assert.Equal(new[] { expected }, steps);
+
+            // 长滑可以继续逐格移动；单个大增量只移动一步，超出的余量清零。
+            for (ulong time = 2000; time < 2020; time++)
+                strip.ApplyWheel(new Vector(0, amount < 0 ? -0.25 : 0.25), KeyModifiers.None, time, precise: true);
+            Assert.Equal(6, steps.Count);
+            strip.ApplyWheel(new Vector(0, amount < 0 ? -4 : 4), KeyModifiers.None, 3000, precise: true);
+            Assert.Equal(7, steps.Count);
+            Assert.All(steps, step => Assert.Equal(expected, step));
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task PreciseRemaindersResetWhenDirectionModifiersOrWheelTypeChange()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch(() =>
+        {
+            var strip = new KeyFrameStripControl { WheelStep = 3, ShiftWheelStep = 12 };
+            var steps = new List<int>();
+            strip.WheelStepRequested += (_, step) => steps.Add(step);
+            ulong time = 1000;
+            void Scroll(double amount, KeyModifiers modifiers = KeyModifiers.None, bool precise = true) =>
+                Assert.True(strip.ApplyWheel(new Vector(0, amount), modifiers, time += 20, precise));
+            Scroll(-0.75);
+            Scroll(0.25);
+            Assert.Empty(steps);
+            Scroll(0.75);
+            Assert.Equal(new[] { -3 }, steps);
+            Scroll(-0.75);
+            Scroll(-0.25, KeyModifiers.Shift);
+            Assert.Single(steps);
+            Scroll(-0.75, KeyModifiers.Shift);
+            Assert.Equal(new[] { -3, 12 }, steps);
+            Scroll(-0.75);
+            strip.ReverseWheel = true;
+            Scroll(-0.25);
+            Assert.Equal(2, steps.Count);
+            Scroll(-0.75);
+            Assert.Equal(new[] { -3, 12, -3 }, steps);
+            Scroll(-0.75);
+            Scroll(-0.2, precise: false);
+            Scroll(-0.25);
+            Assert.Equal(new[] { -3, 12, -3, -3 }, steps);
         }, CancellationToken.None);
     }
 

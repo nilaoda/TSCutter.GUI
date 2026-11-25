@@ -516,15 +516,15 @@ public partial class MainWindow : ClassicWindow
             || !zoomModifier && !e.KeyModifiers.HasFlag(KeyModifiers.Shift)
                 && input.TimelineWheelAction == TimelineWheelAction.Navigate && ContainsPointer(MainTimeline, e);
         if (navigate)
-            e.Handled = KeyFrameStripView.ApplyWheel(e.Delta, e.KeyModifiers, e.Timestamp);
+            e.Handled = KeyFrameStripView.ApplyWheel(e);
     }
 
     private static bool ContainsPointer(Control control, PointerEventArgs e) =>
         control.IsEffectivelyVisible && new Avalonia.Rect(control.Bounds.Size).Contains(e.GetPosition(control));
 
-    // 预览画面与时间轴设为滚轮定位时，与导航条共用步长、方向和事件间隔。
+    // 预览画面与时间轴设为滚轮定位时，与导航条共用滚动累计量、步长和方向。
     private void WheelNavigation_OnRequested(object? sender, PointerWheelEventArgs e) =>
-        e.Handled = KeyFrameStripView.ApplyWheel(e.Delta, e.KeyModifiers, e.Timestamp);
+        e.Handled = KeyFrameStripView.ApplyWheel(e);
 
     // 滚轮定位：默认两种剪辑模式均按关键帧移动（与方向键的条件相同），可设为智能剪辑模式下按帧移动。
     private async void KeyFrameStrip_OnWheelStepRequested(object? sender, int steps)

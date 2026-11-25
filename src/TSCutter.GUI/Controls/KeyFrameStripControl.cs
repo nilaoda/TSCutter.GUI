@@ -9,6 +9,7 @@ using Avalonia.Media;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Utils;
+using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.ViewModels.Preview;
 
 namespace TSCutter.GUI.Controls;
@@ -75,9 +76,12 @@ public sealed class KeyFrameStripControl : Control
     public event EventHandler<KeyFrameStripItem>? SeekRequested;
     /// <summary>滚轮滚动的格数：正数前进，负数后退；已按每格步长与方向设置换算。</summary>
     public event EventHandler<int>? WheelStepRequested;
-    /// <summary>间隔不足该值的滚轮事件忽略（触控板、平滑滚动等连续事件流），与图片预览的滚轮缩放相同。</summary>
+    /// <summary>普通滚轮导航的最小事件间隔。</summary>
     internal const ulong WheelIntervalMs = 16;
     private ulong? lastWheelStep;
+    private double preciseWheelDelta;
+    private bool preciseWheelShift;
+    private bool preciseWheelReverse;
     private static readonly IBrush TypeBadgeBrush = new SolidColorBrush(Color.FromArgb(190, 0, 0, 0)).ToImmutable();
 
     // 波形条：缩略图区域不变，加在下方；上留 2px 间距、条高 18px，与节目带一致。
@@ -373,27 +377,44 @@ public sealed class KeyFrameStripControl : Control
     protected override void OnPointerWheelChanged(PointerWheelEventArgs e)
     {
         base.OnPointerWheelChanged(e);
-        e.Handled |= ApplyWheel(e.Delta, e.KeyModifiers, e.Timestamp);
+        e.Handled |= ApplyWheel(e);
     }
 
+    internal bool ApplyWheel(PointerWheelEventArgs e) =>
+        ApplyWheel(e.Delta, e.KeyModifiers, e.Timestamp, MacOSWheelInput.IsPrecise(this, e.Timestamp));
+
     /// <summary>
-    /// 处理一次滚轮滚动：与图片预览的滚轮缩放相同，每个事件按方向移动一次，不按增量大小换算——
-    /// macOS 普通滚轮每格的增量随滚动加速变化且常小于 1（Avalonia 换算为 scrollingDeltaY / 5），
-    /// 按增量累计会出现有时滚两格才移动一次。每次移动 <see cref="WheelStep"/> 格，按住 Shift 时移动
-    /// <see cref="ShiftWheelStep"/> 格。距上一次移动不足 <see cref="WheelIntervalMs"/> 毫秒的事件忽略。
-    /// 解码期间主窗口的遮罩拦截输入，落在导航条上的滚轮由窗口转交到这里；预览画面与时间轴设为滚轮定位时
-    /// 也转交到这里，共用步长与间隔。返回是否处理了这次滚动。
+    /// 普通滚轮每个有效事件移动一个配置步长；macOS 精细滚动累计到一格后移动一次并清零。
+    /// 导航条、预览画面、时间轴和解码遮罩共用滚动累计量与步长、方向设置。
     /// </summary>
-    internal bool ApplyWheel(Vector delta, KeyModifiers modifiers, ulong timestamp)
+    internal bool ApplyWheel(Vector delta, KeyModifiers modifiers, ulong timestamp, bool precise = false)
     {
         var shift = modifiers.HasFlag(KeyModifiers.Shift);
         // macOS 按住 Shift 滚动时系统把纵向滚动换成横向，增量落在 X 上。
         var amount = delta.Y != 0 ? delta.Y : shift ? delta.X : 0;
         if (!IsEffectivelyEnabled || amount == 0)
             return false;
-        if (lastWheelStep is { } last && timestamp >= last && timestamp - last < WheelIntervalMs)
-            return true;
-        lastWheelStep = timestamp;
+        if (precise)
+        {
+            // 换向、改变加速键或反向设置时清掉余量，避免下一次操作被上一次的累计量影响。
+            if (preciseWheelDelta * amount < 0 || preciseWheelShift != shift || preciseWheelReverse != ReverseWheel)
+                preciseWheelDelta = 0;
+            preciseWheelShift = shift;
+            preciseWheelReverse = ReverseWheel;
+            preciseWheelDelta += amount;
+            // 容忍小数累加的舍入误差，避免已经滚满一格仍需再补一个事件。
+            if (Math.Abs(preciseWheelDelta) < 1 - 1e-9)
+                return true;
+            preciseWheelDelta = 0;
+            lastWheelStep = null;
+        }
+        else
+        {
+            preciseWheelDelta = 0;
+            if (lastWheelStep is { } last && timestamp >= last && timestamp - last < WheelIntervalMs)
+                return true;
+            lastWheelStep = timestamp;
+        }
         // 向上滚 Delta.Y 为正（后退），向下滚为负（前进）。
         var direction = amount < 0 ? 1 : -1;
         if (ReverseWheel)
