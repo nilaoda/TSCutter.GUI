@@ -414,9 +414,10 @@ public sealed class KeyFrameStripTests
                     bitmap.Save(Path.Combine(initialOutput, "Initial.png"));
                 }
                 // 分数帧率、非零起始 PTS 的 TS：点击前后跳转均须命中同一个原始 PTS。
-                foreach (var frame in new[] { strip.Items[0], strip.Items[5], strip.Items[1], strip.Items[3], strip.Items[3] })
+                foreach (var frame in new[] { strip.Items[0], strip.Items[5], strip.Items[1], strip.Items[3], strip.Items[3], strip.Items[^1] })
                 {
-                    var tile = strip.GetTiles().Single(tile => tile.Item.Pts == frame.Pts);
+                    var beforeClick = strip.GetTiles();
+                    var tile = beforeClick.Single(tile => tile.Item.Pts == frame.Pts);
                     var click = strip.TranslatePoint(tile.Bounds.Center, window)!.Value;
                     window.MouseDown(click, Avalonia.Input.MouseButton.Left);
                     window.MouseUp(click, Avalonia.Input.MouseButton.Left);
@@ -427,6 +428,12 @@ public sealed class KeyFrameStripTests
                     var actualPts = (long)typeof(MainWindowViewModel).GetField("_displayedFramePts",
                         BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(vm)!;
                     Assert.Equal(frame.Pts, actualPts);
+                    if (frame.Pts == beforeClick[^1].Item.Pts)
+                    {
+                        var center = (beforeClick.Count - 1) / 2;
+                        Assert.Equal(beforeClick[beforeClick.Count - 1 - center].Item.Pts, strip.Items[0].Pts);
+                        Assert.Equal(frame.Pts, strip.Items[center].Pts);
+                    }
                 }
                 var startFrame = strip.Items[1];
                 var endFrame = strip.Items[4];
@@ -480,12 +487,12 @@ public sealed class KeyFrameStripTests
                 var beforeStep = strip.Items.ToArray();
                 var expectedNext = beforeStep[Array.FindIndex(beforeStep, item => item.IsCurrent) + 1];
                 var navigation = vm.NextGopClickCommand.ExecuteAsync(null);
-                // 主预览尚未完成时先移动高亮，窗口内的图片保持原位。
+                // 主预览尚未完成时先居中，选中帧复用已有图片。
                 Assert.Equal(expectedNext.Pts, strip.Items.Single(item => item.IsCurrent).Pts);
-                Assert.Same(beforeStep[0].Bitmap, strip.Items[0].Bitmap);
-                Assert.DoesNotContain(strip.Items, item => item.IsPlaceholder);
+                Assert.Same(expectedNext.Bitmap, strip.Items.Single(item => item.IsCurrent).Bitmap);
                 await navigation;
                 await vm.KeyFrameStrip.IdleTask;
+                Assert.DoesNotContain(strip.Items, item => item.IsPlaceholder);
                 var navigatedPts = (long)typeof(MainWindowViewModel).GetField("_displayedFramePts",
                     BindingFlags.Instance | BindingFlags.NonPublic)!.GetValue(vm)!;
                 Assert.Equal(expectedNext.Pts, navigatedPts);
@@ -583,7 +590,7 @@ public sealed class KeyFrameStripTests
     }
 
     [Fact]
-    public async Task StepsKeepTheWindowStableAndReusePrefetchedPicturesAcrossTheEdge()
+    public async Task StepsCenterTheWindowAndReuseCachedPicturesInBothDirections()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
         await session.Dispatch<bool>(async () =>
@@ -591,37 +598,160 @@ public sealed class KeyFrameStripTests
             var fake = new FakeService();
             var vm = new KeyFrameStripViewModel(() => fake);
             vm.SetSource(new("one.mp4", null, true));
-            vm.RequestAt(10, true);
-            await vm.IdleTask;
-            var original = vm.Items.ToArray();
-            fake.Gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
             try
             {
-                Assert.True(vm.PreviewStep(1));
+                vm.RequestAt(10, immediate: true);
                 await vm.IdleTask;
-                Assert.Equal(11, vm.Items.Single(item => item.IsCurrent).Timestamp.TotalSeconds);
-                Assert.Equal(original.Select(item => item.Pts), vm.Items.Select(item => item.Pts));
-                Assert.Empty(fake.NeighborRequests);
-                Assert.True(vm.PreviewStep(1));
-                Assert.Equal(12, vm.Items.Single(item => item.IsCurrent).Timestamp.TotalSeconds);
-                for (var index = 0; index < original.Length; index++)
-                    Assert.Same(original[index].Bitmap, vm.Items[index].Bitmap);
-                Assert.Single(fake.NeighborRequests);
-                fake.Gate.SetResult();
+                foreach (var direction in new[] { 1, 1, -1, -1 })
+                {
+                    var original = vm.Items.ToArray();
+                    var next = original[4 + direction];
+                    Assert.True(vm.PreviewStep(direction));
+                    Assert.Equal(next.Pts, vm.Items[4].Pts);
+                    Assert.Same(next.Bitmap, vm.Items[4].Bitmap);
+                    await vm.IdleTask;
+                    Assert.Equal(Enumerable.Range((int)next.Pts - 4, 9).Select(pts => (long)pts),
+                        vm.Items.Select(item => item.Pts));
+                }
+                Assert.Single(fake.Targets);
+                Assert.Equal(1, fake.MaximumConcurrency);
+            }
+            finally { vm.SetSource(null); await vm.IdleTask; }
+            return true;
+        }, CancellationToken.None);
+    }
+
+    [Theory]
+    [InlineData(9, 10, 0, 2)]
+    [InlineData(9, 10, 4, 6)]
+    [InlineData(9, 10, 8, 10)]
+    [InlineData(9, 0, 8, 4)]
+    [InlineData(6, 10, 5, 11)]
+    [InlineData(4, 10, 3, 11)]
+    [InlineData(48, 100, 47, 101)]
+    [InlineData(3, 10, 2, 10)]
+    [InlineData(2, 10, 1, 11)]
+    [InlineData(1, 10, 0, 10)]
+    public async Task NavigationCentersTheSelectedFrameAndReusesPictures(int count, int time, int index, int expectedStart)
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            var fake = new FakeService();
+            var vm = new KeyFrameStripViewModel(() => fake);
+            vm.SetVisibleCount(count);
+            vm.SetSource(new("one.mp4", null, true));
+            try
+            {
+                vm.RequestAt(time, immediate: true);
                 await vm.IdleTask;
-                Assert.Equal(5, fake.NeighborRequests.Count);
-                Assert.Equal(original.Select(item => item.Pts), vm.Items.Select(item => item.Pts));
-                vm.RequestAt(15, immediate: true, currentPts: 15);
+                var original = vm.Items.ToArray();
+                var clicked = original[index];
+                vm.RequestAt(clicked.Timestamp.TotalSeconds, immediate: true, currentPts: clicked.Pts);
                 await vm.IdleTask;
-                Assert.Equal(Enumerable.Range(11, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
-                Assert.Equal(15, vm.Items.Single(item => item.IsCurrent).Pts);
-                Assert.Equal(5, fake.NeighborRequests.Count);
-                vm.RequestAt(10, immediate: true, currentPts: 10);
+                Assert.Equal(Enumerable.Range(expectedStart, count).Select(pts => (long)pts),
+                    vm.Items.Select(item => item.Pts));
+                Assert.Equal(clicked.Pts, vm.Items[(count - 1) / 2].Pts);
+                Assert.True(vm.Items[(count - 1) / 2].IsCurrent);
+                foreach (var item in vm.Items.Where(item => original.Any(old => old.Pts == item.Pts)))
+                    Assert.Same(original.Single(old => old.Pts == item.Pts).Bitmap, item.Bitmap);
+            }
+            finally { vm.SetSource(null); await vm.IdleTask; }
+            return true;
+        }, CancellationToken.None);
+    }
+
+    [Theory]
+    [InlineData(10, 14, 14, 6, 9)]
+    [InlineData(10, 16, 14, 8, 9)]
+    [InlineData(0, 2, 2, 0, 3)]
+    public async Task CenteredWindowClampsAtTheEndAndFillsShortVideos(int time, int end, int clicked, int expectedStart, int expectedCount)
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            var fake = new FakeService { EndPts = end };
+            var vm = new KeyFrameStripViewModel(() => fake);
+            vm.SetSource(new("one.mp4", null, true));
+            try
+            {
+                vm.RequestAt(time, immediate: true);
                 await vm.IdleTask;
-                Assert.Equal(original.Select(item => item.Pts), vm.Items.Select(item => item.Pts));
+                vm.RequestAt(clicked, immediate: true, currentPts: clicked);
+                await vm.IdleTask;
+                Assert.Equal(Enumerable.Range(expectedStart, expectedCount).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                Assert.Equal(clicked, vm.Items.Single(item => item.IsCurrent).Pts);
+                Assert.DoesNotContain(vm.Items, item => item.IsPlaceholder);
                 Assert.Single(fake.Targets);
             }
-            finally { fake.Gate.TrySetResult(); vm.SetSource(null); await vm.IdleTask; }
+            finally { vm.SetSource(null); await vm.IdleTask; }
+            return true;
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task RepeatedNavigationKeepsTheCenteredWindowAfterSeekConfirmation()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            var fake = new FakeService();
+            var vm = new KeyFrameStripViewModel(() => fake);
+            vm.SetSource(new("one.mp4", null, true));
+            try
+            {
+                vm.RequestAt(10, immediate: true);
+                await vm.IdleTask;
+                vm.RequestAt(12, immediate: true, currentPts: 12);
+                await vm.IdleTask;
+                fake.NeighborRequests.Clear();
+                foreach (var pts in new[] { 14, 12, 16, 16 })
+                {
+                    vm.RequestAt(pts, immediate: true, currentPts: pts);
+                    await vm.IdleTask;
+                    var displayed = vm.Items;
+                    var decoded = fake.NeighborRequests.Count;
+                    vm.RequestAt(pts, immediate: true);
+                    await vm.IdleTask;
+                    Assert.Same(displayed, vm.Items);
+                    Assert.Equal(decoded, fake.NeighborRequests.Count);
+                    Assert.Equal(pts, vm.Items.Single(item => item.IsCurrent).Pts);
+                }
+                Assert.Equal(Enumerable.Range(12, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                Assert.Single(fake.Targets);
+            }
+            finally { vm.SetSource(null); await vm.IdleTask; }
+            return true;
+        }, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task ClickingWhileAnEdgeIsLoadingKeepsTheLatestWindowAndSelection()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            var fake = new FakeService();
+            var vm = new KeyFrameStripViewModel(() => fake);
+            vm.SetSource(new("one.mp4", null, true));
+            try
+            {
+                vm.RequestAt(10, immediate: true);
+                await vm.IdleTask;
+                fake.Gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
+                vm.RequestAt(12, immediate: true, currentPts: 12);
+                Assert.Single(fake.NeighborRequests);
+                Assert.Contains(vm.Items, item => item.IsPlaceholder);
+                vm.Cancel();
+                vm.RequestAt(14, immediate: true, currentPts: 14);
+                fake.Gate.SetResult();
+                await vm.IdleTask;
+                Assert.Equal(Enumerable.Range(10, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                Assert.Equal(14, vm.Items.Single(item => item.IsCurrent).Pts);
+                Assert.Single(fake.Targets);
+                Assert.Equal(1, fake.MaximumConcurrency);
+            }
+            finally { fake.Gate?.TrySetResult(); vm.SetSource(null); await vm.IdleTask; }
             return true;
         }, CancellationToken.None);
     }
@@ -650,8 +780,8 @@ public sealed class KeyFrameStripTests
                 if (target == 10)
                     Assert.Empty(fake.NeighborRequests);
                 else
-                    Assert.Equal((7L, -1), Assert.Single(fake.NeighborRequests));
-                Assert.Equal(Enumerable.Range(6, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                    Assert.All(fake.NeighborRequests, request => Assert.Equal(1, request.Direction));
+                Assert.Equal(Enumerable.Range(target - 4, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
                 Assert.Same(current.Bitmap, vm.Items.Single(item => item.IsCurrent).Bitmap);
                 Assert.Equal(1, fake.MaximumConcurrency);
             }
@@ -705,22 +835,27 @@ public sealed class KeyFrameStripTests
                 Assert.True(vm.PreviewStep(1));
                 Assert.True(vm.PreviewStep(1));
                 Assert.Equal(12, vm.Items.Single(item => item.IsCurrent).Timestamp.TotalSeconds);
-                Assert.DoesNotContain(vm.Items, item => item.IsPlaceholder);
+                Assert.Contains(vm.Items, item => item.IsPlaceholder);
                 fake.Gate.SetResult();
                 await vm.IdleTask;
-                Assert.Equal(Enumerable.Range(6, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                Assert.Equal(Enumerable.Range(8, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
                 Assert.Single(fake.Targets);
-                Assert.Equal(5, fake.NeighborRequests.Count);
+                Assert.InRange(fake.NeighborRequests.Count, 2, 8);
                 Assert.Equal(1, fake.MaximumConcurrency);
                 fake.Gate = new(TaskCreationOptions.RunContinuationsAsynchronously);
                 for (var index = 0; index < 7; index++)
                     Assert.True(vm.PreviewStep(1));
                 Assert.Equal(19, vm.Items.Single(item => item.IsCurrent).Pts);
-                Assert.False(vm.PreviewStep(1)); // 未知帧越界时等待主预览确认，不伪造下一帧。
-                vm.RequestAt(20, immediate: true, currentPts: 20);
+                Assert.True(vm.PreviewStep(1));
+                Assert.True(vm.PreviewStep(1));
+                var waiting = vm.Items;
+                Assert.Equal(21, waiting[4].Pts);
+                Assert.False(vm.PreviewStep(1));
+                Assert.Same(waiting, vm.Items);
+                vm.RequestAt(24, immediate: true, currentPts: 24);
                 fake.Gate.SetResult();
                 await vm.IdleTask;
-                Assert.Equal(20, vm.Items.Single(item => item.IsCurrent).Pts);
+                Assert.Equal(24, vm.Items[4].Pts);
                 Assert.DoesNotContain(vm.Items, item => item.IsPlaceholder);
                 Assert.Equal(1, fake.MaximumConcurrency);
             }
@@ -919,11 +1054,9 @@ public sealed class KeyFrameStripTests
         }, CancellationToken.None);
     }
 
-    /// <summary>
-    /// 帧精确模式靠近边缘时批量预取半屏，越界平移后直接复用；窗口内的逐帧移动不改变图片位置。
-    /// </summary>
+    /// <summary>居中导航沿移动方向批量预取，前后逐帧复用窗口及预取缓存。</summary>
     [Fact]
-    public async Task StepsPrefetchBothEdgesInBatchesWithoutMovingTheVisiblePictures()
+    public async Task CenteredStepsPrefetchBothDirectionsInBatches()
     {
         using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
         await session.Dispatch<bool>(async () =>
@@ -933,37 +1066,29 @@ public sealed class KeyFrameStripTests
             vm.SetSource(new("one.ts", null, true, EveryFrame: true));
             try
             {
-                vm.RequestAt(30, true);
+                vm.RequestAt(30, immediate: true);
                 await vm.IdleTask;
-                Assert.Equal(Enumerable.Range(26, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
-                Assert.True(vm.PreviewStep(-1));
-                await vm.IdleTask;
-                Assert.Empty(fake.BatchRequests);
-                Assert.True(vm.PreviewStep(-1));
-                await vm.IdleTask;
-                Assert.Equal([(26L, -1, 5)], fake.BatchRequests);
-                Assert.Equal(Enumerable.Range(26, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
-                for (var current = 27; current >= 24; current--)
+                for (var current = 29; current >= 24; current--)
                 {
                     Assert.True(vm.PreviewStep(-1));
                     await vm.IdleTask;
-                    Assert.Equal(current, vm.Items.Single(item => item.IsCurrent).Pts);
-                    Assert.DoesNotContain(vm.Items, item => item.IsPlaceholder);
+                    Assert.Equal(current, vm.Items[4].Pts);
+                    Assert.Equal(Enumerable.Range(current - 4, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
                 }
-                Assert.Equal(Enumerable.Range(21, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
-                Assert.Single(fake.BatchRequests);
+                Assert.Equal((26L, -1, 9), fake.BatchRequests[0]);
+                Assert.All(fake.BatchRequests, request => Assert.Equal(-1, request.Direction));
                 Assert.Empty(fake.SingleRequests);
-                Assert.True(vm.PreviewStep(-1));
-                await vm.IdleTask;
-                Assert.Equal((21L, -1, 5), fake.BatchRequests[^1]);
-                vm.RequestAt(60, true);
+                vm.RequestAt(60, immediate: true);
                 await vm.IdleTask;
                 Assert.True(vm.PreviewStep(1));
                 await vm.IdleTask;
+                Assert.Contains((64L, 1, 5), fake.BatchRequests);
                 Assert.True(vm.PreviewStep(1));
                 await vm.IdleTask;
-                Assert.Equal((64L, 1, 5), fake.BatchRequests[^1]);
-                Assert.Equal(Enumerable.Range(56, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                Assert.Equal((70L, 1, 1), fake.BatchRequests[^1]);
+                Assert.Equal(Enumerable.Range(58, 9).Select(pts => (long)pts), vm.Items.Select(item => item.Pts));
+                Assert.Equal(62, vm.Items[4].Pts);
+                Assert.Empty(fake.SingleRequests);
             }
             finally { vm.SetSource(null); await vm.IdleTask; }
             return true;
@@ -1037,6 +1162,7 @@ public sealed class KeyFrameStripTests
         public bool Disposed { get; private set; }
         public bool FailNextNeighbor { get; set; }
         public bool StartAtTarget { get; set; }
+        public long? EndPts { get; init; }
         public int MaximumConcurrency { get; private set; }
         private int concurrency;
         public Task OpenAsync(KeyFrameStripSource source, CancellationToken token) => Task.CompletedTask;
@@ -1051,7 +1177,7 @@ public sealed class KeyFrameStripTests
                 if (Gate is not null)
                     await Gate.Task;
                 var start = Math.Max(0, (int)target - (StartAtTarget ? 0 : (frameCount - 1) / 2));
-                var frames = Enumerable.Range(start, frameCount).Select(time =>
+                var frames = Enumerable.Range(start, frameCount).Where(time => EndPts is null || time <= EndPts).Select(time =>
                     new KeyFrameStripFrame(time, TimeSpan.FromSeconds(time), isCached(time) ? null :
                         new WriteableBitmap(new PixelSize(32, 18), new Vector(96, 96),
                             PixelFormat.Bgra8888, AlphaFormat.Opaque), "CRA")).ToArray();
@@ -1067,7 +1193,7 @@ public sealed class KeyFrameStripTests
                         await pause.Task;
                     }
                 }
-                return new(frames.Select(frame => frame with { Bitmap = null }).ToArray(), start == 0, false);
+                return new(frames.Select(frame => frame with { Bitmap = null }).ToArray(), start == 0, frames[^1].Pts == EndPts);
             }
             finally { concurrency--; }
         }
@@ -1086,7 +1212,7 @@ public sealed class KeyFrameStripTests
                     throw new InvalidOperationException("Unable to locate the adjacent keyframe within the scan budget.");
                 }
                 var pts = anchor.Pts + direction;
-                if (pts < 0)
+                if (pts < 0 || EndPts is { } end && pts > end)
                     return null;
                 return new(pts, TimeSpan.FromSeconds(pts), isCached(pts) ? null :
                     new WriteableBitmap(new PixelSize(32, 18), new Vector(96, 96), PixelFormat.Bgra8888, AlphaFormat.Opaque), "CRA");
