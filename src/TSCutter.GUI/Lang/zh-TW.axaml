@@ -196,6 +196,8 @@
     <x:String x:Key="String.MediaInfo.Loading">載入中...</x:String>
     <x:String x:Key="String.MediaInfo.Copied">已複製!</x:String>
     <x:String x:Key="String.MediaInfo.Failed">無法載入媒體資訊:</x:String>
+    <x:String x:Key="String.Export.Information">說明</x:String>
+    <x:String x:Key="String.Export.Av3aConfigurationRecovered">已從音訊影格標頭補齊 AV3A 封裝設定。</x:String>
     <x:String x:Key="String.ExportResult.TitleSuccess">匯出完成</x:String>
     <x:String x:Key="String.ExportResult.TitleFailure">匯出失敗</x:String>
     <x:String x:Key="String.ExportResult.Location">位置</x:String>

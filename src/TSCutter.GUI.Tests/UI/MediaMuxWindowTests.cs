@@ -10,7 +10,9 @@ using Avalonia.VisualTree;
 using Classic.Avalonia.Theme;
 using FFmpeg.AutoGen.Abstractions;
 using Splat;
+using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Tests.Editing;
 using TSCutter.GUI.Themes;
 using TSCutter.GUI.ViewModels.Media;
@@ -22,6 +24,42 @@ namespace TSCutter.GUI.Tests.UI;
 [Collection("Avalonia UI")]
 public sealed class MediaMuxWindowTests
 {
+    [Fact]
+    public async Task ConfigurationInformationUsesDetailsAndClearsForTheNextOperation()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            using var resolver = new ModernDependencyResolver();
+            using var scope = resolver.WithResolver();
+            var locale = new LocalizationService();
+            Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+            var vm = new MediaMuxWindowViewModel(null!);
+            try
+            {
+                Assert.False(vm.HasDetails);
+                vm.InformationModifiers = ExportModifiers.Av3aConfigurationRecovered;
+                foreach (var language in new[] { "en-US", "zh-CN", "zh-TW" })
+                {
+                    locale.SwitchLanguage(language);
+                    Assert.True(vm.HasDetails);
+                    Assert.False(vm.IsFailure || vm.HasErrorDetails);
+                    Assert.Equal(LocalizationManager.Instance.String_Export_Information, vm.DetailsTitle);
+                    Assert.Equal(LocalizationManager.Instance.String_Export_Av3aConfigurationRecovered, vm.DetailsText);
+                }
+                vm.IsFailure = true;
+                vm.ErrorDetails = "test error";
+                Assert.Equal(LocalizationManager.Instance.String_MediaMux_ErrorDetails, vm.DetailsTitle);
+                Assert.Equal("test error", vm.DetailsText);
+                await vm.AddPathsAsync([]);
+                Assert.False(vm.IsFailure || vm.HasDetails || vm.HasErrorDetails);
+                Assert.Equal(ExportModifiers.None, vm.InformationModifiers);
+                return true;
+            }
+            finally { vm.OnClosed(); }
+        }, CancellationToken.None);
+    }
+
     [RemuxExportFact(requireSubtitleEncoders: true)]
     public async Task ImportsEditsAndContainerChecksStayUsableAcrossThemes()
     {

@@ -26,7 +26,7 @@ internal sealed unsafe class RemuxExportService
 {
     private static readonly AVRational Microseconds = new() { num = 1, den = FF.AV_TIME_BASE };
 
-    public Task ExportAsync(RemuxExportRequest request, IProgress<RemuxExportProgress>? progress = null,
+    public Task<ExportModifiers> ExportAsync(RemuxExportRequest request, IProgress<RemuxExportProgress>? progress = null,
         CancellationToken cancellationToken = default, ExportTsCheckSession? checkSession = null) =>
         Task.Run(() => Export(request, progress, cancellationToken, checkSession), cancellationToken);
 
@@ -42,7 +42,7 @@ internal sealed unsafe class RemuxExportService
             language, title, raw->disposition);
     }).ToArray();
 
-    private static void Export(RemuxExportRequest request, IProgress<RemuxExportProgress>? progress,
+    private static ExportModifiers Export(RemuxExportRequest request, IProgress<RemuxExportProgress>? progress,
         CancellationToken token, ExportTsCheckSession? checkSession = null)
     {
         Validate(request);
@@ -197,6 +197,7 @@ internal sealed unsafe class RemuxExportService
             token.ThrowIfCancellationRequested();
             MediaFileAccess.Current.PublishOutput(temporary, request.OutputPath, overwrite: false);
             progress?.Report(new RemuxExportProgress(100, bytes / Math.Max(timer.Elapsed.TotalSeconds, 0.001), 0));
+            return prepared.Any(item => item.ConfigurationRecovered) ? ExportModifiers.Av3aConfigurationRecovered : ExportModifiers.None;
         }
         catch (FFmpegException) when (token.IsCancellationRequested)
         {
@@ -252,7 +253,7 @@ internal sealed unsafe class RemuxExportService
     }
 
     private sealed record PreparedSegment(RemuxExportSegment Segment, FormatContext Input, int[] Streams,
-        double Start, double End, long[] StartDts, long[] EndPts, long[] EndDurations, SourceStamp[] Source, bool[] EndHasLeading);
+        double Start, double End, long[] StartDts, long[] EndPts, long[] EndDurations, SourceStamp[] Source, bool[] EndHasLeading, bool ConfigurationRecovered);
 
     internal sealed record SourceStamp(string Path, long Length, DateTime Modified);
 
@@ -322,6 +323,9 @@ internal sealed unsafe class RemuxExportService
                 input = null!;
                 return Prepare(segment, token, 0);
             }
+            var configurationRecovered = segment.Settings.Container == "mp4" &&
+                Av3aConfiguration.Recover(input, indices, token,
+                    static index => new RemuxExportException(RemuxExportError.UnsupportedTrack, $"#{index}: AV3A"));
             var startBoundary = startBySignature
                 ?? FindBoundary(input, reference->index, requestedStart, false, token, firstIfNone: segment.StartSeconds <= 0);
             var endBoundary = toEnd
@@ -382,7 +386,7 @@ internal sealed unsafe class RemuxExportService
             }
             ReopenAfterDvdEof();
             var result = new PreparedSegment(segment, input, indices, startBoundary.Time, endTime,
-                starts, ends, endDurations, source, endHasLeading);
+                starts, ends, endDurations, source, endHasLeading, configurationRecovered);
             input = null!;
             return result;
         }

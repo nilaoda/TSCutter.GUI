@@ -12,6 +12,7 @@ using CommunityToolkit.Mvvm.Input;
 using FFmpeg.AutoGen.Abstractions;
 using HanumanInstitute.MvvmDialogs;
 using HanumanInstitute.MvvmDialogs.FrameworkDialogs;
+using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Media;
 using TSCutter.GUI.Services.Application.SystemProgress;
 using TSCutter.GUI.Services.Media;
@@ -19,6 +20,7 @@ using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.ViewModels.Editing;
 
 namespace TSCutter.GUI.ViewModels.Media;
 
@@ -184,9 +186,16 @@ public partial class MediaMuxWindowViewModel : ViewModelBase, IModalDialogViewMo
     public bool CanUseFastStart => Container == "mp4";
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private bool _isExporting;
-    [ObservableProperty] private bool _isFailure;
-    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasErrorDetails))] private string _errorDetails = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(DetailsTitle), nameof(DetailsText), nameof(HasDetails))]
+    private bool _isFailure;
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(HasErrorDetails), nameof(DetailsText), nameof(HasDetails))]
+    private string _errorDetails = "";
+    [ObservableProperty, NotifyPropertyChangedFor(nameof(DetailsText), nameof(HasDetails))]
+    private ExportModifiers _informationModifiers;
     public bool HasErrorDetails => ErrorDetails.Length > 0;
+    public string DetailsTitle => IsFailure ? Strings.String_MediaMux_ErrorDetails : Strings.String_Export_Information;
+    public string DetailsText => IsFailure ? ErrorDetails : ExportRecordView.FormatInformation(InformationModifiers, Strings);
+    public bool HasDetails => DetailsText.Length > 0;
     [ObservableProperty] private double _percent;
     private SystemProgressOperation? _systemProgress;
     partial void OnPercentChanged(double value) => _systemProgress?.ReportPercent(value);
@@ -435,7 +444,7 @@ public partial class MediaMuxWindowViewModel : ViewModelBase, IModalDialogViewMo
                 Percent = Math.Max(Percent, value.Percent);
                 ProgressText = $"{Percent:0.0}% · {CommonUtil.FormatFileSize(value.Bytes)} · {CommonUtil.FormatFileSize(value.BytesPerSecond)}/s";
             });
-            await _service.ExportAsync(request, progress, cancellation.Token);
+            InformationModifiers = await _service.ExportAsync(request, progress, cancellation.Token);
             Percent = 100;
             LastOutputPath = request.OutputPath;
             ProgressText = CommonUtil.FormatFileSize(new FileInfo(OutputPath).Length);
@@ -462,6 +471,7 @@ public partial class MediaMuxWindowViewModel : ViewModelBase, IModalDialogViewMo
         _cancellation = cancellation;
         IsFailure = false;
         ErrorDetails = "";
+        InformationModifiers = ExportModifiers.None;
         IsExporting = exporting;
         Percent = 0;
         ProgressText = "";
@@ -525,6 +535,8 @@ public partial class MediaMuxWindowViewModel : ViewModelBase, IModalDialogViewMo
         if (_statusTextProvider is not null)
             SetStatus(_statusTextProvider, _statusArguments);
         OnPropertyChanged(nameof(WindowTitle));
+        OnPropertyChanged(nameof(DetailsTitle));
+        OnPropertyChanged(nameof(DetailsText));
         OnPropertyChanged(nameof(Languages));
         OnPropertyChanged(nameof(ContainerHint));
         foreach (var track in Tracks)

@@ -174,9 +174,9 @@
                            IsVisible="{Binding ValidationText, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
                            Foreground="{DynamicResource AppStatusWarningForegroundBrush}" />
             </StackPanel>
-            <Expander x:Name="MuxErrorDetails" Header="{DynamicResource String.MediaMux.ErrorDetails}" HorizontalAlignment="Stretch"
-                      IsVisible="{Binding HasErrorDetails}" IsExpanded="False">
-                <TextBox Text="{Binding ErrorDetails}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
+            <Expander x:Name="MuxErrorDetails" Header="{Binding DetailsTitle}" HorizontalAlignment="Stretch"
+                      IsVisible="{Binding HasDetails}" IsExpanded="False">
+                <TextBox Text="{Binding DetailsText}" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap"
                          MinHeight="70" MaxHeight="130" ScrollViewer.VerticalScrollBarVisibility="Auto"
                          ScrollViewer.HorizontalScrollBarVisibility="Disabled" />
             </Expander>

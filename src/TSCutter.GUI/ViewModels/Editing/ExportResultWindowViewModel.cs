@@ -74,6 +74,8 @@ public partial class ExportResultWindowViewModel : ViewModelBase, IModalDialogVi
     public bool HasRanges => IsSuccess && RangesText.Length > 0;
     public string ReencodeText => _info.ReencodeText ?? "";
     public bool HasReencode => IsSuccess && _info.ReencodeText is not null;
+    public string InformationText => ExportRecordView.FormatInformation(_info.Record?.Modifiers ?? _info.Modifiers, LocalizationManager.Instance);
+    public bool HasInformation => IsSuccess && InformationText.Length > 0;
     public string CheckStatusText { get; private set; } = "";
     public string CheckDetailText { get; private set; } = "";
     public bool HasCheck { get; private set; }
@@ -181,6 +183,8 @@ public partial class ExportResultWindowViewModel : ViewModelBase, IModalDialogVi
         if (IsSuccess)
             builder.AppendLine($"{strings.String_Export_Records_Column_Size}: {SizeText}");
         builder.AppendLine($"{strings.String_Export_Records_Column_Elapsed}: {FormatElapsed(_info.Elapsed)}");
+        if (HasInformation)
+            builder.AppendLine(InformationText);
         if (ErrorText.Length > 0)
             builder.AppendLine(ErrorText);
         return builder.ToString().TrimEnd();

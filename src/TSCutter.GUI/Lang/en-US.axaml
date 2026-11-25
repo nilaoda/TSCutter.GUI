@@ -196,6 +196,8 @@
     <x:String x:Key="String.MediaInfo.Loading">Loading...</x:String>
     <x:String x:Key="String.MediaInfo.Copied">Copied!</x:String>
     <x:String x:Key="String.MediaInfo.Failed">Failed to load media info:</x:String>
+    <x:String x:Key="String.Export.Information">Information</x:String>
+    <x:String x:Key="String.Export.Av3aConfigurationRecovered">AV3A container configuration was recovered from audio frame headers.</x:String>
     <x:String x:Key="String.ExportResult.TitleSuccess">Export complete</x:String>
     <x:String x:Key="String.ExportResult.TitleFailure">Export failed</x:String>
     <x:String x:Key="String.ExportResult.Location">Location</x:String>

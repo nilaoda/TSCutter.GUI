@@ -49,7 +49,7 @@ internal sealed unsafe class FrameAccurateExportService
     private readonly List<FrameAccurateSegmentReport> reports = [];
     internal IReadOnlyList<FrameAccurateSegmentReport> Reports => reports;
 
-    public Task ExportAsync(FrameAccurateExportRequest request, IProgress<FrameAccurateExportProgress>? progress = null,
+    public Task<ExportModifiers> ExportAsync(FrameAccurateExportRequest request, IProgress<FrameAccurateExportProgress>? progress = null,
         CancellationToken cancellationToken = default, ExportTsCheckSession? checkSession = null) =>
         Task.Run(() => Export(request, progress, cancellationToken, checkSession), cancellationToken);
 
@@ -194,7 +194,7 @@ internal sealed unsafe class FrameAccurateExportService
         }
     }
 
-    private void Export(FrameAccurateExportRequest request, IProgress<FrameAccurateExportProgress>? progress,
+    private ExportModifiers Export(FrameAccurateExportRequest request, IProgress<FrameAccurateExportProgress>? progress,
         CancellationToken token, ExportTsCheckSession? checkSession)
     {
         Validate(request);
@@ -255,6 +255,9 @@ internal sealed unsafe class FrameAccurateExportService
                 }
                 segments = resolved ?? throw new FrameAccurateExportException(FrameAccurateExportError.FrameNotFound, "DVD");
             }
+            var configurationRecovered = settings.Container == "mp4" &&
+                Av3aConfiguration.Recover(input, settings.StreamIndices, token,
+                    static index => new FrameAccurateExportException(FrameAccurateExportError.UnsupportedTrack, $"#{index}: AV3A"));
             var hevc = video->codecpar->codec_id == AVCodecID.AV_CODEC_ID_HEVC;
             // AV1 的附加数据是 av1C、VP9 的是 vpcC，都不是 NAL 参数集。
             var lengthSize = video->codecpar->codec_id is AVCodecID.AV_CODEC_ID_AV1 or AVCodecID.AV_CODEC_ID_VP9 ? 0
@@ -550,6 +553,7 @@ internal sealed unsafe class FrameAccurateExportService
             MediaFileAccess.Current.PublishOutput(temporary, request.OutputPath, overwrite: false);
             done = total;
             Report(100, FrameAccuratePhase.Finishing, encodedBefore, copiedBefore);
+            return configurationRecovered ? ExportModifiers.Av3aConfigurationRecovered : ExportModifiers.None;
         }
         catch (FFmpegException) when (token.IsCancellationRequested)
         {
