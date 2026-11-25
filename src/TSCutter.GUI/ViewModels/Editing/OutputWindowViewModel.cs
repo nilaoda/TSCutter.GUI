@@ -816,17 +816,21 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
                 var fileAccess = MediaFileAccess.Current;
                 var approved = task.OverwriteApproval?.TryConsume(task.DestinationPath) == true;
+                var grantRegistered = false;
                 try
                 {
                     if (approved)
+                    {
                         fileAccess.GrantOverwrite(task.DestinationPath);
+                        grantRegistered = true;
+                    }
                     await (RunBatchTaskAsync ?? CopyClipAsync)(task);
                     CompletedTaskIndices.Add(i);
                 }
                 finally
                 {
-                    if (approved)
-                        fileAccess.TryConsumeOverwrite(task.DestinationPath);
+                    if (approved && (!grantRegistered || fileAccess.TryConsumeOverwrite(task.DestinationPath)))
+                        task.OverwriteApproval!.Restore();
                 }
             }
             catch (OperationCanceledException)

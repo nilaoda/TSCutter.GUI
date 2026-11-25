@@ -1,4 +1,10 @@
 using System.Runtime.InteropServices;
+using System.Reflection;
+using Avalonia.Headless;
+using Splat;
+using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Tests.UI;
+using TSCutter.GUI.ViewModels.Editing;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Files;
@@ -54,6 +60,71 @@ public sealed class MediaOutputTests : IDisposable
             Assert.Equal(new byte[] { 1, 2, 3, 4 }, File.ReadAllBytes(target));
         }
         finally { MediaFileAccess.ConfigureForProcess(previous); }
+    }
+
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(false, true)]
+    [InlineData(true, false)]
+    public async Task QueueReturnsApprovalOnlyWhenWritingHasNotStarted(bool writingStarted, bool cancel)
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            using var resolver = new ModernDependencyResolver();
+            using var scope = resolver.WithResolver();
+            var locale = new LocalizationService();
+            Locator.CurrentMutable.RegisterConstant<ILocalizationService>(locale);
+            locale.SwitchLanguage("en-US");
+            var previous = MediaFileAccess.Current;
+            MediaFileAccess.ConfigureForProcess(restricted);
+            try
+            {
+                var approval = new OverwriteApproval(target);
+                var task = new BatchTask(source, target, 0, 4) { OverwriteApproval = approval };
+                var failed = await Run(async _ =>
+                {
+                    if (writingStarted)
+                    {
+                        using var output = restricted.OpenOutput(target, sources: [source]);
+                        output.WriteByte(9);
+                        throw new IOException("Interrupted write");
+                    }
+                    if (cancel)
+                        throw new OperationCanceledException();
+                    await CommonUtil.CopyFileAsync(new FileInfo(source), target, start: -1);
+                });
+                Assert.Empty(failed.CompletedTaskIndices);
+                Assert.Equal(!writingStarted, approval.Allows(target));
+                Assert.False(restricted.CanOverwrite(target));
+                if (writingStarted)
+                {
+                    Assert.Equal(new byte[] { 9 }, File.ReadAllBytes(target));
+                    Assert.Throws<IOException>(() => restricted.OpenOutput(target));
+                }
+                else
+                {
+                    Assert.Equal("old", File.ReadAllText(target));
+                    var retried = await Run(_ => CommonUtil.CopyFileAsync(new FileInfo(source), target));
+                    Assert.Null(retried.Exception);
+                    Assert.Equal([0], retried.CompletedTaskIndices);
+                    Assert.Equal(new byte[] { 1, 2, 3, 4 }, File.ReadAllBytes(target));
+                    Assert.False(approval.Allows(target));
+                    Assert.False(restricted.CanOverwrite(target));
+                }
+                return true;
+
+                async Task<OutputWindowViewModel> Run(Func<BatchTask, Task> write)
+                {
+                    var output = new OutputWindowViewModel { RunBatchTaskAsync = write };
+                    output.SetBatchTasks([task]);
+                    await (Task)typeof(OutputWindowViewModel).GetMethod("RunBatchAsync", BindingFlags.Instance | BindingFlags.NonPublic)!
+                        .Invoke(output, null)!;
+                    return output;
+                }
+            }
+            finally { MediaFileAccess.ConfigureForProcess(previous); }
+        }, CancellationToken.None);
     }
 
     [Fact]
