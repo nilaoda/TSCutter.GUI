@@ -8,6 +8,70 @@ namespace TSCutter.GUI.Utils.Media;
 
 public static partial class MediaInfoBuilder
 {
+    private static unsafe IReadOnlyDictionary<int, HdrMetadataProbe> ReadHdrMetadata(FormatContext input)
+    {
+        const int packetsPerStream = 128;
+        var probes = new Dictionary<int, HdrMetadataProbe>();
+        var remaining = new Dictionary<int, int>();
+        foreach (var stream in input.Streams)
+        {
+            if (stream.IsAttachedPicture || stream.Codecpar is not { } parameters
+                || parameters.CodecType != AVMediaType.AVMEDIA_TYPE_VIDEO || !HdrMetadataProbe.Supports(parameters.CodecId))
+                continue;
+            probes[stream.Index] = ReadHdrConfiguration(parameters);
+            remaining[stream.Index] = packetsPerStream;
+        }
+        if (remaining.Count == 0)
+            return probes;
+        // 弹窗只抽样开头的编码包，避免扫描整部影片；不需要创建视频解码器。
+        var timer = System.Diagnostics.Stopwatch.StartNew();
+        long bytes = 0;
+        var count = 0;
+        try
+        {
+            foreach (var packet in input.ReadPackets())
+            {
+                AVPacket* raw = packet;
+                bytes += Math.Max(0, raw->size);
+                if (bytes > 32 * 1024 * 1024 || ++count > 8192 || timer.Elapsed.TotalSeconds > 2)
+                    break;
+                if (!remaining.TryGetValue(packet.StreamIndex, out var packets))
+                    continue;
+                if (raw->data != null && raw->size > 0)
+                    probes[packet.StreamIndex].ReadPacket(new ReadOnlySpan<byte>(raw->data, raw->size));
+                if (packets > 1)
+                    remaining[packet.StreamIndex] = packets - 1;
+                else
+                    remaining.Remove(packet.StreamIndex);
+                if (remaining.Count == 0)
+                    break;
+            }
+        }
+        catch (FFmpegException)
+        {
+            // 元数据抽样失败时保留容器信息和已经确认的格式。
+        }
+        return probes;
+    }
+
+    private static unsafe HdrMetadataProbe ReadHdrConfiguration(CodecParameters parameters)
+    {
+        var probe = new HdrMetadataProbe(parameters.CodecId);
+        AVCodecParameters* raw = parameters;
+        for (var index = 0; raw->coded_side_data != null && index < raw->nb_coded_side_data; index++)
+        {
+            var side = raw->coded_side_data[index];
+            if (side.type != AVPacketSideDataType.AV_PKT_DATA_MASTERING_DISPLAY_METADATA
+                || side.data == null || side.size < (nuint)sizeof(AVMasteringDisplayMetadata))
+                continue;
+            var mastering = (AVMasteringDisplayMetadata*)side.data;
+            probe.MasteringDisplay = mastering->has_primaries != 0 && mastering->has_luminance != 0;
+        }
+        if (HdrMetadataProbe.Supports(parameters.CodecId) && raw->extradata != null && raw->extradata_size > 0)
+            probe.ReadConfiguration(new ReadOnlySpan<byte>(raw->extradata, raw->extradata_size));
+        return probe;
+    }
+
     private static unsafe DolbyVisionConfiguration? ReadDolbyVisionConfiguration(CodecParameters parameters)
     {
         AVCodecParameters* raw = parameters;

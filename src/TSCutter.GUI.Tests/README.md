@@ -104,6 +104,7 @@ The default synthetic tests do not depend on the following environment variables
 | `TSCUTTER_TEST_MEDIA_ROOT` | Optional synthetic media root containing `keyframes/`, `remux/`, and `subtitles/`; use with the preparation script's `--output-dir` |
 | `TSCUTTER_REMUX_TEST_SAMPLES` | Legacy remux fixture directory override, taking precedence over the shared root |
 | `TSCUTTER_SUBTITLE_TEST_SAMPLES` | Legacy subtitle fixture directory override, taking precedence over the shared root |
+| `TSCUTTER_HDR_TEST_SAMPLES` | Optional HDR sample directory containing `hdr-vivid-hevc.mp4`, `hdr-vivid-avs2.ts`, `hlg-hevc.ts`, and `hdr10plus.mkv`, for HDR Vivid, HLG, and HDR10+ media info checks |
 | `TSCUTTER_FFMPEG_TEST_SAMPLES` | Optional real codec sample directory containing `1080i.ts`, `4K.ts`, `AVS+.ts`, `AVS+_2.ts`, `AVS+_P.ts`, `AVS2.ts`, and `AVS3.ts`, for checks such as packet position metadata from specialized decoders |
 | `TSCUTTER_DOVI_P81_TEST_SAMPLE` | Optional single-layer Dolby Vision Profile 8.1 (HDR10-compatible) MP4 for the keyframe export check (MP4 keeps `hvc1`) and the frame-accurate check; the latter cuts it between 2 and 12 seconds, so that window should contain at least two IDR frames |
 | `TSCUTTER_DOVI_P84_TEST_SAMPLE` | Optional single-layer Dolby Vision Profile 8.4 (HLG-compatible) MP4 with video at track 0 and audio at track 1, for the keyframe export check (MP4 keeps `hvc1`) and the frame-accurate check; the latter cuts it between 2 and 12 seconds, so that window should contain at least two IDR frames |
