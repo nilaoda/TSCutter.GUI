@@ -29,6 +29,7 @@ public partial class MainWindowViewModel
             {
                 var warning = _dialogService.CreateViewModel<TsExportWarningViewModel>();
                 warning.FileNames = clips ?? missing.Select(path => Path.GetFileName(path)).ToArray();
+                warning.SetWarnings(output.ProgramTableWarnings);
                 await _dialogService.ShowDialogAsync(this, warning);
                 choice = warning.Choice;
             }
