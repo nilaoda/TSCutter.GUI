@@ -302,11 +302,17 @@ public sealed class UpdateService
         string payloadDirectory, string packageDirectory, IReadOnlyList<string> relaunchArgs)
     {
         var backup = targetExe + ".old";
-        var noticeTarget = Path.Combine(Path.GetDirectoryName(targetExe)!, NoticeFileName);
+        var installDirectory = Path.GetDirectoryName(targetExe)!;
+        var noticeTarget = Path.Combine(installDirectory, NoticeFileName);
         var noticeBackup = noticeTarget + ".old";
+        // New release zips are portable by default. Carry the marker into an
+        // older install so an in-place update turns portable mode on as well.
+        var markerTarget = Path.Combine(installDirectory, AppDataPaths.MarkerFileName);
+        var markerSource = Path.Combine(payloadDirectory, AppDataPaths.MarkerFileName);
         Process? relaunched = null;
         var replaced = false;
         var noticeReplaced = false;
+        var markerAdded = false;
         try
         {
             if (!int.TryParse(pidArgument, out var parentPid))
@@ -323,9 +329,14 @@ public sealed class UpdateService
                 ReplaceWithRetry(notice, noticeTarget);
                 noticeReplaced = true;
             }
+            if (File.Exists(markerSource) && !File.Exists(markerTarget))
+            {
+                File.Copy(markerSource, markerTarget, overwrite: false);
+                markerAdded = true;
+            }
 
             // Do not discard the backup until the new executable has actually started.
-            relaunched = Relaunch(targetExe, relaunchArgs, Path.GetDirectoryName(targetExe)!);
+            relaunched = Relaunch(targetExe, relaunchArgs, installDirectory);
             if (relaunched is null)
                 throw new InvalidOperationException("The updated application did not start.");
             bool healthy;
@@ -370,8 +381,10 @@ public sealed class UpdateService
                     TryDelete(noticeTarget);
                     TryRestore(noticeBackup, noticeTarget);
                 }
+                if (markerAdded)
+                    TryDelete(markerTarget);
                 // Show the error in the restored version instead of just closing.
-                Relaunch(targetExe, relaunchArgs, Path.GetDirectoryName(targetExe)!);
+                Relaunch(targetExe, relaunchArgs, installDirectory);
             }
             TryDeleteDirectory(packageDirectory);
             ReleaseUpdateLock();
@@ -448,6 +461,15 @@ public sealed class UpdateService
                 var portableData = Path.Combine(staged.InstallRoot, AppDataDirectoryName);
                 if (Directory.Exists(portableData))
                     CopyDirectory(portableData, Path.Combine(sourceRoot, AppDataDirectoryName));
+                // The portable marker lives at the bundle root too; without it the
+                // updated bundle would silently start using the user profile again.
+                var marker = Path.Combine(staged.InstallRoot, AppDataPaths.MarkerFileName);
+                if (File.Exists(marker))
+                    File.Copy(marker, Path.Combine(sourceRoot, AppDataPaths.MarkerFileName), overwrite: true);
+                // A new release zip may introduce the marker into an older install.
+                var packageMarker = Path.Combine(staged.PayloadDirectory, AppDataPaths.MarkerFileName);
+                if (File.Exists(packageMarker))
+                    File.Copy(packageMarker, Path.Combine(sourceRoot, AppDataPaths.MarkerFileName), overwrite: true);
                 SwapDirectories(sourceRoot, staged.InstallRoot, Path.Combine(backupRoot, "install"),
                     () => FinishUnixUpdate(staged, relaunchArgs, relaunch));
             }
@@ -705,9 +727,14 @@ public sealed class UpdateService
                 TryDeleteDirectory(path);
     }
 
-    internal static string UpdateLockFilePath { get; set; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "TSCutter.GUI", "update.lock");
+    internal static string? UpdateLockFilePathOverride { get; set; }
+
+    internal static string UpdateLockFilePath
+    {
+        get => UpdateLockFilePathOverride ?? AppDataPaths.GetPath(
+            Environment.SpecialFolder.LocalApplicationData, "update.lock");
+        set => UpdateLockFilePathOverride = value;
+    }
 
     internal static bool TryAcquireUpdateLock()
     {
@@ -745,9 +772,8 @@ public sealed class UpdateService
         }
     }
 
-    private static string ResultFilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "TSCutter.GUI", ResultFileName);
+    private static string ResultFilePath => AppDataPaths.GetPath(
+        Environment.SpecialFolder.LocalApplicationData, ResultFileName);
 
     internal static void WriteHelperResult(bool success, string message)
     {

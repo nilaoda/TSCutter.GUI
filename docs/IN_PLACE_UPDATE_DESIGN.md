@@ -123,12 +123,18 @@ validates `Version = X.Y.Z`, `Stage = Beta`, `Tag = v<Version>`
 
 ### 1.5 Why in-place replacement is safe for user data
 
-Configuration lives in `%APPDATA%\TSCutter.GUI\config.json` (with
+By default configuration lives in `%APPDATA%\TSCutter.GUI\config.json` (with
 `remote-editing.json` beside it), recovery files in
-`%LOCALAPPDATA%\TSCutter.GUI\Recovery`, and saved frames under `%APPDATA%`
-(`ConfigurationService.cs:27-28`, `ProjectRecoveryStore.cs:49-53`,
-`SavedFrameStore.cs:23`). None of these are inside the application directory,
-so replacing the executable or `.app` bundle leaves user settings untouched.
+`%LOCALAPPDATA%\TSCutter.GUI\Recovery`, and saved frames under `%APPDATA%`.
+None of these are inside the application directory, so replacing the executable
+or `.app` bundle leaves user settings untouched.
+
+In portable mode (a `TSCutter.GUI.portable` marker beside the executable), all of these move
+into `<install>/data` via `AppDataPaths`. Release ZIPs now include the marker, so
+a fresh install is portable by default. Windows and Linux replacements only touch
+package files, so `data` is untouched; the updater also carries the marker into
+older installs. The macOS bundle swap copies both `data` and the marker into the
+new bundle before replacing the old one. See [PORTABLE_MODE.md](PORTABLE_MODE.md).
 
 ---
 
@@ -361,7 +367,9 @@ browser, no quarantine attribute is added.
   created before the first rename. Both platforms relaunch with the original
   arguments and only keep the backup after the new process has stayed alive for
   two seconds or exited with code zero; an immediate failure restores the old
-  install.
+  install. In portable mode, the `TSCutter.GUI.portable` marker is carried into
+  the new macOS bundle while the sibling `data` folder is left untouched, so the
+  updated app stays portable.
 - **Transport hardening**: only HTTPS URLs on `github.com` / `*.githubusercontent.com`
   are accepted, and the checksum must be a 64-character hex string.
 - **Multi-instance lock**: `update.lock` under `%LOCALAPPDATA%\TSCutter.GUI` holds the

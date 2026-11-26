@@ -361,13 +361,48 @@ public class UpdateServiceTests
             File.WriteAllText(Path.Combine(sourceBundle, "TSCutterGUI"), "new exe");
             File.WriteAllText(Path.Combine(targetBundle, "TSCutterGUI"), "old exe");
             File.WriteAllText(Path.Combine(install, "obsolete.txt"), "old");
+            File.WriteAllText(Path.Combine(install, AppDataPaths.MarkerFileName), "");
+            Directory.CreateDirectory(Path.Combine(install, "data"));
+            File.WriteAllText(Path.Combine(install, "data", "config.json"), "settings");
 
             var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.MacAppBundle);
             UpdateService.ApplyUnixUpdate(staged, [], relaunch: false);
 
             Assert.Equal("new exe", File.ReadAllText(Path.Combine(targetBundle, "TSCutterGUI")));
             Assert.False(File.Exists(Path.Combine(install, "obsolete.txt")));
+            Assert.True(File.Exists(Path.Combine(install, AppDataPaths.MarkerFileName)));
+            Assert.Equal("settings", File.ReadAllText(Path.Combine(install, "data", "config.json")));
             Assert.False(Directory.Exists(Path.Combine(package, "rollback")));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ApplyUnixUpdate_CopiesPackageMarkerIntoMacBundle()
+    {
+        var root = Directory.CreateTempSubdirectory("tscutter-mac-marker-");
+        try
+        {
+            var install = Path.Combine(root.FullName, "TSCutter.GUI.app");
+            var package = Path.Combine(root.FullName, ".TSCutter.GUI.update-1");
+            var payload = Path.Combine(package, "payload");
+            var sourceBundle = Path.Combine(payload, "TSCutter.GUI.app", "Contents", "MacOS");
+            var targetBundle = Path.Combine(install, "Contents", "MacOS");
+            Directory.CreateDirectory(sourceBundle);
+            Directory.CreateDirectory(targetBundle);
+            File.WriteAllText(Path.Combine(sourceBundle, "TSCutterGUI"), "new exe");
+            File.WriteAllText(Path.Combine(targetBundle, "TSCutterGUI"), "old exe");
+            // A new portable release ships the marker at the zip root.
+            File.WriteAllText(Path.Combine(payload, AppDataPaths.MarkerFileName), "");
+
+            var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.MacAppBundle);
+            UpdateService.ApplyUnixUpdate(staged, [], relaunch: false);
+
+            Assert.True(File.Exists(Path.Combine(install, AppDataPaths.MarkerFileName)));
+            Assert.Equal("new exe", File.ReadAllText(Path.Combine(targetBundle, "TSCutterGUI")));
         }
         finally
         {

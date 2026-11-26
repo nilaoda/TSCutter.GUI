@@ -18,6 +18,10 @@ sealed class Program
     [STAThread]
     public static int Main(string[] args)
     {
+        // A "TSCutter.GUI.portable" marker beside the executable moves all app data
+        // into a data folder next to the install; seed it before any service reads a path.
+        AppDataPaths.EnsurePortableData();
+
         // Hidden helper used by in-place updates on Windows: a copy of the running
         // executable replaces the original after the main process has exited.
         if (args.Length >= 6 && args[0] == "--apply-update")

@@ -23,6 +23,7 @@
 - [杜比 E 转码设计方案](./杜比E转码设计方案.md)
 - [多轨合并为 5.1 设计方案](./多轨合并设计方案.md)
 - [就地更新设计方案（In-place update）](./IN_PLACE_UPDATE_DESIGN.md)
+- [便携模式使用说明（Portable mode）](./PORTABLE_MODE.md) · [简体中文](./PORTABLE_MODE_CN.md)
 
 ## 共同前提
 

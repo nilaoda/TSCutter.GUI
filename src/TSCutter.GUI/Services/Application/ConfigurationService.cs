@@ -24,8 +24,8 @@ public class ConfigurationService : IConfigurationService
 
     // 构造函数注入
     public ConfigurationService(ILocalizationService locService, bool persistent = true, AppConfig? initialConfig = null)
-        : this(locService, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "TSCutter.GUI", "config.json"), persistent, initialConfig) { }
+        : this(locService, AppDataPaths.GetPath(Environment.SpecialFolder.ApplicationData, "config.json"),
+            persistent, initialConfig) { }
 
     internal ConfigurationService(ILocalizationService locService, string configPath,
         bool persistent = true, AppConfig? initialConfig = null)

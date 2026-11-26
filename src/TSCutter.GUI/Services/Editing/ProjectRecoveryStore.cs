@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using TSCutter.GUI.Models.Editing;
+using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Utils.Application;
 
 namespace TSCutter.GUI.Services.Editing;
@@ -46,13 +47,11 @@ internal sealed class ProjectRecoveryStore
     }
 
     /// <summary>
-    /// 应用数据目录下的 Recovery 文件夹：Windows 为 %LOCALAPPDATA%\TSCutter.GUI\Recovery，
-    /// macOS 为 ~/Library/Application Support/TSCutter.GUI/Recovery。
+    /// 应用数据目录下的 Recovery 文件夹：便携模式下为安装目录的 data/Recovery，
+    /// 其他情况为 %LOCALAPPDATA%\TSCutter.GUI\Recovery。
     /// </summary>
-    public static string DefaultDirectory => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData,
-            Environment.SpecialFolderOption.DoNotVerify),
-        "TSCutter.GUI", "Recovery");
+    public static string DefaultDirectory =>
+        AppDataPaths.GetPath(Environment.SpecialFolder.LocalApplicationData, "Recovery");
 
     public static ProjectRecoveryStore Default { get; } =
         new(DefaultDirectory, AppInstanceIdentity.Current, AppInstanceIdentity.IsRunning);
