@@ -1,11 +1,13 @@
 <Window xmlns="https://github.com/avaloniaui"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="clr-namespace:TSCutter.GUI.ViewModels.Editing"
+        x:DataType="vm:TsExportWarningViewModel"
         x:Class="TSCutter.GUI.Views.Editing.TsExportWarningView"
         Width="580" SizeToContent="Height" CanResize="False"
         CanMinimize="False" CanMaximize="False" ShowInTaskbar="False"
         WindowStartupLocation="CenterOwner" Title="{DynamicResource String.TsExport.TablesWarningTitle}">
     <Grid Margin="16" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="16">
-        <TextBlock Text="{DynamicResource String.TsExport.TablesWarning}" TextWrapping="Wrap" />
+        <TextBlock Text="{Binding Message}" TextWrapping="Wrap" />
         <ScrollViewer Grid.Row="1" MaxHeight="160" HorizontalScrollBarVisibility="Disabled">
             <ItemsControl Name="FilesList">
                 <ItemsControl.ItemsPanel>
@@ -18,15 +20,18 @@
                 </ItemsControl.ItemTemplate>
             </ItemsControl>
         </ScrollViewer>
-        <TextBlock Grid.Row="2" Text="{DynamicResource String.TsExport.SupplementHint}"
+        <TextBlock Grid.Row="2" Text="{Binding Hint}"
                    TextWrapping="Wrap" Opacity="0.7" />
         <StackPanel Grid.Row="3" Orientation="Horizontal" HorizontalAlignment="Right" Spacing="8">
             <Button Name="ReturnButton" Content="{DynamicResource String.TsExport.AdjustCut}"
-                    Click="ReturnClick" IsCancel="True" MinWidth="100" />
+                    Click="ReturnClick" IsCancel="True" IsDefault="{Binding !HasRepair}" MinWidth="80" />
             <Button Name="ContinueButton" Content="{DynamicResource String.TsExport.Continue}"
                     Click="ContinueClick" MinWidth="100" />
             <Button Name="SupplementButton" Content="{DynamicResource String.TsExport.Supplement}"
-                    Click="SupplementClick" IsDefault="True" MinWidth="160" />
+                    Click="SupplementClick" IsVisible="{Binding CanSupplement}" IsDefault="{Binding CanSupplement}" MinWidth="160" />
+            <Button Name="CurrentProgramButton" Content="{DynamicResource String.TsExport.CurrentProgram}"
+                    Click="CurrentProgramClick" IsVisible="{Binding CanExportCurrentProgram}"
+                    IsDefault="{Binding CanExportCurrentProgram}" MinWidth="160" />
         </StackPanel>
     </Grid>
 </Window>

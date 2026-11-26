@@ -25,4 +25,5 @@ public partial class TsExportWarningView : ClassicWindow
     private void ReturnClick(object? sender, RoutedEventArgs e) => Complete(TsProgramTableExportChoice.Cancel);
     private void ContinueClick(object? sender, RoutedEventArgs e) => Complete(TsProgramTableExportChoice.Original);
     private void SupplementClick(object? sender, RoutedEventArgs e) => Complete(TsProgramTableExportChoice.Supplement);
+    private void CurrentProgramClick(object? sender, RoutedEventArgs e) => Complete(TsProgramTableExportChoice.CurrentProgram);
 }

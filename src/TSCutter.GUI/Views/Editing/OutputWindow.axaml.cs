@@ -59,6 +59,7 @@ public partial class OutputWindow : ClassicWindow
     {
         token.ThrowIfCancellationRequested();
         var warning = new TsExportWarningViewModel { FileNames = files };
+        warning.SetWarnings(viewModel?.ProgramTableWarnings ?? []);
         var dialog = new TsExportWarningView { DataContext = warning };
         using var registration = token.Register(() => Dispatcher.UIThread.Post(() => dialog.Close()));
         await dialog.ShowDialog(this);

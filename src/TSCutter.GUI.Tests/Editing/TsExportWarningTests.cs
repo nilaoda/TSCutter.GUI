@@ -144,9 +144,12 @@ public sealed class TsExportWarningTests
             owner.Show();
             try
             {
-                foreach (var choice in Enum.GetValues<TsProgramTableExportChoice>())
+                foreach (var choice in new[] { TsProgramTableExportChoice.Cancel, TsProgramTableExportChoice.Original,
+                             TsProgramTableExportChoice.Supplement })
                 {
                     var warning = new TsExportWarningViewModel { FileNames = ["output.ts"] };
+                    warning.SetWarnings([new(files.Output, await TSCutter.GUI.Services.Editing.TsExportProgramTableProbe
+                        .InspectNearCutAsync(files.Source, 0, 1, CancellationToken.None))]);
                     var dialog = new TsExportWarningView { DataContext = warning };
                     var task = dialog.ShowDialog(owner);
                     Assert.Equal("output.ts", dialog.FindControl<ItemsControl>("FilesList")!.Items.Single());

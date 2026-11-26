@@ -433,6 +433,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         var request = _mergeRequest;
         if (request is null)
             return;
+        request = ApplyProgramTableChoice(request);
         var mergeSession = CreateCheckSession(request.OutputPath, checkApplicable: true);
         var mergeStopwatch = Stopwatch.StartNew();
         var mergeDelay = (int)Math.Round(request.AudioOffset90k / 90.0);
@@ -444,6 +445,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             CurrentFileName = Path.GetFileName(request.OutputPath);
             SetExportClipInfo(request.Ranges.Count, FormatRangeList(
                 request.Ranges.Select(item => (item.StartTimeSeconds, (double?)item.EndTimeSeconds))));
+            ValidateRecoveredProgram(request.SourcePath, request.OutputPath);
             await ExportWithRebuildAsync(request.SourcePath, request.OutputPath, AudioRebuild, ExcludedPids, _outputProcessing,
                 mergeSession, (_, check) => ExportTsAsync(request, ++_copyGeneration, supplementOutput, check)).ConfigureAwait(true);
             await CompleteCheckAsync(mergeSession);
@@ -545,7 +547,10 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             RemainingSeconds = value.BytesPerSecond > 0
                 ? Math.Max(0, value.TotalBytes - value.BytesProcessed) / value.BytesPerSecond : 0;
         });
-        return Task.Run(() => new TsClipMergeService().MergeAsync(request, progress, _cts.Token, addTables, checkSession), _cts.Token);
+        var preparedTables = addTables || RecoveredProgramFor(request.OutputPath) is not null
+            ? RecoveryForOutput(request.OutputPath) : null;
+        return Task.Run(() => new TsClipMergeService().MergeAsync(request, progress, _cts.Token, addTables, checkSession,
+            preparedTables), _cts.Token);
     }
 
     private async Task RunSingleAsync()
@@ -656,6 +661,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
 
     private async Task CopyClipAsync(BatchTask task)
     {
+        if (RecoveredProgramFor(task.DestinationPath) is { } program)
+            task = task with { ProgramId = program };
         var (kind, checkApplicable) = ResolveTaskKind(task);
         var addTables = AddsProgramTablesTo(task.DestinationPath);
         var delay = task.FrameAccurate?.AudioDelayMs ?? task.RemuxSettings?.AudioDelayMs ??
@@ -677,6 +684,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         var processing = rebuild || task.RemuxSettings?.Container == "m2ts" ? _outputProcessing : TsOutputProcessing.None;
         try
         {
+            ValidateRecoveredProgram(task.SourcePath, task.DestinationPath);
             await ExportWithRebuildAsync(task.SourcePath, task.DestinationPath, rebuild ? task.AudioRebuild : null,
                 rebuild ? task.ExcludedPids : null, processing, session,
                 (_, check) => CopyClipCoreAsync(task, check, addTables));
@@ -710,8 +718,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
             return ExportRemuxAsync(new RemuxExportRequest(task.DestinationPath,
                 [new RemuxExportSegment(task.SourcePath, task.StartSeconds, task.EndSeconds, settings,
                     StartSignature: task.StartSignature, EndSignature: task.EndSignature)]), generation, checkSession);
-        // 补节目表或改写音频延迟时逐包处理：仍是原包复制，只改写节目表前缀与音轨时间戳（含只导出当前节目）。
-        if (addTables || task.AudioDelayMs != 0 && !IsRawByteRange)
+        // 补充或重建节目表、改写音频延迟时逐包处理，保留音视频载荷。
+        if (addTables || RecoveredProgramFor(task.DestinationPath) is not null || task.AudioDelayMs != 0 && !IsRawByteRange)
             return ExportTsAsync(new TsClipMergeRequest
             {
                 SourcePath = task.SourcePath, OutputPath = task.DestinationPath,

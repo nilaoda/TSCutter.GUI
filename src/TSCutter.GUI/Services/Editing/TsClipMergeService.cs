@@ -28,7 +28,7 @@ internal sealed class TsClipMergeService
         TsClipMergeRequest request,
         IProgress<TsClipMergeProgress>? progress = null,
         CancellationToken cancellationToken = default, bool addProgramTables = false,
-        ExportTsCheckSession? checkSession = null)
+        ExportTsCheckSession? checkSession = null, TsProgramTableRecovery? preparedTables = null)
     {
         var sourcePath = Path.GetFullPath(request.SourcePath);
         var outputPath = Path.GetFullPath(request.OutputPath);
@@ -56,8 +56,12 @@ internal sealed class TsClipMergeService
             throw new TsClipMergeException(TsClipMergeErrorCode.InvalidRange);
 
         var tables = addProgramTables && request.ProgramId is null
-            ? await TsExportProgramTableProbe.ReadTablesNearCutAsync(sourcePath, ranges[0].StartPosition, cancellationToken)
-                .ConfigureAwait(false) : null;
+            ? preparedTables is not null ? preparedTables.GetTables(sourcePath, ranges[0].StartPosition)
+                : await TsExportProgramTableProbe.ReadTablesNearCutAsync(sourcePath, ranges[0].StartPosition, cancellationToken)
+                    .ConfigureAwait(false) : null;
+
+        var programCatalog = request.ProgramId is { } selectedProgram && preparedTables is not null
+            ? preparedTables.GetProgramCatalog(sourcePath, ranges[0].StartPosition, selectedProgram, cancellationToken) : null;
 
         // 私有音频（如 DRA）未必被解复用器识别成音轨；无音轨清单时从切点附近的 PMT 补齐。
         var audioPids = ranges.Count > 1 && request.AudioPids.Count == 0
@@ -108,7 +112,7 @@ internal sealed class TsClipMergeService
         {
             cancellationToken.ThrowIfCancellationRequested();
             await using var programOutput = request.ProgramId is { } programId
-                ? await TsProgramClipExportService.OpenWriterAsync(sourcePath, outputPath, programId, cancellationToken, checkSession)
+                ? await TsProgramClipExportService.OpenWriterAsync(sourcePath, outputPath, programId, cancellationToken, checkSession, programCatalog)
                     .ConfigureAwait(false)
                 : null;
             // 提供检测会话时用检测型流包装最终输出；补入的节目表前缀与全部数据块都会经过检测。

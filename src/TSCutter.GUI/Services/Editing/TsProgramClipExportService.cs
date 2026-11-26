@@ -20,12 +20,12 @@ internal sealed class TsProgramClipExportService
 
     internal static async Task<TsServiceFilterService.OutputContext> OpenWriterAsync(
         string sourcePath, string outputPath, int programId, CancellationToken cancellationToken,
-        ExportTsCheckSession? checkSession = null)
+        ExportTsCheckSession? checkSession = null, TsCheckResult? preparedCatalog = null)
     {
         if (string.Equals(Path.GetFullPath(sourcePath), Path.GetFullPath(outputPath),
                 OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
             throw new TsFilterException(TsFilterErrorCode.SameFile);
-        var catalog = await Task.Run(() => new TsStreamAnalyzer().AnalyzeAsync(sourcePath,
+        var catalog = preparedCatalog ?? await Task.Run(() => new TsStreamAnalyzer().AnalyzeAsync(sourcePath,
             cancellationToken: cancellationToken, options: new TsStreamAnalyzeOptions
             {
                 InventoryOnly = true,
