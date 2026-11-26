@@ -100,6 +100,7 @@ FFmpeg 解码和重采样仍复用上文所述的现有运行库。
 | `TSCUTTER_TEST_MEDIA_ROOT` | 可选的合成素材根目录，内含 `keyframes/`、`remux/`、`subtitles/`；与准备脚本的 `--output-dir` 配合使用 |
 | `TSCUTTER_REMUX_TEST_SAMPLES` | 兼容旧的封装导出素材目录，优先于公共根目录 |
 | `TSCUTTER_SUBTITLE_TEST_SAMPLES` | 兼容旧的字幕素材目录，优先于公共根目录 |
+| `TSCUTTER_HDR_TEST_SAMPLES` | 可选 HDR 真实素材目录，包含 `hdr-vivid-hevc.mp4`、`hdr-vivid-avs2.ts`、`hlg-hevc.ts` 和 `hdr10plus.mkv`，验证媒体信息中的 HDR Vivid、HLG 和 HDR10+ |
 | `TSCUTTER_FFMPEG_TEST_SAMPLES` | 可选的真实编码样本目录：`1080i.ts`、`4K.ts`、`AVS+.ts`、`AVS+_2.ts`、`AVS+_P.ts`、`AVS2.ts`、`AVS3.ts`；检查特殊解码器的位置元数据等行为 |
 | `TSCUTTER_DOVI_P81_TEST_SAMPLE` | 可选的单层 Dolby Vision Profile 8.1（兼容 HDR10）MP4，用于关键帧导出检查（MP4 保留 `hvc1`）和帧精确检查；帧精确检查在 2–12 秒之间剪切，该范围内至少应有两个 IDR 帧 |
 | `TSCUTTER_DOVI_P84_TEST_SAMPLE` | 可选的单层 Dolby Vision Profile 8.4（兼容 HLG）MP4，视频轨道 0、音频轨道 1，用于关键帧导出检查（MP4 保留 `hvc1`）和帧精确检查；帧精确检查在 2–12 秒之间剪切，该范围内至少应有两个 IDR 帧 |

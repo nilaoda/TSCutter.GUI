@@ -37,6 +37,7 @@ public static partial class MediaInfoBuilder
                 return BuildEncryptedTs(filePath, ts);
         }
         fc.LoadStreamInfo();
+        var hdrMetadata = ReadHdrMetadata(fc);
 
         var sb = new StringBuilder();
         var fi = new FileInfo(filePath);
@@ -60,7 +61,7 @@ public static partial class MediaInfoBuilder
             AppendField(sb, "Frame rate", firstStream.AvgFrameRate.ToDouble().ToString("F3") + " FPS");
         sb.AppendLine();
 
-        WriteStreams(sb, fc, fi, ts);
+        WriteStreams(sb, fc, fi, ts, hdrMetadata: hdrMetadata);
 
         // ==================== Menu (Program) ====================
         if (fc.Programs is { Count: > 0 })
@@ -93,7 +94,8 @@ public static partial class MediaInfoBuilder
     }
 
     private static void WriteStreams(StringBuilder sb, FormatContext fc, FileInfo? fi,
-        TsMediaInfoProbe? ts = null, TimeSpan? titleDuration = null)
+        TsMediaInfoProbe? ts = null, TimeSpan? titleDuration = null,
+        IReadOnlyDictionary<int, HdrMetadataProbe>? hdrMetadata = null)
     {
         foreach (var stream in fc.Streams)
         {
@@ -101,7 +103,9 @@ public static partial class MediaInfoBuilder
                 continue;
             switch (cp.CodecType)
             {
-                case AVMediaType.AVMEDIA_TYPE_VIDEO: WriteVideo(sb, stream, cp, fc, fi, ts, titleDuration); break;
+                case AVMediaType.AVMEDIA_TYPE_VIDEO:
+                    WriteVideo(sb, stream, cp, fc, fi, ts, titleDuration, hdrMetadata?.GetValueOrDefault(stream.Index));
+                    break;
                 case AVMediaType.AVMEDIA_TYPE_AUDIO: WriteAudio(sb, stream, cp, fc, fi, ts, titleDuration); break;
                 case AVMediaType.AVMEDIA_TYPE_SUBTITLE: WriteSubtitle(sb, stream, cp); break;
                 default: WriteGeneric(sb, stream, cp); break;
@@ -204,7 +208,8 @@ public static partial class MediaInfoBuilder
     #endregion
 
     #region ----- Video -----
-    private static unsafe void WriteVideo(StringBuilder sb, MediaStream stream, CodecParameters cp, FormatContext fc, FileInfo? fi, TsMediaInfoProbe? ts, TimeSpan? titleDuration = null)
+    private static unsafe void WriteVideo(StringBuilder sb, MediaStream stream, CodecParameters cp, FormatContext fc, FileInfo? fi,
+        TsMediaInfoProbe? ts, TimeSpan? titleDuration = null, HdrMetadataProbe? hdrMetadata = null)
     {
         AppendSection(sb, "Video");
 
@@ -223,7 +228,10 @@ public static partial class MediaInfoBuilder
             AppendValues(sb, "Format profile", definition.Profiles);
 
         var dolbyVision = ReadDolbyVisionConfiguration(cp);
-        if (dolbyVision is not null) AppendField(sb, "HDR format", dolbyVision.Description);
+        hdrMetadata ??= ReadHdrConfiguration(cp);
+        var hdrFormat = hdrMetadata.Describe(cp.ColorTrc, cp.ColorPrimaries, GetBitDepth(cp), dolbyVision?.Description);
+        if (hdrFormat.Length > 0)
+            AppendField(sb, "HDR format", hdrFormat);
         AppendField(sb, "Codec ID", ts is null ? VideoCodecId(cp.CodecTag, cp.CodecId) : CodecId(cp, stream.Id, ts));
         AppendField(sb, "Duration", titleDuration is { } duration
             ? FormatDuration((long)Math.Round(duration.TotalSeconds * FF.AV_TIME_BASE)) : FormatDuration(stream));
@@ -279,9 +287,14 @@ public static partial class MediaInfoBuilder
             if (cp.ColorPrimaries != AVColorPrimaries.AVCOL_PRI_UNSPECIFIED)
                 AppendField(sb, "Color primaries", cp.ColorPrimaries == AVColorPrimaries.AVCOL_PRI_BT2020
                     ? "BT.2020" : cp.ColorPrimaries.ToString().Replace("AVCOL_PRI_", ""));
-            if (cp.ColorTrc != AVColorTransferCharacteristic.AVCOL_TRC_UNSPECIFIED)
-                AppendField(sb, "Transfer characteristics", cp.ColorTrc == AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084
-                    ? "PQ" : cp.ColorTrc.ToString().Replace("AVCOL_TRC_", ""));
+            var transfer = hdrMetadata.EffectiveTransfer(cp.ColorTrc);
+            if (transfer != AVColorTransferCharacteristic.AVCOL_TRC_UNSPECIFIED)
+                AppendField(sb, "Transfer characteristics", transfer switch
+                {
+                    AVColorTransferCharacteristic.AVCOL_TRC_SMPTE2084 => "PQ",
+                    AVColorTransferCharacteristic.AVCOL_TRC_ARIB_STD_B67 => "HLG",
+                    _ => transfer.ToString().Replace("AVCOL_TRC_", "")
+                });
             if (cp.ColorSpace != AVColorSpace.AVCOL_SPC_UNSPECIFIED)
                 AppendField(sb, "Matrix coefficients", cp.ColorSpace == AVColorSpace.AVCOL_SPC_BT2020_NCL
                     ? "BT.2020 non-constant" : cp.ColorSpace.ToString().Replace("AVCOL_SPC_", ""));
