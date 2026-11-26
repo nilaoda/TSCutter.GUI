@@ -66,8 +66,9 @@ public partial class UpdatesInfoWindowViewModel : ViewModelBase, IModalDialogVie
             Progress = 0;
             var service = new UpdateService();
             var staged = await service.PrepareAsync(Update, new Progress<double>(value => Progress = value));
-            // The swap and staging live in the parent folder of the installation.
-            UpdateService.EnsureDirectoryIsWritable(Path.GetDirectoryName(staged.InstallRoot)!);
+            // Probe the folder that will actually hold the staging directory.
+            UpdateService.EnsureDirectoryIsWritable(
+                UpdateService.GetStagingParent(staged.InstallRoot, staged.Layout));
             StatusText = strings.String_Update_Installing;
             await service.ApplyAsync(staged, CurrentArguments());
 

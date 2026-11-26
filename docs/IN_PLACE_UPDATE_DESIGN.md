@@ -16,8 +16,9 @@ The additive implementation is in place:
   original 302 tag check as fallback; `GetLatestTagAsync()`, `CheckUpdateAsync()` and
   `IsNewerTag()` remain unchanged.
 - `UpdateService` downloads, verifies SHA-256, extracts with zip-slip protection,
-  stages, and applies the update with whole-directory/bundle replacement and
-  rollback. Staging files are cleaned up after success or on the next launch.
+  stages, and applies the update with per-file replacement on Linux and a
+  whole-bundle swap on macOS, with rollback on both. Staging files are cleaned up
+  after success or on the next launch.
 - `UpdatesInfoWindow` is implemented, with a **new** in-app check menu item; the
   original Help → Check update menu item and browser fallback are untouched.
 - The feature gate, preflight write check, verified relaunch with restore, and
@@ -25,16 +26,21 @@ The additive implementation is in place:
 - The manifest file name is trusted but must match an actual release asset; no
   stage or name pattern is reconstructed by the client.
 - Tests cover tag/version rules, asset selection, manifest parsing, download
-  verification, unsafe archive entries, cancellation, whole-directory swap with
-  rollback, and the update lock.
+  verification, unsafe archive entries, cancellation, per-file Linux replacement,
+  whole-directory/bundle swap with rollback, default backup parent creation, and
+  the update lock.
 
-End-to-end self-replacement has been smoke-tested on Windows only. macOS and
-Linux smoke tests can be done later with a real release build.
+End-to-end self-replacement has been smoke-tested on Windows (helper success and
+rollback) and Linux (per-file replacement, unrelated-file preservation, relaunch,
+and cleanup) with .NET SDK 11.0.100. A macOS smoke test with a real release build
+is still follow-up work.
 
-Verified with .NET SDK 11.0.100: all 49 update-related tests pass, and the full
-suite reports 1021 passed / 237 skipped / 4 failed. The four failures reproduce
-on a clean checkout at HEAD and are environment-only (localized decimal separator
-and missing FFmpeg 9 runtime DLLs), not related to this feature.
+Verified with .NET SDK 11.0.100: all 55 update-related tests pass on the host,
+the Windows VM and the Ubuntu VM. The full suite reports 1029 passed / 237
+skipped / 4 failed on Windows (host and VM) and 1031 passed / 237 skipped /
+2 failed on Ubuntu. Those failures reproduce on a clean checkout and are
+environment-only (localized decimal separator and missing FFmpeg runtime DLLs),
+not related to this feature.
 
 ## 1. Current behavior
 
@@ -249,7 +255,9 @@ browser fallback, so behavior never regresses.
 
 `UpdateService.DownloadAndPrepareAsync(UpdateInfo, IProgress<UpdateProgress>, CancellationToken)`:
 
-1. Create a sibling staging folder next to the install root:
+1. Create a staging folder named `.TSCutter.GUI.update-<guid>`. On Windows it is
+   created inside the install folder, because only files in that folder are
+   replaced. On Linux/macOS it is a sibling of the install root/bundle:
    `<parent of install root>/.TSCutter.GUI.update-<guid>`. This keeps every rename
    on the same filesystem, even when system temp is tmpfs or the app is on an
    external volume.
@@ -296,14 +304,15 @@ updater executable and mirrors the existing hidden `--verify-static-*` flags in
 
 ### 6.2 Linux
 
-The whole install directory is swapped: the staged payload is moved into place,
-the current directory is renamed to a backup inside the sibling staging folder,
-and the new one takes its original name.
-On any failure the backup is moved back. This also removes files that no longer
-exist in the new version and avoids a half-updated installation. A portable
-`data` folder beside the executable is copied into the new tree first. The
-executable bit is reapplied and the app is relaunched with
-`UseShellExecute = false`.
+The Linux ZIP contains only the package's own files (such as `TSCutterGUI` and
+`THIRD_PARTY_NOTICES.txt`) at its root, and users may extract it into a folder
+that holds other files. The installer therefore replaces **only files present in
+the package**, never the whole directory. For each staged file, a temporary copy
+is created next to the target, the old target is moved into a backup tree inside
+the sibling staging folder, and the temporary copy is renamed into place. On any
+failure the backups are moved back in reverse order. Unrelated files in the
+install folder are left untouched. The executable bit is reapplied and the app
+is relaunched with `UseShellExecute = false`.
 
 ### 6.3 macOS
 
@@ -317,7 +326,8 @@ the app rather than a browser, no quarantine attribute is added.
 
 - Keep a backup of the current install until the new one is verified.
 - Preserve the original command line when relaunching.
-- A preflight write probe in the **parent** of the install folder fails early for
+- A preflight write probe in the folder that holds the staging directory (the
+  install folder on Windows, its parent on Linux/macOS) fails early for
   read-only/system locations; the dialog shows the error and leaves the app usable.
 - No update is attempted in a Web-UI session.
 - Any unsupported layout, permission error, or verification failure results in
@@ -332,10 +342,11 @@ the app rather than a browser, no quarantine attribute is added.
   manifest tag/version match, manifest file name present in the release asset
   list, SHA-256 and size verification, zip-slip rejection, payload layout check,
   free-space check. No hard-coded stage or asset-name pattern.
-- **Staging**: download and extraction happen in a sibling folder next to the
-  install root so all swaps stay on one filesystem; any failure deletes it and
-  leaves the installed app untouched. On success the sibling folder and helper
-  copy are deleted; leftovers are removed on the next launch.
+- **Staging**: download and extraction happen inside the install folder on
+  Windows and in a sibling folder on Linux/macOS, so all renames stay on one
+  filesystem; any failure deletes it and leaves the installed app untouched. On
+  success the staging folder and helper copy are deleted; leftovers are removed
+  on the next launch.
 - **Cleanup safety**: startup cleanup runs only when no update lock is held, and
   checks the age of each individual package folder rather than the shared Updates
   root, so an active download is never deleted.
@@ -344,8 +355,10 @@ the app rather than a browser, no quarantine attribute is added.
   seconds with a zero exit code. A failed relaunch is stopped, the old exe and
   notices are restored, the restored exe is relaunched, and the error is written
   to `%LOCALAPPDATA%\TSCutter.GUI\UpdateResult.txt` for immediate display.
-- **Linux/macOS rollback**: the whole install directory or bundle is swapped;
-  any failure moves the backup back. A portable `data` folder is preserved.
+- **Linux/macOS rollback**: Linux restores each replaced package file from its
+  backup; macOS moves the swapped bundle's backup back. Backup parents are
+  created before the first rename. A portable `data` folder inside a macOS bundle
+  is preserved.
 - **Transport hardening**: only HTTPS URLs on `github.com` / `*.githubusercontent.com`
   are accepted, and the checksum must be a 64-character hex string.
 - **Multi-instance lock**: `update.lock` under `%LOCALAPPDATA%\TSCutter.GUI` holds the
@@ -383,7 +396,9 @@ releases page as before.
   checksum validation. Keep all existing tag-comparison cases unchanged.
 - Add `UpdateServiceTests` using a fake HTTP handler and temp directories:
   checksum mismatch, zip-slip rejection, payload layout, cancellation, rollback,
-  and the update lock. No test requires real network access.
+  default backup parent creation, Linux per-file replacement that preserves
+  unrelated files, macOS bundle swap, and the update lock. No test requires real
+  network access.
 - Keep `ReleaseMetadata_MatchesCompiledVersion` green (Stage stays `Beta`).
 - Keep `DialogCloseTests` passing for `UpdatesInfoWindow`.
 

@@ -63,11 +63,13 @@ public sealed class UpdateService
         if (!IsTrustedDownload(asset.Url) || !IsSha256Hex(asset.Sha256))
             throw new InvalidDataException("The release package URL or checksum is not valid.");
 
-        // Stage beside the install root so that every rename during the swap stays
-        // on the same filesystem (system temp may be tmpfs on Linux or another
-        // volume than an external macOS install).
-        var installParent = Path.GetDirectoryName(GetCurrentInstallRoot())!;
-        var packageDirectory = Path.Combine(installParent, StagingPrefix + Guid.NewGuid().ToString("N"));
+        // Windows only replaces files inside the install folder, so stage there.
+        // Unix swaps the whole install folder / bundle, so staging must be a sibling
+        // to keep every rename on one filesystem (system temp may be tmpfs on Linux,
+        // and an external macOS volume is a different filesystem).
+        var currentInstallRoot = GetCurrentInstallRoot();
+        var packageDirectory = Path.Combine(GetStagingParent(currentInstallRoot),
+            StagingPrefix + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(packageDirectory);
         var archivePath = Path.Combine(packageDirectory, asset.FileName + ".part");
 
@@ -187,7 +189,21 @@ public sealed class UpdateService
             if (bundle is not null)
                 return bundle.FullName;
         }
-        return Path.GetDirectoryName(processPath)!;
+        return Path.GetDirectoryName(processPath) ?? AppContext.BaseDirectory;
+    }
+
+    /// <summary>
+    /// Folder that holds a staging directory for the given install root. Windows
+    /// stages inside the install folder because only files in that folder are
+    /// replaced; Unix stages beside it so whole-directory renames stay local.
+    /// </summary>
+    internal static string GetStagingParent(string installRoot, StagedUpdateLayout? layout = null)
+    {
+        var windowsExe = layout == StagedUpdateLayout.WindowsExe
+            || (layout is null && OperatingSystem.IsWindows());
+        if (windowsExe)
+            return installRoot;
+        return Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(installRoot)) ?? installRoot;
     }
 
     internal static string GetInstallRoot(StagedUpdateLayout layout)
@@ -195,11 +211,11 @@ public sealed class UpdateService
         var processPath = Environment.ProcessPath ?? Path.Combine(AppContext.BaseDirectory,
             layout == StagedUpdateLayout.WindowsExe ? WindowsExecutable : UnixExecutable);
         if (layout != StagedUpdateLayout.MacAppBundle)
-            return Path.GetDirectoryName(processPath)!;
-        var directory = new DirectoryInfo(Path.GetDirectoryName(processPath)!);
+            return Path.GetDirectoryName(processPath) ?? AppContext.BaseDirectory;
+        var directory = new DirectoryInfo(Path.GetDirectoryName(processPath) ?? AppContext.BaseDirectory);
         while (directory is not null && !directory.Name.EndsWith(".app", StringComparison.OrdinalIgnoreCase))
             directory = directory.Parent;
-        return directory?.FullName ?? Path.GetDirectoryName(processPath)!;
+        return directory?.FullName ?? Path.GetDirectoryName(processPath) ?? AppContext.BaseDirectory;
     }
 
     /// <summary>
@@ -259,7 +275,7 @@ public sealed class UpdateService
         start.ArgumentList.Add(stagedExe);
         start.ArgumentList.Add(targetExe);
         start.ArgumentList.Add(staged.PayloadDirectory);
-        start.ArgumentList.Add(Path.GetDirectoryName(staged.PayloadDirectory)!);
+        start.ArgumentList.Add(staged.PackageDirectory);
         foreach (var arg in relaunchArgs)
             start.ArgumentList.Add(arg);
         if (Process.Start(start) is null)
@@ -375,6 +391,11 @@ public sealed class UpdateService
             throw new DirectoryNotFoundException(source);
         if (Directory.Exists(backup))
             TryDeleteDirectory(backup);
+        // Directory.Move cannot create a missing destination parent. The default
+        // backup path is <package>/rollback/install, so create "rollback" first.
+        var backupParent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(backup));
+        if (!string.IsNullOrEmpty(backupParent))
+            Directory.CreateDirectory(backupParent);
         Directory.Move(target, backup);
         try
         {
@@ -395,44 +416,111 @@ public sealed class UpdateService
     internal static void ApplyUnixUpdate(StagedUpdate staged, IReadOnlyList<string> relaunchArgs,
         string? backupRoot = null, bool relaunch = true)
     {
-        var sourceRoot = staged.Layout == StagedUpdateLayout.MacAppBundle
+        var bundle = staged.Layout == StagedUpdateLayout.MacAppBundle;
+        var sourceRoot = bundle
             ? Path.Combine(staged.PayloadDirectory, MacBundle)
             : staged.PayloadDirectory;
-        // Keep the backup inside the staging folder, next to the install root.
+        // The backup lives in the staging folder beside the install root, so all
+        // renames stay on the same filesystem.
         backupRoot ??= Path.Combine(staged.PackageDirectory, "rollback");
-
-        // A portable data folder lives beside the executable / bundle and must survive.
-        var portableData = Path.Combine(staged.InstallRoot, AppDataDirectoryName);
-        if (Directory.Exists(portableData))
-            CopyDirectory(portableData, Path.Combine(sourceRoot, AppDataDirectoryName));
 
         try
         {
-            SwapDirectories(sourceRoot, staged.InstallRoot, Path.Combine(backupRoot, "install"), () =>
+            if (bundle)
             {
-                if (!OperatingSystem.IsWindows())
-                {
-                    var relativeExecutable = staged.Layout == StagedUpdateLayout.MacAppBundle
-                        ? Path.Combine("Contents", "MacOS", UnixExecutable)
-                        : UnixExecutable;
-                    SetExecutableBit(Path.Combine(staged.InstallRoot, relativeExecutable));
-                }
-                var launchedExecutable = staged.Layout == StagedUpdateLayout.MacAppBundle
-                    ? Path.Combine(staged.InstallRoot, "Contents", "MacOS", UnixExecutable)
-                    : Path.Combine(staged.InstallRoot, UnixExecutable);
-                if (relaunch && Process.Start(new ProcessStartInfo(launchedExecutable)
-                    {
-                        UseShellExecute = false,
-                        WorkingDirectory = staged.InstallRoot
-                    }) is null)
-                    throw new InvalidOperationException("The updated application did not start.");
-            });
+                // A .app bundle is self-contained: swap it as a whole so files
+                // removed in the new release do not linger inside the bundle.
+                var portableData = Path.Combine(staged.InstallRoot, AppDataDirectoryName);
+                if (Directory.Exists(portableData))
+                    CopyDirectory(portableData, Path.Combine(sourceRoot, AppDataDirectoryName));
+                SwapDirectories(sourceRoot, staged.InstallRoot, Path.Combine(backupRoot, "install"),
+                    () => FinishUnixUpdate(staged, relaunchArgs, relaunch));
+            }
+            else
+            {
+                // A Linux package contains only its own files at the zip root and may
+                // be extracted beside unrelated user files. Replace just those files.
+                ApplyLinuxFiles(staged, sourceRoot, backupRoot, relaunchArgs, relaunch);
+            }
         }
         finally
         {
-            // The backup has either been discarded or moved back on failure.
+            // Backups are discarded after success and moved back after a failure.
             TryDeleteDirectory(backupRoot);
         }
+    }
+
+    private static void ApplyLinuxFiles(StagedUpdate staged, string sourceRoot, string backupRoot,
+        IReadOnlyList<string> relaunchArgs, bool relaunch)
+    {
+        var replaced = new List<(string Backup, string Target)>();
+        var created = new List<string>();
+        try
+        {
+            foreach (var source in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
+                         .OrderBy(path => path, StringComparer.Ordinal))
+            {
+                var relative = Path.GetRelativePath(sourceRoot, source);
+                var target = Path.Combine(staged.InstallRoot, relative);
+                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+                if (File.Exists(target))
+                {
+                    var backup = Path.Combine(backupRoot, relative);
+                    Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
+                    File.Move(target, backup, overwrite: true);
+                    replaced.Add((backup, target));
+                }
+                else
+                {
+                    created.Add(target);
+                }
+
+                // Stage the new file next to its target so the final rename cannot
+                // cross a filesystem boundary.
+                var temporary = target + ".new." + Guid.NewGuid().ToString("N");
+                try
+                {
+                    File.Copy(source, temporary, overwrite: true);
+                    File.Move(temporary, target, overwrite: true);
+                }
+                finally
+                {
+                    TryDelete(temporary);
+                }
+            }
+
+            FinishUnixUpdate(staged, relaunchArgs, relaunch);
+        }
+        catch
+        {
+            foreach (var target in created)
+                TryDelete(target);
+            foreach (var (backup, target) in replaced.AsEnumerable().Reverse())
+                TryRestore(backup, target);
+            throw;
+        }
+    }
+
+    private static void FinishUnixUpdate(StagedUpdate staged, IReadOnlyList<string> relaunchArgs, bool relaunch)
+    {
+        if (!OperatingSystem.IsWindows())
+        {
+            var relativeExecutable = staged.Layout == StagedUpdateLayout.MacAppBundle
+                ? Path.Combine("Contents", "MacOS", UnixExecutable)
+                : UnixExecutable;
+            SetExecutableBit(Path.Combine(staged.InstallRoot, relativeExecutable));
+        }
+        if (!relaunch)
+            return;
+        var launchedExecutable = staged.Layout == StagedUpdateLayout.MacAppBundle
+            ? Path.Combine(staged.InstallRoot, "Contents", "MacOS", UnixExecutable)
+            : Path.Combine(staged.InstallRoot, UnixExecutable);
+        if (Process.Start(new ProcessStartInfo(launchedExecutable)
+            {
+                UseShellExecute = false,
+                WorkingDirectory = staged.InstallRoot
+            }) is null)
+            throw new InvalidOperationException("The updated application did not start.");
     }
 
     private static void CopyDirectory(string source, string destination)
@@ -546,10 +634,14 @@ public sealed class UpdateService
             }
 
             var cutoff = DateTime.UtcNow.AddDays(-1);
-            var installParent = Path.GetDirectoryName(GetCurrentInstallRoot())!;
-            foreach (var directory in Directory.EnumerateDirectories(installParent, StagingPrefix + "*"))
-                if (Directory.GetCreationTimeUtc(directory) < cutoff)
-                    TryDeleteDirectory(directory);
+            var installRoot = GetCurrentInstallRoot();
+            // Windows stages inside the install folder; Unix stages beside it.
+            // Check both so leftovers from either layout are removed on launch.
+            RemoveStagingFolders(installRoot, cutoff);
+            var installParent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(installRoot));
+            if (installParent is not null
+                && !string.Equals(installParent, installRoot, StringComparison.Ordinal))
+                RemoveStagingFolders(installParent, cutoff);
 
             // Legacy temp layout from earlier builds: check each package folder,
             // not the shared Updates root, so an active download is not removed.
@@ -571,6 +663,15 @@ public sealed class UpdateService
         {
             Console.Error.WriteLine($"Failed to clean stale update files: {ex.Message}");
         }
+    }
+
+    private static void RemoveStagingFolders(string directory, DateTime cutoff)
+    {
+        if (!Directory.Exists(directory))
+            return;
+        foreach (var path in Directory.EnumerateDirectories(directory, StagingPrefix + "*"))
+            if (Directory.GetCreationTimeUtc(path) < cutoff)
+                TryDeleteDirectory(path);
     }
 
     internal static string UpdateLockFilePath { get; set; } = Path.Combine(

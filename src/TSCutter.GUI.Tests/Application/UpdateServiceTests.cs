@@ -37,7 +37,7 @@ public class UpdateServiceTests
     }
 
     [Fact]
-    public async Task PrepareAsync_StagesBesideInstallRoot()
+    public async Task PrepareAsync_StagesOnSameFilesystemAsInstallRoot()
     {
         var zip = CreateZip(new Dictionary<string, string> { ["TSCutterGUI.exe"] = "new" });
         var service = CreateService(zip);
@@ -46,8 +46,13 @@ public class UpdateServiceTests
         var staged = await service.PrepareAsync(info);
         try
         {
-            Assert.Equal(Path.GetDirectoryName(staged.InstallRoot),
-                Path.GetDirectoryName(staged.PackageDirectory), StringComparer.OrdinalIgnoreCase);
+            // Windows replaces files inside the install folder; Unix renames the
+            // whole folder/bundle and therefore stages beside it.
+            var expectedParent = OperatingSystem.IsWindows()
+                ? staged.InstallRoot
+                : Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(staged.InstallRoot));
+            Assert.Equal(expectedParent, Path.GetDirectoryName(staged.PackageDirectory),
+                StringComparer.OrdinalIgnoreCase);
             Assert.StartsWith(".TSCutter.GUI.update-", Path.GetFileName(staged.PackageDirectory));
         }
         finally
@@ -160,6 +165,132 @@ public class UpdateServiceTests
     }
 
     [Fact]
+    public void SwapDirectories_CreatesMissingBackupParent()
+    {
+        var root = Directory.CreateTempSubdirectory("tscutter-backup-parent-");
+        try
+        {
+            var source = Path.Combine(root.FullName, "source");
+            var target = Path.Combine(root.FullName, "target");
+            var backup = Path.Combine(root.FullName, "rollback", "install");
+            Directory.CreateDirectory(source);
+            Directory.CreateDirectory(target);
+            File.WriteAllText(Path.Combine(source, "a.txt"), "new");
+            File.WriteAllText(Path.Combine(target, "old.txt"), "old");
+
+            UpdateService.SwapDirectories(source, target, backup);
+
+            Assert.True(Directory.Exists(backup));
+            Assert.Equal("new", File.ReadAllText(Path.Combine(target, "a.txt")));
+            Assert.Equal("old", File.ReadAllText(Path.Combine(backup, "old.txt")));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ApplyUnixUpdate_ReplacesOnlyPackageFilesAndCleansUpDefaultBackup()
+    {
+        var root = Directory.CreateTempSubdirectory("tscutter-linux-apply-");
+        try
+        {
+            var install = Path.Combine(root.FullName, "install");
+            var package = Path.Combine(root.FullName, ".TSCutter.GUI.update-1");
+            var payload = Path.Combine(package, "payload");
+            Directory.CreateDirectory(Path.Combine(install, "notes"));
+            Directory.CreateDirectory(payload);
+            File.WriteAllText(Path.Combine(install, "TSCutterGUI"), "old exe");
+            File.WriteAllText(Path.Combine(install, "THIRD_PARTY_NOTICES.txt"), "old notices");
+            File.WriteAllText(Path.Combine(install, "other-tool"), "keep me");
+            File.WriteAllText(Path.Combine(install, "notes", "todo.txt"), "keep me too");
+            File.WriteAllText(Path.Combine(payload, "TSCutterGUI"), "new exe");
+            File.WriteAllText(Path.Combine(payload, "THIRD_PARTY_NOTICES.txt"), "new notices");
+
+            var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.LinuxFolder);
+            UpdateService.ApplyUnixUpdate(staged, [], relaunch: false);
+
+            Assert.Equal("new exe", File.ReadAllText(Path.Combine(install, "TSCutterGUI")));
+            Assert.Equal("new notices", File.ReadAllText(Path.Combine(install, "THIRD_PARTY_NOTICES.txt")));
+            Assert.Equal("keep me", File.ReadAllText(Path.Combine(install, "other-tool")));
+            Assert.Equal("keep me too", File.ReadAllText(Path.Combine(install, "notes", "todo.txt")));
+            Assert.False(Directory.Exists(Path.Combine(package, "rollback")));
+            Assert.Empty(Directory.EnumerateFiles(install, "*.new.*", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ApplyUnixUpdate_RestoresOriginalsWhenAFileCannotBeReplaced()
+    {
+        var root = Directory.CreateTempSubdirectory("tscutter-linux-rollback-");
+        try
+        {
+            var install = Path.Combine(root.FullName, "install");
+            var package = Path.Combine(root.FullName, ".TSCutter.GUI.update-1");
+            var payload = Path.Combine(package, "payload");
+            Directory.CreateDirectory(install);
+            Directory.CreateDirectory(Path.Combine(install, "collision"));
+            Directory.CreateDirectory(payload);
+            File.WriteAllText(Path.Combine(install, "TSCutterGUI"), "old exe");
+            File.WriteAllText(Path.Combine(install, "THIRD_PARTY_NOTICES.txt"), "old notices");
+            File.WriteAllText(Path.Combine(payload, "TSCutterGUI"), "new exe");
+            File.WriteAllText(Path.Combine(payload, "THIRD_PARTY_NOTICES.txt"), "new notices");
+            File.WriteAllText(Path.Combine(payload, "AAA-added.txt"), "new file");
+            // A directory at the target path makes the final rename fail last.
+            File.WriteAllText(Path.Combine(payload, "collision"), "new file");
+
+            var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.LinuxFolder);
+            Assert.ThrowsAny<Exception>(() => UpdateService.ApplyUnixUpdate(staged, [], relaunch: false));
+
+            Assert.Equal("old exe", File.ReadAllText(Path.Combine(install, "TSCutterGUI")));
+            Assert.Equal("old notices", File.ReadAllText(Path.Combine(install, "THIRD_PARTY_NOTICES.txt")));
+            Assert.False(File.Exists(Path.Combine(install, "AAA-added.txt")));
+            Assert.True(Directory.Exists(Path.Combine(install, "collision")));
+            Assert.False(Directory.Exists(Path.Combine(package, "rollback")));
+            Assert.Empty(Directory.EnumerateFiles(install, "*.new.*", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ApplyUnixUpdate_SwapsMacBundleAsAWhole()
+    {
+        var root = Directory.CreateTempSubdirectory("tscutter-mac-apply-");
+        try
+        {
+            var install = Path.Combine(root.FullName, "TSCutter.GUI.app");
+            var package = Path.Combine(root.FullName, ".TSCutter.GUI.update-1");
+            var payload = Path.Combine(package, "payload");
+            var sourceBundle = Path.Combine(payload, "TSCutter.GUI.app", "Contents", "MacOS");
+            var targetBundle = Path.Combine(install, "Contents", "MacOS");
+            Directory.CreateDirectory(sourceBundle);
+            Directory.CreateDirectory(targetBundle);
+            File.WriteAllText(Path.Combine(sourceBundle, "TSCutterGUI"), "new exe");
+            File.WriteAllText(Path.Combine(targetBundle, "TSCutterGUI"), "old exe");
+            File.WriteAllText(Path.Combine(install, "obsolete.txt"), "old");
+
+            var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.MacAppBundle);
+            UpdateService.ApplyUnixUpdate(staged, [], relaunch: false);
+
+            Assert.Equal("new exe", File.ReadAllText(Path.Combine(targetBundle, "TSCutterGUI")));
+            Assert.False(File.Exists(Path.Combine(install, "obsolete.txt")));
+            Assert.False(Directory.Exists(Path.Combine(package, "rollback")));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public void UpdateLock_CanBeAcquiredAndReleased()
     {
         var root = Directory.CreateTempSubdirectory("tscutter-lock-");
@@ -196,6 +327,16 @@ public class UpdateServiceTests
         Assert.Equal("v9.9.9", manifest.Tag);
         Assert.Equal(42, manifest.Assets!["win-x64"].Size);
     }
+
+    private static StagedUpdate CreateStagedUpdate(string package, string payload, string install,
+        StagedUpdateLayout layout) => new()
+    {
+        PackageDirectory = package,
+        PayloadDirectory = payload,
+        InstallRoot = install,
+        Layout = layout,
+        ExecutableName = layout == StagedUpdateLayout.WindowsExe ? "TSCutterGUI.exe" : "TSCutterGUI"
+    };
 
     private static UpdateService CreateService(byte[] zip) =>
         new(new HttpClient(new ByteArrayHandler(zip)));
