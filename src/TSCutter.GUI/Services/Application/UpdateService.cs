@@ -46,6 +46,7 @@ public sealed class UpdateService
     private const string MacBundle = "TSCutter.GUI.app";
     private const string ResultFileName = "UpdateResult.txt";
     private const string AppDataDirectoryName = "data";
+    private const string StagingPrefix = ".TSCutter.GUI.update-";
 
     private readonly HttpClient _http;
 
@@ -62,8 +63,11 @@ public sealed class UpdateService
         if (!IsTrustedDownload(asset.Url) || !IsSha256Hex(asset.Sha256))
             throw new InvalidDataException("The release package URL or checksum is not valid.");
 
-        var packageDirectory = Path.Combine(Path.GetTempPath(), "TSCutter.GUI", "Updates",
-            info.Tag, Guid.NewGuid().ToString("N"));
+        // Stage beside the install root so that every rename during the swap stays
+        // on the same filesystem (system temp may be tmpfs on Linux or another
+        // volume than an external macOS install).
+        var installParent = Path.GetDirectoryName(GetCurrentInstallRoot())!;
+        var packageDirectory = Path.Combine(installParent, StagingPrefix + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(packageDirectory);
         var archivePath = Path.Combine(packageDirectory, asset.FileName + ".part");
 
@@ -169,6 +173,21 @@ public sealed class UpdateService
         if (File.Exists(Path.Combine(payload, UnixExecutable)))
             return StagedUpdateLayout.LinuxFolder;
         throw new InvalidDataException("The update package does not contain a supported application.");
+    }
+
+    /// <summary>Install directory for the currently running platform.</summary>
+    internal static string GetCurrentInstallRoot()
+    {
+        var processPath = Environment.ProcessPath ?? AppContext.BaseDirectory;
+        if (OperatingSystem.IsMacOS())
+        {
+            var bundle = new DirectoryInfo(Path.GetDirectoryName(processPath)!);
+            while (bundle is not null && !bundle.Name.EndsWith(".app", StringComparison.OrdinalIgnoreCase))
+                bundle = bundle.Parent;
+            if (bundle is not null)
+                return bundle.FullName;
+        }
+        return Path.GetDirectoryName(processPath)!;
     }
 
     internal static string GetInstallRoot(StagedUpdateLayout layout)
@@ -379,7 +398,8 @@ public sealed class UpdateService
         var sourceRoot = staged.Layout == StagedUpdateLayout.MacAppBundle
             ? Path.Combine(staged.PayloadDirectory, MacBundle)
             : staged.PayloadDirectory;
-        backupRoot ??= Path.Combine(Path.GetTempPath(), "TSCutter.GUI", "Rollback", Guid.NewGuid().ToString("N"));
+        // Keep the backup inside the staging folder, next to the install root.
+        backupRoot ??= Path.Combine(staged.PackageDirectory, "rollback");
 
         // A portable data folder lives beside the executable / bundle and must survive.
         var portableData = Path.Combine(staged.InstallRoot, AppDataDirectoryName);
@@ -489,8 +509,8 @@ public sealed class UpdateService
         }
     }
 
-    /// <summary>Fails early when the application folder cannot be modified.</summary>
-    internal static void EnsureInstallLocationIsWritable(string directory)
+    /// <summary>Fails early when the folder that will hold staging and the swap cannot be modified.</summary>
+    internal static void EnsureDirectoryIsWritable(string directory)
     {
         var probe = Path.Combine(directory, ".tscutter-update-test-" + Guid.NewGuid().ToString("N"));
         try
@@ -513,14 +533,36 @@ public sealed class UpdateService
     /// </summary>
     internal static void CleanupStaleTempFiles()
     {
-        var cutoff = DateTime.UtcNow.AddDays(-1);
         try
         {
-            var root = Path.Combine(Path.GetTempPath(), "TSCutter.GUI");
-            if (Directory.Exists(root))
-                foreach (var directory in Directory.EnumerateDirectories(root))
-                    if (Directory.GetCreationTimeUtc(directory) < cutoff)
-                        TryDeleteDirectory(directory);
+            // Never clean up while another instance is applying an update.
+            if (File.Exists(UpdateLockFilePath))
+            {
+                var owner = File.ReadAllText(UpdateLockFilePath).Trim();
+                if (AppInstanceIdentity.TryParseFileKey(owner, out var identity)
+                    && AppInstanceIdentity.IsRunning(identity))
+                    return;
+                TryDelete(UpdateLockFilePath);
+            }
+
+            var cutoff = DateTime.UtcNow.AddDays(-1);
+            var installParent = Path.GetDirectoryName(GetCurrentInstallRoot())!;
+            foreach (var directory in Directory.EnumerateDirectories(installParent, StagingPrefix + "*"))
+                if (Directory.GetCreationTimeUtc(directory) < cutoff)
+                    TryDeleteDirectory(directory);
+
+            // Legacy temp layout from earlier builds: check each package folder,
+            // not the shared Updates root, so an active download is not removed.
+            var updatesRoot = Path.Combine(Path.GetTempPath(), "TSCutter.GUI", "Updates");
+            if (Directory.Exists(updatesRoot))
+                foreach (var tag in Directory.EnumerateDirectories(updatesRoot))
+                {
+                    foreach (var package in Directory.EnumerateDirectories(tag))
+                        if (Directory.GetCreationTimeUtc(package) < cutoff)
+                            TryDeleteDirectory(package);
+                    if (!Directory.EnumerateFileSystemEntries(tag).Any())
+                        TryDeleteDirectory(tag);
+                }
             foreach (var helper in Directory.EnumerateFiles(Path.GetTempPath(), "TSCutter.GUI.Updater.*.exe"))
                 if (File.GetCreationTimeUtc(helper) < cutoff)
                     TryDelete(helper);

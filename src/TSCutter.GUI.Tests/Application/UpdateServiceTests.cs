@@ -37,6 +37,26 @@ public class UpdateServiceTests
     }
 
     [Fact]
+    public async Task PrepareAsync_StagesBesideInstallRoot()
+    {
+        var zip = CreateZip(new Dictionary<string, string> { ["TSCutterGUI.exe"] = "new" });
+        var service = CreateService(zip);
+        var info = CreateInfo(Convert.ToHexString(SHA256.HashData(zip)), zip.Length);
+
+        var staged = await service.PrepareAsync(info);
+        try
+        {
+            Assert.Equal(Path.GetDirectoryName(staged.InstallRoot),
+                Path.GetDirectoryName(staged.PackageDirectory), StringComparer.OrdinalIgnoreCase);
+            Assert.StartsWith(".TSCutter.GUI.update-", Path.GetFileName(staged.PackageDirectory));
+        }
+        finally
+        {
+            Directory.Delete(staged.PackageDirectory, recursive: true);
+        }
+    }
+
+    [Fact]
     public async Task PrepareAsync_RejectsWrongChecksum()
     {
         var zip = CreateZip(new Dictionary<string, string> { ["TSCutterGUI.exe"] = "new" });

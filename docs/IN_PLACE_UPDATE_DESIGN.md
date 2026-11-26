@@ -249,7 +249,10 @@ browser fallback, so behavior never regresses.
 
 `UpdateService.DownloadAndPrepareAsync(UpdateInfo, IProgress<UpdateProgress>, CancellationToken)`:
 
-1. Create a temp directory under `%TEMP%\TSCutter.GUI\Updates\<tag>`.
+1. Create a sibling staging folder next to the install root:
+   `<parent of install root>/.TSCutter.GUI.update-<guid>`. This keeps every rename
+   on the same filesystem, even when system temp is tmpfs or the app is on an
+   external volume.
 2. Stream the ZIP to `<file>.part` with `HttpCompletionOption.ResponseHeadersRead`;
    report progress from `Content-Length` (pattern used by existing `IProgress<T>`
    services). Rename to the final name on success.
@@ -294,8 +297,8 @@ updater executable and mirrors the existing hidden `--verify-static-*` flags in
 ### 6.2 Linux
 
 The whole install directory is swapped: the staged payload is moved into place,
-the current directory is renamed to a backup under
-`%TEMP%\TSCutter.GUI\Rollback\<guid>`, and the new one takes its original name.
+the current directory is renamed to a backup inside the sibling staging folder,
+and the new one takes its original name.
 On any failure the backup is moved back. This also removes files that no longer
 exist in the new version and avoids a half-updated installation. A portable
 `data` folder beside the executable is copied into the new tree first. The
@@ -314,8 +317,8 @@ the app rather than a browser, no quarantine attribute is added.
 
 - Keep a backup of the current install until the new one is verified.
 - Preserve the original command line when relaunching.
-- A preflight write probe in the install folder fails early for read-only/system
-  locations; the dialog shows the error and leaves the app usable.
+- A preflight write probe in the **parent** of the install folder fails early for
+  read-only/system locations; the dialog shows the error and leaves the app usable.
 - No update is attempted in a Web-UI session.
 - Any unsupported layout, permission error, or verification failure results in
   a clear message plus the existing browser fallback — never a silent failure.
@@ -329,10 +332,13 @@ the app rather than a browser, no quarantine attribute is added.
   manifest tag/version match, manifest file name present in the release asset
   list, SHA-256 and size verification, zip-slip rejection, payload layout check,
   free-space check. No hard-coded stage or asset-name pattern.
-- **Staging**: download and extraction happen in a temp folder; any failure
-  deletes the staging folder and leaves the installed app untouched. On success
-  the staging folder, helper copy and rollback folder are deleted; anything still
-  locked by the previous process is removed on the next launch.
+- **Staging**: download and extraction happen in a sibling folder next to the
+  install root so all swaps stay on one filesystem; any failure deletes it and
+  leaves the installed app untouched. On success the sibling folder and helper
+  copy are deleted; leftovers are removed on the next launch.
+- **Cleanup safety**: startup cleanup runs only when no update lock is held, and
+  checks the age of each individual package folder rather than the shared Updates
+  root, so an active download is never deleted.
 - **Windows rollback**: the helper renames the running exe to `.old`, and only
   deletes that backup after the new exe has started and stayed alive for two
   seconds with a zero exit code. A failed relaunch is stopped, the old exe and

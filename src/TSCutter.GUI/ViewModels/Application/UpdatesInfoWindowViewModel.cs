@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -65,7 +66,8 @@ public partial class UpdatesInfoWindowViewModel : ViewModelBase, IModalDialogVie
             Progress = 0;
             var service = new UpdateService();
             var staged = await service.PrepareAsync(Update, new Progress<double>(value => Progress = value));
-            UpdateService.EnsureInstallLocationIsWritable(staged.InstallRoot);
+            // The swap and staging live in the parent folder of the installation.
+            UpdateService.EnsureDirectoryIsWritable(Path.GetDirectoryName(staged.InstallRoot)!);
             StatusText = strings.String_Update_Installing;
             await service.ApplyAsync(staged, CurrentArguments());
 
