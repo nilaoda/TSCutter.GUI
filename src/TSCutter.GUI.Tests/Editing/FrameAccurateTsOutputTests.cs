@@ -256,6 +256,77 @@ public sealed class FrameAccurateTsOutputTests
     }
 
     [NativeMediaTheory("frameaccurate")]
+    [InlineData(0, false)]
+    [InlineData(0, true)]
+    [InlineData(-900, false)]
+    public async Task HevcNativeCopyKeepsEqualDtsAndRejectsBackwardsDts(int difference, bool merge)
+    {
+        static unsafe long ReadDts(Packet packet) => ((AVPacket*)packet)->dts;
+        var source = Temporary(".ts");
+        var output = Temporary(".ts");
+        try
+        {
+            var fixture = Fixture("hevc-hlg.ts");
+            var frames = FrameAccurateExportTests.DecodeFrames(fixture);
+            var bytes = File.ReadAllBytes(fixture);
+            long previousDts = long.MinValue, injectedPts = long.MinValue;
+            using (var input = FormatContext.OpenInputUrl(fixture))
+            {
+                input.LoadStreamInfo();
+                var video = input.GetVideoStream().Index;
+                foreach (var packet in input.ReadPackets())
+                {
+                    if (packet.StreamIndex != video)
+                        continue;
+                    if (packet.Pts >= frames[100] && packet.Position >= 0)
+                    {
+                        var body = bytes.AsSpan((int)packet.Position, 188);
+                        if (TsTimestampFieldCodec.TryLocatePesTimestamps(body, out _, out var dts) && dts >= 0)
+                        {
+                            Assert.Equal(1, TsTimestampFieldCodec.RewritePesTimestamps(body,
+                                previousDts + difference - ReadDts(packet), dts, -1));
+                            injectedPts = packet.Pts;
+                            break;
+                        }
+                    }
+                    previousDts = ReadDts(packet);
+                }
+            }
+            Assert.NotEqual(long.MinValue, injectedPts);
+            File.WriteAllBytes(source, bytes);
+            if (difference < 0)
+            {
+                var error = await Assert.ThrowsAsync<FrameAccurateExportException>(() => Export(source, output, frames[17], frames[^23]));
+                Assert.Equal(FrameAccurateExportError.NonMonotonicTimestamp, error.Code);
+                Assert.False(File.Exists(output));
+                return;
+            }
+            var service = new FrameAccurateExportService();
+            var segment = new FrameAccurateExportSegment(source, frames[17], frames[^23], FrameAccurateExportTests.Settings(source));
+            await service.ExportAsync(new(output, merge ? [segment, segment] : [segment]));
+            Assert.Equal(merge ? 2 : 1, service.Reports.Count);
+            Assert.All(service.Reports, report => Assert.True(report.EncodedFrames > 0 && report.CopiedPackets > 0));
+            var expected = Enumerable.Range(17, frames.Count - 23 - 17 + 1);
+            Assert.Equal(merge ? expected.Concat(expected) : expected, FrameAccurateExportTests.DecodeNumbers(output));
+            using var result = FormatContext.OpenInputUrl(output);
+            result.LoadStreamInfo();
+            var outputVideo = result.GetVideoStream().Index;
+            var duration = frames[^23] - frames[17] + frames[1] - frames[0];
+            var matched = 0;
+            foreach (var packet in result.ReadPackets())
+            {
+                if (packet.StreamIndex != outputVideo)
+                    continue;
+                var offset = matched * duration;
+                if (packet.Pts == injectedPts + offset && ReadDts(packet) == previousDts + offset)
+                    matched++;
+            }
+            Assert.Equal(merge ? 2 : 1, matched);
+        }
+        finally { File.Delete(source); File.Delete(output); }
+    }
+
+    [NativeMediaTheory("frameaccurate")]
     [InlineData(0)]
     [InlineData(1)]
     public async Task StillRejectsVideoAndAudioDtsRegressions(int streamIndex)
