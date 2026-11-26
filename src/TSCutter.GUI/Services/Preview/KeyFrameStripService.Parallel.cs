@@ -131,7 +131,8 @@ internal sealed partial class KeyFrameStripService
         var leftRank = 0;
         for (var attempt = 0; attempt < MaximumWindowAttempts; attempt++)
         {
-            if (BuildRun(state, target) is not { } scanned)
+            if (!primary.SupportsParallelKeyFrameScan || usable.Any(helper => !helper.SupportsParallelKeyFrameScan)
+                || BuildRun(state, target) is not { } scanned)
                 return null;
             var (run, atStart, atEnd) = scanned;
             var before = run.Count(frame => frame.Timestamp.TotalSeconds <= target);
@@ -141,8 +142,11 @@ internal sealed partial class KeyFrameStripService
             var wantAfter = atStart ? Math.Max(rightCount, frameCount - before) : rightCount;
             var leftDone = atStart || before >= wantBefore;
             var rightDone = atEnd || after >= wantAfter;
-            if (leftDone && rightDone || attempt == MaximumWindowAttempts - 1)
+            if (leftDone && rightDone)
                 return RememberWindow(CreateRange(run, target, atStart, run[0].Pts, atEnd, frameCount), target, leftCount);
+            // 补读预算内仍无法补齐连续窗口时，本次请求交给顺序扫描；后续请求继续优先尝试并行。
+            if (attempt == MaximumWindowAttempts - 1)
+                return null;
             // 只补缺少的一侧，已经读过的画面不再解码。某段可能因预算用尽没有读到下一段，空隙可能紧挨着连续段，
             // 所以补读都以最高的序号重新定位：已认领的关键包跳过，只解出空缺的画面。
             // 向右由主实例从连续段末尾附近读取，越过段末后补够缺少的张数，或遇到已认领的关键包（与之后读过的部分接上）即止。
@@ -237,6 +241,13 @@ internal sealed partial class KeyFrameStripService
             for (var count = 0; count < budget; count++)
             {
                 var result = await video.DecodeNextSearchFrameAsync(thumbnailWidth, thumbnailHeight, token, Filter);
+                // 完整解码不再经过关键包认领过滤，分段拼接必须交回顺序扫描，不能据此标记文件尾。
+                if (!video.SupportsParallelKeyFrameScan)
+                {
+                    if (result is not null)
+                        DisposeResult(result);
+                    return new SliceResult(null, previous);
+                }
                 if (result is null)
                 {
                     if (!stopped)
@@ -281,7 +292,8 @@ internal sealed partial class KeyFrameStripService
         {
             try
             {
-                if (result.FrameTimestamp.TotalSeconds < 0)
+                // 只发布能对应到已读取关键包的画面，排空时修正出的其他 PTS 不进入缩略图缓存。
+                if (result.FrameTimestamp.TotalSeconds < 0 || !state.Owners.ContainsKey(result.FramePts))
                     return null;
                 var frame = CreateFrame(result, isCached);
                 bool added;
