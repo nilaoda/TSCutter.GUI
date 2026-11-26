@@ -1,0 +1,393 @@
+# In-place update design
+
+[Back to README](README.md)
+
+This document records how the current "check for updates" feature works and how an
+in-place install path can be added to it. The new path is **additive**: every
+existing behavior (silent startup check, strict version comparison, browser
+fallback, Web-UI suppression, release layout) is preserved.
+
+## Implementation status
+
+The additive implementation is in place:
+
+- CI publishes `update-manifest.json` and `SHA256SUMS.txt` alongside the six packages.
+- `VersionChecker.CheckForUpdateAsync()` reads the release API and manifest, with the
+  original 302 tag check as fallback; `GetLatestTagAsync()`, `CheckUpdateAsync()` and
+  `IsNewerTag()` remain unchanged.
+- `UpdateService` downloads, verifies SHA-256, extracts with zip-slip protection,
+  stages, and applies the update with per-platform replacement and rollback.
+- `UpdatesInfoWindow` is implemented, with a **new** in-app check menu item; the
+  original Help → Check update menu item and browser fallback are untouched.
+- The feature gate, preflight write check, verified relaunch with restore, and
+  startup reporting of helper failures are implemented (see 6.5).
+- Tests cover tag/version rules, asset naming, manifest parsing, download verification,
+  unsafe archive entries, cancellation, rollback, and the update lock.
+
+Verified with .NET SDK 11.0.100: all 49 update-related tests pass, and the full
+suite reports 1021 passed / 237 skipped / 4 failed. The four failures reproduce
+on a clean checkout at HEAD and are environment-only (localized decimal separator
+and missing FFmpeg 9 runtime DLLs), not related to this feature.
+
+## 1. Current behavior
+
+The update feature today is deliberately small: it detects a newer version and
+opens the releases page in the browser. It never downloads or installs anything.
+
+### 1.1 Flow
+
+```text
+config.json: AutoCheckForUpdates (default true)
+        |
+App.OnFrameworkInitializationCompleted()          App.axaml.cs:172-176
+        |  fire-and-forget, after the main window is shown
+        v
+App.CheckUpdatesAsync()                           App.axaml.cs:189-212
+        |  Task.Delay(1000)
+        v
+VersionChecker.GetLatestTagAsync()                VersionChecker.cs:33-47
+        |  GET .../releases/latest, AllowAutoRedirect = false
+        |  read 302 Location -> .../releases/tag/<tag>
+        v
+VersionChecker.IsNewerTag(latest, App.CurrentTag) VersionChecker.cs:16-31
+        |  strict "vMAJOR.MINOR.BUILD" only
+        v
+localized MessageBox (Yes / No)
+        |  Yes
+        v
+MainWindow.CheckUpdateCommand                     MainWindowViewModel.cs:1639-1644
+        |  Process.Start("https://github.com/nilaoda/TSCutter.GUI/releases")
+        v
+browser opens the releases page
+```
+
+### 1.2 Current version identity
+
+`ReleaseInfo` (`../src/TSCutter.GUI/Utils/Application/ReleaseInfo.cs`) reads
+`AssemblyMetadata` values emitted by `TSCutter.GUI.csproj:4,8,26-29`:
+
+| Metadata | Value | Used for |
+| --- | --- | --- |
+| `ReleaseVersion` | `0.10.1` | title, About dialog |
+| `ReleaseTag` | `v0.10.1` | `App.CurrentTag`, update comparison |
+| `ReleaseStage` | `Beta` | title, About dialog, asset names |
+| `BuildDate` | `2026-11-25` | About dialog |
+
+`IsNewerTag` only accepts a `v` prefix plus a three-component `Version`
+(`Build >= 0`, `Revision == -1`). Legacy `alphabuild_*` tags, prerelease tags
+such as `v0.2.0-beta.1`, and malformed tags are ignored so a stale `/latest`
+response can never suggest a downgrade. This rule is covered by
+`../src/TSCutter.GUI.Tests/Application/VersionCheckerTests.cs:8-29`.
+
+### 1.3 Existing pieces intended for future use
+
+- `VersionChecker.CheckUpdateAsync()` (`VersionChecker.cs:49-61`) fetches the
+  GitHub API `.../releases/latest` JSON and deserializes `GitHubVersionInfo`
+  (`tag_name`, `body`, `name`, …) through `AppJsonContext`. The call is currently
+  commented out at `App.axaml.cs:192-197`.
+- `UpdatesInfoWindow` / `UpdatesInfoWindowViewModel` are registered in DI
+  (`App.axaml.cs:91,230`) and covered by `DialogCloseTests`, but the window XAML
+  still contains the literal `TODO` (`Views/Application/UpdatesInfoWindow.axaml:23`).
+
+### 1.4 Release artifacts
+
+`../.github/workflows/build-desktop.yml` publishes self-contained NativeAOT
+single-file builds for six RIDs. Asset names are already deterministic:
+
+`TSCutter.GUI_<Stage>_<Version>_<rid>.zip`, e.g. `TSCutter.GUI_Beta_0.10.1_win-x64.zip`.
+
+| RID | ZIP payload |
+| --- | --- |
+| `win-x64`, `win-arm64` | `TSCutterGUI.exe` + `THIRD_PARTY_NOTICES.txt` |
+| `linux-x64`, `linux-arm64` | publish folder contents (`.dbg` excluded) |
+| `osx-arm64`, `osx-x64` | `TSCutter.GUI.app` bundle |
+
+The release is tagged `v<Version>` and marked `makeLatest: true`. The workflow
+validates `Version = X.Y.Z`, `Stage = Beta`, `Tag = v<Version>`
+(`build-desktop.yml:45-64`).
+
+### 1.5 Why in-place replacement is safe for user data
+
+Configuration lives in `%APPDATA%\TSCutter.GUI\config.json` (with
+`remote-editing.json` beside it), recovery files in
+`%LOCALAPPDATA%\TSCutter.GUI\Recovery`, and saved frames under `%APPDATA%`
+(`ConfigurationService.cs:27-28`, `ProjectRecoveryStore.cs:49-53`,
+`SavedFrameStore.cs:23`). None of these are inside the application directory,
+so replacing the executable or `.app` bundle leaves user settings untouched.
+
+---
+
+## 2. Compatibility: what must not be removed
+
+The new implementation is an *additional* path, not a replacement of the old
+one. The following behavior stays:
+
+1. `AppConfig.AutoCheckForUpdates` remains, defaults to `true`, and remains
+   persisted in `config.json`. Tools → Settings keeps its checkbox.
+2. Web-UI / headless sessions keep forcing `AutoCheckForUpdates = false`
+   (`App.axaml.cs:141`). No installation is attempted from a remote session.
+3. The silent, delayed, fire-and-forget check stays. When there is no newer
+   version, nothing is shown to the user.
+4. `GetLatestTagAsync()`, the 302 discovery, and `IsNewerTag()` stay available
+   with their current semantics and tests. They remain the conservative
+   pre-check; a newer tag is still required before any install UI appears.
+5. `CheckUpdateAsync()` and `GitHubVersionInfo` stay available; they are
+   extended with asset metadata rather than replaced.
+6. **Help → Check update keeps opening the releases page in the browser.**
+   This is the universal fallback whenever in-place update is unavailable,
+   declined, or fails.
+7. The existing localized strings (`String.UpdatesInfo.*`, `String.Settings.AutoCheckForUpdates`)
+   keep their keys and values; new strings are added alongside them.
+8. `UpdatesInfoWindow` / `UpdatesInfoWindowViewModel` DI registrations and the
+   dialog-close tests keep working.
+9. Release tag, stage, and all six asset filenames stay unchanged. The CI
+   workflow gains an extra manifest asset; it does not rename or repackage
+   existing assets.
+10. `ReleaseMetadata_MatchesCompiledVersion` keeps passing (Stage stays `Beta`).
+11. No user data, config, recovery file, or saved frame is deleted or moved.
+
+---
+
+## 3. Small changes to existing files
+
+All changes below are additive extensions of the current code.
+
+| File | Additive change | Purpose |
+| --- | --- | --- |
+| `Models/Application/GitHubVersionInfo.cs` | optional `assets` array (`name`, `size`, `browser_download_url`) and `html_url` | select the right download without hard-coded URLs |
+| `Utils/Application/AppJsonContext.cs` | register the new model types for source-generated JSON | AOT-safe deserialization |
+| `Utils/Application/VersionChecker.cs` | new `CheckForUpdateAsync()` returning an `UpdateInfo`; new RID mapping | API-based discovery with asset metadata |
+| `App.axaml.cs` | keep `CheckUpdatesAsync()` but route "Yes" to the update dialog; keep `MainWindow.CheckUpdateCommand.Execute(null)` for the browser option | richer prompt, old fallback intact |
+| `Views/MainWindow.axaml`, `ViewModels/MainWindowViewModel.cs` | add a **new** menu item and command for an in-app check; leave `CheckUpdateCommand` and its menu item untouched | manual install path without changing existing behavior |
+| `ViewModels/Application/UpdatesInfoWindowViewModel.cs` | version strings, release notes, progress, and commands | drive the new dialog |
+| `Views/Application/UpdatesInfoWindow.axaml` | replace `TODO` with real controls | user-facing install UI |
+| `Models/Application/AppConfig.cs` | optional `SkippedUpdateVersion` and `EnableInPlaceUpdates` properties | "Skip this version" and a feature gate, both config-compatible |
+| `Views/Application/SettingsWindow.axaml`, `ViewModels/Application/SettingsWindowViewModel.cs` | new checkbox bound to `EnableInPlaceUpdates` | user-controlled feature gate |
+| `Lang/en-US.axaml`, `zh-CN.axaml`, `zh-TW.axaml` | new `String.Update.*` keys | localization for new UI |
+| `Program.cs` | hidden `--apply-update ...` argument handler next to the existing hidden `--verify-static-*` flags | Windows self-replacement helper |
+| `.github/workflows/build-desktop.yml` | upload `update-manifest.json` and `SHA256SUMS.txt` in the release job | verifiable download metadata |
+
+New files: `Models/Application/UpdateModels.cs` and
+`Services/Application/UpdateService.cs`, plus `UpdateServiceTests`.
+
+---
+
+## 4. New architecture
+
+```text
+Startup (existing)              New menu item: Check for updates (install)
+        |                                   |
+   AutoCheckForUpdates                      |
+        |                                   |
+   [1s delay] → VersionChecker  <------------+
+        |  API /releases/latest (fallback: existing 302 check)
+        v
+   UpdateInfo (tag, notes, matching asset, checksum)
+        |
+   IsNewerTag + SkippedUpdateVersion (existing rule + new skip)
+        |
+   UpdatesInfoWindow
+        +-- Install now ------> UpdateService.DownloadAndPrepareAsync
+        |                          -> verify -> extract -> platform applier -> restart
+        +-- Open in browser --> MainWindow.CheckUpdateCommand   (existing behavior)
+        +-- Skip this version -> AppConfig.SkippedUpdateVersion
+        +-- Later ------------> close
+
+Existing Help → Check update menu item: unchanged, always opens the browser.
+```
+
+### 4.1 Release manifest
+
+Generated in the `release` job after all six artifacts are downloaded:
+
+```json
+{
+  "version": "0.10.1",
+  "tag": "v0.10.1",
+  "releaseNotesUrl": "https://github.com/nilaoda/TSCutter.GUI/releases/tag/v0.10.1",
+  "assets": {
+    "win-x64":   { "file": "TSCutter.GUI_Beta_0.10.1_win-x64.zip",   "size": 12345678, "sha256": "..." },
+    "win-arm64": { "file": "TSCutter.GUI_Beta_0.10.1_win-arm64.zip", "size": 12345678, "sha256": "..." },
+    "linux-x64": { "file": "TSCutter.GUI_Beta_0.10.1_linux-x64.zip", "size": 12345678, "sha256": "..." },
+    "linux-arm64":{ "file": "TSCutter.GUI_Beta_0.10.1_linux-arm64.zip","size": 12345678, "sha256": "..." },
+    "osx-arm64": { "file": "TSCutter.GUI_Beta_0.10.1_osx-arm64.zip",  "size": 12345678, "sha256": "..." },
+    "osx-x64":   { "file": "TSCutter.GUI_Beta_0.10.1_osx-x64.zip",    "size": 12345678, "sha256": "..." }
+  }
+}
+```
+
+The client prefers the manifest asset (`browser_download_url` or a constructed
+`.../releases/download/<tag>/<file>` URL) and requires its SHA-256 to match.
+`SHA256SUMS.txt` is uploaded as a second, human-checkable asset.
+
+### 4.2 RID mapping
+
+| OS | Architecture | RID |
+| --- | --- | --- |
+| Windows (`OperatingSystem.IsWindows`) | `X64` | `win-x64` |
+| Windows | `Arm64` | `win-arm64` |
+| Linux (`OperatingSystem.IsLinux`) | `X64` | `linux-x64` |
+| Linux | `Arm64` | `linux-arm64` |
+| macOS (`OperatingSystem.IsMacOS`) | `Arm64` | `osx-arm64` |
+| macOS | `X64` | `osx-x64` |
+
+Any other combination has no matching asset → the dialog offers only the
+browser fallback, so behavior never regresses.
+
+---
+
+## 5. Download and verification
+
+`UpdateService.DownloadAndPrepareAsync(UpdateInfo, IProgress<UpdateProgress>, CancellationToken)`:
+
+1. Create a temp directory under `%LOCALAPPDATA%\TSCutter.GUI\Updates\<tag>`.
+2. Stream the ZIP to `<file>.part` with `HttpCompletionOption.ResponseHeadersRead`;
+   report progress from `Content-Length` (pattern used by existing `IProgress<T>`
+   services). Rename to the final name on success.
+3. Verify size and SHA-256 against the manifest before touching the archive.
+   A mismatch cancels the install and offers the browser fallback.
+4. Extract into a staging directory. Validate every entry path: reject absolute
+   paths, `..` segments, and anything escaping the staging root (zip-slip).
+5. Validate the expected payload per RID: `TSCutterGUI.exe` on Windows,
+   `TSCutter.GUI.app/Contents/MacOS/TSCutterGUI` on macOS, `TSCutterGUI` with
+   the executable bit on Linux.
+6. Check free disk space first, following the existing `DiskSpaceUtil` /
+   `ExportSpaceCheck` patterns.
+7. Never execute downloaded code before steps 3-5 succeed.
+
+Cancellation is honored at every step; partial downloads are discarded.
+
+---
+
+## 6. Platform replacement strategy
+
+### 6.1 Windows
+
+A running `.exe` cannot be overwritten in place. The app copies its own current
+executable to a temp path (e.g. `%TEMP%\tscutter-updater-<guid>.exe`) and starts
+it with a hidden argument:
+
+```text
+--apply-update <parentPid> <stagedExe> <targetExe> <payloadDir> [original args...]
+```
+
+The helper waits for the parent process to exit, renames the running executable
+to `.old` (a rename is allowed on Windows even while the file is in use), moves
+the staged executable into place with a short retry loop for antivirus/file
+locks, copies the notices file, then relaunches the new executable with the
+original arguments and exits. On failure the `.old` file is moved back.
+Using a copy of the same binary avoids shipping a second updater executable and
+mirrors the existing hidden `--verify-static-*` flags in `Program.cs`. The flag
+is internal and not shown in the UI.
+
+### 6.2 Linux
+
+POSIX allows replacing an open file, so every staged file is copied to a
+same-directory temporary file and then atomically moved over its target. The
+originals are backed up under `%TEMP%\TSCutter.GUI\Rollback\<guid>` and restored
+if any replacement fails. The executable bit is reapplied and the app is
+relaunched with `UseShellExecute = false`.
+
+### 6.3 macOS
+
+The staged bundle's `Contents/**` files are applied the same way to the running
+`.app` bundle located by walking up from `Environment.ProcessPath`. Originals
+are backed up and restored on failure, the executable bit is reapplied, and
+the app is relaunched from `Contents/MacOS/TSCutterGUI`. Because the ZIP is
+downloaded by the app rather than a browser, no quarantine attribute is added.
+
+### 6.4 Common rules
+
+- Keep a backup of the current install until the new one is verified.
+- Preserve the original command line when relaunching.
+- A preflight write probe in the install folder fails early for read-only/system
+  locations; the dialog shows the error and leaves the app usable.
+- No update is attempted in a Web-UI session.
+- Any unsupported layout, permission error, or verification failure results in
+  a clear message plus the existing browser fallback — never a silent failure.
+
+### 6.5 Safeguards and rollback
+
+- **Feature gate**: `AppConfig.EnableInPlaceUpdates` (default `true`, exposed in
+  Tools → Settings). When off, both the automatic prompt and the new menu item
+  keep the original browser-only behavior.
+- **Verification before replacement**: strict tag comparison, skip-version,
+  manifest tag/version/asset-name match, SHA-256 and size verification,
+  zip-slip rejection, payload layout check, free-space check.
+- **Staging**: download and extraction happen in a temp folder; any failure
+  deletes the staging folder and leaves the installed app untouched.
+- **Windows rollback**: the helper renames the running exe to `.old`, and only
+  deletes that backup after the new exe has started and stayed alive for two
+  seconds with a zero exit code. A failed relaunch is stopped, the backup is
+  restored, and the error is written to `%LOCALAPPDATA%\TSCutter.GUI\UpdateResult.txt`
+  for display on the next launch.
+- **Linux/macOS rollback**: every original file is copied to a rollback folder
+  before replacement; any exception restores them in reverse order.
+- **Transport hardening**: only HTTPS URLs on `github.com` / `*.githubusercontent.com`
+  are accepted, and the checksum must be a 64-character hex string.
+- **Multi-instance lock**: `update.lock` under `%LOCALAPPDATA%\TSCutter.GUI` holds the
+  owner's `AppInstanceIdentity`; a running foreign owner blocks installation. The
+  Windows helper releases the lock after it finishes.
+- **Still not covered**: cryptographic signature verification (Sigstore / code
+  signing). Integrity relies on HTTPS plus the SHA-256 published in the signed-off
+  release manifest, not on a detached signature.
+
+---
+
+## 7. UI and localization
+
+`UpdatesInfoWindow` replaces the `TODO` with: current version, new version,
+release notes from `body`, a progress bar during download, and buttons:
+
+| Button | Action |
+| --- | --- |
+| Install now | `UpdateService` → platform applier → restart |
+| Open in browser | existing `MainWindow.CheckUpdateCommand` |
+| Skip this version | stores `AppConfig.SkippedUpdateVersion` |
+| Later | closes the dialog |
+
+New `String.Update.*` keys are added to all three language files next to the
+existing `String.UpdatesInfo.*` keys; no existing key is changed or deleted.
+The new in-app menu item reports "You are up to date" when there is no newer
+release, while the original Help → Check update menu item keeps opening the
+releases page as before.
+
+---
+
+## 8. Testing
+
+- Extend `VersionCheckerTests`: RID mapping, asset selection, manifest parsing,
+  checksum validation. Keep all existing tag-comparison cases unchanged.
+- Add `UpdateServiceTests` using a fake HTTP handler and temp directories:
+  checksum mismatch, zip-slip rejection, payload layout, cancellation, rollback,
+  and the update lock. No test requires real network access.
+- Keep `ReleaseMetadata_MatchesCompiledVersion` green (Stage stays `Beta`).
+- Keep `DialogCloseTests` passing for `UpdatesInfoWindow`.
+
+---
+
+## 9. Rollout and risks
+
+- The in-place path is gated by a user setting and still falls back to the
+  releases page on every platform.
+- Unauthenticated GitHub API calls are rate-limited (60/hour/IP): results are cached
+  for 10 minutes; a manual check forces a refresh, and the manifest avoids extra API
+  calls for asset discovery.
+- Windows SmartScreen / signing: a copied helper EXE may be treated as a new
+  file. Keep the helper name and behavior minimal, and fall back to the browser
+  if it is blocked.
+- macOS code signing and quarantine are handled by the applier; verify that the
+  replaced bundle is launchable before removing the backup.
+- Multi-user and read-only installs: detect and fall back rather than asking
+  for elevation.
+- User consent stays explicit: the in-place path is only taken after the user
+  chooses "Install now". Fully automatic installation is out of scope.
+
+## 10. Implementation order
+
+1. CI: manifest + checksum assets (Phase 0).
+2. Models and checker extension; keep old check intact (Phase 1).
+3. Download, verification, and staging service (Phase 2).
+4. Platform appliers with backup/rollback (Phase 3).
+5. Dialog, commands, and localization (Phase 4).
+6. Tests and gated rollout (Phases 5-6).

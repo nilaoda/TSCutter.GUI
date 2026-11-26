@@ -114,6 +114,7 @@
     <x:String x:Key="String.Menu.Theme">Theme</x:String>
     <x:String x:Key="String.Menu.Help">_Help</x:String>
     <x:String x:Key="String.Menu.CheckUpdate">_Check Update</x:String>
+    <x:String x:Key="String.Menu.CheckForUpdatesInApp">Check for updates (install)</x:String>
     <x:String x:Key="String.Menu.About">_About...</x:String>
     <x:String x:Key="String.Menu.AboutApp">About TSCutter.GUI</x:String>
     <x:String x:Key="String.ToolBar.OpenVideoTip">Open Video...</x:String>
@@ -244,6 +245,7 @@
     <x:String x:Key="String.Settings.CurrentLightTheme">Light theme</x:String>
     <x:String x:Key="String.Settings.CurrentDarkTheme">Dark theme</x:String>
     <x:String x:Key="String.Settings.AutoCheckForUpdates">Auto check for updates after app started</x:String>
+    <x:String x:Key="String.Settings.EnableInPlaceUpdates">Allow in-place updates (download and install)</x:String>
     <x:String x:Key="String.Settings.ShowSystemProgress">Show progress on the taskbar or Dock icon</x:String>
     <x:String x:Key="String.Settings.ShowSystemProgressTip">Shows the progress of exports, checks, repairs and other long tasks on the taskbar button (Windows) or the Dock icon (macOS).&#10;The bar turns red when a task fails.</x:String>
     <x:String x:Key="String.Settings.ShowImageNavigator">Show image navigator</x:String>
@@ -282,6 +284,17 @@
     <x:String x:Key="String.UpdatesInfo.NewVersionTitle">New version found</x:String>
     <x:String x:Key="String.UpdatesInfo.NewVersionInfo">Current: {0}, New: {1}</x:String>
     <x:String x:Key="String.UpdatesInfo.NewVersionAlert">Do you want to open the download page?</x:String>
+    <x:String x:Key="String.Update.VersionInfo">Current: {0}, New: {1}</x:String>
+    <x:String x:Key="String.Update.UpToDate">You are up to date.</x:String>
+    <x:String x:Key="String.Update.NoNotes">No release notes were published for this version.</x:String>
+    <x:String x:Key="String.Update.OpenInBrowser">Open in browser</x:String>
+    <x:String x:Key="String.Update.Skip">Skip this version</x:String>
+    <x:String x:Key="String.Update.Later">Later</x:String>
+    <x:String x:Key="String.Update.Install">Install now</x:String>
+    <x:String x:Key="String.Update.Downloading">Downloading update…</x:String>
+    <x:String x:Key="String.Update.Installing">Installing update. The app will restart shortly.</x:String>
+    <x:String x:Key="String.Update.Error">Update failed: {0}. You can download it from the releases page.</x:String>
+    <x:String x:Key="String.Update.FailedTitle">Update failed</x:String>
     <x:String x:Key="String.RawCutter.Title">TS Raw Stream Cutter</x:String>
     <x:String x:Key="String.RawCutter.FilePath">File Path:</x:String>
     <x:String x:Key="String.RawCutter.SyncOffset">Sync Offset: {0} bytes</x:String>

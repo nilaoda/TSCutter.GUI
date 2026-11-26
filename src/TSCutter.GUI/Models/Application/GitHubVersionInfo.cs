@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Text.Json.Serialization;
 
 namespace TSCutter.GUI.Models.Application;
@@ -14,4 +15,8 @@ public class GitHubVersionInfo
     public required string Name { get; set; }
     [JsonPropertyName("tag_name")]
     public required string TagName { get; set; }
+    [JsonPropertyName("html_url")]
+    public string? HtmlUrl { get; set; }
+    [JsonPropertyName("assets")]
+    public List<GitHubReleaseAsset>? Assets { get; set; }
 }

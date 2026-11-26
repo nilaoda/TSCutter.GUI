@@ -8,19 +8,32 @@
         mc:Ignorable="d"
         DataContext="{x:Static local:App.UpdatesInfoDialog}"
         x:DataType="viewModels:UpdatesInfoWindowViewModel"
-        Width="400" Height="300"
+        Width="460" Height="360" MinWidth="460" MinHeight="320"
         WindowStartupLocation="CenterOwner"
         CanResize="False"
         x:Class="TSCutter.GUI.Views.Application.UpdatesInfoWindow"
         Title="{DynamicResource String.UpdatesInfo.Title}">
     <DockPanel Margin="12">
-        <StackPanel DockPanel.Dock="Bottom" HorizontalAlignment="Right" Margin="0,8,0,0">
-            <Button Content="{DynamicResource String.Window.Close}" MinWidth="80" IsCancel="True"
-                    Command="{x:Static themes:WindowCommands.Close}" CommandParameter="{Binding $parent[Window]}" />
+        <StackPanel DockPanel.Dock="Bottom" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,8,0,0">
+            <Button Content="{DynamicResource String.Update.OpenInBrowser}"
+                    Command="{Binding OpenInBrowserCommand}" MinWidth="120" Margin="0,0,6,0" />
+            <Button Content="{DynamicResource String.Update.Skip}"
+                    Command="{Binding SkipThisVersionCommand}" MinWidth="90" Margin="0,0,6,0" />
+            <Button Content="{DynamicResource String.Update.Later}" MinWidth="70" Margin="0,0,6,0"
+                    IsCancel="True"
+                    Command="{x:Static themes:WindowCommands.Close}"
+                    CommandParameter="{Binding $parent[Window]}" />
+            <Button Content="{DynamicResource String.Update.Install}" MinWidth="90" IsDefault="True"
+                    Command="{Binding InstallCommand}" />
         </StackPanel>
-        <Border BorderThickness="1" BorderBrush="#808080" Margin="0,10,0,10">
+        <StackPanel DockPanel.Dock="Top">
+            <TextBlock Text="{Binding VersionText}" FontWeight="Bold" TextWrapping="Wrap" />
+            <TextBlock Text="{Binding StatusText}" TextWrapping="Wrap" Margin="0,6,0,4" />
+            <ProgressBar Height="12" Minimum="0" Maximum="1" Value="{Binding Progress}" />
+        </StackPanel>
+        <Border BorderThickness="1" BorderBrush="#808080" Margin="0,10,0,0">
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Margin="4">
-                TODO
+                <TextBlock Text="{Binding NotesText}" TextWrapping="Wrap" />
             </ScrollViewer>
         </Border>
     </DockPanel>

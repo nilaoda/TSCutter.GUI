@@ -87,6 +87,8 @@
                         </StackPanel>
                         <CheckBox IsChecked="{Binding AutoCheckForUpdates}"
                                   Content="{DynamicResource String.Settings.AutoCheckForUpdates}" />
+                        <CheckBox IsChecked="{Binding EnableInPlaceUpdates}"
+                                  Content="{DynamicResource String.Settings.EnableInPlaceUpdates}" />
                         <CheckBox IsChecked="{Binding ShowSystemProgress}"
                                   IsVisible="{Binding IsSystemProgressAvailable}"
                                   Content="{DynamicResource String.Settings.ShowSystemProgress}">

@@ -114,6 +114,7 @@
     <x:String x:Key="String.Menu.Theme">佈景主題</x:String>
     <x:String x:Key="String.Menu.Help">說明(_H)</x:String>
     <x:String x:Key="String.Menu.CheckUpdate">檢查更新(_C)</x:String>
+    <x:String x:Key="String.Menu.CheckForUpdatesInApp">檢查並更新(_I)</x:String>
     <x:String x:Key="String.Menu.About">關於(_A)...</x:String>
     <x:String x:Key="String.Menu.AboutApp">關於 TSCutter.GUI</x:String>
     <x:String x:Key="String.ToolBar.OpenVideoTip">開啟影片...</x:String>
@@ -244,6 +245,7 @@
     <x:String x:Key="String.Settings.CurrentLightTheme">目前淺色佈景主題</x:String>
     <x:String x:Key="String.Settings.CurrentDarkTheme">目前深色佈景主題</x:String>
     <x:String x:Key="String.Settings.AutoCheckForUpdates">程式啟動後自動檢查更新</x:String>
+    <x:String x:Key="String.Settings.EnableInPlaceUpdates">允許就地更新（下載並安裝）</x:String>
     <x:String x:Key="String.Settings.ShowSystemProgress">在工作列或 Dock 圖示上顯示進度</x:String>
     <x:String x:Key="String.Settings.ShowSystemProgressTip">在工作列按鈕（Windows）或 Dock 圖示（macOS）上顯示匯出、檢測、修復等耗時操作的進度。&#10;操作失敗時進度列會變紅。</x:String>
     <x:String x:Key="String.Settings.ShowImageNavigator">顯示影像導覽小地圖</x:String>
@@ -282,6 +284,17 @@
     <x:String x:Key="String.UpdatesInfo.NewVersionTitle">發現新版本</x:String>
     <x:String x:Key="String.UpdatesInfo.NewVersionInfo">目前版本: {0}, 新版本: {1}</x:String>
     <x:String x:Key="String.UpdatesInfo.NewVersionAlert">是否開啟下載頁面？</x:String>
+    <x:String x:Key="String.Update.VersionInfo">目前版本: {0}, 新版本: {1}</x:String>
+    <x:String x:Key="String.Update.UpToDate">目前已是最新版本。</x:String>
+    <x:String x:Key="String.Update.NoNotes">此版本沒有發布說明。</x:String>
+    <x:String x:Key="String.Update.OpenInBrowser">在瀏覽器中開啟</x:String>
+    <x:String x:Key="String.Update.Skip">略過此版本</x:String>
+    <x:String x:Key="String.Update.Later">稍後</x:String>
+    <x:String x:Key="String.Update.Install">立即安裝</x:String>
+    <x:String x:Key="String.Update.Downloading">正在下載更新…</x:String>
+    <x:String x:Key="String.Update.Installing">正在安裝更新，程式即將重新啟動。</x:String>
+    <x:String x:Key="String.Update.Error">更新失敗: {0}。您可以從發布頁面下載。</x:String>
+    <x:String x:Key="String.Update.FailedTitle">更新失敗</x:String>
     <x:String x:Key="String.RawCutter.Title">TS 原始流截取</x:String>
     <x:String x:Key="String.RawCutter.FilePath">檔案路徑:</x:String>
     <x:String x:Key="String.RawCutter.SyncOffset">同步偏移: {0} 位元組</x:String>

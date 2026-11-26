@@ -12,6 +12,7 @@ namespace TSCutter.GUI.Utils.Application;
 [JsonSerializable(typeof(AppConfig))]
 [JsonSerializable(typeof(RemoteEditingConfig))]
 [JsonSerializable(typeof(GitHubVersionInfo))]
+[JsonSerializable(typeof(UpdateManifest))]
 [JsonSerializable(typeof(CutterProject))]
 [JsonSerializable(typeof(ClipPointFile))]
 [JsonSerializable(typeof(ProjectRecoveryFile))]

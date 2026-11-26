@@ -48,6 +48,10 @@ public class AppConfig : ObservableObject
     public ThemeVariantMode ThemeVariantMode { get; set; } = ThemeVariantMode.Automatic;
     public bool AutoDetectLanguage { get; set; } = true;
     public bool AutoCheckForUpdates { get; set; } = true;
+    // 关闭后仍会提示新版本，但只保留原有的浏览器下载方式。
+    public bool EnableInPlaceUpdates { get; set; } = true;
+    // 用户选择跳过的版本标签；安装更新后清空，不参与版本比较。
+    public string? SkippedUpdateVersion { get; set; }
     public bool ShowImageNavigator
     {
         get => _showImageNavigator;
