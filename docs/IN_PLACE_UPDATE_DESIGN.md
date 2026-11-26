@@ -130,11 +130,12 @@ None of these are inside the application directory, so replacing the executable
 or `.app` bundle leaves user settings untouched.
 
 In portable mode (a `TSCutter.GUI.portable` marker beside the executable), all of these move
-into `<install>/data` via `AppDataPaths`. Release ZIPs now include the marker, so
-a fresh install is portable by default. Windows and Linux replacements only touch
-package files, so `data` is untouched; the updater also carries the marker into
-older installs. The macOS bundle swap copies both `data` and the marker into the
-new bundle before replacing the old one. See [PORTABLE_MODE.md](PORTABLE_MODE.md).
+into `<install>/data` via `AppDataPaths` (beside the macOS bundle, not inside it).
+Release ZIPs now include the marker, so a fresh install is portable by default.
+Windows and Linux replacements only touch package files, so `data` is untouched;
+the updater also carries the marker into older installs unless the user opted out.
+The macOS swap replaces only the bundle, leaving the sibling `data` folder alone,
+and carries only the marker. See [PORTABLE_MODE.md](PORTABLE_MODE.md).
 
 ---
 
@@ -369,7 +370,7 @@ browser, no quarantine attribute is added.
   two seconds or exited with code zero; an immediate failure restores the old
   install. In portable mode, the `TSCutter.GUI.portable` marker is carried into
   the new macOS bundle while the sibling `data` folder is left untouched, so the
-  updated app stays portable.
+  updated app stays portable without writing inside a possibly signed bundle.
 - **Transport hardening**: only HTTPS URLs on `github.com` / `*.githubusercontent.com`
   are accepted, and the checksum must be a 64-character hex string.
 - **Multi-instance lock**: `update.lock` under `%LOCALAPPDATA%\TSCutter.GUI` holds the

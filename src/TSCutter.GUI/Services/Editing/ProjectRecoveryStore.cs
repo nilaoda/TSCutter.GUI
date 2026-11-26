@@ -83,6 +83,7 @@ internal sealed class ProjectRecoveryStore
                 stream.Flush(flushToDisk: true);
             }
             File.Move(temporaryPath, OwnFilePath, overwrite: true);
+            AppDataPaths.RestrictFile(OwnFilePath);
         }
         finally
         {

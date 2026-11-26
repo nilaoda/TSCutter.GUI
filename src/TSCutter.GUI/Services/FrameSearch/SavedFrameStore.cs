@@ -72,6 +72,7 @@ internal sealed class SavedFrameStore
         {
             await File.WriteAllTextAsync(temporary, json, token).ConfigureAwait(false);
             File.Move(temporary, path, overwrite: true);
+            AppDataPaths.RestrictFile(path);
         }
         finally
         {

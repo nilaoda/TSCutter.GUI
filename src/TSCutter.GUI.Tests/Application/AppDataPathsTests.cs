@@ -62,19 +62,53 @@ public sealed class AppDataPathsTests : IDisposable
     }
 
     [Fact]
-    public void DeletingMarker_RestoresProfileFolders()
+    public void DeletingMarker_RestoresProfileFoldersAndData()
     {
         var marker = Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName);
         File.WriteAllText(marker, "");
+        AppDataPaths.Initialize();
+        File.WriteAllText(Path.Combine(AppDataPaths.DataDirectory, "config.json"), "portable settings");
         Assert.True(AppDataPaths.IsPortable);
 
         File.Delete(marker);
+        AppDataPaths.Initialize();
 
         Assert.False(AppDataPaths.IsPortable);
-        Assert.Equal(ProfileConfig(AppDataPaths.ApplicationDataRootOverride!, "config.json"),
-            AppDataPaths.GetPath(Environment.SpecialFolder.ApplicationData, "config.json"));
+        Assert.Equal("portable settings", File.ReadAllText(ProfileConfig(
+            AppDataPaths.ApplicationDataRootOverride!, "config.json")));
+        Assert.True(File.Exists(AppDataPaths.OptOutFilePath));
         Assert.Equal(ProfileConfig(AppDataPaths.LocalApplicationDataRootOverride!, "update.lock"),
             AppDataPaths.GetPath(Environment.SpecialFolder.LocalApplicationData, "update.lock"));
+    }
+
+    [Fact]
+    public void AddingMarkerAgainClearsTheOptOut()
+    {
+        Directory.CreateDirectory(AppDataPaths.DataDirectory);
+        File.WriteAllText(AppDataPaths.OptOutFilePath, "");
+        Assert.True(AppDataPaths.IsOptedOut);
+
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+        AppDataPaths.Initialize();
+
+        Assert.False(AppDataPaths.IsOptedOut);
+        Assert.True(AppDataPaths.IsPortable);
+    }
+
+    [Fact]
+    public void PortableDataFilesArePrivateOnUnix()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var profileConfig = Path.Combine(AppDataPaths.ApplicationDataRootOverride!, "TSCutter.GUI");
+        Directory.CreateDirectory(profileConfig);
+        File.WriteAllText(Path.Combine(profileConfig, "config.json"), "settings");
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+        AppDataPaths.Initialize();
+
+        var config = Path.Combine(AppDataPaths.DataDirectory, "config.json");
+        var mode = File.GetUnixFileMode(config);
+        Assert.Equal(UnixFileMode.UserRead | UnixFileMode.UserWrite, mode);
     }
 
     [Fact]
@@ -91,7 +125,7 @@ public sealed class AppDataPathsTests : IDisposable
         File.WriteAllText(Path.Combine(localRoot, "update.lock"), "stale lock");
         File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
 
-        AppDataPaths.EnsurePortableData();
+        AppDataPaths.Initialize();
 
         Assert.Equal("config", File.ReadAllText(Path.Combine(AppDataPaths.DataDirectory, "config.json")));
         Assert.Equal("remote", File.ReadAllText(Path.Combine(AppDataPaths.DataDirectory, "remote-editing.json")));
@@ -103,7 +137,7 @@ public sealed class AppDataPathsTests : IDisposable
 
         // A second launch must not overwrite portable data with profile data.
         File.WriteAllText(Path.Combine(configRoot, "config.json"), "changed");
-        AppDataPaths.EnsurePortableData();
+        AppDataPaths.Initialize();
         Assert.Equal("config", File.ReadAllText(Path.Combine(AppDataPaths.DataDirectory, "config.json")));
     }
 
@@ -111,7 +145,7 @@ public sealed class AppDataPathsTests : IDisposable
     public void ConfigurationService_WritesConfigIntoThePortableDataFolder()
     {
         File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
-        AppDataPaths.EnsurePortableData();
+        AppDataPaths.Initialize();
 
         new ConfigurationService(new TestLocalization()).Save();
 

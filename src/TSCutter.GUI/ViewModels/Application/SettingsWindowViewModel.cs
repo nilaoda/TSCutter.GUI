@@ -7,6 +7,7 @@ using HanumanInstitute.MvvmDialogs;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
 using TSCutter.GUI.Utils.Editing;
 using TSCutter.GUI.Utils.Media;
@@ -230,6 +231,12 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     public IReadOnlyList<ThemePickerItem> DarkThemeOptions { get; } = ThemePickerItem.Create(ThemeModel.AllDarkThemes);
     public List<SupportedLang> Languages => _locService.SupportedLanguages;
 
+    public string PortableStatus => AppDataPaths.IsPortable
+        ? _strings.String_Settings_PortableOn
+        : _strings.String_Settings_PortableOff;
+    public string PortableFallbackMessage => AppDataPaths.FallbackMessage ?? "";
+    public bool HasPortableFallbackMessage => !string.IsNullOrEmpty(PortableFallbackMessage);
+
     public SettingsWindowViewModel(IConfigurationService configurationService, ILocalizationService localizationService)
     {
         _configService = configurationService;
@@ -376,6 +383,9 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         : seconds == 60
             ? strings.String_Settings_AutoSaveInterval_Minute
             : string.Format(strings.String_Settings_AutoSaveInterval_Minutes, seconds / 60);
+
+    [RelayCommand]
+    private void OpenDataFolder() => CommonUtil.OpenDirectory(AppDataPaths.DataDirectory);
 
     [RelayCommand(CanExecute = nameof(HasRecentItems))]
     private void ClearRecentItems()

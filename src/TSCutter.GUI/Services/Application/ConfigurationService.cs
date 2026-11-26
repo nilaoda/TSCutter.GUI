@@ -54,6 +54,8 @@ public class ConfigurationService : IConfigurationService
             {
                 var json = File.ReadAllText(_configPath);
                 CurrentConfig = JsonSerializer.Deserialize(json, AppJsonContext.Default.AppConfig) ?? CurrentConfig;
+                if (AppDataPaths.IsPortable)
+                    CurrentConfig.DropMissingPaths();
             }
         }
         catch (Exception ex)
@@ -125,6 +127,7 @@ public class ConfigurationService : IConfigurationService
         {
             File.WriteAllText(temporary, json);
             File.Move(temporary, path, overwrite: true);
+            AppDataPaths.RestrictFile(path);
         }
         finally
         {

@@ -23,7 +23,8 @@ On macOS, put `TSCutter.GUI.portable` at the root of the `TSCutter.GUI.app`
 bundle, next to `Contents`.
 
 On the next launch the app detects the marker, creates a `data` folder beside the
-executable, and reads and writes all user data there:
+executable (on macOS: beside the `.app` bundle, not inside it), and reads and
+writes all user data there:
 
 | Data | Portable path |
 | --- | --- |
@@ -46,24 +47,32 @@ user profile once:
 Original files are left untouched. The update lock and result files are not
 copied, so a stale lock from another install cannot block updates. Migration runs
 only once: as long as `data` exists, later launches never overwrite its contents.
+On Unix the data folder and its files are created with owner-only permissions,
+because they contain remote-account password hashes.
 
 ## In-place updates
 
 In-place updates replace only files shipped in the package, so the marker and the
-`data` folder survive. The macOS update replaces the whole `.app` bundle, so the
-updater copies both of them into the new bundle before swapping it in.
+`data` folder survive. The macOS update replaces only the `.app` bundle; the sibling
+`data` folder is untouched. If the marker was deleted, the updater records an
+opt-out and does not add the marker from a newer package back in.
 
 ## Turn it off
 
-Delete `TSCutter.GUI.portable`. The app immediately goes back to the user profile
-folders; the `data` folder stays where it is and can be copied back manually if
-needed.
+Delete `TSCutter.GUI.portable`. On the next launch the app copies the portable
+data back into the user profile if that profile has no config yet, and records a
+`TSCutter.GUI.portable.disabled` opt-out inside `data`. The `data` folder itself
+stays where it is. Re-creating the marker clears the opt-out and turns portable
+mode back on.
 
 ## Notes
 
 - The install folder must be writable. If the `data` folder cannot be created,
-  the app prints a message to the console and falls back to the user profile;
-  use normal (non-portable) mode on read-only volumes.
+  the app falls back to the user profile and shows the reason in Settings →
+  General; use normal (non-portable) mode on read-only volumes.
+- Settings → General shows whether portable mode is active and has a button to
+  open the data folder.
+- Moving a portable install to another machine drops recent items and saved
+  folders that no longer exist there.
 - The Web UI worker uses the same executable and therefore shares the portable
   data folder.
-- In-place updates carry the marker into older installs, so updating turns portable mode on as well.

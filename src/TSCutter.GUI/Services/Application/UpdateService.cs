@@ -45,7 +45,6 @@ public sealed class UpdateService
     private const string UnixExecutable = "TSCutterGUI";
     private const string MacBundle = "TSCutter.GUI.app";
     private const string ResultFileName = "UpdateResult.txt";
-    private const string AppDataDirectoryName = "data";
     private const string StagingPrefix = ".TSCutter.GUI.update-";
 
     private readonly HttpClient _http;
@@ -309,6 +308,8 @@ public sealed class UpdateService
         // older install so an in-place update turns portable mode on as well.
         var markerTarget = Path.Combine(installDirectory, AppDataPaths.MarkerFileName);
         var markerSource = Path.Combine(payloadDirectory, AppDataPaths.MarkerFileName);
+        var optOut = Path.Combine(installDirectory, AppDataPaths.DataDirectoryName,
+            AppDataPaths.OptOutFileName);
         Process? relaunched = null;
         var replaced = false;
         var noticeReplaced = false;
@@ -329,7 +330,7 @@ public sealed class UpdateService
                 ReplaceWithRetry(notice, noticeTarget);
                 noticeReplaced = true;
             }
-            if (File.Exists(markerSource) && !File.Exists(markerTarget))
+            if (File.Exists(markerSource) && !File.Exists(markerTarget) && !File.Exists(optOut))
             {
                 File.Copy(markerSource, markerTarget, overwrite: false);
                 markerAdded = true;
@@ -458,18 +459,20 @@ public sealed class UpdateService
             {
                 // A .app bundle is self-contained: swap it as a whole so files
                 // removed in the new release do not linger inside the bundle.
-                var portableData = Path.Combine(staged.InstallRoot, AppDataDirectoryName);
-                if (Directory.Exists(portableData))
-                    CopyDirectory(portableData, Path.Combine(sourceRoot, AppDataDirectoryName));
-                // The portable marker lives at the bundle root too; without it the
-                // updated bundle would silently start using the user profile again.
-                var marker = Path.Combine(staged.InstallRoot, AppDataPaths.MarkerFileName);
-                if (File.Exists(marker))
-                    File.Copy(marker, Path.Combine(sourceRoot, AppDataPaths.MarkerFileName), overwrite: true);
-                // A new release zip may introduce the marker into an older install.
-                var packageMarker = Path.Combine(staged.PayloadDirectory, AppDataPaths.MarkerFileName);
-                if (File.Exists(packageMarker))
-                    File.Copy(packageMarker, Path.Combine(sourceRoot, AppDataPaths.MarkerFileName), overwrite: true);
+                // Portable data lives beside the bundle and is untouched, so a
+                // signed bundle never has to be modified at runtime.
+                // The marker lives at the bundle root; preserve it when portable
+                // mode is still active, but honor an explicit opt-out.
+                if (!AppDataPaths.IsOptedOut)
+                {
+                    var marker = Path.Combine(staged.InstallRoot, AppDataPaths.MarkerFileName);
+                    if (File.Exists(marker))
+                        File.Copy(marker, Path.Combine(sourceRoot, AppDataPaths.MarkerFileName), overwrite: true);
+                    // A new release zip may introduce the marker into an older install.
+                    var packageMarker = Path.Combine(staged.PayloadDirectory, AppDataPaths.MarkerFileName);
+                    if (File.Exists(packageMarker))
+                        File.Copy(packageMarker, Path.Combine(sourceRoot, AppDataPaths.MarkerFileName), overwrite: true);
+                }
                 SwapDirectories(sourceRoot, staged.InstallRoot, Path.Combine(backupRoot, "install"),
                     () => FinishUnixUpdate(staged, relaunchArgs, relaunch));
             }
@@ -492,12 +495,16 @@ public sealed class UpdateService
     {
         var replaced = new List<(string Backup, string Target)>();
         var created = new List<string>();
+        var optedOut = File.Exists(Path.Combine(staged.InstallRoot,
+            AppDataPaths.DataDirectoryName, AppDataPaths.OptOutFileName));
         try
         {
             foreach (var source in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
                          .OrderBy(path => path, StringComparer.Ordinal))
             {
                 var relative = Path.GetRelativePath(sourceRoot, source);
+                if (optedOut && relative == AppDataPaths.MarkerFileName)
+                    continue;
                 var target = Path.Combine(staged.InstallRoot, relative);
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 if (File.Exists(target))
@@ -573,17 +580,6 @@ public sealed class UpdateService
                 Kill(launched);
                 throw new InvalidOperationException("The updated application exited with an error.");
             }
-        }
-    }
-
-    private static void CopyDirectory(string source, string destination)
-    {
-        Directory.CreateDirectory(destination);
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-        {
-            var target = Path.Combine(destination, Path.GetRelativePath(source, file));
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(file, target, overwrite: true);
         }
     }
 
@@ -750,6 +746,7 @@ public sealed class UpdateService
             }
             Directory.CreateDirectory(Path.GetDirectoryName(UpdateLockFilePath)!);
             File.WriteAllText(UpdateLockFilePath, AppInstanceIdentity.Current.FileKey);
+            AppDataPaths.RestrictFile(UpdateLockFilePath);
             return true;
         }
         catch (Exception ex)
@@ -782,6 +779,7 @@ public sealed class UpdateService
             var path = ResultFilePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, success ? "ok\n" : "error\n" + message);
+            AppDataPaths.RestrictFile(path);
         }
         catch (Exception ex)
         {

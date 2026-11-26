@@ -346,6 +346,35 @@ public class UpdateServiceTests
     }
 
     [Fact]
+    public void LinuxUpdate_DoesNotReAddMarkerWhenOptedOut()
+    {
+        var root = Directory.CreateTempSubdirectory("tscutter-linux-optout-");
+        try
+        {
+            var install = Path.Combine(root.FullName, "install");
+            var package = Path.Combine(Path.GetDirectoryName(install)!, ".TSCutter.GUI.update-1");
+            var payload = Path.Combine(package, "payload");
+            Directory.CreateDirectory(install);
+            Directory.CreateDirectory(Path.Combine(install, "data"));
+            Directory.CreateDirectory(payload);
+            File.WriteAllText(Path.Combine(install, "TSCutterGUI"), "old exe");
+            File.WriteAllText(Path.Combine(payload, "TSCutterGUI"), "new exe");
+            File.WriteAllText(Path.Combine(payload, AppDataPaths.MarkerFileName), "");
+            File.WriteAllText(Path.Combine(install, "data", AppDataPaths.OptOutFileName), "");
+
+            var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.LinuxFolder);
+            UpdateService.ApplyUnixUpdate(staged, [], relaunch: false);
+
+            Assert.Equal("new exe", File.ReadAllText(Path.Combine(install, "TSCutterGUI")));
+            Assert.False(File.Exists(Path.Combine(install, AppDataPaths.MarkerFileName)));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public void ApplyUnixUpdate_SwapsMacBundleAsAWhole()
     {
         var root = Directory.CreateTempSubdirectory("tscutter-mac-apply-");
@@ -362,8 +391,10 @@ public class UpdateServiceTests
             File.WriteAllText(Path.Combine(targetBundle, "TSCutterGUI"), "old exe");
             File.WriteAllText(Path.Combine(install, "obsolete.txt"), "old");
             File.WriteAllText(Path.Combine(install, AppDataPaths.MarkerFileName), "");
-            Directory.CreateDirectory(Path.Combine(install, "data"));
-            File.WriteAllText(Path.Combine(install, "data", "config.json"), "settings");
+            // On macOS the data folder is beside the bundle, not inside it.
+            var data = Path.Combine(root.FullName, "data");
+            Directory.CreateDirectory(data);
+            File.WriteAllText(Path.Combine(data, "config.json"), "settings");
 
             var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.MacAppBundle);
             UpdateService.ApplyUnixUpdate(staged, [], relaunch: false);
@@ -371,7 +402,7 @@ public class UpdateServiceTests
             Assert.Equal("new exe", File.ReadAllText(Path.Combine(targetBundle, "TSCutterGUI")));
             Assert.False(File.Exists(Path.Combine(install, "obsolete.txt")));
             Assert.True(File.Exists(Path.Combine(install, AppDataPaths.MarkerFileName)));
-            Assert.Equal("settings", File.ReadAllText(Path.Combine(install, "data", "config.json")));
+            Assert.Equal("settings", File.ReadAllText(Path.Combine(data, "config.json")));
             Assert.False(Directory.Exists(Path.Combine(package, "rollback")));
         }
         finally

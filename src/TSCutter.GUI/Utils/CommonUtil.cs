@@ -197,4 +197,24 @@ public static partial class CommonUtil
             throw new PlatformNotSupportedException("Not supported");
         }
     }
+
+    /// <summary>Opens a folder in the platform file manager (no file needs to exist inside it).</summary>
+    public static void OpenDirectory(string directory)
+    {
+        if (WebUiSession.Current is not null || !Directory.Exists(directory))
+            return;
+        try
+        {
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                Win32Util.OpenFolderInExplorer(directory);
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+                Process.Start("open", $"\"{directory}\"");
+            else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+                Process.Start("xdg-open", $"\"{directory}\"");
+        }
+        catch (Exception ex) when (ex is IOException or System.ComponentModel.Win32Exception)
+        {
+            Console.Error.WriteLine($"Could not open {directory}: {ex.Message}");
+        }
+    }
 }
