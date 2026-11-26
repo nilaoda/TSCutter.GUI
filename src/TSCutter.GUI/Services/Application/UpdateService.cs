@@ -45,6 +45,7 @@ public sealed class UpdateService
     private const string UnixExecutable = "TSCutterGUI";
     private const string MacBundle = "TSCutter.GUI.app";
     private const string ResultFileName = "UpdateResult.txt";
+    private const string AppDataDirectoryName = "data";
 
     private readonly HttpClient _http;
 
@@ -215,6 +216,8 @@ public sealed class UpdateService
         {
             ReleaseUpdateLock();
         }
+        // The new install is running; its staging files are no longer needed.
+        TryDeleteDirectory(staged.PackageDirectory);
         return Task.CompletedTask;
     }
 
@@ -237,6 +240,7 @@ public sealed class UpdateService
         start.ArgumentList.Add(stagedExe);
         start.ArgumentList.Add(targetExe);
         start.ArgumentList.Add(staged.PayloadDirectory);
+        start.ArgumentList.Add(Path.GetDirectoryName(staged.PayloadDirectory)!);
         foreach (var arg in relaunchArgs)
             start.ArgumentList.Add(arg);
         if (Process.Start(start) is null)
@@ -245,23 +249,33 @@ public sealed class UpdateService
 
     /// <summary>Entrypoint for the hidden --apply-update helper argument.</summary>
     public static int RunWindowsHelper(string pidArgument, string stagedExe, string targetExe,
-        string payloadDirectory, IReadOnlyList<string> relaunchArgs)
+        string payloadDirectory, string packageDirectory, IReadOnlyList<string> relaunchArgs)
     {
+        var backup = targetExe + ".old";
+        var noticeTarget = Path.Combine(Path.GetDirectoryName(targetExe)!, NoticeFileName);
+        var noticeBackup = noticeTarget + ".old";
+        Process? relaunched = null;
+        var replaced = false;
+        var noticeReplaced = false;
         try
         {
             if (!int.TryParse(pidArgument, out var parentPid))
                 throw new ArgumentException("Invalid update helper arguments.");
             WaitForExit(parentPid);
 
-            var backup = targetExe + ".old";
             TryDelete(backup);
             ReplaceWithRetry(stagedExe, targetExe);
+            replaced = true;
             var notice = Path.Combine(payloadDirectory, NoticeFileName);
             if (File.Exists(notice))
-                ReplaceWithRetry(notice, Path.Combine(Path.GetDirectoryName(targetExe)!, NoticeFileName));
+            {
+                TryDelete(noticeBackup);
+                ReplaceWithRetry(notice, noticeTarget);
+                noticeReplaced = true;
+            }
 
             // Do not discard the backup until the new executable has actually started.
-            var relaunched = Relaunch(targetExe, relaunchArgs, Path.GetDirectoryName(targetExe)!);
+            relaunched = Relaunch(targetExe, relaunchArgs, Path.GetDirectoryName(targetExe)!);
             if (relaunched is null)
                 throw new InvalidOperationException("The updated application did not start.");
             bool healthy;
@@ -276,36 +290,86 @@ public sealed class UpdateService
             }
             if (!healthy)
             {
-                try
-                {
-                    if (!relaunched.HasExited)
-                        relaunched.Kill(entireProcessTree: true);
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"Could not stop the failed update: {ex.Message}");
-                }
+                Kill(relaunched);
                 throw new InvalidOperationException("The updated application exited with an error.");
             }
             relaunched.Dispose();
+            relaunched = null;
             WriteHelperResult(success: true, "");
             TryDelete(backup);
+            if (noticeReplaced)
+                TryDelete(noticeBackup);
+            TryDeleteDirectory(packageDirectory);
             ReleaseUpdateLock();
             return 0;
         }
         catch (Exception ex)
         {
             Console.Error.WriteLine(ex.Message);
+            Kill(relaunched);
             WriteHelperResult(success: false, ex.Message);
-            ReleaseUpdateLock();
-            var backup = targetExe + ".old";
-            if (File.Exists(backup))
+            if (replaced)
             {
-                // A failed relaunch may still be running; it must release the file first.
-                TryDelete(targetExe);
-                TryRestore(backup, targetExe);
+                if (File.Exists(backup))
+                {
+                    TryDelete(targetExe);
+                    TryRestore(backup, targetExe);
+                }
+                if (noticeReplaced && File.Exists(noticeBackup))
+                {
+                    TryDelete(noticeTarget);
+                    TryRestore(noticeBackup, noticeTarget);
+                }
+                // Show the error in the restored version instead of just closing.
+                Relaunch(targetExe, relaunchArgs, Path.GetDirectoryName(targetExe)!);
             }
+            TryDeleteDirectory(packageDirectory);
+            ReleaseUpdateLock();
             return 1;
+        }
+    }
+
+    private static void Kill(Process? process)
+    {
+        if (process is null)
+            return;
+        try
+        {
+            if (!process.HasExited)
+                process.Kill(entireProcessTree: true);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Could not stop the failed update: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Swaps the whole install directory (or macOS bundle) with the staged one.
+    /// This removes files that no longer exist in the new version and leaves no
+    /// half-updated installation: either the new tree is in place or the old one
+    /// is restored.
+    /// </summary>
+    internal static void SwapDirectories(string source, string target, string backup, Action? afterSwap = null)
+    {
+        if (!Directory.Exists(source))
+            throw new DirectoryNotFoundException(source);
+        if (Directory.Exists(backup))
+            TryDeleteDirectory(backup);
+        Directory.Move(target, backup);
+        try
+        {
+            Directory.Move(source, target);
+            afterSwap?.Invoke();
+        }
+        catch
+        {
+            if (Directory.Exists(backup))
+            {
+                TryDeleteDirectory(target);
+                Directory.Move(backup, target);
+            }
+            throw;
         }
     }
 
@@ -316,42 +380,49 @@ public sealed class UpdateService
             ? Path.Combine(staged.PayloadDirectory, MacBundle)
             : staged.PayloadDirectory;
         backupRoot ??= Path.Combine(Path.GetTempPath(), "TSCutter.GUI", "Rollback", Guid.NewGuid().ToString("N"));
-        var replaced = new List<(string Backup, string Target)>();
+
+        // A portable data folder lives beside the executable / bundle and must survive.
+        var portableData = Path.Combine(staged.InstallRoot, AppDataDirectoryName);
+        if (Directory.Exists(portableData))
+            CopyDirectory(portableData, Path.Combine(sourceRoot, AppDataDirectoryName));
+
         try
         {
-            foreach (var source in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
-                         .OrderBy(path => path, StringComparer.Ordinal))
+            SwapDirectories(sourceRoot, staged.InstallRoot, Path.Combine(backupRoot, "install"), () =>
             {
-                var relative = Path.GetRelativePath(sourceRoot, source);
-                var target = Path.Combine(staged.InstallRoot, relative);
-                Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-                if (File.Exists(target))
+                if (!OperatingSystem.IsWindows())
                 {
-                    var backup = Path.Combine(backupRoot, relative);
-                    Directory.CreateDirectory(Path.GetDirectoryName(backup)!);
-                    File.Copy(target, backup, overwrite: true);
-                    replaced.Add((backup, target));
+                    var relativeExecutable = staged.Layout == StagedUpdateLayout.MacAppBundle
+                        ? Path.Combine("Contents", "MacOS", UnixExecutable)
+                        : UnixExecutable;
+                    SetExecutableBit(Path.Combine(staged.InstallRoot, relativeExecutable));
                 }
-                ReplaceFile(source, target);
-            }
-            if (!OperatingSystem.IsWindows())
-            {
-                var relativeExecutable = staged.Layout == StagedUpdateLayout.MacAppBundle
-                    ? Path.Combine("Contents", "MacOS", UnixExecutable)
-                    : UnixExecutable;
-                SetExecutableBit(Path.Combine(staged.InstallRoot, relativeExecutable));
-            }
-            var launchedExecutable = staged.Layout == StagedUpdateLayout.MacAppBundle
-                ? Path.Combine(staged.InstallRoot, "Contents", "MacOS", UnixExecutable)
-                : Path.Combine(staged.InstallRoot, UnixExecutable);
-            if (relaunch)
-                Relaunch(launchedExecutable, relaunchArgs, staged.InstallRoot);
+                var launchedExecutable = staged.Layout == StagedUpdateLayout.MacAppBundle
+                    ? Path.Combine(staged.InstallRoot, "Contents", "MacOS", UnixExecutable)
+                    : Path.Combine(staged.InstallRoot, UnixExecutable);
+                if (relaunch && Process.Start(new ProcessStartInfo(launchedExecutable)
+                    {
+                        UseShellExecute = false,
+                        WorkingDirectory = staged.InstallRoot
+                    }) is null)
+                    throw new InvalidOperationException("The updated application did not start.");
+            });
         }
-        catch
+        finally
         {
-            foreach (var (backup, target) in replaced.AsEnumerable().Reverse())
-                TryRestore(backup, target);
-            throw;
+            // The backup has either been discarded or moved back on failure.
+            TryDeleteDirectory(backupRoot);
+        }
+    }
+
+    private static void CopyDirectory(string source, string destination)
+    {
+        Directory.CreateDirectory(destination);
+        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        {
+            var target = Path.Combine(destination, Path.GetRelativePath(source, file));
+            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            File.Copy(file, target, overwrite: true);
         }
     }
 
@@ -386,20 +457,6 @@ public sealed class UpdateService
             }
         }
         File.Move(source, destination, overwrite: true);
-    }
-
-    private static void ReplaceFile(string source, string destination)
-    {
-        var temporary = destination + ".new." + Guid.NewGuid().ToString("N");
-        try
-        {
-            File.Copy(source, temporary, overwrite: true);
-            File.Move(temporary, destination, overwrite: true);
-        }
-        finally
-        {
-            TryDelete(temporary);
-        }
     }
 
     private static void SetExecutableBit(string path)
@@ -447,6 +504,30 @@ public sealed class UpdateService
         finally
         {
             TryDelete(probe);
+        }
+    }
+
+    /// <summary>
+    /// Removes staging folders and helper copies left behind by an earlier update.
+    /// Called on startup, when files still in use by the previous process can be deleted.
+    /// </summary>
+    internal static void CleanupStaleTempFiles()
+    {
+        var cutoff = DateTime.UtcNow.AddDays(-1);
+        try
+        {
+            var root = Path.Combine(Path.GetTempPath(), "TSCutter.GUI");
+            if (Directory.Exists(root))
+                foreach (var directory in Directory.EnumerateDirectories(root))
+                    if (Directory.GetCreationTimeUtc(directory) < cutoff)
+                        TryDeleteDirectory(directory);
+            foreach (var helper in Directory.EnumerateFiles(Path.GetTempPath(), "TSCutter.GUI.Updater.*.exe"))
+                if (File.GetCreationTimeUtc(helper) < cutoff)
+                    TryDelete(helper);
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to clean stale update files: {ex.Message}");
         }
     }
 

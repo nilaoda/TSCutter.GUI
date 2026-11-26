@@ -16,13 +16,20 @@ The additive implementation is in place:
   original 302 tag check as fallback; `GetLatestTagAsync()`, `CheckUpdateAsync()` and
   `IsNewerTag()` remain unchanged.
 - `UpdateService` downloads, verifies SHA-256, extracts with zip-slip protection,
-  stages, and applies the update with per-platform replacement and rollback.
+  stages, and applies the update with whole-directory/bundle replacement and
+  rollback. Staging files are cleaned up after success or on the next launch.
 - `UpdatesInfoWindow` is implemented, with a **new** in-app check menu item; the
   original Help → Check update menu item and browser fallback are untouched.
 - The feature gate, preflight write check, verified relaunch with restore, and
   startup reporting of helper failures are implemented (see 6.5).
-- Tests cover tag/version rules, asset naming, manifest parsing, download verification,
-  unsafe archive entries, cancellation, rollback, and the update lock.
+- The manifest file name is trusted but must match an actual release asset; no
+  stage or name pattern is reconstructed by the client.
+- Tests cover tag/version rules, asset selection, manifest parsing, download
+  verification, unsafe archive entries, cancellation, whole-directory swap with
+  rollback, and the update lock.
+
+End-to-end self-replacement has been smoke-tested on Windows only. macOS and
+Linux smoke tests can be done later with a real release build.
 
 Verified with .NET SDK 11.0.100: all 49 update-related tests pass, and the full
 suite reports 1021 passed / 237 skipped / 4 failed. The four failures reproduce
@@ -94,7 +101,9 @@ response can never suggest a downgrade. This rule is covered by
 `../.github/workflows/build-desktop.yml` publishes self-contained NativeAOT
 single-file builds for six RIDs. Asset names are already deterministic:
 
-`TSCutter.GUI_<Stage>_<Version>_<rid>.zip`, e.g. `TSCutter.GUI_Beta_0.10.1_win-x64.zip`.
+`TSCutter.GUI_<Stage>_<rid>_<Version>.zip`, e.g. `TSCutter.GUI_Beta_win-x64_0.10.1.zip`.
+The client does not reconstruct this name: it trusts the file name in the release
+manifest and verifies it against the release's asset list.
 
 | RID | ZIP payload |
 | --- | --- |
@@ -206,12 +215,12 @@ Generated in the `release` job after all six artifacts are downloaded:
   "tag": "v0.10.1",
   "releaseNotesUrl": "https://github.com/nilaoda/TSCutter.GUI/releases/tag/v0.10.1",
   "assets": {
-    "win-x64":   { "file": "TSCutter.GUI_Beta_0.10.1_win-x64.zip",   "size": 12345678, "sha256": "..." },
-    "win-arm64": { "file": "TSCutter.GUI_Beta_0.10.1_win-arm64.zip", "size": 12345678, "sha256": "..." },
-    "linux-x64": { "file": "TSCutter.GUI_Beta_0.10.1_linux-x64.zip", "size": 12345678, "sha256": "..." },
-    "linux-arm64":{ "file": "TSCutter.GUI_Beta_0.10.1_linux-arm64.zip","size": 12345678, "sha256": "..." },
-    "osx-arm64": { "file": "TSCutter.GUI_Beta_0.10.1_osx-arm64.zip",  "size": 12345678, "sha256": "..." },
-    "osx-x64":   { "file": "TSCutter.GUI_Beta_0.10.1_osx-x64.zip",    "size": 12345678, "sha256": "..." }
+    "win-x64":   { "file": "TSCutter.GUI_Beta_win-x64_0.10.1.zip",   "size": 12345678, "sha256": "..." },
+    "win-arm64": { "file": "TSCutter.GUI_Beta_win-arm64_0.10.1.zip", "size": 12345678, "sha256": "..." },
+    "linux-x64": { "file": "TSCutter.GUI_Beta_linux-x64_0.10.1.zip", "size": 12345678, "sha256": "..." },
+    "linux-arm64":{ "file": "TSCutter.GUI_Beta_linux-arm64_0.10.1.zip","size": 12345678, "sha256": "..." },
+    "osx-arm64": { "file": "TSCutter.GUI_Beta_osx-arm64_0.10.1.zip",  "size": 12345678, "sha256": "..." },
+    "osx-x64":   { "file": "TSCutter.GUI_Beta_osx-x64_0.10.1.zip",    "size": 12345678, "sha256": "..." }
   }
 }
 ```
@@ -240,7 +249,7 @@ browser fallback, so behavior never regresses.
 
 `UpdateService.DownloadAndPrepareAsync(UpdateInfo, IProgress<UpdateProgress>, CancellationToken)`:
 
-1. Create a temp directory under `%LOCALAPPDATA%\TSCutter.GUI\Updates\<tag>`.
+1. Create a temp directory under `%TEMP%\TSCutter.GUI\Updates\<tag>`.
 2. Stream the ZIP to `<file>.part` with `HttpCompletionOption.ResponseHeadersRead`;
    report progress from `Content-Length` (pattern used by existing `IProgress<T>`
    services). Rename to the final name on success.
@@ -264,37 +273,42 @@ Cancellation is honored at every step; partial downloads are discarded.
 ### 6.1 Windows
 
 A running `.exe` cannot be overwritten in place. The app copies its own current
-executable to a temp path (e.g. `%TEMP%\tscutter-updater-<guid>.exe`) and starts
+executable to a temp path (e.g. `%TEMP%\TSCutter.GUI.Updater.<guid>.exe`) and starts
 it with a hidden argument:
 
 ```text
---apply-update <parentPid> <stagedExe> <targetExe> <payloadDir> [original args...]
+--apply-update <parentPid> <stagedExe> <targetExe> <payloadDir> <packageDir> [original args...]
 ```
 
 The helper waits for the parent process to exit, renames the running executable
 to `.old` (a rename is allowed on Windows even while the file is in use), moves
 the staged executable into place with a short retry loop for antivirus/file
 locks, copies the notices file, then relaunches the new executable with the
-original arguments and exits. On failure the `.old` file is moved back.
-Using a copy of the same binary avoids shipping a second updater executable and
-mirrors the existing hidden `--verify-static-*` flags in `Program.cs`. The flag
-is internal and not shown in the UI.
+original arguments and exits. On success the `.old` files, the notices backup and
+the staging folder are deleted. On failure the old executable and notices are
+restored **and the restored version is relaunched**, so the error can be shown to
+the user immediately. Using a copy of the same binary avoids shipping a second
+updater executable and mirrors the existing hidden `--verify-static-*` flags in
+`Program.cs`. The flag is internal and not shown in the UI.
 
 ### 6.2 Linux
 
-POSIX allows replacing an open file, so every staged file is copied to a
-same-directory temporary file and then atomically moved over its target. The
-originals are backed up under `%TEMP%\TSCutter.GUI\Rollback\<guid>` and restored
-if any replacement fails. The executable bit is reapplied and the app is
-relaunched with `UseShellExecute = false`.
+The whole install directory is swapped: the staged payload is moved into place,
+the current directory is renamed to a backup under
+`%TEMP%\TSCutter.GUI\Rollback\<guid>`, and the new one takes its original name.
+On any failure the backup is moved back. This also removes files that no longer
+exist in the new version and avoids a half-updated installation. A portable
+`data` folder beside the executable is copied into the new tree first. The
+executable bit is reapplied and the app is relaunched with
+`UseShellExecute = false`.
 
 ### 6.3 macOS
 
-The staged bundle's `Contents/**` files are applied the same way to the running
-`.app` bundle located by walking up from `Environment.ProcessPath`. Originals
-are backed up and restored on failure, the executable bit is reapplied, and
-the app is relaunched from `Contents/MacOS/TSCutterGUI`. Because the ZIP is
-downloaded by the app rather than a browser, no quarantine attribute is added.
+The staged `TSCutter.GUI.app` bundle replaces the running bundle with the same
+whole-directory swap, located by walking up from `Environment.ProcessPath`. The
+backup is moved back on failure, the executable bit is reapplied, and the app is
+relaunched from `Contents/MacOS/TSCutterGUI`. Because the ZIP is downloaded by
+the app rather than a browser, no quarantine attribute is added.
 
 ### 6.4 Common rules
 
@@ -312,17 +326,20 @@ downloaded by the app rather than a browser, no quarantine attribute is added.
   Tools → Settings). When off, both the automatic prompt and the new menu item
   keep the original browser-only behavior.
 - **Verification before replacement**: strict tag comparison, skip-version,
-  manifest tag/version/asset-name match, SHA-256 and size verification,
-  zip-slip rejection, payload layout check, free-space check.
+  manifest tag/version match, manifest file name present in the release asset
+  list, SHA-256 and size verification, zip-slip rejection, payload layout check,
+  free-space check. No hard-coded stage or asset-name pattern.
 - **Staging**: download and extraction happen in a temp folder; any failure
-  deletes the staging folder and leaves the installed app untouched.
+  deletes the staging folder and leaves the installed app untouched. On success
+  the staging folder, helper copy and rollback folder are deleted; anything still
+  locked by the previous process is removed on the next launch.
 - **Windows rollback**: the helper renames the running exe to `.old`, and only
   deletes that backup after the new exe has started and stayed alive for two
-  seconds with a zero exit code. A failed relaunch is stopped, the backup is
-  restored, and the error is written to `%LOCALAPPDATA%\TSCutter.GUI\UpdateResult.txt`
-  for display on the next launch.
-- **Linux/macOS rollback**: every original file is copied to a rollback folder
-  before replacement; any exception restores them in reverse order.
+  seconds with a zero exit code. A failed relaunch is stopped, the old exe and
+  notices are restored, the restored exe is relaunched, and the error is written
+  to `%LOCALAPPDATA%\TSCutter.GUI\UpdateResult.txt` for immediate display.
+- **Linux/macOS rollback**: the whole install directory or bundle is swapped;
+  any failure moves the backup back. A portable `data` folder is preserved.
 - **Transport hardening**: only HTTPS URLs on `github.com` / `*.githubusercontent.com`
   are accepted, and the checksum must be a 64-character hex string.
 - **Multi-instance lock**: `update.lock` under `%LOCALAPPDATA%\TSCutter.GUI` holds the

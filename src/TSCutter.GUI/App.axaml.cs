@@ -169,7 +169,8 @@ public partial class App : Application
             progressDesktop.Exit += (_, _) => WebUiLauncher.StopWithOwner();
         }
 
-        // 报告上次由更新助手完成的安装结果（助手在原进程退出后才能运行）。
+        // Clean copies left behind by an earlier update, then report its result.
+        UpdateService.CleanupStaleTempFiles();
         _ = ShowPendingUpdateResultAsync();
 
         // 后台静默检查更新

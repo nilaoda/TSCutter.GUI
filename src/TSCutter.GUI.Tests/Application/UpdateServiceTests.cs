@@ -91,41 +91,47 @@ public class UpdateServiceTests
     }
 
     [Fact]
-    public void ApplyUnixUpdate_RestoresOriginalWhenReplacementFails()
+    public void SwapDirectories_ReplacesWholeTree()
+    {
+        var root = Directory.CreateTempSubdirectory("tscutter-swap-");
+        try
+        {
+            var source = Path.Combine(root.FullName, "source");
+            var target = Path.Combine(root.FullName, "target");
+            Directory.CreateDirectory(source);
+            Directory.CreateDirectory(target);
+            File.WriteAllText(Path.Combine(source, "new.txt"), "new");
+            File.WriteAllText(Path.Combine(target, "removed.txt"), "old");
+
+            UpdateService.SwapDirectories(source, target, Path.Combine(root.FullName, "backup"));
+
+            Assert.True(File.Exists(Path.Combine(target, "new.txt")));
+            Assert.False(File.Exists(Path.Combine(target, "removed.txt")));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SwapDirectories_RestoresOriginalWhenPostSwapStepFails()
     {
         var root = Directory.CreateTempSubdirectory("tscutter-rollback-");
         try
         {
-            var install = Path.Combine(root.FullName, "install");
-            var payload = Path.Combine(root.FullName, "payload");
-            Directory.CreateDirectory(install);
-            Directory.CreateDirectory(payload);
-            File.WriteAllText(Path.Combine(install, "a.txt"), "old");
-            // A directory at the target path makes the second replacement fail.
-            Directory.CreateDirectory(Path.Combine(install, "z.txt"));
-            File.WriteAllText(Path.Combine(payload, "a.txt"), "new");
-            File.WriteAllText(Path.Combine(payload, "z.txt"), "new");
+            var source = Path.Combine(root.FullName, "source");
+            var target = Path.Combine(root.FullName, "target");
+            Directory.CreateDirectory(source);
+            Directory.CreateDirectory(target);
+            File.WriteAllText(Path.Combine(source, "a.txt"), "new");
+            File.WriteAllText(Path.Combine(target, "a.txt"), "old");
 
-            var staged = new StagedUpdate
-            {
-                PayloadDirectory = payload,
-                PackageDirectory = root.FullName,
-                Layout = StagedUpdateLayout.LinuxFolder,
-                InstallRoot = install,
-                ExecutableName = "TSCutterGUI"
-            };
-            var threw = false;
-            try
-            {
-                UpdateService.ApplyUnixUpdate(staged, [], Path.Combine(root.FullName, "backup"), relaunch: false);
-            }
-            catch (Exception)
-            {
-                threw = true;
-            }
+            Assert.Throws<InvalidOperationException>(() => UpdateService.SwapDirectories(
+                source, target, Path.Combine(root.FullName, "backup"),
+                () => throw new InvalidOperationException("simulated failure")));
 
-            Assert.True(threw);
-            Assert.Equal("old", File.ReadAllText(Path.Combine(install, "a.txt")));
+            Assert.Equal("old", File.ReadAllText(Path.Combine(target, "a.txt")));
         }
         finally
         {

@@ -42,10 +42,34 @@ public class VersionCheckerTests
     }
 
     [Fact]
-    public void ExpectedAssetName_UsesReleaseNaming()
+    public void FindAssetUrl_AcceptsManifestNamePresentInRelease()
     {
-        Assert.Equal("TSCutter.GUI_Beta_0.10.1_win-x64.zip",
-            VersionChecker.GetExpectedAssetName("win-x64", "0.10.1"));
+        const string name = "TSCutter.GUI_Beta_win-x64_0.10.1.zip";
+        var release = new GitHubVersionInfo
+        {
+            Version = "url", Id = 1, Body = "", Name = "Beta 0.10.1", TagName = "v0.10.1",
+            Assets = [new GitHubReleaseAsset { Name = name, BrowserDownloadUrl = "https://github.com/a.zip" }]
+        };
+        Assert.Equal("https://github.com/a.zip", VersionChecker.FindAssetUrl(release, name, "v0.10.1"));
+    }
+
+    [Fact]
+    public void FindAssetUrl_RejectsUnknownNameWhenReleaseAssetsAreKnown()
+    {
+        var release = new GitHubVersionInfo
+        {
+            Version = "url", Id = 1, Body = "", Name = "Beta 0.10.1", TagName = "v0.10.1",
+            Assets = [new GitHubReleaseAsset { Name = "other.zip", BrowserDownloadUrl = "https://github.com/other.zip" }]
+        };
+        Assert.Null(VersionChecker.FindAssetUrl(release, "TSCutter.GUI_Beta_win-x64_0.10.1.zip", "v0.10.1"));
+        Assert.Null(VersionChecker.FindAssetUrl(release, "../unsafe.zip", "v0.10.1"));
+    }
+
+    [Fact]
+    public void FindAssetUrl_FallsBackToTagWhenApiResponseIsMissing()
+    {
+        Assert.Equal("https://github.com/nilaoda/TSCutter.GUI/releases/download/v0.10.1/a.zip",
+            VersionChecker.FindAssetUrl(null, "a.zip", "v0.10.1"));
     }
 
     [Fact]

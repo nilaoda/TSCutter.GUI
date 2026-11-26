@@ -17,7 +17,6 @@ public static class VersionChecker
     private const string ReleaseUrlPrefix = "https://github.com/nilaoda/TSCutter.GUI/releases/tag/";
     private const string DownloadUrlPrefix = "https://github.com/nilaoda/TSCutter.GUI/releases/download/";
     private const string ManifestFileName = "update-manifest.json";
-    private const string ReleaseStage = "Beta";
     private static readonly TimeSpan CacheLifetime = TimeSpan.FromMinutes(10);
     private static readonly SemaphoreSlim CacheGate = new(1, 1);
     private static UpdateInfo? _cachedInfo;
@@ -44,9 +43,28 @@ public static class VersionChecker
                && version.Build >= 0 && version.Revision == -1;
     }
 
-    /// <summary>Builds the deterministic asset name used by the release workflow.</summary>
-    internal static string GetExpectedAssetName(string rid, string version) =>
-        $"TSCutter.GUI_{ReleaseStage}_{version}_{rid}.zip";
+    /// <summary>
+    /// Resolves the download URL for a manifest asset. The file name is trusted from
+    /// the manifest but must be a plain .zip name and, when the API asset list is
+    /// available, must match one of the actual release assets. This avoids assuming
+    /// a particular naming pattern or release stage.
+    /// </summary>
+    internal static string? FindAssetUrl(GitHubVersionInfo? release, string fileName, string tag)
+    {
+        if (string.IsNullOrEmpty(fileName) || !fileName.EndsWith(".zip", StringComparison.OrdinalIgnoreCase)
+            || fileName.Contains('/') || fileName.Contains('\\') || fileName.Contains(".."))
+            return null;
+
+        var asset = release?.Assets?
+            .FirstOrDefault(a => string.Equals(a.Name, fileName, StringComparison.OrdinalIgnoreCase));
+        if (!string.IsNullOrEmpty(asset?.BrowserDownloadUrl))
+            return asset.BrowserDownloadUrl;
+        // If the API list is present but does not contain the file, do not download it.
+        if (release?.Assets is { Count: > 0 })
+            return null;
+        // Fallback when the API response was unavailable: use the release tag.
+        return DownloadUrlPrefix + tag + "/" + fileName;
+    }
 
     public static async Task<string> GetLatestTagAsync()
     {
@@ -142,15 +160,12 @@ public static class VersionChecker
             if (manifest is null || manifest.Tag != tag || manifest.Version != info.Version
                 || manifest.Assets is null
                 || !manifest.Assets.TryGetValue(rid, out var asset)
-                || string.IsNullOrEmpty(asset.File) || string.IsNullOrEmpty(asset.Sha256)
-                || !string.Equals(asset.File, GetExpectedAssetName(rid, info.Version), StringComparison.OrdinalIgnoreCase))
+                || string.IsNullOrEmpty(asset.File) || string.IsNullOrEmpty(asset.Sha256))
                 return info;
 
-            var assetUrl = release?.Assets?
-                .FirstOrDefault(a => string.Equals(a.Name, asset.File, StringComparison.OrdinalIgnoreCase))?
-                .BrowserDownloadUrl;
-            if (string.IsNullOrEmpty(assetUrl))
-                assetUrl = DownloadUrlPrefix + tag + "/" + asset.File;
+            var assetUrl = FindAssetUrl(release, asset.File, tag);
+            if (assetUrl is null)
+                return info;
 
             info.Asset = new UpdateAsset
             {
