@@ -268,6 +268,8 @@ internal sealed unsafe class FrameAccurateExportService
             decoder.FillParameters(new CodecParameters(video->codecpar));
             decoder.PacketTimeBase = video->time_base;
             decoder.ThreadCount = 0;
+            if (hevc)
+                ((AVCodecContext*)decoder)->flags |= FF.AV_CODEC_FLAG_COPY_OPAQUE;
             FFmpegException.Check(FF.avcodec_open2(decoder, FF.avcodec_find_decoder(video->codecpar->codec_id), null));
             // 规划时用同一解码器验证普通 I 帧能否作为衔接点。
             context.Decoder = decoder;
@@ -2303,6 +2305,7 @@ internal sealed unsafe class FrameAccurateExportService
             (rawInput->streams[index]->disposition & 1024) == 0 &&
             rawInput->streams[index]->codecpar->codec_type != AVMediaType.AVMEDIA_TYPE_ATTACHMENT).ToHashSet();
         using var frame = new Frame();
+        using var hdrPacket = new Packet();
         using var reordered = new ReorderedFrames();
         try
         {
@@ -2667,7 +2670,8 @@ internal sealed unsafe class FrameAccurateExportService
 
         void DecodeAndEncode(AVPacket* packet, long lower)
         {
-            var result = FF.avcodec_send_packet(decoder, packet);
+            var decodePacket = context.Hevc ? HevcDynamicHdrMetadata.Attach(packet, hdrPacket, context.LengthSize) : packet;
+            var result = FF.avcodec_send_packet(decoder, decodePacket);
             if (result < 0 && result != FF.AVERROR_EOF)
                 throw new FrameAccurateExportException(FrameAccurateExportError.IncompatibleStream,
                     FFmpegException.FromErrorCode(result).Message);

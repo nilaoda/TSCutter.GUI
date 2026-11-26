@@ -1585,7 +1585,7 @@
     <x:String x:Key="String.CutMode.Reason.Codec">only these videos are supported for now:&#10;H.264 (Baseline, Main, High or High 4:2:2 profile)&#10;HEVC (Main, Main 10 or 4:2:2 profile)&#10;MPEG-2 (Main, Simple or 4:2:2 profile)&#10;AV1 (Main profile) and VP9 (Profile 0 or 2)</x:String>
     <x:String x:Key="String.CutMode.Reason.Interlaced">interlaced video is not supported yet.</x:String>
     <x:String x:Key="String.CutMode.Reason.PixelFormat">only 4:2:0 video&#10;(8-bit, or 10-bit for HEVC, AV1 and VP9)&#10;and 4:2:2 video (8- or 10-bit H.264 and HEVC,&#10;8-bit MPEG-2) are supported for now.</x:String>
-    <x:String x:Key="String.CutMode.Reason.DynamicHdr">per-frame dynamic HDR metadata (such as HDR10+)&#10;cannot be kept for re-encoded frames.</x:String>
+    <x:String x:Key="String.CutMode.Reason.DynamicHdr">the source's per-frame HDR metadata&#10;cannot be safely preserved for re-encoded frames.</x:String>
     <x:String x:Key="String.CutMode.Reason.Pulldown">soft pulldown (repeated fields)&#10;cannot be kept for re-encoded frames.</x:String>
     <x:String x:Key="String.CutMode.Reason.DolbyVision">only single-layer Dolby Vision Profile 5, 8.1 and 8.4&#10;are supported; this video uses a different Dolby Vision format.</x:String>
     <x:String x:Key="String.CutMode.Reason.DolbyVisionContainer">the Dolby Vision signaling cannot be kept&#10;when the output format differs from the source (TS to M2TS or back).</x:String>

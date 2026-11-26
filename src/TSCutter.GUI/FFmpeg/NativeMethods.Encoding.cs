@@ -9,6 +9,14 @@ public static unsafe partial class NativeMethods
 {
     public const int AV_CODEC_FLAG_GLOBAL_HEADER = 1 << 22;
 
+    [LibraryImport("tscutter.avutil", EntryPoint = "av_buffer_alloc")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial AVBufferRef* av_buffer_alloc(nuint size);
+
+    [LibraryImport("tscutter.avcodec", EntryPoint = "av_grow_packet")]
+    [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
+    public static partial int av_grow_packet(AVPacket* packet, int growBy);
+
     [LibraryImport("tscutter.avcodec", EntryPoint = "avcodec_find_encoder_by_name", StringMarshalling = StringMarshalling.Utf8)]
     [UnmanagedCallConv(CallConvs = [typeof(CallConvCdecl)])]
     public static partial AVCodec* avcodec_find_encoder_by_name(string name);
