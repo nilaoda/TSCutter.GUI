@@ -1585,7 +1585,7 @@
     <x:String x:Key="String.CutMode.Reason.Codec">目前僅支援以下視訊：&#10;H.264（Baseline、Main、High 或 High 4:2:2 設定檔）&#10;HEVC（Main、Main 10 或 4:2:2 設定檔）&#10;MPEG-2（Main、Simple 或 4:2:2 設定檔）&#10;AV1（Main 設定檔）和 VP9（Profile 0 或 2）</x:String>
     <x:String x:Key="String.CutMode.Reason.Interlaced">暫不支援交錯式視訊。</x:String>
     <x:String x:Key="String.CutMode.Reason.PixelFormat">目前僅支援 4:2:0 視訊&#10;（8 位元；HEVC、AV1 與 VP9 也支援 10 位元），&#10;以及 4:2:2 視訊（8 位元或 10 位元的 H.264、HEVC，&#10;8 位元的 MPEG-2）。</x:String>
-    <x:String x:Key="String.CutMode.Reason.DynamicHdr">重新編碼的畫面無法保留&#10;逐影格動態 HDR 中繼資料（如 HDR10+）。</x:String>
+    <x:String x:Key="String.CutMode.Reason.DynamicHdr">無法安全保留來源素材的&#10;逐影格動態 HDR 中繼資料。</x:String>
     <x:String x:Key="String.CutMode.Reason.Pulldown">重新編碼的畫面無法保留軟性下拉（重複圖場）。</x:String>
     <x:String x:Key="String.CutMode.Reason.DolbyVision">目前僅支援單層杜比視界 Profile 5、8.1 和 8.4，&#10;此視訊的杜比視界格式暫不支援。</x:String>
     <x:String x:Key="String.CutMode.Reason.DolbyVisionContainer">輸出格式與來源檔案不同（TS 與 M2TS 互轉）時，&#10;無法保留杜比視界標識。</x:String>

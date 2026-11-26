@@ -30,6 +30,7 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
     private AVFieldOrder fieldOrder;
     private bool dolbyVision;
     private readonly Packet output = new();
+    private readonly Dictionary<long, byte[]> dynamicHdr = [];
 
     /// <summary>编码器全局头中的参数集（H.264 与 HEVC）；HEVC 同时在每个 IDR 前带内输出。</summary>
     public List<byte[]> ParameterSets { get; } = [];
@@ -576,8 +577,9 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
             if (dolbyVision ? !hasDolbyMetadata
                     : hasDolbyMetadata || FF.av_frame_get_side_data(frame, AVFrameSideDataType.AV_FRAME_DATA_DOVI_RPU_BUFFER) != null)
                 throw new FrameAccurateExportException(FrameAccurateExportError.Unsupported, "", FrameAccurateSupport.DolbyVision);
-            if (FF.av_frame_get_side_data(frame, AVFrameSideDataType.AV_FRAME_DATA_DYNAMIC_HDR_PLUS) != null)
-                throw new FrameAccurateExportException(FrameAccurateExportError.Unsupported, "", FrameAccurateSupport.DynamicHdr);
+            var hdr = HevcDynamicHdrMetadata.ReadFrame(frame, context->codec_id);
+            if (!hdr.IsEmpty && !dynamicHdr.TryAdd(frame->pts, hdr.ToArray()))
+                throw new FrameAccurateExportException(FrameAccurateExportError.NonMonotonicTimestamp, "dynamic HDR PTS");
             // 解码帧带有原始画面类型，必须清除，否则编码器会照搬原 GOP 结构。
             frame->pict_type = AVPictureType.AV_PICTURE_TYPE_NONE;
             frame->flags &= ~FF.AV_FRAME_FLAG_KEY;
@@ -590,10 +592,19 @@ internal sealed unsafe class FrameAccurateVideoEncoder : IDisposable
             AVPacket* packet = output;
             result = FF.avcodec_receive_packet(context, packet);
             if (result == FF.AVERROR_EAGAIN || result == FF.AVERROR_EOF)
+            {
+                if (result == FF.AVERROR_EOF && dynamicHdr.Count != 0)
+                    throw new FrameAccurateExportException(FrameAccurateExportError.EncodeFailed, "dynamic HDR metadata");
                 return;
+            }
             if (result < 0)
                 throw new FrameAccurateExportException(FrameAccurateExportError.EncodeFailed, FFmpegException.FromErrorCode(result).Message);
-            try { write(packet); }
+            try
+            {
+                if (dynamicHdr.Remove(packet->pts, out var hdr))
+                    HevcDynamicHdrMetadata.Insert(packet, hdr);
+                write(packet);
+            }
             finally { FF.av_packet_unref(packet); }
         }
     }
