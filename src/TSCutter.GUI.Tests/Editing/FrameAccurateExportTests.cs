@@ -2195,10 +2195,9 @@ public sealed class FrameAccurateExportTests
     private static bool IsSlice(int type, bool hevc) => hevc ? type is >= 0 and <= 31 : type is 1 or 5;
 
     /// <summary>
-    /// 各轨道 DTS 严格递增、视频 PTS 不早于 DTS。音频按包复制：首包不早于视频起点，
-    /// 且晚于视频起点不超过一个 AAC 帧（1024/48000 秒）。
+    /// 音视频轨道 DTS 严格递增、视频 PTS 不早于 DTS。alignedStart 时音频首包不早于视频起点，
+    /// 且晚于视频起点不超过指定容差，默认为一个 AAC 帧（1024/48000 秒）。
     /// </summary>
-    /// <summary>各轨道 DTS 严格递增；alignedStart 时其余轨道与视频同时开始（相差不超过一个音频帧）。</summary>
     private static unsafe void AssertTimestamps(string output, double audioTolerance = 1024 / 48000.0, bool alignedStart = true)
     {
         using var input = FormatContext.OpenInputUrl(output);
@@ -2210,7 +2209,8 @@ public sealed class FrameAccurateExportTests
         {
             AVPacket* p = packet;
             var stream = raw->streams[p->stream_index];
-            if (stream->codecpar->codec_type == AVMediaType.AVMEDIA_TYPE_SUBTITLE)
+            // 数据轨可重复时间戳，音视频的时序与同步检查不包含数据和字幕轨。
+            if (stream->codecpar->codec_type is not (AVMediaType.AVMEDIA_TYPE_VIDEO or AVMediaType.AVMEDIA_TYPE_AUDIO))
                 continue;
             var seconds = p->pts * (double)stream->time_base.num / stream->time_base.den;
             first[p->stream_index] = first.TryGetValue(p->stream_index, out var value) ? Math.Min(value, seconds) : seconds;

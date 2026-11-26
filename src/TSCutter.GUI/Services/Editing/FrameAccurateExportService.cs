@@ -1891,6 +1891,7 @@ internal sealed unsafe class FrameAccurateExportService
         public long SegmentLength { get; set; }
         private long spliceFirstDts = FF.AV_NOPTS_VALUE;
         private long splicePreviousDts = FF.AV_NOPTS_VALUE;
+        private bool lastVideoWasNativeCopy;
         // H.264 复制区从普通 I 帧开始时的改写状态（改为 IDR、frame_num 重编号），每个片段重新开始。
         private H264Splice.CopyRewriter? h264Rewriter;
         // 改写出的 IDR 在 1、2 间交替，与 x264 首个 IDR（0）及相邻的改写 IDR 都不同。
@@ -1907,6 +1908,7 @@ internal sealed unsafe class FrameAccurateExportService
             var timeBase = output->streams[map.VideoOutput]->time_base;
             spliceFirstDts = Rescale(firstSourceDts - sourceStart + offset, context.Video->time_base, timeBase);
             splicePreviousDts = lastDts[map.VideoOutput];
+            lastVideoWasNativeCopy = false;
             h264Rewriter = null;
             h264Renumberer = null;
         }
@@ -1944,7 +1946,11 @@ internal sealed unsafe class FrameAccurateExportService
             }
             if (context.DtsCorrection > 0 && packet->dts > packet->pts)
                 throw new FrameAccurateExportException(FrameAccurateExportError.NonMonotonicTimestamp, "video DTS correction");
-            CheckDts(packet, index, strict: true);
+            // HEVC 原包连续复制区的 DTS 可由解复用器根据 PTS 推算，允许相等。
+            // 重编码画面、片段及重编码与复制的交界仍要求严格递增；DTS 倒退始终拒绝。
+            var nativeCopy = Ts is not null && context.Hevc && kind != TsVideoPiece.Encoded;
+            CheckDts(packet, index, strict: !nativeCopy || !lastVideoWasNativeCopy);
+            lastVideoWasNativeCopy = nativeCopy;
             if (Ts is not null)
             {
                 Ts.Video(kind, sourcePosition, new ReadOnlySpan<byte>(packet->data, packet->size), packet->pts, packet->dts,
