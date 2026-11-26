@@ -78,6 +78,89 @@ public sealed class KeyFrameStripParallelTests
         }, CancellationToken.None);
     }
 
+    [NativeMediaFact("keyframes")]
+    public async Task DecoderSwitchingToFullPacketsFallsBackWithoutTreatingItAsEndOfFile()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            var path = Path.Combine(NativeTestEnvironment.FixtureDirectory("keyframes"), "fixed.mp4");
+            await using var service = new KeyFrameStripService { ScanInstanceCount = 2 };
+            await service.OpenAsync(new(path, null, false), CancellationToken.None);
+            var primary = (VideoInstance)typeof(KeyFrameStripService).GetField("decoder", Private)!.GetValue(service)!;
+            var fullPackets = typeof(VideoInstance).GetField("useFullPacketDecoding", Private)!;
+            var switched = false;
+            var range = await service.ReadAsync(0, _ => false, frame =>
+            {
+                frame.Bitmap?.Dispose();
+                if (switched)
+                    return;
+                // 完整解码不经过关键包认领过滤，切换后须放弃本次分段拼接。
+                fullPackets.SetValue(primary, true);
+                switched = true;
+            }, CancellationToken.None);
+            Assert.True(switched);
+            Assert.Equal(Enumerable.Range(0, 9).Select(second => (double)second),
+                range.Frames.Select(frame => frame.Timestamp.TotalSeconds));
+            Assert.True(range.AtStart);
+            Assert.False(range.AtEnd);
+            return true;
+        }, CancellationToken.None);
+    }
+
+    [NativeMediaFact(sampleVariable: "TSCUTTER_AVS_STARTUP_TEST_SAMPLE")]
+    public async Task IncompleteStartupScanFallsBackAndCanResumeParallelScanning()
+    {
+        using var session = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await session.Dispatch<bool>(async () =>
+        {
+            var path = Environment.GetEnvironmentVariable("TSCUTTER_AVS_STARTUP_TEST_SAMPLE")!;
+            using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+            await using var sequential = new KeyFrameStripService { ScanInstanceCount = 1 };
+            await using var parallel = new KeyFrameStripService { ScanInstanceCount = 3 };
+            await sequential.OpenAsync(new(path, null, false), cancellation.Token);
+            await parallel.OpenAsync(new(path, null, false), cancellation.Token);
+            var expected = await ReadAsync(sequential, 0, 9, null);
+            var received = new HashSet<long>();
+            var actual = await parallel.ReadAsync(0, _ => false, frame =>
+            {
+                received.Add(frame.Pts);
+                frame.Bitmap?.Dispose();
+            }, cancellation.Token);
+            Assert.Equal(9, actual.Frames.Count);
+            Assert.Equal(expected.Frames.Select(frame => frame.Pts), actual.Frames.Select(frame => frame.Pts));
+            // 无法对应输入关键包的排空画面不进入缓存。
+            Assert.All(received, pts => Assert.Contains(pts, expected.Frames.Select(frame => frame.Pts)));
+            Assert.Equal(2, ((System.Collections.ICollection)typeof(KeyFrameStripService)
+                .GetField("helpers", Private)!.GetValue(parallel)!).Count);
+
+            await ReadAsync(parallel, 20, 9, null);
+            var primary = (VideoInstance)typeof(KeyFrameStripService).GetField("decoder", Private)!.GetValue(parallel)!;
+            // 直接检查并行结果，避免由顺序兜底掩盖并行能力被关闭的问题。
+            var resumed = await (Task<KeyFrameStripRange?>)typeof(KeyFrameStripService)
+                .GetMethod("ReadParallelAsync", Private)!.Invoke(parallel,
+                    [primary, 0d, 4, 4, 9, (Func<long, bool>)(_ => false),
+                     (Action<KeyFrameStripFrame>)(frame => frame.Bitmap?.Dispose()), null, cancellation.Token])!;
+            Assert.NotNull(resumed);
+            Assert.Equal(expected.Frames.Select(frame => frame.Pts), resumed.Frames.Select(frame => frame.Pts));
+
+            using var input = FormatContext.OpenInputUrl(path);
+            input.LoadStreamInfo();
+            var audio = input.GetAudioStream();
+            using var waveform = AudioWaveformReader.TryOpen(new(path, null, primary.TsSyncOffset, null,
+                new(audio.Index, audio.Id, null), primary.TimelineOriginSeconds));
+            Assert.NotNull(waveform);
+            var seconds = new List<int>();
+            waveform.Read(0, 2, (second, peaks) =>
+            {
+                seconds.Add(second);
+                Assert.Contains(peaks, float.IsFinite);
+            }, cancellation.Token);
+            Assert.Equal(new[] { 0, 1 }, seconds);
+            return true;
+        }, CancellationToken.None);
+    }
+
     /// <summary>
     /// 关键包过滤：跳过的关键包不解码，停止后返回 null；停止前已送入的关键帧可从解码器缓存中取出。
     /// </summary>
