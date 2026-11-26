@@ -32,6 +32,8 @@ The switch state is remembered and saved with projects, and queued exports keep 
 
 Re-encoded pictures keep HDR10, HLG and single-layer Dolby Vision Profile 5/8.1/8.4.
 
+Supported HEVC sources also retain HDR10+ and HDR Vivid dynamic metadata for each picture, including re-encoded boundaries and the copied middle. This applies to MP4/MKV and TS/M2TS, using the output formats below. If the dynamic metadata cannot be safely preserved, the export stops with an explanation.
+
 ## Output formats
 
 - TS/M2TS sources export to the same format; MP4, MKV and other remuxable sources export to MP4 or MKV.
@@ -40,4 +42,4 @@ Re-encoded pictures keep HDR10, HLG and single-layer Dolby Vision Profile 5/8.1/
 
 ## Limitations
 
-The switch is disabled for unsupported sources, and hovering over it explains why (for example 4:4:4, HDR10+ or soft pulldown). Each re-encoded part is limited to 60 seconds; if no joinable keyframe can be found, the export stops with a clear error before writing. Re-encoded pictures differ slightly from the original. The runtime bundled with official releases includes the required encoders.
+The switch is disabled for unsupported sources, and hovering over it explains why (for example 4:4:4 or soft pulldown). Each re-encoded part is limited to 60 seconds; if no joinable keyframe can be found, the export stops with a clear error before writing. Re-encoded pictures differ slightly from the original. The runtime bundled with official releases includes the required encoders.
