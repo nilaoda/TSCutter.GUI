@@ -801,7 +801,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
         {
             var cell = new ThumbnailSheetCell(i, points[i])
             {
-                TimestampText = CommonUtil.FormatSeconds(points[i].TotalSeconds, true)
+                TimestampText = TimecodeDisplay.Format(points[i].TotalSeconds)
             };
             Cells.Add(cell);
             cells.Add(cell);
@@ -931,7 +931,7 @@ public partial class ThumbnailSheetWindowViewModel : ViewModelBase, IModalDialog
         if (info.OverallBitRate > 0)
             summaryParts.Add(CommonUtil.FormatBitrate(info.OverallBitRate));
         if (info.Duration > TimeSpan.Zero)
-            summaryParts.Add(CommonUtil.FormatSeconds(info.Duration.TotalSeconds));
+            summaryParts.Add(TimecodeDisplay.Format(info.Duration.TotalSeconds));
         if (info.FileSize > 0)
             summaryParts.Add(CommonUtil.FormatFileSize(info.FileSize));
         if (summaryParts.Count > 0)

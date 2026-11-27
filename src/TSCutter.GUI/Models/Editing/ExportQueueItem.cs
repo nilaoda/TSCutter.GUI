@@ -3,6 +3,7 @@ using System.IO;
 using CommunityToolkit.Mvvm.ComponentModel;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.Utils.Files;
 
 namespace TSCutter.GUI.Models.Editing;
@@ -87,11 +88,11 @@ public partial class ExportQueueItem : ObservableObject
         ? $"{SourceFileName} · {string.Format(LocalizationManager.Instance.String_PreviewTrack_ProgramFallback, programId)}"
         : SourceFileName;
 
-    public string StartBoundaryTimeStr => $"[ {CommonUtil.FormatSeconds(StartTimeSeconds)}";
+    public string StartBoundaryTimeStr => $"[ {TimecodeDisplay.Format(StartTimeSeconds)}";
 
     public string EndBoundaryTimeStr => EndPosition < 0
         ? $"{LocalizationManager.Instance.String_Project_FileEnd} ]"
-        : $"{CommonUtil.FormatSeconds(EndTimeSeconds)} ]";
+        : $"{TimecodeDisplay.Format(EndTimeSeconds)} ]";
 
     public string EstimatedSizeStr => LocalizationManager.Instance.String_SizePrefix
         + (ProgramId is null && RemuxSettings is null && FrameAccurate is null

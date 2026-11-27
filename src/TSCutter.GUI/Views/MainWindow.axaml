@@ -447,6 +447,22 @@
                             Command="{Binding ToggleSdrToneMappingCommand}"
                             ToolTip.Tip="{DynamicResource String.Status.ToggleSdrToneMappingTip}" />
                 </commonControls:StatusBarItem>
+                <commonControls:StatusBarItem IsVisible="{Binding HasTimecode}">
+                    <Button x:Name="TimecodeToggle" Classes="desktop-template-button timecode-toggle"
+                            Theme="{StaticResource PreviewStatusTextTheme}"
+                            Classes.timecode-on="{Binding TimecodeDisplayEnabled}"
+                            Content="{Binding TimecodeToggleText}"
+                            Command="{Binding ToggleTimecodeCommand}"
+                            ToolTip.Tip="{Binding TimecodeTipText}"
+                            ToolTip.ShowOnDisabled="True">
+                        <Button.Styles>
+                            <Style Selector="Button.timecode-on">
+                                <Setter Property="Foreground" Value="{DynamicResource AppRepairMapSelectionBrush}" />
+                                <Setter Property="FontWeight" Value="Bold" />
+                            </Style>
+                        </Button.Styles>
+                    </Button>
+                </commonControls:StatusBarItem>
                 <commonControls:StatusBarItem commonControls:StatusBar.Size="*">
                     <Button Command="{Binding OpenFileInExplorerCommand}"
                             Classes="hyperlink"
@@ -1213,7 +1229,9 @@
                                                       ViewportBrush="{DynamicResource AppRepairMapSelectionBrush}"
                                                       FitTip="{DynamicResource String.Timeline.FitTip}"
                                                       ZoomTip="{DynamicResource String.Timeline.ZoomTip}"
-                                                      ScrollTip="{DynamicResource String.Timeline.ScrollTip}" />
+                                                      ScrollTip="{DynamicResource String.Timeline.ScrollTip}"
+                                                       UseTimecode="{Binding TimecodeDisplayEnabled}"
+                                                       Timecode="{Binding Timecode}" />
                         </StackPanel>
                         <!-- 时间码与摘要共用上行，剪辑、播放、音量和保存共用操作行。 -->
                         <Grid Grid.Row="2" Name="PlaybackControls"
@@ -1276,7 +1294,7 @@
                                       Data="M 5,0 H 0 V 5 M 9,0 H 14 V 5 M 0,9 V 14 H 5 M 9,14 H 14 V 9" />
                             </Button>
                             <Button Grid.Row="0" Grid.Column="1" Name="PlaybackTimeButton" Width="150" Height="26"
-                                    Content="{Binding CurrentTime, Converter={StaticResource SecondsConverter}}"
+                                    Content="{Binding CurrentTimeDisplay}"
                                     Command="{Binding JumpToClickCommand}" Classes="hyperlink"
                                     ToolTip.Tip="{DynamicResource String.Navigate.JumpTo}"
                                     FontSize="19" FontWeight="Bold" HorizontalAlignment="Center" VerticalAlignment="Center" />
@@ -1418,10 +1436,10 @@
                         </Button>
                         <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                             <TextBlock Foreground="White" FontFamily="Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, $Default"
-                                       FontFeatures="tnum" Text="{Binding CurrentTime, Converter={StaticResource SecondsConverter}}" />
+                                       FontFeatures="tnum" Text="{Binding CurrentTimeDisplay}" />
                             <TextBlock Foreground="#BFC3CA" Text="/" />
                             <TextBlock Foreground="#BFC3CA" FontFamily="Consolas, Menlo, DejaVu Sans Mono, Liberation Mono, $Default"
-                                       FontFeatures="tnum" Text="{Binding DurationMax, Converter={StaticResource SecondsConverter}}" />
+                                       FontFeatures="tnum" Text="{Binding DurationDisplay}" />
                             <TextBlock Foreground="#FFD287" Text="!" IsVisible="{Binding HasPlaybackAudioProblem}"
                                        ToolTip.Tip="{Binding PlaybackAudioStatusText}" />
                         </StackPanel>

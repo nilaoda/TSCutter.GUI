@@ -6,6 +6,7 @@
 
 1. Open a TS, M2TS, MP4 or MKV file, or drag it into the main window.
 2. Navigate or zoom the timeline, add a clip, and mark its start and end points.
+   If the media contains an embedded timecode (for example an MP4 `tmcd` track), the status-bar **Timecode** button is enabled; click it to show the media timecode on the ruler and at the current position instead of elapsed time. Transport streams without a timecode tag can use a DVB TDT/TOT broadcast time-of-day instead (frame numbers use a nominal 25 fps when the stream's frame-rate metadata is unreliable). The button is hidden when neither source is found. This is display only - seeking and clip points still use elapsed time.
 3. Save the current clip, add it to the export queue, or select multiple clips and merge them.
 4. Use the File menu to save a `.tscut` project and reopen it later to restore clips and queued exports. A growing source is accepted when verification of its saved portion succeeds.
 

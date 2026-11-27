@@ -17,6 +17,7 @@ using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Services.TransportStream.Analysis;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.Utils.Files;
 using TSCutter.GUI.ViewModels;
 
@@ -486,7 +487,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     };
 
     private static string FormatRange(double startSeconds, double? endSeconds) =>
-        $"{CommonUtil.FormatSeconds(startSeconds)} – {(endSeconds is { } end ? CommonUtil.FormatSeconds(end) : "Inf.")}";
+        $"{TimecodeDisplay.Format(startSeconds)} – {(endSeconds is { } end ? TimecodeDisplay.Format(end) : "Inf.")}";
 
     private static string FormatRangeList(IEnumerable<(double Start, double? End)> ranges)
     {

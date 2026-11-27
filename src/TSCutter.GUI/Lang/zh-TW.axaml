@@ -280,6 +280,10 @@
     <x:String x:Key="String.Status.SdrToneMappingOff">SDR 映射：關</x:String>
     <x:String x:Key="String.Status.ToggleSdrToneMappingTip">點擊暫時開關目前檔案的 HDR 到 SDR 預覽映射。</x:String>
     <x:String x:Key="String.Status.ToggleHardwareDecodingTip">點擊暫時切換目前檔案的硬體或軟體解碼。</x:String>
+    <x:String x:Key="String.Status.TimecodeOn">時間碼：開</x:String>
+    <x:String x:Key="String.Status.TimecodeOff">時間碼：關</x:String>
+    <x:String x:Key="String.Status.ToggleTimecodeTip">在時間軸與目前位置顯示媒體中的時間碼。</x:String>
+    <x:String x:Key="String.Status.TimecodeUnavailableTip">目前媒體中未找到時間碼。</x:String>
     <x:String x:Key="String.Status.DecoderSwitchFailed">切換解碼器時無法保持目前畫面，已保留原預覽。</x:String>
     <x:String x:Key="String.Status.HardwareDecoding">H/W</x:String>
     <x:String x:Key="String.Status.SoftwareDecoding">S/W</x:String>

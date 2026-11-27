@@ -85,6 +85,9 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
         new Dictionary<int, Utils.Media.DolbyE.DolbyETrackInfo>();
     internal int AudioTrackCount => inFc.Streams.Count(stream => stream.Codecpar?.CodecType == AVMediaType.AVMEDIA_TYPE_AUDIO);
     internal double TimelineOriginSeconds => firstFrameTimestamp * timeBase.num / (double)timeBase.den;
+    /// <summary>Timecode anchored at the start of the timeline; null when the media has none.</summary>
+    public MediaTimecode? Timecode { get; private set; }
+    internal bool HasTimecode => Timecode is not null;
     internal int TimeBaseNumerator => timeBase.num;
     internal int TimeBaseDenominator => timeBase.den;
     /// <summary>
@@ -307,6 +310,22 @@ public partial class VideoInstance(string filePath, bool enableHardwareDecoding 
 
         videoStreamIndex = inVideoStream.Index;
         timeBase = inVideoStream.TimeBase;
+        Timecode = TimecodeUtil.Read(inFc, inVideoStream);
+        if (Timecode is null && isMpegTs && Disc is null && !string.IsNullOrEmpty(videoPath))
+        {
+            // Broadcast recordings may carry a DVB TDT/TOT wall-clock instead of a
+            // timecode tag. Use its time of day as the timecode at the timeline start.
+            var broadcastOffset = TsSyncOffset >= 0 ? TsSyncOffset : 0;
+            var broadcastUtc = TsBroadcastTimecodeProbe.TryReadFirstUtc(videoPath, broadcastOffset);
+            var frameRate = inVideoStream.AvgFrameRate.den == 0
+                ? 0 : inVideoStream.AvgFrameRate.num / (double)inVideoStream.AvgFrameRate.den;
+            if (broadcastUtc is not null && frameRate < 10)
+                // Damaged recordings can report a nonsense rate; broadcast timecode
+                // uses a nominal PAL rate for its frame numbers in that case.
+                frameRate = 25;
+            if (broadcastUtc is not null && frameRate >= 1)
+                Timecode = TimecodeUtil.FromUtc(broadcastUtc.Value, frameRate);
+        }
         FrameAccurateSupport = !CanClip ? FrameAccurateSupport.Container
             : FrameAccurateExportService.CheckSupport(inFc, videoStreamIndex,
                 CreateFrameAccurateSettings(CanRemuxClip ? CreateExportSettings() : null).StreamIndices, ClipExtension);

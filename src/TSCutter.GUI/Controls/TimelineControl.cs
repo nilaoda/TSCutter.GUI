@@ -11,6 +11,7 @@ using Avalonia.Media;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Utils;
+using TSCutter.GUI.Utils.Media;
 
 namespace TSCutter.GUI.Controls;
 
@@ -101,6 +102,13 @@ public sealed class TimelineControl : Control
     public static readonly StyledProperty<string> ScrollTipProperty =
         AvaloniaProperty.Register<TimelineControl, string>(nameof(ScrollTip), string.Empty);
 
+    /// <summary>Shows ruler labels as timecode from the media instead of elapsed time.</summary>
+    public static readonly StyledProperty<bool> UseTimecodeProperty =
+        AvaloniaProperty.Register<TimelineControl, bool>(nameof(UseTimecode));
+
+    public static readonly StyledProperty<MediaTimecode?> TimecodeProperty =
+        AvaloniaProperty.Register<TimelineControl, MediaTimecode?>(nameof(Timecode));
+
     /// <summary>不按修饰键滚动滚轮时的动作；Ctrl（macOS 为 ⌘）加滚轮始终缩放。</summary>
     public static readonly StyledProperty<TimelineWheelAction> PlainWheelActionProperty =
         AvaloniaProperty.Register<TimelineControl, TimelineWheelAction>(nameof(PlainWheelAction));
@@ -149,7 +157,8 @@ public sealed class TimelineControl : Control
             ViewportStartProperty, ViewportEndProperty, ZoomLevelProperty, RangesProperty,
             BackgroundBrushProperty, TrackBrushProperty, EmptyTrackBrushProperty, BorderDarkBrushProperty,
             BorderLightBrushProperty, TextBrushProperty, MutedTextBrushProperty,
-            ClipBrushProperty, RemovedBrushProperty, AccentBrushProperty, ViewportBrushProperty);
+            ClipBrushProperty, RemovedBrushProperty, AccentBrushProperty, ViewportBrushProperty,
+            UseTimecodeProperty, TimecodeProperty);
     }
 
     public TimelineControl()
@@ -187,6 +196,8 @@ public sealed class TimelineControl : Control
     public string FitTip { get => GetValue(FitTipProperty); set => SetValue(FitTipProperty, value); }
     public string ZoomTip { get => GetValue(ZoomTipProperty); set => SetValue(ZoomTipProperty, value); }
     public string ScrollTip { get => GetValue(ScrollTipProperty); set => SetValue(ScrollTipProperty, value); }
+    public bool UseTimecode { get => GetValue(UseTimecodeProperty); set => SetValue(UseTimecodeProperty, value); }
+    public MediaTimecode? Timecode { get => GetValue(TimecodeProperty); set => SetValue(TimecodeProperty, value); }
 
     public event EventHandler<double>? SeekRequested;
     public event EventHandler? ScrubStarted;
@@ -255,11 +266,14 @@ public sealed class TimelineControl : Control
         var minorInterval = majorInterval / 5;
         var firstMinor = Math.Ceiling(VisibleStart / minorInterval) * minorInterval;
         var minorPen = new Pen(brush, 1);
-        var startLabel = CreateText(FormatRulerTime(VisibleStart), 10, brush);
-        var endLabel = CreateText(FormatRulerTime(VisibleEnd), 10, brush);
+        var timecodeActive = UseTimecode && Timecode is not null;
+        var labelBrush = timecodeActive ? AccentBrush ?? brush : brush;
+        var startLabel = CreateText(FormatRulerTime(VisibleStart), 10, labelBrush);
+        var endLabel = CreateText(FormatRulerTime(VisibleEnd), 10, labelBrush);
         var startLabelX = bounds.Left + 3;
         var endLabelX = bounds.Right - endLabel.Width - 3;
         var labelY = bounds.Top + 2;
+        var lastLabelRight = startLabelX + startLabel.Width + 6;
         for (var time = firstMinor; time <= VisibleEnd + minorInterval * 0.1; time += minorInterval)
         {
             var x = TimeToMainX(time, bounds);
@@ -274,10 +288,16 @@ public sealed class TimelineControl : Control
 
             var label = CreateText(FormatRulerTime(time), 10, brush);
             var labelX = Math.Clamp(x - label.Width / 2, bounds.Left + 3, bounds.Right - label.Width - 3);
-            if (labelX > startLabelX + startLabel.Width + 6
+            if (labelX > lastLabelRight
                 && labelX + label.Width < endLabelX - 6)
+            {
                 context.DrawText(label, new Point(labelX, labelY));
+                lastLabelRight = labelX + label.Width + 6;
+            }
         }
+        if (timecodeActive && AccentBrush is { } accent)
+            context.DrawLine(new Pen(accent, 1),
+                new Point(bounds.Left, bounds.Bottom - 6), new Point(bounds.Right, bounds.Bottom - 6));
         context.DrawText(startLabel, new Point(startLabelX, labelY));
         if (endLabelX > startLabelX + startLabel.Width + 8)
             context.DrawText(endLabel, new Point(endLabelX, labelY));
@@ -606,7 +626,7 @@ public sealed class TimelineControl : Control
         var details = range is { } selected
             ? string.Join("\n", new[] { selected.Name, selected.Notes }.Where(value => !string.IsNullOrWhiteSpace(value)))
             : "";
-        return CommonUtil.FormatSeconds(time) + (details.Length == 0 ? "" : "\n" + details);
+        return TimecodeDisplay.Format(time) + (details.Length == 0 ? "" : "\n" + details);
     }
 
     private HitPart HitTest(Point point)
@@ -837,8 +857,10 @@ public sealed class TimelineControl : Control
         return factor * exponent;
     }
 
-    private static string FormatRulerTime(double seconds)
+    private string FormatRulerTime(double seconds)
     {
+        if (UseTimecode && Timecode is { } timecode)
+            return timecode.Format(seconds);
         var value = TimeSpan.FromSeconds(Math.Max(0, seconds));
         return value.TotalHours >= 1
             ? $"{(int)value.TotalHours:00}:{value.Minutes:00}:{value.Seconds:00}"

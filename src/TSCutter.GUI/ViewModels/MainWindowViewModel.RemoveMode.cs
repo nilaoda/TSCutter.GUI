@@ -10,6 +10,7 @@ using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.ViewModels.Editing;
 
 namespace TSCutter.GUI.ViewModels;
@@ -118,7 +119,7 @@ public partial class MainWindowViewModel
                 return string.Empty;
             var kept = CreateKeptRanges(removed).Sum(range => (range.End?.Time ?? DurationMax) - range.Start.Time);
             return string.Format(LocalizationManager.Instance.String_RemoveMode_Summary, removed.Length,
-                CommonUtil.FormatSeconds(Math.Max(0, kept)));
+                TimecodeDisplay.Format(Math.Max(0, kept)));
         }
     }
 
@@ -218,7 +219,7 @@ public partial class MainWindowViewModel
         }
         var keptSeconds = kept.Sum(range => (range.End?.Time ?? DurationMax) - range.Start.Time);
         await ShowExportResultAsync(output, outputPath, string.Format(LocalizationManager.Instance.String_ExportResult_Removed,
-            removed.Length, CommonUtil.FormatSeconds(Math.Max(0, keptSeconds))), LocalizationManager.Instance.String_ExportResult_RemoveTag);
+            removed.Length, TimecodeDisplay.Format(Math.Max(0, keptSeconds))), LocalizationManager.Instance.String_ExportResult_RemoveTag);
     }
 
     private MergeExportSnapshot CaptureRemoveExportSnapshot(PickedClip[] removed, List<KeptRange> kept, bool frameAccurate)

@@ -280,6 +280,10 @@
     <x:String x:Key="String.Status.SdrToneMappingOff">SDR mapping: Off</x:String>
     <x:String x:Key="String.Status.ToggleSdrToneMappingTip">Click to toggle HDR to SDR preview mapping for this file.</x:String>
     <x:String x:Key="String.Status.ToggleHardwareDecodingTip">Click to switch hardware/software decoding for this file.</x:String>
+    <x:String x:Key="String.Status.TimecodeOn">Timecode: On</x:String>
+    <x:String x:Key="String.Status.TimecodeOff">Timecode: Off</x:String>
+    <x:String x:Key="String.Status.ToggleTimecodeTip">Show the media timecode on the timeline and current position.</x:String>
+    <x:String x:Key="String.Status.TimecodeUnavailableTip">No timecode found in this media.</x:String>
     <x:String x:Key="String.Status.DecoderSwitchFailed">Could not retain the current frame while switching decoders.</x:String>
     <x:String x:Key="String.Status.HardwareDecoding">H/W</x:String>
     <x:String x:Key="String.Status.SoftwareDecoding">S/W</x:String>
