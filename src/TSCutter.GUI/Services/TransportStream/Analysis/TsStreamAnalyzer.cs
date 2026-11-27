@@ -25,8 +25,9 @@ public sealed class TsStreamAnalyzer : IDisposable
     private const int MaxMpegAudioProbeBytes = 64 * 1024;
     private const double PcrGapThresholdSeconds = 0.5;
     private const double TimestampJumpThresholdSeconds = 10;
-    private const double AvDriftThresholdSeconds = 0.5;
-    private const int AvSyncBaselineSampleCount = 5;
+    private const long AvDriftThreshold90k = 45_000;
+    private const int AvSyncWindowSize = 5;
+    private const int AvSyncConfirmationSamples = 4;
     private const int MaxTimelineBuckets = 4_096;
     private const double InitialTimelineBucketSeconds = 1;
     private const long MaximumBitratePcrInterval90k = 90_000;
@@ -236,10 +237,11 @@ public sealed class TsStreamAnalyzer : IDisposable
         if (!_sessionActive)
             throw new InvalidOperationException("The incremental check session is not active.");
         cancellationToken.ThrowIfCancellationRequested();
-        if (_syncOffset < 0 && _sessionScratchLength > 0)
+        if (_sessionScratchLength > 0 && !_stopRequested)
         {
             var consumedTail = ProcessBuffer(_sessionScratch.AsSpan(0, _sessionScratchLength),
                 _sessionScratchStartOffset, cancellationToken, isFinal: true);
+            _sessionScratchStartOffset += consumedTail;
             _sessionScratchLength -= consumedTail;
         }
         if (_options.InventoryOnly && _syncOffset < 0)
@@ -366,7 +368,7 @@ public sealed class TsStreamAnalyzer : IDisposable
         var position = 0;
         if (_syncOffset < 0)
         {
-            var found = TsPacketLayout.FindLayout(data, validateHeaders: false);
+            var found = TsPacketLayout.FindLayout(data, validateHeaders: false, requireCompleteProbe: !isFinal);
             if (found.PacketSize == 0 && isFinal)
                 found = TsPacketLayout.FindShortLayout(data);
             if (found.PacketSize == 0)
@@ -392,11 +394,12 @@ public sealed class TsStreamAnalyzer : IDisposable
                 // TS 失步后无法确认各 PID 当前 PES 中间丢了多少数据，先放弃半成品，避免恢复后重复报长度错误。
                 DiscardPendingPes();
                 // 中途失步时在当前缓冲区内重新寻找连续同步点，恢复后继续保持单遍扫描。
-                var resync = _packetLayout.FindPacketSync(data[position..]);
+                var resync = _packetLayout.FindPacketSync(data[position..], requireCompleteProbe: !isFinal);
                 if (resync < 0)
                 {
                     // 保留足够的同步窗口给下一次读取拼接，其余损坏字节可立即丢弃，防止残余缓冲无限增长。
-                    var discard = Math.Max(0, data.Length - position - PacketStride * 4);
+                    var overlap = isFinal ? PacketStride * 4 : TsPacketLayout.SyncProbeOverlapBytes;
+                    var discard = Math.Max(0, data.Length - position - overlap);
                     if (discard > 0)
                     {
                         if (_pendingSyncLossOffset < 0)
@@ -507,7 +510,9 @@ public sealed class TsStreamAnalyzer : IDisposable
             state.ResetTimestamps();
             if (_psiAssemblers.TryGetValue(pid, out var discontinuousAssembler))
                 discontinuousAssembler.DiscardUntilPayloadStart();
-            if (_streamPidPrograms.TryGetValue(pid, out var programNumber) && _programClocks.TryGetValue(programNumber, out var clock))
+            if ((_streamPidPrograms.TryGetValue(pid, out var programNumber) ||
+                 _pcrPidPrograms.TryGetValue(pid, out programNumber)) &&
+                _programClocks.TryGetValue(programNumber, out var clock))
                 clock.ResetSync();
         }
 
@@ -672,7 +677,7 @@ public sealed class TsStreamAnalyzer : IDisposable
             // 否则录制开头正常的 PTS/PCR 偏移会被误判为时钟停滞，进而错误标记为估算时间轴。
             UpdateTimeline(pid, pcr / 90_000.0, discontinuity);
         if (HasFeature(TsStreamAnalyzeFeatures.AvSyncValidation) &&
-            _pcrPidPrograms.TryGetValue(pid, out var programNumber))
+            _pcrPidPrograms.TryGetValue(pid, out var programNumber) && _result.Programs[programNumber].PcrPid == pid)
             CheckAvSyncAtPcr(programNumber, pcr, fileOffset);
     }
 
@@ -849,7 +854,20 @@ public sealed class TsStreamAnalyzer : IDisposable
 
         var pmtVersion = (byte)((section[5] >> 1) & 0x1F);
         var rebuildDefinitions = program.StreamDefinitions.Count == 0 || program.PmtVersion != pmtVersion;
-        var catalogChanged = rebuildDefinitions || program.PcrPid != pcrPid;
+        var syncTracksChanged = program.PcrPid != pcrPid;
+        var catalogChanged = rebuildDefinitions || syncTracksChanged;
+        HashSet<(int Pid, byte Type, TsSupplementaryStreamType? Supplementary)>? previousSyncTracks = null;
+        if (rebuildDefinitions && HasFeature(TsStreamAnalyzeFeatures.AvSyncValidation) && !syncTracksChanged)
+        {
+            previousSyncTracks = [];
+            foreach (var pid in program.StreamDefinitions.Keys)
+            {
+                var type = program.Streams[pid];
+                var supplementary = _result.Pids[pid].SupplementaryStreamType;
+                if (TsStreamTypes.IsVideo(type) || TsStreamTypes.IsAudio(type, supplementary))
+                    previousSyncTracks.Add((pid, type, supplementary));
+            }
+        }
         program.PcrPid = pcrPid;
         if (rebuildDefinitions)
         {
@@ -873,6 +891,10 @@ public sealed class TsStreamAnalyzer : IDisposable
             // DVB 常把 AC-3/E-AC-3 标成 private data (0x06)，需要结合 descriptor 还原实际类型。
             var descriptors = section.Slice(offset + 5, infoLength);
             var streamInfo = ResolveStreamInfo(originalStreamType, descriptors);
+            if (previousSyncTracks is not null && (TsStreamTypes.IsVideo(streamInfo.StreamType) ||
+                TsStreamTypes.IsAudio(streamInfo.StreamType, streamInfo.SupplementaryStreamType)))
+                syncTracksChanged |= !previousSyncTracks.Remove((elementaryPid, streamInfo.StreamType,
+                    streamInfo.SupplementaryStreamType));
             program.Streams[elementaryPid] = streamInfo.StreamType;
             if (rebuildDefinitions)
             {
@@ -892,6 +914,14 @@ public sealed class TsStreamAnalyzer : IDisposable
         }
         if (catalogChanged)
             _lastCatalogChangePacket = _packetIndex;
+        // PCR 或参与同步比较的轨道变化后，按新节目表重新选择视频 PID 和建立基线。
+        if (HasFeature(TsStreamAnalyzeFeatures.AvSyncValidation) &&
+            (syncTracksChanged || previousSyncTracks is { Count: > 0 }))
+        {
+            var clock = _programClocks[programNumber];
+            clock.VideoPid = -1;
+            clock.ResetSync();
+        }
     }
 
     private void ParseSdt(ReadOnlySpan<byte> section)
@@ -1206,7 +1236,7 @@ public sealed class TsStreamAnalyzer : IDisposable
             if (state.PesActive)
                 state.PesStartTimeSeconds = ptsToSeconds(pts);
             if (HasFeature(TsStreamAnalyzeFeatures.AvSyncValidation))
-                UpdateStreamClock(pid, pts);
+                UpdateStreamClock(state.Summary, pts);
         }
 
         if (rawDts is not null)
@@ -1379,75 +1409,63 @@ public sealed class TsStreamAnalyzer : IDisposable
         }
     }
 
-    private void UpdateStreamClock(int pid, long pts)
+    private void UpdateStreamClock(TsCheckPidSummary stream, long pts)
     {
         // 用首个稳定的音视频 PTS 差建立基线，仅报告相对基线的漂移，避免误报合法固定延迟。
-        if (!_streamPidPrograms.TryGetValue(pid, out var programNumber) ||
+        var pid = stream.Pid;
+        if (stream.StreamType is not { } streamType ||
+            !_streamPidPrograms.TryGetValue(pid, out var programNumber) ||
             !_programClocks.TryGetValue(programNumber, out var clock) ||
             !_result.Programs.TryGetValue(programNumber, out var program) ||
-            !program.Streams.TryGetValue(pid, out var streamType))
+            !program.StreamDefinitions.ContainsKey(pid))
             return;
 
         if (TsStreamTypes.IsVideo(streamType))
         {
-            if (clock.VideoPid < 0 || clock.VideoPid == pid)
+            if ((clock.VideoPid < 0 || clock.VideoPid == pid) && clock.VideoPts90k != pts)
             {
                 clock.VideoPid = pid;
                 clock.VideoPts90k = pts;
+                clock.VideoPtsPacketIndex = _packetIndex;
             }
         }
-        else if (TsStreamTypes.IsAudio(streamType, _result.Pids[pid].SupplementaryStreamType))
+        else if (TsStreamTypes.IsAudio(streamType, stream.SupplementaryStreamType))
         {
-            clock.AudioPts90k[pid] = pts;
+            if (!clock.AudioSyncStates.TryGetValue(pid, out var audio))
+            {
+                audio = new AudioSyncState();
+                clock.AudioSyncStates.Add(pid, audio);
+            }
+            if (audio.Pts90k != pts)
+            {
+                audio.Pts90k = pts;
+                audio.PtsPacketIndex = _packetIndex;
+            }
         }
-        else
-        {
-            return;
-        }
-
     }
 
     private void CheckAvSyncAtPcr(int programNumber, long pcr, long fileOffset)
     {
         if (!_programClocks.TryGetValue(programNumber, out var clock) ||
-            clock.VideoPts90k == long.MinValue ||
             (clock.LastSyncSamplePcr90k != long.MinValue && pcr - clock.LastSyncSamplePcr90k < 90_000))
             return;
 
+        var previousSample = clock.LastSyncSamplePacketIndex;
         clock.LastSyncSamplePcr90k = pcr;
-        foreach (var pair in clock.AudioPts90k)
+        clock.LastSyncSamplePacketIndex = _packetIndex;
+        var freshVideo = clock.VideoPtsPacketIndex >= previousSample && clock.VideoPtsPacketIndex >= 0;
+        foreach (var (pid, audio) in clock.AudioSyncStates)
         {
-            if (!clock.AudioSyncStates.TryGetValue(pair.Key, out var syncState))
+            // 音轨开始较晚或提前结束时，只有同一采样区间内双方的新 PTS 才能用于比较。
+            if (!freshVideo || audio.PtsPacketIndex < previousSample)
             {
-                syncState = new AudioSyncState();
-                clock.AudioSyncStates[pair.Key] = syncState;
-            }
-
-            var currentOffset90k = pair.Value - clock.VideoPts90k;
-            // 文件可能从半个 GOP 开始，首组 PTS 往往不是同一播放时刻；用少量样本中位数
-            // 建立固定偏移基线，可过滤启动离群值且只占每条音轨几十字节内存。
-            if (!syncState.TryGetBaseline(currentOffset90k, out var baselineOffset90k))
+                audio.ResetWindow();
                 continue;
-
-            var drift = (currentOffset90k - baselineOffset90k) / 90_000.0;
-            if (Math.Abs(drift) >= AvDriftThresholdSeconds)
-            {
-                var consecutiveCount = clock.SyncDriftCounts.GetValueOrDefault(pair.Key) + 1;
-                clock.SyncDriftCounts[pair.Key] = consecutiveCount;
-                if (consecutiveCount >= 3 &&
-                    (clock.LastDriftReport90k == long.MinValue || pcr - clock.LastDriftReport90k >= 450_000))
-                {
-                    AddEvent(TsCheckSeverity.Warning, TsCheckEventType.AvSyncDrift, pair.Key, _packetIndex, fileOffset,
-                        TsCheckMessageCode.AvSyncDrift,
-                        [baselineOffset90k / 90.0, currentOffset90k / 90.0, drift * 1000],
-                        ptsToSeconds(pcr), false);
-                    clock.LastDriftReport90k = pcr;
-                }
             }
-            else
-            {
-                clock.SyncDriftCounts[pair.Key] = 0;
-            }
+            if (audio.TryGetDrift(audio.Pts90k - clock.VideoPts90k, out var baseline, out var current))
+                AddEvent(TsCheckSeverity.Warning, TsCheckEventType.AvSyncDrift, pid, _packetIndex, fileOffset,
+                    TsCheckMessageCode.AvSyncDrift, [baseline / 90.0, current / 90.0, (current - baseline) / 90.0],
+                    ptsToSeconds(pcr), false);
         }
     }
 
@@ -2022,46 +2040,75 @@ public sealed class TsStreamAnalyzer : IDisposable
     {
         public int VideoPid = -1;
         public long VideoPts90k = long.MinValue;
-        public Dictionary<int, long> AudioPts90k { get; } = [];
+        public long VideoPtsPacketIndex = -1;
         public Dictionary<int, AudioSyncState> AudioSyncStates { get; } = [];
-        public Dictionary<int, int> SyncDriftCounts { get; } = [];
         public long LastSyncSamplePcr90k = long.MinValue;
-        public long LastDriftReport90k = long.MinValue;
+        public long LastSyncSamplePacketIndex;
         public long LastTransportDamagePacket = -1;
 
         public void ResetSync()
         {
             VideoPts90k = long.MinValue;
-            AudioPts90k.Clear();
+            VideoPtsPacketIndex = -1;
             AudioSyncStates.Clear();
-            SyncDriftCounts.Clear();
             LastSyncSamplePcr90k = long.MinValue;
-            LastDriftReport90k = long.MinValue;
+            LastSyncSamplePacketIndex = 0;
         }
     }
 
     private sealed class AudioSyncState
     {
-        private readonly long[] _baselineSamples = new long[AvSyncBaselineSampleCount];
-        private int _sampleCount;
-        private long _baselineOffset90k;
+        private readonly long[] _samples = new long[AvSyncWindowSize];
+        private int _count;
+        private int _next;
+        private long? _baseline90k;
+        private int _direction;
+        private int _consecutive;
+        public long Pts90k = long.MinValue;
+        public long PtsPacketIndex = -1;
 
-        public bool TryGetBaseline(long currentOffset90k, out long baselineOffset90k)
+        public void ResetWindow()
         {
-            if (_sampleCount < AvSyncBaselineSampleCount)
-            {
-                _baselineSamples[_sampleCount++] = currentOffset90k;
-                if (_sampleCount == AvSyncBaselineSampleCount)
-                {
-                    Span<long> sorted = stackalloc long[AvSyncBaselineSampleCount];
-                    _baselineSamples.CopyTo(sorted);
-                    sorted.Sort();
-                    _baselineOffset90k = sorted[AvSyncBaselineSampleCount / 2];
-                }
-            }
+            _count = 0;
+            _next = 0;
+            _direction = 0;
+            _consecutive = 0;
+        }
 
-            baselineOffset90k = _baselineOffset90k;
-            return _sampleCount >= AvSyncBaselineSampleCount;
+        public bool TryGetDrift(long offset, out long baseline, out long median)
+        {
+            baseline = _baseline90k.GetValueOrDefault();
+            median = 0;
+            _samples[_next] = offset;
+            _next = (_next + 1) % _samples.Length;
+            if (_count < _samples.Length)
+                _count++;
+
+            if (_baseline90k.HasValue)
+            {
+                var drift = offset - baseline;
+                var direction = Math.Abs(drift) >= AvDriftThreshold90k ? Math.Sign(drift) : 0;
+                _consecutive = direction == 0 ? 0 : direction == _direction ? _consecutive + 1 : 1;
+                _direction = direction;
+            }
+            if (_count < _samples.Length || _baseline90k.HasValue && _consecutive < AvSyncConfirmationSamples)
+                return false;
+
+            Span<long> sorted = stackalloc long[AvSyncWindowSize];
+            _samples.CopyTo(sorted);
+            sorted.Sort();
+            median = sorted[AvSyncWindowSize / 2];
+            if (!_baseline90k.HasValue)
+            {
+                _baseline90k = median;
+                return false;
+            }
+            // 连续同向变化由中位数确认。以确认后的偏移为新基线，同一音轨的持续错位只提示一次。
+            if ((median - baseline) * _direction < AvDriftThreshold90k)
+                return false;
+            _baseline90k = median;
+            _consecutive = 0;
+            return true;
         }
     }
 
