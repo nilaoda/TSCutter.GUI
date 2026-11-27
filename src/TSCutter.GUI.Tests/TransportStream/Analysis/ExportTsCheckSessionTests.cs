@@ -88,6 +88,44 @@ public sealed class ExportTsCheckSessionTests
         Assert.Equal(0, sessionResult.SyncOffset);
     }
 
+    [Theory]
+    [InlineData(false, false)]
+    [InlineData(true, false)]
+    [InlineData(false, true)]
+    [InlineData(true, true)]
+    public async Task M2tsArrivalBytesDoNotBecomeSyncAtAWriteBoundary(bool afterLoss, bool truncated)
+    {
+        var packets = BuildPacketList();
+        const int stride = TsPacketLayout.M2tsPacketSize;
+        var firstPacket = afterLoss ? 0 : 4;
+        var gap = afterLoss ? 5 : 0;
+        const int gapIndex = 6;
+        var data = new byte[firstPacket + packets.Count * stride + gap];
+        for (var index = 0; index < packets.Count; index++)
+        {
+            var offset = firstPacket + index * stride + (index >= gapIndex ? gap : 0);
+            data[offset + 1] = 0x47;
+            data[offset + 3] = (byte)index;
+            packets[index].CopyTo(data, offset + TsPacketLayout.M2tsHeaderSize);
+        }
+        // 本块的最后一个候选位置只有到达头，下一个块才包含真正的 TS 同步字节。
+        var probeStart = afterLoss ? gapIndex * stride + gap : firstPacket;
+        var split = probeStart + 3 * stride + 2;
+        if (truncated)
+            data = data[..(split + 10)];
+        var file = await AnalyzeFileAsync(data);
+        var session = new ExportTsCheckSession("out.m2ts");
+        session.Append(data.AsSpan(0, split));
+        session.Append(data.AsSpan(split));
+        session.Complete();
+
+        Assert.Equal(firstPacket, file.SyncOffset);
+        Assert.Equal(truncated ? (afterLoss ? gapIndex : 0) + 3 : packets.Count, file.PacketCount);
+        Assert.Equal(0, Count(file, TsCheckEventType.InvalidPacketHeader));
+        Assert.Equal(afterLoss ? 1 : 0, Count(file, TsCheckEventType.SyncLoss));
+        AssertResultsEquivalent(file, session.Result!);
+    }
+
     [Fact]
     public void AbortedSessionIsMarkedIncompleteAndNeverPasses()
     {

@@ -42,8 +42,8 @@ public readonly record struct TsPacketLayout(int PacketSize, long SyncOffset)
     public Span<byte> GetPacketBody(Span<byte> buffer, int packetOffset = 0) =>
         buffer.Slice(packetOffset + PrefixSize, TsUtil.TsPacketSize);
 
-    internal int FindPacketSync(ReadOnlySpan<byte> data) =>
-        TsUtil.FindPacketSync(data, PacketSize, PrefixSize);
+    internal int FindPacketSync(ReadOnlySpan<byte> data, bool requireCompleteProbe = false) =>
+        TsUtil.FindPacketSync(data, PacketSize, PrefixSize, requireCompleteProbe);
 
     public void RequireSupported(bool standardOnly = false)
     {
@@ -119,10 +119,15 @@ public readonly record struct TsPacketLayout(int PacketSize, long SyncOffset)
         }
     }
 
-    internal static (int PacketSize, int SyncOffset) FindLayout(ReadOnlySpan<byte> data, bool validateHeaders = true)
+    internal static (int PacketSize, int SyncOffset) FindLayout(ReadOnlySpan<byte> data, bool validateHeaders = true,
+        bool requireCompleteProbe = false)
     {
         var packetSizes = DetectablePacketSizes;
-        for (var offset = 0; offset + TsUtil.TsPacketSize * (SyncProbePacketCount - 1) < data.Length; offset++)
+        // 分块输入等待同一候选位置的各个步长以及 M2TS 包头都可校验，再决定布局。
+        var minimumProbeBytes = requireCompleteProbe
+            ? (SyncProbePacketCount - 1) * FecPacketSize + TsUtil.TsPacketSize + M2tsHeaderSize - 1
+            : TsUtil.TsPacketSize * (SyncProbePacketCount - 1) + 1;
+        for (var offset = 0; offset <= data.Length - minimumProbeBytes; offset++)
         {
             if (data[offset] != TsUtil.TsSyncByte)
                 continue;
@@ -162,11 +167,15 @@ public readonly record struct TsPacketLayout(int PacketSize, long SyncOffset)
 
     private static bool HasValidPacketHeaders(ReadOnlySpan<byte> data, int syncOffset, int packetSize, int packetCount)
     {
-        if (syncOffset + packetSize * (packetCount - 1) + TsUtil.TsPacketSize > data.Length)
-            return false;
         for (var index = 0; index < packetCount; index++)
-            if (!TsPacketParser.Parse(data.Slice(syncOffset + index * packetSize, TsUtil.TsPacketSize)).IsValid)
+        {
+            var offset = syncOffset + index * packetSize;
+            // 文件尾不足一包时，已验证的完整包仍可用于区分同步字节与到达头。
+            if (data.Length - offset < TsUtil.TsPacketSize)
+                return index > 0 && offset < data.Length && data[offset] == TsUtil.TsSyncByte;
+            if (!TsPacketParser.Parse(data.Slice(offset, TsUtil.TsPacketSize)).IsValid)
                 return false;
+        }
         return true;
     }
 

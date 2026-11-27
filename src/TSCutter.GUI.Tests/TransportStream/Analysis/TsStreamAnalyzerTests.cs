@@ -519,7 +519,42 @@ public sealed class TsStreamAnalyzerTests
 
         var result = await AnalyzeAsync(CreateAvSyncPackets(offsets90k));
 
-        Assert.True(Count(result, TsCheckEventType.AvSyncDrift) > 0);
+        var drift = Assert.Single(result.Events, item => item.Type == TsCheckEventType.AvSyncDrift);
+        Assert.Equal(700d, drift.MessageArguments[2]);
+    }
+
+    [Fact]
+    public async Task AlternatingPtsSamplingOffsetsDoNotCreateDriftWarnings()
+    {
+        var offsets = Enumerable.Range(0, 40).Select(index => index % 6 < 3 ? 90_000L : -90_000L).ToArray();
+
+        var result = await AnalyzeAsync(CreateAvSyncPackets(offsets));
+
+        Assert.Equal(0, Count(result, TsCheckEventType.AvSyncDrift));
+    }
+
+    [Fact]
+    public async Task AudioEndingBeforeVideoDoesNotCreateDriftWarnings()
+    {
+        var offsets = new long[40];
+
+        var result = await AnalyzeAsync(CreateAvSyncPackets(offsets, audioEnd: 20));
+
+        Assert.Equal(0, Count(result, TsCheckEventType.AvSyncDrift));
+    }
+
+    [Fact]
+    public async Task EachAudioTrackReportsItsOwnDriftAfterTheVideoPidChanges()
+    {
+        var first = Enumerable.Range(0, 60).Select(index => index >= 36 ? 135_000L : 0).ToArray();
+        var second = first.Select(offset => offset == 0 ? 0 : -63_000L).ToArray();
+
+        var result = await AnalyzeAsync(CreateAvSyncPackets(first, videoChangeSample: 20, secondAudioOffsets: second));
+
+        var drifts = result.Events.Where(item => item.Type == TsCheckEventType.AvSyncDrift).OrderBy(item => item.Pid).ToArray();
+        Assert.Equal(new[] { 0x0102, 0x0104 }, drifts.Select(item => item.Pid));
+        Assert.Equal(new[] { 1500d, -700d }, drifts.Select(item => (double)item.MessageArguments[2]));
+        Assert.All(drifts, item => Assert.Equal(1, item.Occurrences));
     }
 
     [Fact]
@@ -603,23 +638,39 @@ public sealed class TsStreamAnalyzerTests
         }
     }
 
-    private static IEnumerable<byte[]> CreateAvSyncPackets(IReadOnlyList<long> audioOffsets90k)
+    private static IEnumerable<byte[]> CreateAvSyncPackets(IReadOnlyList<long> audioOffsets90k,
+        int audioEnd = int.MaxValue, int videoChangeSample = int.MaxValue, IReadOnlyList<long>? secondAudioOffsets = null)
     {
         const int pmtPid = 0x0100;
         const int videoPid = 0x0101;
         const int audioPid = 0x0102;
+        const int otherVideoPid = 0x0103;
+        const int otherAudioPid = 0x0104;
+        const int pcrPid = 0x0105;
+        byte[] ProgramTable(int selectedVideo, byte version)
+        {
+            var streams = new List<(int StreamType, int Pid)> { (0x1B, selectedVideo), (0x03, audioPid) };
+            if (secondAudioOffsets is not null)
+                streams.Add((0x03, otherAudioPid));
+            return BuildPmtSection(pcrPid, version, streams.ToArray());
+        }
+
         yield return CreatePsiPacket(0x0000, 0, BuildPatSection(pmtPid));
-        yield return CreatePsiPacket(
-            pmtPid, 0, BuildPmtSection(videoPid, (0x1B, videoPid), (0x03, audioPid)));
+        yield return CreatePsiPacket(pmtPid, 0, ProgramTable(videoPid, 0));
 
         const long startPts90k = 900_000;
         for (var index = 0; index < audioOffsets90k.Count; index++)
         {
             var videoPts = startPts90k + index * 90_000L;
-            yield return CreatePesPacket(videoPid, index * 2 & 0x0F, videoPts, 0xE0);
-            yield return CreatePesPacket(
-                audioPid, index & 0x0F, videoPts + audioOffsets90k[index], 0xC0);
-            yield return CreatePacket(videoPid, index * 2 + 1 & 0x0F, pcrBase: videoPts);
+            if (index == videoChangeSample)
+                yield return CreatePsiPacket(pmtPid, 1, ProgramTable(otherVideoPid, 1));
+            yield return CreatePesPacket(index < videoChangeSample ? videoPid : otherVideoPid,
+                index & 0x0F, videoPts, 0xE0);
+            if (index < audioEnd)
+                yield return CreatePesPacket(audioPid, index & 0x0F, videoPts + audioOffsets90k[index], 0xC0);
+            if (secondAudioOffsets is not null)
+                yield return CreatePesPacket(otherAudioPid, index & 0x0F, videoPts + secondAudioOffsets[index], 0xC0);
+            yield return CreatePacket(pcrPid, index & 0x0F, pcrBase: videoPts);
         }
     }
 
@@ -693,13 +744,15 @@ public sealed class TsStreamAnalyzerTests
 
     private static byte[] BuildPmtSection(
         int pcrPid,
-        params (int StreamType, int Pid)[] streams)
+        params (int StreamType, int Pid)[] streams) => BuildPmtSection(pcrPid, 0, streams);
+
+    private static byte[] BuildPmtSection(int pcrPid, byte version, (int StreamType, int Pid)[] streams)
     {
         var sectionLength = 9 + streams.Length * 5 + 4;
         var section = new List<byte>
         {
             0x02, (byte)(0xB0 | (sectionLength >> 8)), (byte)sectionLength,
-            0x00, 0x01, 0xC1, 0x00, 0x00,
+            0x00, 0x01, (byte)(0xC1 | version << 1), 0x00, 0x00,
             (byte)(0xE0 | (pcrPid >> 8)), (byte)pcrPid, 0xF0, 0x00
         };
         foreach (var stream in streams)

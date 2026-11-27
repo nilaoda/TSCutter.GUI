@@ -9,9 +9,12 @@ public static class TsUtil
     public const int TsPacketSize = 188;
     public const byte TsSyncByte = 0x47;
 
-    internal static int FindPacketSync(ReadOnlySpan<byte> data, int stride = TsPacketSize, int prefixSize = 0)
+    internal static int FindPacketSync(ReadOnlySpan<byte> data, int stride = TsPacketSize, int prefixSize = 0,
+        bool requireCompleteProbe = false)
     {
-        var limit = data.Length - stride * 3 - prefixSize;
+        var minimumProbeBytes = requireCompleteProbe && prefixSize > 0
+            ? TsPacketLayout.SyncProbeOverlapBytes : stride * 3 + prefixSize + 1;
+        var limit = data.Length - minimumProbeBytes + 1;
         for (var index = 0; index < limit; index++)
         {
             var sync = index + prefixSize;
