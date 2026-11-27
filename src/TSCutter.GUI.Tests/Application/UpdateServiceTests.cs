@@ -346,21 +346,21 @@ public class UpdateServiceTests
     }
 
     [Fact]
-    public void LinuxUpdate_DoesNotReAddMarkerWhenOptedOut()
+    public void LinuxUpdate_IgnoresPackageMarkerOnNormalInstall()
     {
-        var root = Directory.CreateTempSubdirectory("tscutter-linux-optout-");
+        var root = Directory.CreateTempSubdirectory("tscutter-linux-marker-");
         try
         {
             var install = Path.Combine(root.FullName, "install");
             var package = Path.Combine(Path.GetDirectoryName(install)!, ".TSCutter.GUI.update-1");
             var payload = Path.Combine(package, "payload");
             Directory.CreateDirectory(install);
-            Directory.CreateDirectory(Path.Combine(install, "data"));
             Directory.CreateDirectory(payload);
             File.WriteAllText(Path.Combine(install, "TSCutterGUI"), "old exe");
             File.WriteAllText(Path.Combine(payload, "TSCutterGUI"), "new exe");
+            // Release packages do not ship a marker. Even if one sneaks into the
+            // payload, a normal install (no marker, no opt-out) must stay normal.
             File.WriteAllText(Path.Combine(payload, AppDataPaths.MarkerFileName), "");
-            File.WriteAllText(Path.Combine(install, "data", AppDataPaths.OptOutFileName), "");
 
             var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.LinuxFolder);
             UpdateService.ApplyUnixUpdate(staged, [], relaunch: false);
@@ -412,7 +412,43 @@ public class UpdateServiceTests
     }
 
     [Fact]
-    public void ApplyUnixUpdate_CopiesPackageMarkerIntoMacBundle()
+    public void MacUpdate_RemovesMarkerFromIncomingBundleWhenOptedOut()
+    {
+        var root = Directory.CreateTempSubdirectory("tscutter-mac-optout-");
+        try
+        {
+            var install = Path.Combine(root.FullName, "TSCutter.GUI.app");
+            var package = Path.Combine(root.FullName, ".TSCutter.GUI.update-1");
+            var payload = Path.Combine(package, "payload");
+            var incomingBundle = Path.Combine(payload, "TSCutter.GUI.app");
+            var sourceBundle = Path.Combine(incomingBundle, "Contents", "MacOS");
+            var targetBundle = Path.Combine(install, "Contents", "MacOS");
+            Directory.CreateDirectory(sourceBundle);
+            Directory.CreateDirectory(targetBundle);
+            File.WriteAllText(Path.Combine(sourceBundle, "TSCutterGUI"), "new exe");
+            File.WriteAllText(Path.Combine(targetBundle, "TSCutterGUI"), "old exe");
+            // The real macOS package layout puts the marker inside the bundle.
+            File.WriteAllText(Path.Combine(incomingBundle, AppDataPaths.MarkerFileName), "");
+            // The user deleted the marker from the installed bundle. On macOS the
+            // data folder is beside the bundle.
+            var dataDirectory = Path.Combine(root.FullName, AppDataPaths.DataDirectoryName);
+            Directory.CreateDirectory(dataDirectory);
+            File.WriteAllText(Path.Combine(dataDirectory, AppDataPaths.OptOutFileName), "");
+
+            var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.MacAppBundle);
+            UpdateService.ApplyUnixUpdate(staged, [], relaunch: false);
+
+            Assert.False(File.Exists(Path.Combine(install, AppDataPaths.MarkerFileName)));
+            Assert.Equal("new exe", File.ReadAllText(Path.Combine(targetBundle, "TSCutterGUI")));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void MacUpdate_PreservesInstallMarker()
     {
         var root = Directory.CreateTempSubdirectory("tscutter-mac-marker-");
         try
@@ -420,23 +456,74 @@ public class UpdateServiceTests
             var install = Path.Combine(root.FullName, "TSCutter.GUI.app");
             var package = Path.Combine(root.FullName, ".TSCutter.GUI.update-1");
             var payload = Path.Combine(package, "payload");
-            var sourceBundle = Path.Combine(payload, "TSCutter.GUI.app", "Contents", "MacOS");
+            var incomingBundle = Path.Combine(payload, "TSCutter.GUI.app");
+            var sourceBundle = Path.Combine(incomingBundle, "Contents", "MacOS");
             var targetBundle = Path.Combine(install, "Contents", "MacOS");
             Directory.CreateDirectory(sourceBundle);
             Directory.CreateDirectory(targetBundle);
             File.WriteAllText(Path.Combine(sourceBundle, "TSCutterGUI"), "new exe");
             File.WriteAllText(Path.Combine(targetBundle, "TSCutterGUI"), "old exe");
-            // A new portable release ships the marker at the zip root.
-            File.WriteAllText(Path.Combine(payload, AppDataPaths.MarkerFileName), "");
+            // The install is already portable; the incoming bundle has no marker
+            // and there is no opt-out beside it, so the choice must be preserved.
+            File.WriteAllText(Path.Combine(install, AppDataPaths.MarkerFileName), "");
 
             var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.MacAppBundle);
             UpdateService.ApplyUnixUpdate(staged, [], relaunch: false);
 
-            Assert.True(File.Exists(Path.Combine(install, AppDataPaths.MarkerFileName)));
             Assert.Equal("new exe", File.ReadAllText(Path.Combine(targetBundle, "TSCutterGUI")));
+            Assert.True(File.Exists(Path.Combine(install, AppDataPaths.MarkerFileName)));
         }
         finally
         {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void WindowsHelperKeepsStorageContext()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        var root = Directory.CreateTempSubdirectory("tscutter-helper-context-");
+        var install = Path.Combine(root.FullName, "install");
+        var payload = Path.Combine(root.FullName, "payload");
+        var package = Path.Combine(root.FullName, ".TSCutter.GUI.update-1");
+        var dataDirectory = Path.Combine(root.FullName, "data");
+        var resultFile = Path.Combine(dataDirectory, "UpdateResult.txt");
+        var previousLockPath = UpdateService.UpdateLockFilePathOverride;
+        var cmd = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+        var stagedExe = Path.Combine(payload, "TSCutterGUI.exe");
+        var targetExe = Path.Combine(install, "TSCutterGUI.exe");
+        try
+        {
+            Directory.CreateDirectory(install);
+            Directory.CreateDirectory(payload);
+            Directory.CreateDirectory(package);
+            Directory.CreateDirectory(dataDirectory);
+            File.Copy(cmd, targetExe, overwrite: true);
+            File.Copy(cmd, stagedExe, overwrite: true);
+            // A package marker must never turn a normal install portable.
+            File.WriteAllText(Path.Combine(payload, AppDataPaths.MarkerFileName), "");
+            UpdateService.UpdateLockFilePathOverride = null;
+
+            var result = UpdateService.RunWindowsHelper("999999", stagedExe, targetExe,
+                payload, package, ["/c", "exit", "0"], dataDirectory);
+
+            Assert.Equal(0, result);
+            Assert.True(File.Exists(resultFile));
+            Assert.True(UpdateService.ReadHelperResult()?.Success);
+            Assert.False(File.Exists(Path.Combine(install, AppDataPaths.MarkerFileName)));
+            Assert.True(File.Exists(targetExe));
+        }
+        finally
+        {
+            // ReadHelperResult resolves into the supplied data directory because
+            // the helper set DataDirectoryOverride; clean up there and reset the
+            // global state before anything else can see it.
+            if (File.Exists(resultFile))
+                File.Delete(resultFile);
+            AppDataPaths.ResetForTests();
+            UpdateService.UpdateLockFilePathOverride = previousLockPath;
             root.Delete(recursive: true);
         }
     }

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.Versioning;
 using System.Security.AccessControl;
 using System.Security.Principal;
 
@@ -20,6 +21,9 @@ public static class AppDataPaths
     public const string OptOutFileName = "TSCutter.GUI.portable.disabled";
     public const string DataDirectoryName = "data";
     public const string AppDirectoryName = "TSCutter.GUI";
+    // Written only after every intended file has been copied. Its absence means
+    // either a foreign folder or an interrupted migration that must be retried.
+    private const string CompletionMarkerFileName = ".tscutter-portable-ready";
 
     // Test seams; production code leaves these null.
     internal static string? InstallRootOverride { get; set; }
@@ -51,17 +55,34 @@ public static class AppDataPaths
         ? Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(InstallRoot)) ?? InstallRoot
         : InstallRoot;
 
-    public static string DataDirectory => Path.Combine(DataRoot, DataDirectoryName);
+    /// <summary>Used by the Windows update helper so it shares the parent's storage context.</summary>
+    internal static string? DataDirectoryOverride { get; private set; }
+
+    public static string DataDirectory => DataDirectoryOverride ?? Path.Combine(DataRoot, DataDirectoryName);
     public static string OptOutFilePath => Path.Combine(DataDirectory, OptOutFileName);
+    private static string CompletionFilePath => Path.Combine(DataDirectory, CompletionMarkerFileName);
+
+    /// <summary>Directory that currently holds the settings, portable or profile-based.</summary>
+    public static string ActiveDataDirectory => GetPath(Environment.SpecialFolder.ApplicationData);
 
     private static bool _portableUnavailable;
 
-    /// <summary>Set when portable storage could not be created, for display in the UI.</summary>
+    /// <summary>Raw reason portable storage was unavailable, for localized display in the UI.</summary>
     public static string? FallbackMessage { get; private set; }
 
     public static bool HasMarker => File.Exists(Path.Combine(InstallRoot, MarkerFileName));
-    public static bool IsPortable => !_portableUnavailable && HasMarker;
+    public static bool IsPortable =>
+        DataDirectoryOverride is not null || (!_portableUnavailable && HasMarker);
     public static bool IsOptedOut => File.Exists(OptOutFilePath);
+
+    internal static void UseDataDirectory(string directory) => DataDirectoryOverride = directory;
+
+    internal static void ResetForTests()
+    {
+        DataDirectoryOverride = null;
+        _portableUnavailable = false;
+        FallbackMessage = null;
+    }
 
     /// <summary>
     /// Returns an app-data path for the given profile root. In portable mode both
@@ -100,7 +121,9 @@ public static class AppDataPaths
             return;
         }
 
-        if (!Directory.Exists(DataDirectory))
+        // A data folder only belongs to us if migration actually completed.
+        // This avoids touching an unrelated folder that happens to be named data.
+        if (DataDirectoryOverride is not null || !File.Exists(CompletionFilePath))
             return;
         WriteOptOut();
         RestoreFromPortableData();
@@ -110,11 +133,28 @@ public static class AppDataPaths
     {
         try
         {
-            if (Directory.Exists(DataDirectory))
-                return;
             Directory.CreateDirectory(DataDirectory);
+            var probe = Path.Combine(DataDirectory,
+                ".tscutter-write-test-" + Guid.NewGuid().ToString("N"));
+            using (File.Create(probe, 1, FileOptions.DeleteOnClose)) { }
+            TryDelete(probe);
             RestrictDirectory(DataDirectory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // A read-only install folder cannot hold portable data. Fall back to
+            // the user profile so the app still starts with writable settings.
+            _portableUnavailable = true;
+            FallbackMessage = ex.Message;
+            Console.Error.WriteLine(
+                $"Portable data folder is unavailable: {ex.Message}. Using the user profile instead.");
+            return;
+        }
 
+        if (File.Exists(CompletionFilePath))
+            return;
+        try
+        {
             var configRoot = Path.Combine(ProfileRoot(Environment.SpecialFolder.ApplicationData), AppDirectoryName);
             CopyFileIfPresent(configRoot, DataDirectory, "config.json");
             CopyFileIfPresent(configRoot, DataDirectory, "remote-editing.json");
@@ -124,14 +164,14 @@ public static class AppDataPaths
                 AppDirectoryName, "Recovery");
             if (Directory.Exists(recovery))
                 CopyDirectory(recovery, Path.Combine(DataDirectory, "Recovery"));
+
+            File.WriteAllText(CompletionFilePath, "");
+            RestrictFile(CompletionFilePath);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // A read-only install folder cannot hold portable data. Fall back to
-            // the user profile so the app still starts with writable settings.
-            _portableUnavailable = true;
-            FallbackMessage = $"Portable data folder is unavailable: {ex.Message}. Using the user profile instead.";
-            Console.Error.WriteLine(FallbackMessage);
+            // Leave the completion marker absent so the next launch retries.
+            Console.Error.WriteLine($"Portable data migration incomplete: {ex.Message}");
         }
     }
 
@@ -180,7 +220,8 @@ public static class AppDataPaths
             return;
         Directory.CreateDirectory(targetDirectory);
         var target = Path.Combine(targetDirectory, name);
-        File.Copy(source, target, overwrite: false);
+        // Overwrite so a retry can complete a migration that failed halfway.
+        File.Copy(source, target, overwrite: true);
         RestrictFile(target);
     }
 
@@ -192,7 +233,7 @@ public static class AppDataPaths
         {
             var target = Path.Combine(destination, Path.GetRelativePath(source, file));
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(file, target, overwrite: false);
+            File.Copy(file, target, overwrite: true);
             RestrictFile(target);
         }
     }
@@ -257,6 +298,7 @@ public static class AppDataPaths
         }
     }
 
+    [SupportedOSPlatform("windows")]
     private static IEnumerable<FileSystemAccessRule> PrivateRules(InheritanceFlags inheritance)
     {
         var user = WindowsIdentity.GetCurrent().User;

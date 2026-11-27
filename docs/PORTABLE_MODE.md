@@ -8,9 +8,10 @@ you want to move the whole install folder to another machine.
 
 ## Enable it
 
-Release ZIPs already contain an empty `TSCutter.GUI.portable` marker, so a fresh
-extract is portable by default. For older packages, create the marker yourself in
-the folder that contains the executable (the file contents do not matter):
+Portable mode is strictly opt-in. Release ZIPs do not contain the marker, so a
+fresh extract uses the user profile. To enable it, create an empty
+`TSCutter.GUI.portable` file yourself in the folder that contains the executable
+(the file contents do not matter):
 
 ```text
 TSCutter.GUI/
@@ -45,26 +46,31 @@ user profile once:
   Application Support folder).
 
 Original files are left untouched. The update lock and result files are not
-copied, so a stale lock from another install cannot block updates. Migration runs
-only once: as long as `data` exists, later launches never overwrite its contents.
-The data folder and its files are private: owner-only modes (`0700`/`0600`) on
-Unix and a protected ACL for the current user (plus SYSTEM and Administrators) on
-Windows, because they contain remote-account password hashes.
+copied, so a stale lock from another install cannot block updates. Migration is
+considered complete only after all intended files are copied; a partial migration
+is retried on the next launch. The folder must be writable or the app falls back
+to the user profile and shows the reason in Settings. The data folder and its
+files are private: owner-only modes (`0700`/`0600`) on Unix and a protected ACL
+for the current user (plus SYSTEM and Administrators) on Windows, because they
+contain remote-account password hashes.
 
 ## In-place updates
 
 In-place updates replace only files shipped in the package, so the marker and the
 `data` folder survive. The macOS update replaces only the `.app` bundle; the sibling
-`data` folder is untouched. If the marker was deleted, the updater records an
-opt-out and does not add the marker from a newer package back in.
+`data` folder is untouched. If the marker was deleted, a marker in an incoming
+bundle or package is removed or ignored, so an update never enables portability.
+The Windows update helper receives the active data directory from the parent
+process, so its lock and result files stay with that installation.
 
 ## Turn it off
 
 Delete `TSCutter.GUI.portable`. On the next launch the app copies the portable
 data back into the user profile if that profile has no config yet, and records a
-`TSCutter.GUI.portable.disabled` opt-out inside `data`. The `data` folder itself
-stays where it is. Re-creating the marker clears the opt-out and turns portable
-mode back on.
+`TSCutter.GUI.portable.disabled` opt-out inside `data`. This only happens for a
+`data` folder this application finished migrating; an unrelated folder with the
+same name is never touched. The `data` folder itself stays where it is. Re-creating
+the marker clears the opt-out and turns portable mode back on.
 
 ## Notes
 
@@ -72,7 +78,8 @@ mode back on.
   the app falls back to the user profile and shows the reason in Settings →
   General; use normal (non-portable) mode on read-only volumes.
 - Settings → General shows whether portable mode is active and has a button to
-  open the data folder.
+  open the data location actually in use (the profile folder in normal mode).
+  The fallback reason is localized in en-US, zh-CN and zh-TW.
 - Moving a portable install to another machine drops recent items and saved
   folders that no longer exist there.
 - The Web UI worker uses the same executable and therefore shares the portable

@@ -257,6 +257,7 @@
     <x:String x:Key="String.Settings.PortableOn">On - data folder beside the app</x:String>
     <x:String x:Key="String.Settings.PortableOff">Off - user profile folder</x:String>
     <x:String x:Key="String.Settings.OpenDataFolder">Open data folder</x:String>
+    <x:String x:Key="String.Settings.PortableFallback">Portable data folder unavailable: {0}. Using the user profile instead.</x:String>
     <x:String x:Key="String.Settings.ShowSystemProgress">Show progress on the taskbar or Dock icon</x:String>
     <x:String x:Key="String.Settings.ShowSystemProgressTip">Shows the progress of exports, checks, repairs and other long tasks on the taskbar button (Windows) or the Dock icon (macOS).&#10;The bar turns red when a task fails.</x:String>
     <x:String x:Key="String.Settings.ShowImageNavigator">Show image navigator</x:String>

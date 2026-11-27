@@ -21,6 +21,7 @@ public sealed class AppDataPathsTests : IDisposable
 
     public AppDataPathsTests()
     {
+        AppDataPaths.ResetForTests();
         AppDataPaths.InstallRootOverride = Path.Combine(_root.FullName, "install");
         AppDataPaths.ApplicationDataRootOverride = Path.Combine(_root.FullName, "appdata");
         AppDataPaths.LocalApplicationDataRootOverride = Path.Combine(_root.FullName, "localappdata");
@@ -34,6 +35,7 @@ public sealed class AppDataPathsTests : IDisposable
         AppDataPaths.InstallRootOverride = null;
         AppDataPaths.ApplicationDataRootOverride = null;
         AppDataPaths.LocalApplicationDataRootOverride = null;
+        AppDataPaths.ResetForTests();
         _root.Delete(recursive: true);
     }
 
@@ -141,6 +143,98 @@ public sealed class AppDataPathsTests : IDisposable
         File.WriteAllText(Path.Combine(configRoot, "config.json"), "changed");
         AppDataPaths.Initialize();
         Assert.Equal("config", File.ReadAllText(Path.Combine(AppDataPaths.DataDirectory, "config.json")));
+    }
+
+    [Fact]
+    public void ReadOnlyDataFolderFallsBack()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var dataDirectory = AppDataPaths.DataDirectory;
+        Directory.CreateDirectory(dataDirectory);
+        var originalMode = File.GetUnixFileMode(dataDirectory);
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+        try
+        {
+            File.SetUnixFileMode(dataDirectory, UnixFileMode.UserRead | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+
+            AppDataPaths.Initialize();
+
+            Assert.NotNull(AppDataPaths.FallbackMessage);
+            Assert.False(AppDataPaths.IsPortable);
+            Assert.Equal(ProfileConfig(AppDataPaths.ApplicationDataRootOverride!, "config.json"),
+                AppDataPaths.GetPath(Environment.SpecialFolder.ApplicationData, "config.json"));
+        }
+        finally
+        {
+            File.SetUnixFileMode(dataDirectory, originalMode);
+        }
+    }
+
+    [Fact]
+    public void PartialMigrationIsRetriedAndCompleted()
+    {
+        var configRoot = Path.Combine(AppDataPaths.ApplicationDataRootOverride!, AppDataPaths.AppDirectoryName);
+        Directory.CreateDirectory(configRoot);
+        File.WriteAllText(Path.Combine(configRoot, "remote-editing.json"), "remote");
+        File.WriteAllText(Path.Combine(configRoot, "saved-frames.json"), "frames");
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+        Directory.CreateDirectory(AppDataPaths.DataDirectory);
+        File.WriteAllText(Path.Combine(AppDataPaths.DataDirectory, "config.json"), "existing config");
+
+        AppDataPaths.Initialize();
+
+        Assert.True(File.Exists(Path.Combine(AppDataPaths.DataDirectory, "remote-editing.json")));
+        Assert.True(File.Exists(Path.Combine(AppDataPaths.DataDirectory, "saved-frames.json")));
+        Assert.True(File.Exists(Path.Combine(AppDataPaths.DataDirectory, ".tscutter-portable-ready")));
+    }
+
+    [Fact]
+    public void UnrelatedDataFolderIsIgnoredInNormalMode()
+    {
+        var dataDirectory = AppDataPaths.DataDirectory;
+        Directory.CreateDirectory(dataDirectory);
+        File.WriteAllText(Path.Combine(dataDirectory, "config.json"), "foreign settings");
+
+        AppDataPaths.Initialize();
+
+        Assert.False(File.Exists(AppDataPaths.OptOutFilePath));
+        Assert.False(File.Exists(ProfileConfig(AppDataPaths.ApplicationDataRootOverride!, "config.json")));
+    }
+
+    [Fact]
+    public void ActiveDataDirectoryFollowsMode()
+    {
+        Assert.Equal(Path.Combine(AppDataPaths.ApplicationDataRootOverride!, AppDataPaths.AppDirectoryName),
+            AppDataPaths.ActiveDataDirectory);
+
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+        AppDataPaths.Initialize();
+
+        Assert.Equal(AppDataPaths.DataDirectory, AppDataPaths.ActiveDataDirectory);
+    }
+
+    [Fact]
+    public void HelperDataDirectoryOverrideRedirectsPaths()
+    {
+        var helperData = Path.Combine(_root.FullName, "helper-data");
+        var previous = UpdateService.UpdateLockFilePathOverride;
+        UpdateService.UpdateLockFilePathOverride = null;
+        try
+        {
+            AppDataPaths.UseDataDirectory(helperData);
+
+            Assert.Equal(Path.Combine(helperData, "config.json"),
+                AppDataPaths.GetPath(Environment.SpecialFolder.ApplicationData, "config.json"));
+            Assert.Equal(helperData, AppDataPaths.ActiveDataDirectory);
+            Assert.Equal(Path.Combine(helperData, "update.lock"), UpdateService.UpdateLockFilePath);
+        }
+        finally
+        {
+            UpdateService.UpdateLockFilePathOverride = previous;
+        }
     }
 
     [Fact]

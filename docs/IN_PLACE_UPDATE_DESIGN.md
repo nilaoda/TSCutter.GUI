@@ -129,13 +129,15 @@ By default configuration lives in `%APPDATA%\TSCutter.GUI\config.json` (with
 None of these are inside the application directory, so replacing the executable
 or `.app` bundle leaves user settings untouched.
 
-In portable mode (a `TSCutter.GUI.portable` marker beside the executable), all of these move
-into `<install>/data` via `AppDataPaths` (beside the macOS bundle, not inside it).
-Release ZIPs now include the marker, so a fresh install is portable by default.
-Windows and Linux replacements only touch package files, so `data` is untouched;
-the updater also carries the marker into older installs unless the user opted out.
+In portable mode (a user-created `TSCutter.GUI.portable` marker beside the
+executable), all of these move into `<install>/data` via `AppDataPaths` (beside the
+macOS bundle, not inside it). Portable mode is strictly opt-in: release ZIPs do not
+ship the marker, and updates never add it, so a normal installation stays normal.
+Windows and Linux replacements only touch package files, so `data` is untouched.
 The macOS swap replaces only the bundle, leaving the sibling `data` folder alone,
-and carries only the marker. See [PORTABLE_MODE.md](PORTABLE_MODE.md).
+and preserves or removes the bundle marker to match the installation's choice.
+The Windows helper receives the active data directory from its parent so its lock
+and result files stay with that installation. See [PORTABLE_MODE.md](PORTABLE_MODE.md).
 
 ---
 
@@ -368,9 +370,10 @@ browser, no quarantine attribute is added.
   created before the first rename. Both platforms relaunch with the original
   arguments and only keep the backup after the new process has stayed alive for
   two seconds or exited with code zero; an immediate failure restores the old
-  install. In portable mode, the `TSCutter.GUI.portable` marker is carried into
-  the new macOS bundle while the sibling `data` folder is left untouched, so the
-  updated app stays portable without writing inside a possibly signed bundle.
+  install. In portable mode, the user-created `TSCutter.GUI.portable` marker is
+  carried into the new macOS bundle while the sibling `data` folder is left
+  untouched; if the user opted out, the marker is removed from the incoming bundle.
+  Updates never enable portability on their own.
 - **Transport hardening**: only HTTPS URLs on `github.com` / `*.githubusercontent.com`
   are accepted, and the checksum must be a 64-character hex string.
 - **Multi-instance lock**: `update.lock` under `%LOCALAPPDATA%\TSCutter.GUI` holds the

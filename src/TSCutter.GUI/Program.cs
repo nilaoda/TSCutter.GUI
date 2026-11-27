@@ -24,8 +24,9 @@ sealed class Program
 
         // Hidden helper used by in-place updates on Windows: a copy of the running
         // executable replaces the original after the main process has exited.
-        if (args.Length >= 6 && args[0] == "--apply-update")
-            return UpdateService.RunWindowsHelper(args[1], args[2], args[3], args[4], args[5], args.Skip(6).ToArray());
+        if (args.Length >= 7 && args[0] == "--apply-update")
+            return UpdateService.RunWindowsHelper(args[1], args[2], args[3], args[4], args[5],
+                args.Skip(7).ToArray(), args[6]);
 #if TSCUTTER_GRAPHICS_STATIC
         if (args.Length == 1 && args[0] == "--verify-static-graphics")
             return Utils.Media.NativeGraphicsSmokeTest.Run();

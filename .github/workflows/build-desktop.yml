@@ -168,11 +168,9 @@ jobs:
           path: src/TSCutter.GUI/artifact
 
       - name: Package [win-x64]
-        shell: pwsh
         run: |
           cd src/TSCutter.GUI/artifact
-          New-Item -ItemType File -Force -Path TSCutter.GUI.portable | Out-Null
-          zip ../../../TSCutter.GUI_${{ needs.release-info.outputs.stage }}_win-x64_${{ needs.release-info.outputs.version }}.zip TSCutterGUI.exe THIRD_PARTY_NOTICES.txt TSCutter.GUI.portable
+          zip ../../../TSCutter.GUI_${{ needs.release-info.outputs.stage }}_win-x64_${{ needs.release-info.outputs.version }}.zip TSCutterGUI.exe THIRD_PARTY_NOTICES.txt
 
       - name: Upload Artifact [win-x64]
         uses: actions/upload-artifact@v4
@@ -278,11 +276,9 @@ jobs:
           path: src/TSCutter.GUI/artifact
 
       - name: Package [win-arm64]
-        shell: pwsh
         run: |
           cd src/TSCutter.GUI/artifact
-          New-Item -ItemType File -Force -Path TSCutter.GUI.portable | Out-Null
-          zip ../../../TSCutter.GUI_${{ needs.release-info.outputs.stage }}_win-arm64_${{ needs.release-info.outputs.version }}.zip TSCutterGUI.exe THIRD_PARTY_NOTICES.txt TSCutter.GUI.portable
+          zip ../../../TSCutter.GUI_${{ needs.release-info.outputs.stage }}_win-arm64_${{ needs.release-info.outputs.version }}.zip TSCutterGUI.exe THIRD_PARTY_NOTICES.txt
 
       - name: Upload Artifact [win-arm64]
         uses: actions/upload-artifact@v4
@@ -340,7 +336,6 @@ jobs:
       - name: Package [linux-x64]
         run: |
           cd artifact
-          touch TSCutter.GUI.portable
           zip -r ../TSCutter.GUI_${{ needs.release-info.outputs.stage }}_linux-x64_${{ needs.release-info.outputs.version }}.zip . -x "*.dbg"
 
       - name: Upload Artifact [linux-x64]
@@ -399,7 +394,6 @@ jobs:
       - name: Package [linux-arm64]
         run: |
           cd artifact
-          touch TSCutter.GUI.portable
           zip -r ../TSCutter.GUI_${{ needs.release-info.outputs.stage }}_linux-arm64_${{ needs.release-info.outputs.version }}.zip . -x "*.dbg"
 
       - name: Upload Artifact [linux-arm64]
@@ -458,7 +452,6 @@ jobs:
 
           rm -rf "$APP_ROOT"
           mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
-          touch "$APP_ROOT/TSCutter.GUI.portable"
 
           cp -R artifact/. "$MACOS_DIR/"
           find "$MACOS_DIR" -maxdepth 1 -name '*.dSYM' -prune -exec rm -rf {} +
@@ -568,7 +561,6 @@ jobs:
 
           rm -rf "$APP_ROOT"
           mkdir -p "$MACOS_DIR" "$RESOURCES_DIR"
-          touch "$APP_ROOT/TSCutter.GUI.portable"
 
           cp -R artifact/. "$MACOS_DIR/"
           find "$MACOS_DIR" -maxdepth 1 -name '*.dSYM' -prune -exec rm -rf {} +

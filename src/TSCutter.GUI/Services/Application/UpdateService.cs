@@ -294,6 +294,9 @@ public sealed class UpdateService
         start.ArgumentList.Add(targetExe);
         start.ArgumentList.Add(staged.PayloadDirectory);
         start.ArgumentList.Add(staged.PackageDirectory);
+        // The helper runs from a temp copy of the exe. Pass the active data
+        // directory so its lock and result file live where the app will look.
+        start.ArgumentList.Add(AppDataPaths.ActiveDataDirectory);
         foreach (var arg in relaunchArgs)
             start.ArgumentList.Add(arg);
         if (Process.Start(start) is null)
@@ -302,22 +305,18 @@ public sealed class UpdateService
 
     /// <summary>Entrypoint for the hidden --apply-update helper argument.</summary>
     public static int RunWindowsHelper(string pidArgument, string stagedExe, string targetExe,
-        string payloadDirectory, string packageDirectory, IReadOnlyList<string> relaunchArgs)
+        string payloadDirectory, string packageDirectory, IReadOnlyList<string> relaunchArgs,
+        string? dataDirectory = null)
     {
+        if (!string.IsNullOrEmpty(dataDirectory))
+            AppDataPaths.UseDataDirectory(dataDirectory);
         var backup = targetExe + ".old";
         var installDirectory = Path.GetDirectoryName(targetExe)!;
         var noticeTarget = Path.Combine(installDirectory, NoticeFileName);
         var noticeBackup = noticeTarget + ".old";
-        // New release zips are portable by default. Carry the marker into an
-        // older install so an in-place update turns portable mode on as well.
-        var markerTarget = Path.Combine(installDirectory, AppDataPaths.MarkerFileName);
-        var markerSource = Path.Combine(payloadDirectory, AppDataPaths.MarkerFileName);
-        var optOut = Path.Combine(installDirectory, AppDataPaths.DataDirectoryName,
-            AppDataPaths.OptOutFileName);
         Process? relaunched = null;
         var replaced = false;
         var noticeReplaced = false;
-        var markerAdded = false;
         try
         {
             if (!int.TryParse(pidArgument, out var parentPid))
@@ -334,12 +333,6 @@ public sealed class UpdateService
                 ReplaceWithRetry(notice, noticeTarget);
                 noticeReplaced = true;
             }
-            if (File.Exists(markerSource) && !File.Exists(markerTarget) && !File.Exists(optOut))
-            {
-                File.Copy(markerSource, markerTarget, overwrite: false);
-                markerAdded = true;
-            }
-
             // Do not discard the backup until the new executable has actually started.
             relaunched = Relaunch(targetExe, relaunchArgs, installDirectory);
             if (relaunched is null)
@@ -386,8 +379,6 @@ public sealed class UpdateService
                     TryDelete(noticeTarget);
                     TryRestore(noticeBackup, noticeTarget);
                 }
-                if (markerAdded)
-                    TryDelete(markerTarget);
                 // Show the error in the restored version instead of just closing.
                 Relaunch(targetExe, relaunchArgs, installDirectory);
             }
@@ -465,17 +456,20 @@ public sealed class UpdateService
                 // removed in the new release do not linger inside the bundle.
                 // Portable data lives beside the bundle and is untouched, so a
                 // signed bundle never has to be modified at runtime.
-                // The marker lives at the bundle root; preserve it when portable
-                // mode is still active, but honor an explicit opt-out.
-                if (!AppDataPaths.IsOptedOut)
+                // The marker lives at the bundle root. Preserve the installation's
+                // choice: keep it when portable, remove it from the incoming bundle
+                // when the user opted out. Release packages do not carry a marker.
+                var stagedMarker = Path.Combine(sourceRoot, AppDataPaths.MarkerFileName);
+                if (IsPortableOptedOut(staged))
+                {
+                    if (File.Exists(stagedMarker))
+                        TryDelete(stagedMarker);
+                }
+                else
                 {
                     var marker = Path.Combine(staged.InstallRoot, AppDataPaths.MarkerFileName);
                     if (File.Exists(marker))
-                        File.Copy(marker, Path.Combine(sourceRoot, AppDataPaths.MarkerFileName), overwrite: true);
-                    // A new release zip may introduce the marker into an older install.
-                    var packageMarker = Path.Combine(staged.PayloadDirectory, AppDataPaths.MarkerFileName);
-                    if (File.Exists(packageMarker))
-                        File.Copy(packageMarker, Path.Combine(sourceRoot, AppDataPaths.MarkerFileName), overwrite: true);
+                        File.Copy(marker, stagedMarker, overwrite: true);
                 }
                 SwapDirectories(sourceRoot, staged.InstallRoot, Path.Combine(backupRoot, "install"),
                     () => FinishUnixUpdate(staged, relaunchArgs, relaunch));
@@ -499,15 +493,16 @@ public sealed class UpdateService
     {
         var replaced = new List<(string Backup, string Target)>();
         var created = new List<string>();
-        var optedOut = File.Exists(Path.Combine(staged.InstallRoot,
-            AppDataPaths.DataDirectoryName, AppDataPaths.OptOutFileName));
+        // An update must preserve the install's choice: a marker in the package
+        // never turns a normal installation portable.
+        var installHasMarker = File.Exists(Path.Combine(staged.InstallRoot, AppDataPaths.MarkerFileName));
         try
         {
             foreach (var source in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
                          .OrderBy(path => path, StringComparer.Ordinal))
             {
                 var relative = Path.GetRelativePath(sourceRoot, source);
-                if (optedOut && relative == AppDataPaths.MarkerFileName)
+                if (relative == AppDataPaths.MarkerFileName && !installHasMarker)
                     continue;
                 var target = Path.Combine(staged.InstallRoot, relative);
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
@@ -547,6 +542,14 @@ public sealed class UpdateService
                 TryRestore(backup, target);
             throw;
         }
+    }
+
+    private static bool IsPortableOptedOut(StagedUpdate staged)
+    {
+        var root = staged.Layout == StagedUpdateLayout.MacAppBundle
+            ? Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(staged.InstallRoot)) ?? staged.InstallRoot
+            : staged.InstallRoot;
+        return File.Exists(Path.Combine(root, AppDataPaths.DataDirectoryName, AppDataPaths.OptOutFileName));
     }
 
     private static void FinishUnixUpdate(StagedUpdate staged, IReadOnlyList<string> relaunchArgs, bool relaunch)

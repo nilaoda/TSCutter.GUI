@@ -234,7 +234,9 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     public string PortableStatus => AppDataPaths.IsPortable
         ? _strings.String_Settings_PortableOn
         : _strings.String_Settings_PortableOff;
-    public string PortableFallbackMessage => AppDataPaths.FallbackMessage ?? "";
+    public string PortableFallbackMessage => string.IsNullOrEmpty(AppDataPaths.FallbackMessage)
+        ? ""
+        : string.Format(_strings.String_Settings_PortableFallback, AppDataPaths.FallbackMessage);
     public bool HasPortableFallbackMessage => !string.IsNullOrEmpty(PortableFallbackMessage);
 
     public SettingsWindowViewModel(IConfigurationService configurationService, ILocalizationService localizationService)
@@ -385,7 +387,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
             : string.Format(strings.String_Settings_AutoSaveInterval_Minutes, seconds / 60);
 
     [RelayCommand]
-    private void OpenDataFolder() => CommonUtil.OpenDirectory(AppDataPaths.DataDirectory);
+    private void OpenDataFolder() => CommonUtil.OpenDirectory(AppDataPaths.ActiveDataDirectory);
 
     [RelayCommand(CanExecute = nameof(HasRecentItems))]
     private void ClearRecentItems()
