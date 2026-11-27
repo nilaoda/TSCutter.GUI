@@ -296,6 +296,46 @@ public sealed class MainWindowPlaybackTests
     }
 
     [NativeMediaFact("keyframes")]
+    public async Task RepeatedPlaybackAndKeyframeNavigation()
+    {
+        using var headless = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));
+        await headless.Dispatch<bool>(async () =>
+        {
+            using var resolver = new ModernDependencyResolver();
+            using var scope = resolver.WithResolver();
+            var vm = CreateViewModel();
+            vm.VideoPath = Path.Combine(NativeTestEnvironment.FixtureDirectory("keyframes"), "fixed.mp4");
+            const BindingFlags flags = BindingFlags.Instance | BindingFlags.NonPublic;
+            try
+            {
+                Assert.True(await (Task<bool>)typeof(MainWindowViewModel).GetMethod("LoadVideoAsync", flags)!.Invoke(vm, [null])!);
+                for (var cycle = 0; cycle < 20; cycle++)
+                {
+                    if (cycle % 5 == 0)
+                    {
+                        await vm.TogglePlaybackCommand.ExecuteAsync(null);
+                        await WaitForAsync(() => vm.IsPlaybackPlaying);
+                        Assert.True(vm.IsPlaybackPlaying);
+                        await Task.Delay(100);
+                    }
+                    if (vm.CurrentTime >= vm.DurationMax / 2)
+                        await vm.SeekToTimeAndDrawFrameAsync(TimeSpan.Zero);
+                    var before = vm.CurrentTime;
+                    await vm.DrawNextFrameAsync();
+                    Assert.True(vm.CurrentTime > before, $"Cycle {cycle}: {before} -> {vm.CurrentTime}");
+                    Dispatcher.UIThread.RunJobs();
+                }
+                return true;
+            }
+            finally
+            {
+                vm.Close();
+                await ((Task)typeof(MainWindowViewModel).GetField("previewDisposalTask", flags)!.GetValue(vm)!).WaitAsync(TimeSpan.FromSeconds(10));
+            }
+        }, System.Threading.CancellationToken.None);
+    }
+
+    [NativeMediaFact("keyframes")]
     public async Task TimelineScrubResumesPlaybackOnlyWhenPlaying()
     {
         using var headless = HeadlessUnitTestSession.StartNew(typeof(ThemeTestAppBuilder));

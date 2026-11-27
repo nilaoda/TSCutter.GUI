@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using Classic.CommonControls.Dialogs;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -21,6 +22,9 @@ public partial class MainWindowViewModel
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(StatusInfoText))]
     public partial bool IsCheckingExportTimestamps { get; set; }
+
+    [ObservableProperty]
+    public partial bool ShowExportPreparation { get; set; }
 
     [RelayCommand]
     private void CancelExportTimestampCheck() => timestampCheckCancellation?.Cancel();
@@ -65,13 +69,9 @@ public partial class MainWindowViewModel
             return false;
         using var cancellation = new CancellationTokenSource();
         timestampCheckCancellation = cancellation;
-        IsCheckingExportTimestamps = true;
         try
         {
-            // 保存前的时间戳检查只更新主窗口状态，不弹出与导出进度相似的窗口。
-            var sources = await output.FindTimestampNormalizationSourcesAsync(cancellation.Token);
-            cancellation.Token.ThrowIfCancellationRequested();
-            IsCheckingExportTimestamps = false;
+            var sources = await CheckExportTimestampsAsync(output.FindTimestampNormalizationSourcesAsync, cancellation.Token);
             if (!IsCurrent())
                 return false;
             if (sources.Count > 0)
@@ -95,8 +95,27 @@ public partial class MainWindowViewModel
         }
         finally
         {
-            IsCheckingExportTimestamps = false;
             timestampCheckCancellation = null;
+        }
+    }
+
+    private async Task<IReadOnlyList<string>> CheckExportTimestampsAsync(
+        Func<CancellationToken, Task<IReadOnlyList<string>>> check, CancellationToken token)
+    {
+        IsCheckingExportTimestamps = true;
+        var loadingTimer = DispatcherTimer.RunOnce(() => ShowExportPreparation = true,
+            TimeSpan.FromMilliseconds(250));
+        try
+        {
+            var result = await check(token);
+            token.ThrowIfCancellationRequested();
+            return result;
+        }
+        finally
+        {
+            loadingTimer.Dispose();
+            ShowExportPreparation = false;
+            IsCheckingExportTimestamps = false;
         }
     }
 

@@ -73,6 +73,7 @@ sealed class Program
     public static AppBuilder BuildAvaloniaApp()
         => AppBuilder.Configure<App>()
             .UsePlatformDetect()
+            .AfterSetup(_ => WindowsPickerStorageProvider.Install())
             .With(new Win32PlatformOptions
             {
                 // DirectComposition can spin without waiting for VSync on some Windows VMs.

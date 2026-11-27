@@ -754,6 +754,18 @@
                                                           SubtitleOverlay="{Binding SubtitleOverlay}"
                                                           Zoom="{Binding ZoomFactor, Mode=TwoWay}">
                                     </controls:ImageViewer>
+                                    <Border Grid.Row="1" Name="ExportPreparationPanel" IsVisible="{Binding ShowExportPreparation}"
+                                            HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16"
+                                            Background="#EE202124" CornerRadius="8" Padding="24,18" ZIndex="10">
+                                        <StackPanel Spacing="14">
+                                            <TextBlock Text="{DynamicResource String.TsExport.Checking}" Foreground="White"
+                                                       HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="300" />
+                                            <ProgressBar IsIndeterminate="True" Width="200" Height="3" MinHeight="0"
+                                                         BorderThickness="0" Background="#30FFFFFF" Foreground="White" />
+                                            <Button Content="{DynamicResource String.Cancel}" Command="{Binding CancelExportTimestampCheckCommand}"
+                                                    HorizontalAlignment="Center" MinWidth="90" />
+                                        </StackPanel>
+                                    </Border>
                                     <Border Grid.Row="1" Name="PlaybackLoadingPanel" IsVisible="{Binding ShowPlaybackLoading}"
                                             HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16"
                                             Background="#DD202124" CornerRadius="8" Padding="18,12" IsHitTestVisible="False">
@@ -1380,6 +1392,18 @@
         </Grid>
         <Grid Name="FullScreenSurface" Grid.RowSpan="2" ZIndex="100" Background="Black" IsVisible="False" Focusable="True">
             <Border Name="FullScreenVideoHost" />
+            <Border Name="FullScreenExportPreparationPanel" IsVisible="{Binding ShowExportPreparation}"
+                    HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16"
+                    Background="#EE202124" CornerRadius="8" Padding="24,18" ZIndex="10">
+                <StackPanel Spacing="14">
+                    <TextBlock Text="{DynamicResource String.TsExport.Checking}" Foreground="White"
+                               HorizontalAlignment="Center" TextWrapping="Wrap" MaxWidth="300" />
+                    <ProgressBar IsIndeterminate="True" Width="200" Height="3" MinHeight="0"
+                                 BorderThickness="0" Background="#30FFFFFF" Foreground="White" />
+                    <Button Content="{DynamicResource String.Cancel}" Command="{Binding CancelExportTimestampCheckCommand}"
+                            HorizontalAlignment="Center" MinWidth="90" />
+                </StackPanel>
+            </Border>
             <Border Name="FullScreenPlaybackLoadingPanel" IsVisible="{Binding ShowPlaybackLoading}"
                     HorizontalAlignment="Center" VerticalAlignment="Center" Margin="16"
                     Background="#DD202124" CornerRadius="8" Padding="18,12" IsHitTestVisible="False">
