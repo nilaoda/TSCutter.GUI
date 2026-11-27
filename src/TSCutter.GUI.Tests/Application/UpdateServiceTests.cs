@@ -46,11 +46,11 @@ public class UpdateServiceTests
         var staged = await service.PrepareAsync(info);
         try
         {
-            // Windows replaces files inside the install folder; Unix renames the
-            // whole folder/bundle and therefore stages beside it.
-            var expectedParent = OperatingSystem.IsWindows()
-                ? staged.InstallRoot
-                : Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(staged.InstallRoot));
+            // Windows/Linux replace files inside the install folder; macOS swaps
+            // the whole bundle and therefore stages beside it.
+            var expectedParent = OperatingSystem.IsMacOS()
+                ? Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(staged.InstallRoot))
+                : staged.InstallRoot;
             Assert.Equal(expectedParent, Path.GetDirectoryName(staged.PackageDirectory),
                 StringComparer.OrdinalIgnoreCase);
             Assert.StartsWith(".TSCutter.GUI.update-", Path.GetFileName(staged.PackageDirectory));
@@ -253,6 +253,64 @@ public class UpdateServiceTests
             Assert.True(Directory.Exists(Path.Combine(install, "collision")));
             Assert.False(Directory.Exists(Path.Combine(package, "rollback")));
             Assert.Empty(Directory.EnumerateFiles(install, "*.new.*", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void UnixUpdate_PassesRelaunchArguments()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var root = Directory.CreateTempSubdirectory("tscutter-unix-args-");
+        try
+        {
+            var install = Path.Combine(root.FullName, "install");
+            var package = Path.Combine(Path.GetDirectoryName(install)!, ".TSCutter.GUI.update-1");
+            var payload = Path.Combine(package, "payload");
+            var argsFile = Path.Combine(root.FullName, "args with space.txt");
+            Directory.CreateDirectory(install);
+            Directory.CreateDirectory(payload);
+            File.WriteAllText(Path.Combine(payload, "TSCutterGUI"),
+                "#!/bin/sh\nprintf '%s' \"$*\" > \"" + argsFile.Replace("\"", "\\\"") + "\"\n");
+
+            var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.LinuxFolder);
+            UpdateService.ApplyUnixUpdate(staged, ["plain", "path with space", "--flag"], relaunch: true);
+
+            Assert.Equal("plain path with space --flag", File.ReadAllText(argsFile));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
+    public void UnixUpdate_RollsBackWhenRelaunchedAppExitsWithError()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var root = Directory.CreateTempSubdirectory("tscutter-unix-health-");
+        try
+        {
+            var install = Path.Combine(root.FullName, "install");
+            var package = Path.Combine(Path.GetDirectoryName(install)!, ".TSCutter.GUI.update-1");
+            var payload = Path.Combine(package, "payload");
+            Directory.CreateDirectory(install);
+            Directory.CreateDirectory(payload);
+            File.WriteAllText(Path.Combine(install, "TSCutterGUI"), "#!/bin/sh\nexit 0\n");
+            File.WriteAllText(Path.Combine(payload, "TSCutterGUI"), "#!/bin/sh\nexit 1\n");
+
+            var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.LinuxFolder);
+            Assert.Throws<InvalidOperationException>(
+                () => UpdateService.ApplyUnixUpdate(staged, [], relaunch: true));
+
+            Assert.Equal("#!/bin/sh\nexit 0\n",
+                File.ReadAllText(Path.Combine(install, "TSCutterGUI")));
+            Assert.False(Directory.Exists(Path.Combine(package, "rollback")));
         }
         finally
         {

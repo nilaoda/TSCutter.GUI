@@ -202,6 +202,9 @@ public partial class App : Application
         if (ConfigService?.CurrentConfig.EnableInPlaceUpdates == false)
             info.Asset = null;
         if (Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktopApp) return;
+        // Use the view model attached to the visible window: the locator's
+        // MainWindowViewModel is a different instance and has no view/dialog owner.
+        if (desktopApp.MainWindow?.DataContext is not MainWindowViewModel mainViewModel) return;
 
         if (!info.CanInstallInPlace)
         {
@@ -215,12 +218,12 @@ public partial class App : Application
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (result == MessageBoxResult.Yes)
             {
-                MainWindow.CheckUpdateCommand.Execute(null);
+                mainViewModel.CheckUpdateCommand.Execute(null);
             }
             return;
         }
 
-        MainWindow.ShowUpdateDialogCommand.Execute(info);
+        mainViewModel.ShowUpdateDialogCommand.Execute(info);
     }
 
     private static async Task ShowPendingUpdateResultAsync()

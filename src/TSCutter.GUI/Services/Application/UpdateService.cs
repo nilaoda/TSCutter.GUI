@@ -63,10 +63,9 @@ public sealed class UpdateService
         if (!IsTrustedDownload(asset.Url) || !IsSha256Hex(asset.Sha256))
             throw new InvalidDataException("The release package URL or checksum is not valid.");
 
-        // Windows only replaces files inside the install folder, so stage there.
-        // Unix swaps the whole install folder / bundle, so staging must be a sibling
-        // to keep every rename on one filesystem (system temp may be tmpfs on Linux,
-        // and an external macOS volume is a different filesystem).
+        // Windows and Linux only replace files inside the install folder, so they
+        // stage there. macOS swaps the whole bundle, so staging must be a sibling
+        // to keep the rename on one filesystem (an external volume is common).
         var currentInstallRoot = GetCurrentInstallRoot();
         var packageDirectory = Path.Combine(GetStagingParent(currentInstallRoot),
             StagingPrefix + Guid.NewGuid().ToString("N"));
@@ -199,9 +198,12 @@ public sealed class UpdateService
     /// </summary>
     internal static string GetStagingParent(string installRoot, StagedUpdateLayout? layout = null)
     {
-        var windowsExe = layout == StagedUpdateLayout.WindowsExe
-            || (layout is null && OperatingSystem.IsWindows());
-        if (windowsExe)
+        // Windows and Linux only replace files inside the install folder, so they
+        // stage there. A macOS .app is swapped as a whole, so its staging folder
+        // must be a sibling to keep the rename on the same filesystem.
+        var macBundle = layout == StagedUpdateLayout.MacAppBundle
+            || (layout is null && OperatingSystem.IsMacOS());
+        if (!macBundle)
             return installRoot;
         return Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(installRoot)) ?? installRoot;
     }
@@ -515,12 +517,28 @@ public sealed class UpdateService
         var launchedExecutable = staged.Layout == StagedUpdateLayout.MacAppBundle
             ? Path.Combine(staged.InstallRoot, "Contents", "MacOS", UnixExecutable)
             : Path.Combine(staged.InstallRoot, UnixExecutable);
-        if (Process.Start(new ProcessStartInfo(launchedExecutable)
+        var launched = Relaunch(launchedExecutable, relaunchArgs, staged.InstallRoot)
+            ?? throw new InvalidOperationException("The updated application did not start.");
+        using (launched)
+        {
+            // Same early-exit check as the Windows helper: an app that starts and
+            // immediately fails must roll the update back, not keep the new files.
+            bool healthy;
+            try
             {
-                UseShellExecute = false,
-                WorkingDirectory = staged.InstallRoot
-            }) is null)
-            throw new InvalidOperationException("The updated application did not start.");
+                launched.WaitForExit(2000);
+                healthy = !launched.HasExited || launched.ExitCode == 0;
+            }
+            catch (InvalidOperationException)
+            {
+                healthy = false;
+            }
+            if (!healthy)
+            {
+                Kill(launched);
+                throw new InvalidOperationException("The updated application exited with an error.");
+            }
+        }
     }
 
     private static void CopyDirectory(string source, string destination)
@@ -635,8 +653,8 @@ public sealed class UpdateService
 
             var cutoff = DateTime.UtcNow.AddDays(-1);
             var installRoot = GetCurrentInstallRoot();
-            // Windows stages inside the install folder; Unix stages beside it.
-            // Check both so leftovers from either layout are removed on launch.
+            // Windows/Linux stage inside the install folder; macOS stages beside
+            // the bundle. Check both so leftovers from either layout are removed.
             RemoveStagingFolders(installRoot, cutoff);
             var installParent = Path.GetDirectoryName(Path.TrimEndingDirectorySeparator(installRoot));
             if (installParent is not null
