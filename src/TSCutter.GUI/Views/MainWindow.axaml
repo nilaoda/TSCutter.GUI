@@ -348,6 +348,8 @@
                     <MenuItem Header="{DynamicResource String.Menu.Help}">
                         <MenuItem Header="{DynamicResource String.Menu.CheckUpdate}"
                                   Command="{Binding CheckUpdateCommand}"/>
+                        <MenuItem Header="{DynamicResource String.Menu.CheckForUpdatesInApp}"
+                                  Command="{Binding ShowUpdateDialogCommand}"/>
                         <Separator />
                         <MenuItem Header="{DynamicResource String.Menu.About}"
                                   Command="{Binding ShowAboutDialogCommand}"/>

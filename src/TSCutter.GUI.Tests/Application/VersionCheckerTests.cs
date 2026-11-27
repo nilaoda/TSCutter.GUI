@@ -1,4 +1,5 @@
 using Xunit;
+using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Utils.Application;
 
 namespace TSCutter.GUI.Tests.Application;
@@ -38,5 +39,56 @@ public class VersionCheckerTests
         Assert.Equal("Beta", ReleaseInfo.Stage);
         Assert.Contains(ReleaseInfo.Version, ReleaseInfo.WindowTitle);
         Assert.Contains(ReleaseInfo.Stage, ReleaseInfo.AboutVersion);
+    }
+
+    [Fact]
+    public void FindAssetUrl_AcceptsManifestNamePresentInRelease()
+    {
+        const string name = "TSCutter.GUI_Beta_win-x64_0.10.1.zip";
+        var release = new GitHubVersionInfo
+        {
+            Version = "url", Id = 1, Body = "", Name = "Beta 0.10.1", TagName = "v0.10.1",
+            Assets = [new GitHubReleaseAsset { Name = name, BrowserDownloadUrl = "https://github.com/a.zip" }]
+        };
+        Assert.Equal("https://github.com/a.zip", VersionChecker.FindAssetUrl(release, name, "v0.10.1"));
+    }
+
+    [Fact]
+    public void FindAssetUrl_RejectsUnknownNameWhenReleaseAssetsAreKnown()
+    {
+        var release = new GitHubVersionInfo
+        {
+            Version = "url", Id = 1, Body = "", Name = "Beta 0.10.1", TagName = "v0.10.1",
+            Assets = [new GitHubReleaseAsset { Name = "other.zip", BrowserDownloadUrl = "https://github.com/other.zip" }]
+        };
+        Assert.Null(VersionChecker.FindAssetUrl(release, "TSCutter.GUI_Beta_win-x64_0.10.1.zip", "v0.10.1"));
+        Assert.Null(VersionChecker.FindAssetUrl(release, "../unsafe.zip", "v0.10.1"));
+    }
+
+    [Fact]
+    public void FindAssetUrl_FallsBackToTagWhenApiResponseIsMissing()
+    {
+        Assert.Equal("https://github.com/nilaoda/TSCutter.GUI/releases/download/v0.10.1/a.zip",
+            VersionChecker.FindAssetUrl(null, "a.zip", "v0.10.1"));
+    }
+
+    [Fact]
+    public void CurrentRid_IsSupportedOnKnownPlatforms()
+    {
+        if (OperatingSystem.IsWindows() || OperatingSystem.IsLinux() || OperatingSystem.IsMacOS())
+            Assert.NotNull(VersionChecker.CurrentRid);
+    }
+
+    [Fact]
+    public void UpdateInfo_AllowsInstallOnlyWithVerifiedAsset()
+    {
+        var info = new UpdateInfo { Tag = "v1.0.0", Version = "1.0.0" };
+        Assert.False(info.CanInstallInPlace);
+
+        info.Asset = new UpdateAsset { FileName = "a.zip", Url = "https://example.test/a.zip" };
+        Assert.False(info.CanInstallInPlace);
+
+        info.Asset.Sha256 = new string('a', 64);
+        Assert.True(info.CanInstallInPlace);
     }
 }

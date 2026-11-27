@@ -40,6 +40,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     [ObservableProperty]
     private bool _autoCheckForUpdates;
     [ObservableProperty]
+    private bool _enableInPlaceUpdates;
+    [ObservableProperty]
     private bool _showSystemProgress;
     [ObservableProperty]
     private bool _rememberRecentItems;
@@ -235,6 +237,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
             ? _configService.CurrentConfig.ClipOutputTemplate : Utils.Editing.ClipOutputNaming.DefaultTemplate;
         AutoDetectLanguage = _configService.CurrentConfig.AutoDetectLanguage;
         AutoCheckForUpdates = _configService.CurrentConfig.AutoCheckForUpdates;
+        EnableInPlaceUpdates = _configService.CurrentConfig.EnableInPlaceUpdates;
         ShowSystemProgress = _configService.CurrentConfig.ShowSystemProgress;
         RememberRecentItems = _configService.CurrentConfig.RememberRecentItems;
         HasRecentItems = _configService.CurrentConfig.RecentItems.Count > 0;
@@ -411,6 +414,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         // 更新配置
         _configService.CurrentConfig.AutoDetectLanguage = AutoDetectLanguage;
         _configService.CurrentConfig.AutoCheckForUpdates = AutoCheckForUpdates;
+        _configService.CurrentConfig.EnableInPlaceUpdates = EnableInPlaceUpdates;
         _configService.CurrentConfig.ShowSystemProgress = ShowSystemProgress;
         // 关闭记录时同时清空已有的列表。
         _configService.CurrentConfig.RememberRecentItems = RememberRecentItems;

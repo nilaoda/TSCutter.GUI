@@ -169,6 +169,10 @@ public partial class App : Application
             progressDesktop.Exit += (_, _) => WebUiLauncher.StopWithOwner();
         }
 
+        // Clean copies left behind by an earlier update, then report its result.
+        UpdateService.CleanupStaleTempFiles();
+        _ = ShowPendingUpdateResultAsync();
+
         // 后台静默检查更新
         if (configService.CurrentConfig.AutoCheckForUpdates)
         {
@@ -189,26 +193,65 @@ public partial class App : Application
     private async Task CheckUpdatesAsync()
     {
         await Task.Delay(1000);
-        // var info = await VersionChecker.CheckUpdateAsync();
-        // if (info != null && info.TagName != CurrentTag)
-        // {
-        //     var viewModel = _dialogService.CreateViewModel<UpdatesInfoWindowViewModel>();
-        //     await _dialogService.ShowDialogAsync(this, viewModel);
-        // }
-        var latestTag = await VersionChecker.GetLatestTagAsync();
-        if (VersionChecker.IsNewerTag(latestTag, CurrentTag) && Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktopApp)
+        // CheckForUpdateAsync uses the release API and manifest but falls back to the
+        // original 302 /latest-tag discovery when either is unavailable.
+        var info = await VersionChecker.CheckForUpdateAsync();
+        if (info is null || !VersionChecker.IsNewerTag(info.Tag, CurrentTag)) return;
+        if (ConfigService?.CurrentConfig.SkippedUpdateVersion == info.Tag) return;
+        // Feature gate: without in-place support the original browser prompt is used.
+        if (ConfigService?.CurrentConfig.EnableInPlaceUpdates == false)
+            info.Asset = null;
+        if (Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktopApp) return;
+        // Use the view model attached to the visible window: the locator's
+        // MainWindowViewModel is a different instance and has no view/dialog owner.
+        if (desktopApp.MainWindow?.DataContext is not MainWindowViewModel mainViewModel) return;
+
+        if (!info.CanInstallInPlace)
         {
+            // Original behavior, unchanged: offer the releases page when no verified
+            // package is available for this platform.
             var result = await MessageBox.ShowDialog(desktopApp.MainWindow!,
-                string.Format(LocalizationManager.Instance.String_UpdatesInfo_NewVersionInfo, CurrentTag, latestTag)
+                string.Format(LocalizationManager.Instance.String_UpdatesInfo_NewVersionInfo, CurrentTag, info.Tag)
                 + Environment.NewLine + Environment.NewLine
                 + LocalizationManager.Instance.String_UpdatesInfo_NewVersionAlert,
                 LocalizationManager.Instance.String_UpdatesInfo_NewVersionTitle,
                 MessageBoxButtons.YesNo, MessageBoxIcon.Question);
             if (result == MessageBoxResult.Yes)
             {
-                MainWindow.CheckUpdateCommand.Execute(null);
+                mainViewModel.CheckUpdateCommand.Execute(null);
             }
+            return;
         }
+
+        mainViewModel.ShowUpdateDialogCommand.Execute(info);
+    }
+
+    private static async Task ShowPendingUpdateResultAsync()
+    {
+        if (WebUiSession.Current is not null)
+            return;
+        var result = UpdateService.ReadHelperResult();
+        if (result is null)
+            return;
+        UpdateService.ClearHelperResult();
+        if (result.Success)
+            return;
+        if (Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop ||
+            desktop.MainWindow is null)
+            return;
+        await MessageBox.ShowDialog(desktop.MainWindow,
+            string.Format(LocalizationManager.Instance.String_Update_Error, result.Message),
+            LocalizationManager.Instance.String_Update_FailedTitle,
+            MessageBoxButtons.Ok, MessageBoxIcon.Error);
+    }
+
+    /// <summary>Closes the app after the update helper has been started.</summary>
+    public static void ShutdownForUpdate()
+    {
+        if (Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+            desktop.Shutdown();
+        else
+            Environment.Exit(0);
     }
 
     public static MainWindowViewModel MainWindow => Locator.Current.GetService<MainWindowViewModel>()!;

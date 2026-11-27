@@ -19,6 +19,7 @@ internal static class WebUiPreferences
         snapshot.ClipListMode = clipMode ?? snapshot.ClipListMode;
         snapshot.AutoDetectLanguage = false;
         snapshot.AutoCheckForUpdates = false;
+        snapshot.EnableInPlaceUpdates = false;
         snapshot.RememberRecentItems = false;
         snapshot.RecentItems = [];
         snapshot.LastImportFolder = null;

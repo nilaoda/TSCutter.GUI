@@ -35,6 +35,18 @@ public class AppConfigTests
     }
 
     [Fact]
+    public void InPlaceUpdatesDefaultToEnabledAndCanBeDisabled()
+    {
+        var config = JsonSerializer.Deserialize("{}", AppJsonContext.Default.AppConfig)!;
+        Assert.True(config.EnableInPlaceUpdates);
+        config.EnableInPlaceUpdates = false;
+        var restored = JsonSerializer.Deserialize(
+            JsonSerializer.Serialize(config, AppJsonContext.Default.AppConfig),
+            AppJsonContext.Default.AppConfig)!;
+        Assert.False(restored.EnableInPlaceUpdates);
+    }
+
+    [Fact]
     public void KeyFrameStripDefaultsToEnabledAndKeepsDisabledPreference()
     {
         var config = JsonSerializer.Deserialize("{}", AppJsonContext.Default.AppConfig)!;

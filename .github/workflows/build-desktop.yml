@@ -634,13 +634,51 @@ jobs:
         with:
           pattern: TSCutter.GUI_*
 
+      - name: Generate update manifest
+        shell: bash
+        run: |
+          python3 - <<'PYTHON'
+          import hashlib
+          import json
+          import os
+
+          root = os.environ["GITHUB_WORKSPACE"]
+          version = "${{ needs.release-info.outputs.version }}"
+          tag = "${{ needs.release-info.outputs.tag }}"
+          rids = ["win-x64", "win-arm64", "linux-x64", "linux-arm64", "osx-arm64", "osx-x64"]
+          assets = {}
+          sums = []
+          for rid in rids:
+              folder = os.path.join(root, "TSCutter.GUI_" + rid)
+              packages = [name for name in os.listdir(folder) if name.endswith(".zip")]
+              if len(packages) != 1:
+                  raise RuntimeError("Expected exactly one package in " + folder)
+              name = packages[0]
+              path = os.path.join(folder, name)
+              with open(path, "rb") as source:
+                  digest = hashlib.sha256(source.read()).hexdigest()
+              assets[rid] = {"file": name, "size": os.path.getsize(path), "sha256": digest}
+              sums.append(digest + "  " + name)
+          manifest = {
+              "version": version,
+              "tag": tag,
+              "releaseNotesUrl": "https://github.com/nilaoda/TSCutter.GUI/releases/tag/" + tag,
+              "assets": assets,
+          }
+          with open(os.path.join(root, "update-manifest.json"), "w", encoding="utf-8") as target:
+              json.dump(manifest, target, indent=2)
+              target.write("\n")
+          with open(os.path.join(root, "SHA256SUMS.txt"), "w", encoding="utf-8") as target:
+              target.write("\n".join(sums) + "\n")
+          PYTHON
+
       - name: Create GitHub Release
         uses: ncipollo/release-action@v1
         with:
           tag: ${{ needs.release-info.outputs.tag }}
           commit: ${{ github.sha }}
           name: ${{ needs.release-info.outputs.stage }} ${{ needs.release-info.outputs.version }}
-          artifacts: "TSCutter.GUI_linux-x64/*,TSCutter.GUI_linux-arm64/*,TSCutter.GUI_osx-arm64/*,TSCutter.GUI_osx-x64/*,TSCutter.GUI_win-x64/*,TSCutter.GUI_win-arm64/*"
+          artifacts: "TSCutter.GUI_linux-x64/*,TSCutter.GUI_linux-arm64/*,TSCutter.GUI_osx-arm64/*,TSCutter.GUI_osx-x64/*,TSCutter.GUI_win-x64/*,TSCutter.GUI_win-arm64/*,update-manifest.json,SHA256SUMS.txt"
           draft: false
           prerelease: false
           makeLatest: true

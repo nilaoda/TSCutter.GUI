@@ -1642,6 +1642,23 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         if (WebUiSession.Current is null)
             Process.Start(new ProcessStartInfo("https://github.com/nilaoda/TSCutter.GUI/releases") { UseShellExecute = true });
     }
+
+    /// <summary>Shows the in-app update dialog; a null argument performs a manual check.</summary>
+    [RelayCommand]
+    private async Task ShowUpdateDialogAsync(UpdateInfo? info)
+    {
+        if (WebUiSession.Current is not null)
+            return;
+        if (App.ConfigService?.CurrentConfig.EnableInPlaceUpdates == false)
+        {
+            CheckUpdateCommand.Execute(null);
+            return;
+        }
+        var target = info ?? await VersionChecker.CheckForUpdateAsync(forceRefresh: true);
+        var viewModel = App.UpdatesInfoDialog;
+        viewModel.Prepare(target);
+        await _dialogService.ShowDialogAsync(this, viewModel);
+    }
     
     [RelayCommand]
     private async Task ShowAboutDialogAsync()
