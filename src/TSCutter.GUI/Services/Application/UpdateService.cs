@@ -49,8 +49,21 @@ public sealed class UpdateService
     private const string StagingPrefix = ".TSCutter.GUI.update-";
 
     private readonly HttpClient _http;
+    private readonly string? _installRootOverride;
 
-    public UpdateService(HttpClient? httpClient = null) => _http = httpClient ?? new HttpClient();
+    public UpdateService(HttpClient? httpClient = null) : this(httpClient, null) { }
+
+    /// <summary>
+    /// Uses a supplied install root instead of discovering it from the running
+    /// executable. Keeps tests independent of where the test host SDK lives.
+    /// </summary>
+    internal UpdateService(string installRoot) : this(null, installRoot) { }
+
+    internal UpdateService(HttpClient? httpClient, string? installRootOverride)
+    {
+        _http = httpClient ?? new HttpClient();
+        _installRootOverride = installRootOverride;
+    }
 
     /// <summary>Downloads, verifies and extracts a package without changing the installation.</summary>
     public async Task<StagedUpdate> PrepareAsync(UpdateInfo info, IProgress<double>? progress = null,
@@ -66,7 +79,7 @@ public sealed class UpdateService
         // Windows and Linux only replace files inside the install folder, so they
         // stage there. macOS swaps the whole bundle, so staging must be a sibling
         // to keep the rename on one filesystem (an external volume is common).
-        var currentInstallRoot = GetCurrentInstallRoot();
+        var currentInstallRoot = _installRootOverride ?? GetCurrentInstallRoot();
         var packageDirectory = Path.Combine(GetStagingParent(currentInstallRoot),
             StagingPrefix + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(packageDirectory);
@@ -93,7 +106,7 @@ public sealed class UpdateService
             var payload = Path.Combine(packageDirectory, "payload");
             ExtractSafely(archivePath, payload);
             var layout = DetectLayout(payload);
-            var installRoot = GetInstallRoot(layout);
+            var installRoot = _installRootOverride ?? GetInstallRoot(layout);
 
             return new StagedUpdate
             {

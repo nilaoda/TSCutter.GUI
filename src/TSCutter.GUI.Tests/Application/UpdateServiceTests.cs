@@ -21,18 +21,20 @@ public class UpdateServiceTests
             ["TSCutterGUI.exe"] = "new executable",
             ["THIRD_PARTY_NOTICES.txt"] = "notices"
         });
-        var service = CreateService(zip);
-        var info = CreateInfo(Convert.ToHexString(SHA256.HashData(zip)), zip.Length);
-
-        var staged = await service.PrepareAsync(info);
+        var (root, installRoot) = CreateTempInstall();
         try
         {
+            var service = CreateService(zip, installRoot);
+            var info = CreateInfo(Convert.ToHexString(SHA256.HashData(zip)), zip.Length);
+
+            var staged = await service.PrepareAsync(info);
+            Assert.Equal(installRoot, staged.InstallRoot);
             Assert.Equal(StagedUpdateLayout.WindowsExe, staged.Layout);
             Assert.Equal("new executable", File.ReadAllText(Path.Combine(staged.PayloadDirectory, "TSCutterGUI.exe")));
         }
         finally
         {
-            Directory.Delete(staged.PackageDirectory, recursive: true);
+            root.Delete(recursive: true);
         }
     }
 
@@ -40,12 +42,13 @@ public class UpdateServiceTests
     public async Task PrepareAsync_StagesOnSameFilesystemAsInstallRoot()
     {
         var zip = CreateZip(new Dictionary<string, string> { ["TSCutterGUI.exe"] = "new" });
-        var service = CreateService(zip);
-        var info = CreateInfo(Convert.ToHexString(SHA256.HashData(zip)), zip.Length);
-
-        var staged = await service.PrepareAsync(info);
+        var (root, installRoot) = CreateTempInstall();
         try
         {
+            var service = CreateService(zip, installRoot);
+            var info = CreateInfo(Convert.ToHexString(SHA256.HashData(zip)), zip.Length);
+
+            var staged = await service.PrepareAsync(info);
             // Windows/Linux replace files inside the install folder; macOS swaps
             // the whole bundle and therefore stages beside it.
             var expectedParent = OperatingSystem.IsMacOS()
@@ -57,7 +60,7 @@ public class UpdateServiceTests
         }
         finally
         {
-            Directory.Delete(staged.PackageDirectory, recursive: true);
+            root.Delete(recursive: true);
         }
     }
 
@@ -65,10 +68,18 @@ public class UpdateServiceTests
     public async Task PrepareAsync_RejectsWrongChecksum()
     {
         var zip = CreateZip(new Dictionary<string, string> { ["TSCutterGUI.exe"] = "new" });
-        var service = CreateService(zip);
-        var info = CreateInfo("0000000000000000000000000000000000000000000000000000000000000000", zip.Length);
+        var (root, installRoot) = CreateTempInstall();
+        try
+        {
+            var service = CreateService(zip, installRoot);
+            var info = CreateInfo("0000000000000000000000000000000000000000000000000000000000000000", zip.Length);
 
-        await Assert.ThrowsAsync<InvalidDataException>(() => service.PrepareAsync(info));
+            await Assert.ThrowsAsync<InvalidDataException>(() => service.PrepareAsync(info));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
     }
 
     [Fact]
@@ -79,10 +90,18 @@ public class UpdateServiceTests
             ["TSCutterGUI.exe"] = "new",
             ["../escaped.txt"] = "bad"
         });
-        var service = CreateService(zip);
-        var info = CreateInfo(Convert.ToHexString(SHA256.HashData(zip)), zip.Length);
+        var (root, installRoot) = CreateTempInstall();
+        try
+        {
+            var service = CreateService(zip, installRoot);
+            var info = CreateInfo(Convert.ToHexString(SHA256.HashData(zip)), zip.Length);
 
-        await Assert.ThrowsAsync<InvalidDataException>(() => service.PrepareAsync(info));
+            await Assert.ThrowsAsync<InvalidDataException>(() => service.PrepareAsync(info));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
     }
 
     [Fact]
@@ -106,13 +125,21 @@ public class UpdateServiceTests
     public async Task PrepareAsync_HonorsCancellation()
     {
         var zip = CreateZip(new Dictionary<string, string> { ["TSCutterGUI.exe"] = "new" });
-        var service = CreateService(zip);
-        var info = CreateInfo(Convert.ToHexString(SHA256.HashData(zip)), zip.Length);
-        using var cancellation = new CancellationTokenSource();
-        cancellation.Cancel();
+        var (root, installRoot) = CreateTempInstall();
+        try
+        {
+            var service = CreateService(zip, installRoot);
+            var info = CreateInfo(Convert.ToHexString(SHA256.HashData(zip)), zip.Length);
+            using var cancellation = new CancellationTokenSource();
+            cancellation.Cancel();
 
-        await Assert.ThrowsAnyAsync<OperationCanceledException>(
-            () => service.PrepareAsync(info, token: cancellation.Token));
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                () => service.PrepareAsync(info, token: cancellation.Token));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
     }
 
     [Fact]
@@ -396,8 +423,14 @@ public class UpdateServiceTests
         ExecutableName = layout == StagedUpdateLayout.WindowsExe ? "TSCutterGUI.exe" : "TSCutterGUI"
     };
 
-    private static UpdateService CreateService(byte[] zip) =>
-        new(new HttpClient(new ByteArrayHandler(zip)));
+    private static (DirectoryInfo Root, string InstallRoot) CreateTempInstall()
+    {
+        var root = Directory.CreateTempSubdirectory("tscutter-prepare-");
+        return (root, Path.Combine(root.FullName, "install"));
+    }
+
+    private static UpdateService CreateService(byte[] zip, string? installRoot = null) =>
+        new(new HttpClient(new ByteArrayHandler(zip)), installRoot);
 
     private static UpdateInfo CreateInfo(string sha256, long size) => new()
     {
