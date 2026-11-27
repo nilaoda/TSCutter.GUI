@@ -30,6 +30,7 @@ public unsafe class FormatContext : SafeHandle
     public AVIOContext* Pb => Raw->pb;
     public InputFormatInfo? InputFormat => Raw->iformat == null ? null
         : new InputFormatInfo(Marshal.PtrToStringUTF8((IntPtr)Raw->iformat->name) ?? "");
+    public NativeMetadata Metadata => new(Raw->metadata);
 
     public static FormatContext OpenInputUrl(string path)
         => Utils.Media.InterruptibleInputFormatContext.Open(path, static () => false);
@@ -111,6 +112,7 @@ public readonly unsafe struct MediaStream
     public long StartTime => raw == null ? FF.AV_NOPTS_VALUE : raw->start_time;
     public AVRational TimeBase => raw == null ? default : raw->time_base;
     public AVRational AvgFrameRate => raw == null ? default : raw->avg_frame_rate;
+    public AVRational RFrameRate => raw == null ? default : raw->r_frame_rate;
     public AVRational SampleAspectRatio => raw == null ? default : raw->sample_aspect_ratio;
     public NativeMetadata Metadata => new(raw == null ? null : raw->metadata);
     public static implicit operator AVStream*(MediaStream stream) => stream.raw;

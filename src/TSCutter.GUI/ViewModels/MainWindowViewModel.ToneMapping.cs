@@ -66,6 +66,7 @@ public partial class MainWindowViewModel
     {
         preferHardwareDecodingForPreview = _configService.CurrentConfig.PreferHardwareDecoding;
         EnableSdrToneMapping = _configService.CurrentConfig.EnableSdrToneMapping;
+        TimecodeDisplayEnabled = _configService.CurrentConfig.ShowTimecode;
         toneMappingRefreshPending = false;
     }
 

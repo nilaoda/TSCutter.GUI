@@ -47,6 +47,7 @@ public class AppConfig : ObservableObject
     }
     public ThemeVariantMode ThemeVariantMode { get; set; } = ThemeVariantMode.Automatic;
     public bool AutoDetectLanguage { get; set; } = true;
+    public bool ShowTimecode { get; set; }
     public bool AutoCheckForUpdates { get; set; } = true;
     // 关闭后仍会提示新版本，但只保留原有的浏览器下载方式。
     public bool EnableInPlaceUpdates { get; set; } = true;

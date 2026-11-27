@@ -18,6 +18,7 @@ internal static class WebUiPreferences
         snapshot.ClipCutMode = cutMode ?? snapshot.ClipCutMode;
         snapshot.ClipListMode = clipMode ?? snapshot.ClipListMode;
         snapshot.AutoDetectLanguage = false;
+        snapshot.ShowTimecode = false;
         snapshot.AutoCheckForUpdates = false;
         snapshot.EnableInPlaceUpdates = false;
         snapshot.RememberRecentItems = false;

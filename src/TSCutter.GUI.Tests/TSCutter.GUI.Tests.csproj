@@ -21,6 +21,7 @@
     </ItemGroup>
     <ItemGroup>
         <None Update="Application/Fixtures/WebUiClip.mp4" CopyToOutputDirectory="PreserveNewest" />
+        <None Update="Application/Fixtures/timecode.mp4" CopyToOutputDirectory="PreserveNewest" />
         <None Include="../../artifacts/test-media/**/*"
               Link="TestAssets/%(RecursiveDir)%(Filename)%(Extension)"
               CopyToOutputDirectory="PreserveNewest" />

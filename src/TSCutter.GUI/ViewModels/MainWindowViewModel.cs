@@ -262,7 +262,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             var aggregate = GetSelectedClipAggregate();
             if (aggregate.Count == 0)
                 return string.Empty;
-            var duration = CommonUtil.FormatSeconds(aggregate.DurationSeconds);
+            var duration = TimecodeDisplay.Format(aggregate.DurationSeconds);
             return aggregate.Count == 1
                 ? string.Format(
                     LocalizationManager.Instance.String_Clips_SelectionSummarySingle,
@@ -500,15 +500,18 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         }
         
         var vm = _dialogService.CreateViewModel<JumpTimeViewModel>();
-        var currentTimeStr = CommonUtil.FormatSeconds(CurrentTime);
+        var currentTimeStr = CurrentTimeDisplay;
         vm.InputText = currentTimeStr;
         var result = await _dialogService.ShowDialogAsync(this, vm);
         
         if (result is false || result is null || currentTimeStr == vm.InputText) return;
         
-        if (CommonUtil.TryParseFormattedTime(vm.InputText, out var newTime) && newTime < DurationMax)
+        var parsed = TimecodeDisplayEnabled && Timecode is { } timecode
+                     && TimecodeUtil.TryParseElapsed(vm.InputText, timecode, out var timecodeTime)
+                     || CommonUtil.TryParseFormattedTime(vm.InputText, out timecodeTime);
+        if (parsed && timecodeTime >= 0 && timecodeTime < DurationMax)
         {
-            await SeekToTimeAndDrawFrameAsync(TimeSpan.FromSeconds(Math.Max(0, newTime - 1)));
+            await SeekToTimeAndDrawFrameAsync(TimeSpan.FromSeconds(Math.Max(0, timecodeTime - 1)));
             return;
         }
 
@@ -1576,6 +1579,56 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     [ObservableProperty]
     public partial double CurrentTime { get; set; } = 0.0;
 
+    /// <summary>Timecode anchored at the timeline start, null when the media has none.</summary>
+    [ObservableProperty]
+    public partial MediaTimecode? Timecode { get; private set; }
+
+    [ObservableProperty]
+    public partial bool TimecodeDisplayEnabled { get; set; }
+
+    public string CurrentTimeDisplay => TimecodeDisplayEnabled && Timecode is { } timecode
+        ? timecode.Format(CurrentTime)
+        : CommonUtil.FormatSeconds(CurrentTime);
+
+    public string DurationDisplay => TimecodeDisplayEnabled && Timecode is { } timecode
+        ? timecode.FormatDuration(DurationMax)
+        : CommonUtil.FormatSeconds(DurationMax);
+
+    public bool HasTimecode => Timecode is not null;
+    public bool CanToggleTimecode => !_isLoadingVideo && Timecode is not null;
+
+    public string TimecodeToggleText => TimecodeDisplayEnabled
+        ? LocalizationManager.Instance.String_Status_TimecodeOn
+        : LocalizationManager.Instance.String_Status_TimecodeOff;
+
+    public string TimecodeTipText => Timecode is null
+        ? LocalizationManager.Instance.String_Status_TimecodeUnavailableTip
+        : LocalizationManager.Instance.String_Status_ToggleTimecodeTip;
+
+    partial void OnDurationMaxChanged(double value) => OnPropertyChanged(nameof(DurationDisplay));
+
+    partial void OnTimecodeChanged(MediaTimecode? value)
+    {
+        TimecodeDisplay.Configure(value, TimecodeDisplayEnabled);
+        OnPropertyChanged(nameof(HasTimecode));
+    }
+
+    partial void OnTimecodeDisplayEnabledChanged(bool value)
+    {
+        TimecodeDisplay.Configure(Timecode, value);
+        OnPropertyChanged(nameof(CurrentTimeDisplay));
+        OnPropertyChanged(nameof(DurationDisplay));
+        OnPropertyChanged(nameof(TimecodeToggleText));
+    }
+
+    [RelayCommand(CanExecute = nameof(CanToggleTimecode))]
+    private void ToggleTimecode()
+    {
+        TimecodeDisplayEnabled = !TimecodeDisplayEnabled;
+        _configService.CurrentConfig.ShowTimecode = TimecodeDisplayEnabled;
+        _configService.Save();
+    }
+
     [ObservableProperty]
     public partial PixelSize DecodedFrameSourceSize { get; set; }
 
@@ -1583,6 +1636,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
 
     partial void OnCurrentTimeChanged(double value)
     {
+        OnPropertyChanged(nameof(CurrentTimeDisplay));
         TimelineViewport.SetPlayhead(value);
         // 播放期间挂起缩略图条和 EPG 探测，暂停或导航后再按当前画面刷新。
         if (!keyFrameStripScrubbing && !_isLoadingVideo && !IsPlaybackActive)
@@ -2788,6 +2842,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         NotifyClipSelectionChanged();
         DurationMax = 0.0;
         CurrentTime = 0.0;
+        Timecode = null;
+        TimecodeDisplayEnabled = false;
         _displayedFramePosition = -1;
         _displayedFramePts = long.MinValue;
         _displayedFramePts90k = long.MinValue;
@@ -2830,6 +2886,8 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 };
                 if (prepared is null)
                     await _videoInstance.InitVideoAsync();
+                Timecode = _videoInstance.Timecode;
+                TimecodeDisplayEnabled = Timecode is not null && _configService.CurrentConfig.ShowTimecode;
                 _remuxExportSettings = null;
                 SetPreviewTrackChoices(_videoInstance.PreviewPrograms, _videoInstance.StreamSelection);
                 SetSubtitleTrackChoices(_videoInstance.PreviewSubtitleTracks);
@@ -3135,6 +3193,10 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         OnPropertyChanged(nameof(CanTogglePreviewOptions));
         OnPropertyChanged(nameof(CanToggleHardwareDecoding));
         OnPropertyChanged(nameof(CanToggleSdrToneMapping));
+        OnPropertyChanged(nameof(HasTimecode));
+        OnPropertyChanged(nameof(CanToggleTimecode));
+        OnPropertyChanged(nameof(TimecodeToggleText));
+        OnPropertyChanged(nameof(TimecodeTipText));
         // Avalonia 按钮只在 CanExecuteChanged 时重查可用性：加载/忙碌变化必须显式通知。
         OnPropertyChanged(nameof(CanTogglePlayback));
         OnPropertyChanged(nameof(CanPlaySelectedClip));
@@ -3142,6 +3204,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         PlaySelectedClipCommand.NotifyCanExecuteChanged();
         ToggleHardwareDecodingCommand.NotifyCanExecuteChanged();
         ToggleSdrToneMappingCommand.NotifyCanExecuteChanged();
+        ToggleTimecodeCommand.NotifyCanExecuteChanged();
         StartToneMappingRefresh();
         SaveFrameClickCommand.NotifyCanExecuteChanged();
         KeyFrameOverviewClickCommand.NotifyCanExecuteChanged();

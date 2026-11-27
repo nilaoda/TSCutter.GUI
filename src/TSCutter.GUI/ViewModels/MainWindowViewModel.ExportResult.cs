@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.ViewModels.Editing;
 
 namespace TSCutter.GUI.ViewModels;
@@ -64,7 +65,7 @@ public partial class MainWindowViewModel
     }
 
     private static string FormatExportDuration(double seconds) =>
-        string.Format(LocalizationManager.Instance.String_ExportResult_Duration, CommonUtil.FormatSeconds(Math.Max(0, seconds)));
+        string.Format(LocalizationManager.Instance.String_ExportResult_Duration, TimecodeDisplay.Format(Math.Max(0, seconds)));
 
     /// <summary>片段覆盖的总时长：按时间合并重叠部分，未标记终点的片段算到文件结尾。</summary>
     private double ClipsDuration(IEnumerable<PickedClip> clips)

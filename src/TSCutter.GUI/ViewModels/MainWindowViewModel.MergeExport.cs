@@ -13,6 +13,7 @@ using TSCutter.GUI.Models.TransportStream.Processing;
 using TSCutter.GUI.Services.Editing;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.ViewModels.Editing;
 
 namespace TSCutter.GUI.ViewModels;
@@ -134,6 +135,6 @@ public partial class MainWindowViewModel
             OnPropertyChanged(nameof(SelectedClipEstimatedSizeStr));
         }
         await ShowExportResultAsync(output, outputPath, string.Format(LocalizationManager.Instance.String_ExportResult_Merged,
-            clips.Length, CommonUtil.FormatSeconds(ClipsDuration(clips))));
+            clips.Length, TimecodeDisplay.Format(ClipsDuration(clips))));
     }
 }

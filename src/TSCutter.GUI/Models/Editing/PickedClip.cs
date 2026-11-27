@@ -6,6 +6,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using TSCutter.GUI.Models.TransportStream.Analysis;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Media;
 
 namespace TSCutter.GUI.Models.Editing;
 
@@ -158,10 +159,10 @@ public partial class PickedClip : ObservableObject, IDisposable
 
     public required FileInfo InFileInfo { get; init; }
 
-    public string StartBoundaryTimeStr => $"[ {CommonUtil.FormatSeconds(StartTime)}";
+    public string StartBoundaryTimeStr => $"[ {TimecodeDisplay.Format(StartTime)}";
     public string? OutputFileSizeStr => OutputFileInfo is { Exists: true } file ? CommonUtil.FormatFileSize(file.Length) : null;
     public string? OutputFilePathStr => OutputFileInfo?.FullName;
-    public string EndBoundaryTimeStr => $"{(EndTime < 0 ? "Inf." : CommonUtil.FormatSeconds(EndTime))} ]";
+    public string EndBoundaryTimeStr => $"{(EndTime < 0 ? "Inf." : TimecodeDisplay.Format(EndTime))} ]";
     /// <summary>删除范围 [起点, 终点画面) 在源文件中的字节数；删除到文件结尾或旧工程未记录终点画面位置时按片段范围计算。</summary>
     private long RemovedBytes => Math.Max(0, (EndPosition > 0 ? EndFramePosition >= 0 ? EndFramePosition : EndPosition
         : InFileInfo.Length) - StartPosition);

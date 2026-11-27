@@ -5,6 +5,7 @@ using System.Linq;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Media;
 
 namespace TSCutter.GUI.ViewModels.Preview;
 
@@ -44,7 +45,7 @@ public sealed record TimelineSegmentItem(
                 lines.Add(string.Format(strings.String_Epg_Schedule, EpgText.Schedule(program.Event, guide.LocalOffset, withDate: true),
                     EpgText.Duration(program.Event.Duration)));
             lines.Add(string.Format(strings.String_Epg_InRecording,
-                CommonUtil.FormatSeconds(program.StartSeconds), CommonUtil.FormatSeconds(program.EndSeconds)));
+                TimecodeDisplay.Format(program.StartSeconds), TimecodeDisplay.Format(program.EndSeconds)));
             if (!string.IsNullOrWhiteSpace(program.Event.Description))
                 lines.Add(program.Event.Description);
             lines.Add(strings.String_Epg_TimingHint);
@@ -65,9 +66,9 @@ public sealed record TimelineSegmentItem(
             var lines = new List<string> { title };
             if (chapter.Title is not null)
                 lines.Add(numbered);
-            lines.Add(string.Format(strings.String_Chapter_Range, CommonUtil.FormatSeconds(chapter.StartSeconds),
-                CommonUtil.FormatSeconds(chapter.EndSeconds),
-                CommonUtil.FormatSeconds(Math.Round(chapter.EndSeconds - chapter.StartSeconds, 3))));
+            lines.Add(string.Format(strings.String_Chapter_Range, TimecodeDisplay.Format(chapter.StartSeconds),
+                TimecodeDisplay.Format(chapter.EndSeconds),
+                TimecodeDisplay.Format(Math.Round(chapter.EndSeconds - chapter.StartSeconds, 3))));
             return new TimelineSegmentItem(TimelineSegmentKind.Chapter, title, chapter.StartSeconds, chapter.EndSeconds,
                 chapter.StartSeconds <= 0, chapter.EndSeconds >= duration - 0.000001, title, string.Join("\n", lines));
         }).ToArray();
@@ -105,8 +106,8 @@ public sealed record SegmentListItem(string Time, string Title, string Descripti
             var segment = segments.FirstOrDefault(item => item.Event?.EventId == value.EventId);
             var status = segment is null
                 ? strings.String_Epg_NotInRecording
-                : string.Format(strings.String_Epg_InRecording, CommonUtil.FormatSeconds(segment.StartSeconds),
-                    CommonUtil.FormatSeconds(segment.EndSeconds));
+                : string.Format(strings.String_Epg_InRecording, TimecodeDisplay.Format(segment.StartSeconds),
+                    TimecodeDisplay.Format(segment.EndSeconds));
             items.Add(new SegmentListItem(EpgText.Schedule(value, guide.LocalOffset), value.Title,
                 value.Description.Trim(), status, segment));
         }
@@ -114,9 +115,9 @@ public sealed record SegmentListItem(string Time, string Title, string Descripti
     }
 
     public static IReadOnlyList<SegmentListItem> FromChapters(IReadOnlyList<TimelineSegmentItem> segments) =>
-        segments.Select(segment => new SegmentListItem(CommonUtil.FormatSeconds(segment.StartSeconds), segment.Title, "",
+        segments.Select(segment => new SegmentListItem(TimecodeDisplay.Format(segment.StartSeconds), segment.Title, "",
             string.Format(LocalizationManager.Instance.String_Chapter_Length,
-                CommonUtil.FormatSeconds(Math.Round(segment.EndSeconds - segment.StartSeconds, 3))), segment)).ToArray();
+                TimecodeDisplay.Format(Math.Round(segment.EndSeconds - segment.StartSeconds, 3))), segment)).ToArray();
 }
 
 /// <summary>

@@ -47,7 +47,7 @@ Keyframe-mode MP4/MKV exports rewrite the container and timestamps. Smart cut su
 
 ## Other features
 
-- **Preview and navigate**: Audio playback, full screen, keyframe or frame thumbnails, a zoomable timeline, embedded subtitles and image search.
+- **Preview and navigate**: Audio playback, full screen, keyframe or frame thumbnails, a zoomable timeline, embedded subtitles and image search. Media with an embedded timecode can show it on the timeline and time readouts.
 - **HDR preview**: SDR mapping for HDR10/PQ, HLG and Dolby Vision Profile 5, with GPU presentation and CPU fallback.
 - **Media muxer**: Select and reorder tracks, edit languages and time offsets, convert text subtitles to suit the output format, and output MP4, MKV, TS or M2TS.
 - **Audio tracks**: Choose output tracks on TS export, detect silent tracks, transcode Dolby E to regular audio tracks, or merge three stereo tracks into 5.1.

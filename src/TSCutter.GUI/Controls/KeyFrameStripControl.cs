@@ -10,6 +10,7 @@ using TSCutter.GUI.Models.Editing;
 using TSCutter.GUI.Models.Preview;
 using TSCutter.GUI.Utils;
 using TSCutter.GUI.Utils.Application;
+using TSCutter.GUI.Utils.Media;
 using TSCutter.GUI.ViewModels.Preview;
 
 namespace TSCutter.GUI.Controls;
@@ -179,7 +180,7 @@ public sealed class KeyFrameStripControl : Control
             using (context.PushOpacity(item.IsCurrent ? 1 : 0.28))
                 context.DrawRectangle(null, new Pen(item.IsCurrent ? AccentBrush ?? Brushes.DodgerBlue
                     : BorderBrush ?? Brushes.Gray, item.IsCurrent ? 2 : 1), bounds);
-            var text = new FormattedText(item.IsPlaceholder ? "…" : CommonUtil.FormatSeconds(item.Timestamp.TotalSeconds),
+            var text = new FormattedText(item.IsPlaceholder ? "…" : TimecodeDisplay.Format(item.Timestamp.TotalSeconds),
                 CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface("Inter"), 11,
                 TextBrush ?? Brushes.Gray);
             context.DrawText(text, new Point(bounds.Center.X - text.Width / 2, bounds.Bottom - 19));
