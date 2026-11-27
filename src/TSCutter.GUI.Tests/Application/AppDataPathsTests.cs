@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Security.AccessControl;
 using TSCutter.GUI.Models.Application;
 using TSCutter.GUI.Services.Application;
+using TSCutter.GUI.Web;
 using Xunit;
 
 namespace TSCutter.GUI.Tests.Application;
@@ -150,6 +152,65 @@ public sealed class AppDataPathsTests : IDisposable
         new ConfigurationService(new TestLocalization()).Save();
 
         Assert.True(File.Exists(Path.Combine(AppDataPaths.DataDirectory, "config.json")));
+    }
+
+    [Fact]
+    public void PortableDataFilesArePrivateOnWindows()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+        var profileConfig = Path.Combine(AppDataPaths.ApplicationDataRootOverride!, "TSCutter.GUI");
+        Directory.CreateDirectory(profileConfig);
+        File.WriteAllText(Path.Combine(profileConfig, "config.json"), "settings");
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+        AppDataPaths.Initialize();
+
+        var dataDirectory = new DirectoryInfo(AppDataPaths.DataDirectory);
+        var file = new FileInfo(Path.Combine(AppDataPaths.DataDirectory, "config.json"));
+        Assert.True(dataDirectory.GetAccessControl().AreAccessRulesProtected);
+        Assert.True(file.GetAccessControl().AreAccessRulesProtected);
+    }
+
+    [Fact]
+    public void WebUiSnapshotDoesNotRedirectPortablePaths()
+    {
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+        AppDataPaths.Initialize();
+        var snapshot = WebUiPreferences.CreateSnapshot(new AppConfig
+        {
+            LastImportFolder = Path.GetTempPath()
+        });
+        var previous = Environment.GetEnvironmentVariable(WebUiPreferences.EnvironmentVariable);
+        try
+        {
+            Environment.SetEnvironmentVariable(WebUiPreferences.EnvironmentVariable, snapshot);
+            Assert.NotNull(WebUiPreferences.ReadSnapshot());
+            Assert.Equal(Path.Combine(AppDataPaths.DataDirectory, "config.json"),
+                AppDataPaths.GetPath(Environment.SpecialFolder.ApplicationData, "config.json"));
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable(WebUiPreferences.EnvironmentVariable, previous);
+        }
+    }
+
+    [Fact]
+    public void ForeignMachineLockBlocksUpdates()
+    {
+        var previous = UpdateService.UpdateLockFilePathOverride;
+        UpdateService.UpdateLockFilePathOverride = Path.Combine(_root.FullName, "update.lock");
+        try
+        {
+            File.WriteAllText(UpdateService.UpdateLockFilePath, "OTHER-MACHINE|1-123456789");
+            Assert.False(UpdateService.TryAcquireUpdateLock());
+
+            UpdateService.ReleaseUpdateLock();
+            Assert.True(UpdateService.TryAcquireUpdateLock());
+        }
+        finally
+        {
+            UpdateService.UpdateLockFilePathOverride = previous;
+        }
     }
 
     [Fact]

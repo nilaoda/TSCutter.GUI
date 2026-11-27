@@ -46,6 +46,10 @@ public sealed class UpdateService
     private const string MacBundle = "TSCutter.GUI.app";
     private const string ResultFileName = "UpdateResult.txt";
     private const string StagingPrefix = ".TSCutter.GUI.update-";
+    private const char LockOwnerSeparator = '|';
+    // A portable folder on a shared drive may be locked by another machine, whose
+    // processes cannot be inspected locally. Treat a recent foreign lock as active.
+    private static readonly TimeSpan ForeignLockExpiry = TimeSpan.FromHours(2);
 
     private readonly HttpClient _http;
     private readonly string? _installRootOverride;
@@ -676,8 +680,9 @@ public sealed class UpdateService
             if (File.Exists(UpdateLockFilePath))
             {
                 var owner = File.ReadAllText(UpdateLockFilePath).Trim();
-                if (AppInstanceIdentity.TryParseFileKey(owner, out var identity)
-                    && AppInstanceIdentity.IsRunning(identity))
+                if (TryParseLockOwner(owner, out var machine, out var identity)
+                    && ((!string.IsNullOrEmpty(machine) && IsForeignLockActive(UpdateLockFilePath, machine))
+                        || AppInstanceIdentity.IsRunning(identity)))
                     return;
                 TryDelete(UpdateLockFilePath);
             }
@@ -739,13 +744,17 @@ public sealed class UpdateService
             if (File.Exists(UpdateLockFilePath))
             {
                 var owner = File.ReadAllText(UpdateLockFilePath).Trim();
-                if (AppInstanceIdentity.TryParseFileKey(owner, out var identity)
-                    && identity != AppInstanceIdentity.Current
-                    && AppInstanceIdentity.IsRunning(identity))
-                    return false;
+                if (TryParseLockOwner(owner, out var machine, out var identity))
+                {
+                    if (!string.IsNullOrEmpty(machine) && IsForeignLockActive(UpdateLockFilePath, machine))
+                        return false;
+                    if (identity != AppInstanceIdentity.Current && AppInstanceIdentity.IsRunning(identity))
+                        return false;
+                }
             }
             Directory.CreateDirectory(Path.GetDirectoryName(UpdateLockFilePath)!);
-            File.WriteAllText(UpdateLockFilePath, AppInstanceIdentity.Current.FileKey);
+            File.WriteAllText(UpdateLockFilePath,
+                Environment.MachineName + LockOwnerSeparator + AppInstanceIdentity.Current.FileKey);
             AppDataPaths.RestrictFile(UpdateLockFilePath);
             return true;
         }
@@ -755,6 +764,28 @@ public sealed class UpdateService
             return false;
         }
     }
+
+    /// <summary>Reads both the old bare file key and the machine-qualified lock owner.</summary>
+    private static bool TryParseLockOwner(string text, out string? machine, out AppInstanceIdentity identity)
+    {
+        machine = null;
+        identity = default;
+        var separator = text.IndexOf(LockOwnerSeparator);
+        var key = separator < 0 ? text : text[(separator + 1)..];
+        if (!AppInstanceIdentity.TryParseFileKey(key, out identity))
+            return false;
+        if (separator >= 0)
+        {
+            machine = text[..separator];
+            if (string.IsNullOrWhiteSpace(machine))
+                return false;
+        }
+        return true;
+    }
+
+    private static bool IsForeignLockActive(string path, string machine) =>
+        !string.Equals(machine, Environment.MachineName, StringComparison.OrdinalIgnoreCase)
+        && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < ForeignLockExpiry;
 
     internal static void ReleaseUpdateLock()
     {

@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.AccessControl;
+using System.Security.Principal;
 
 namespace TSCutter.GUI.Services.Application;
 
@@ -194,16 +197,33 @@ public static class AppDataPaths
         }
     }
 
-    /// <summary>Keeps portable data private on Unix; the profile folders already are.</summary>
+    /// <summary>
+    /// Keeps portable data private. On Unix owner-only modes are enough; on Windows
+    /// the install folder's inherited ACLs may grant access to other users, so the
+    /// data files and folders get an explicit protected ACL.
+    /// </summary>
     internal static void RestrictFile(string path)
     {
-        if (OperatingSystem.IsWindows() || !File.Exists(path))
+        if (!File.Exists(path))
             return;
         try
         {
-            File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            if (OperatingSystem.IsWindows())
+            {
+                var info = new FileInfo(path);
+                var security = info.GetAccessControl();
+                security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                foreach (var rule in PrivateRules(InheritanceFlags.None))
+                    security.AddAccessRule(rule);
+                info.SetAccessControl(security);
+            }
+            else
+            {
+                File.SetUnixFileMode(path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
+            }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                      or PlatformNotSupportedException or SystemException)
         {
             Console.Error.WriteLine($"Could not restrict {path}: {ex.Message}");
         }
@@ -211,17 +231,45 @@ public static class AppDataPaths
 
     internal static void RestrictDirectory(string path)
     {
-        if (OperatingSystem.IsWindows() || !Directory.Exists(path))
+        if (!Directory.Exists(path))
             return;
         try
         {
-            File.SetUnixFileMode(path,
-                UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            if (OperatingSystem.IsWindows())
+            {
+                var info = new DirectoryInfo(path);
+                var security = info.GetAccessControl();
+                security.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+                foreach (var rule in PrivateRules(InheritanceFlags.ContainerInherit | InheritanceFlags.ObjectInherit))
+                    security.AddAccessRule(rule);
+                info.SetAccessControl(security);
+            }
+            else
+            {
+                File.SetUnixFileMode(path,
+                    UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+            }
         }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or PlatformNotSupportedException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                      or PlatformNotSupportedException or SystemException)
         {
             Console.Error.WriteLine($"Could not restrict {path}: {ex.Message}");
         }
+    }
+
+    private static IEnumerable<FileSystemAccessRule> PrivateRules(InheritanceFlags inheritance)
+    {
+        var user = WindowsIdentity.GetCurrent().User;
+        if (user is not null)
+            yield return new FileSystemAccessRule(user, FileSystemRights.FullControl, inheritance,
+                PropagationFlags.None, AccessControlType.Allow);
+        foreach (var sid in new[]
+                 {
+                     new SecurityIdentifier(WellKnownSidType.LocalSystemSid, null),
+                     new SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid, null)
+                 })
+            yield return new FileSystemAccessRule(sid, FileSystemRights.FullControl, inheritance,
+                PropagationFlags.None, AccessControlType.Allow);
     }
 
     private static void TryDelete(string path)

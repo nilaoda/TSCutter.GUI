@@ -47,8 +47,9 @@ user profile once:
 Original files are left untouched. The update lock and result files are not
 copied, so a stale lock from another install cannot block updates. Migration runs
 only once: as long as `data` exists, later launches never overwrite its contents.
-On Unix the data folder and its files are created with owner-only permissions,
-because they contain remote-account password hashes.
+The data folder and its files are private: owner-only modes (`0700`/`0600`) on
+Unix and a protected ACL for the current user (plus SYSTEM and Administrators) on
+Windows, because they contain remote-account password hashes.
 
 ## In-place updates
 
@@ -75,4 +76,7 @@ mode back on.
 - Moving a portable install to another machine drops recent items and saved
   folders that no longer exist there.
 - The Web UI worker uses the same executable and therefore shares the portable
-  data folder.
+  data folder; its environment-based preferences snapshot does not redirect paths.
+- `data/update.lock` records the owning machine. If a portable folder on a shared
+  drive was locked on another machine, updates are blocked until that lock is
+  older than two hours or is removed.
