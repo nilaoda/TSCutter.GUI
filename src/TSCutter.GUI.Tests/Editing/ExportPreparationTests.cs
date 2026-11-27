@@ -53,6 +53,52 @@ public sealed class ExportPreparationTests
         });
     }
 
+    [Theory]
+    [InlineData("fast")]
+    [InlineData("slow")]
+    [InlineData("cancel")]
+    [InlineData("error")]
+    public async Task TimestampCheckShowsInlineProgressAndAlwaysRestoresState(string mode)
+    {
+        await RunAsync(async (main, dialogs) =>
+        {
+            using var cancellation = new CancellationTokenSource();
+            var completion = new TaskCompletionSource<IReadOnlyList<string>>();
+            Func<CancellationToken, Task<IReadOnlyList<string>>> check = token =>
+                mode == "fast" ? Task.FromResult<IReadOnlyList<string>>([]) : completion.Task.WaitAsync(token);
+            var pending = (Task<IReadOnlyList<string>>)typeof(MainWindowViewModel)
+                .GetMethod("CheckExportTimestampsAsync", PrivateInstance)!.Invoke(main, [check, cancellation.Token])!;
+            if (mode == "fast")
+                Assert.True(pending.IsCompletedSuccessfully);
+            else
+            {
+                Assert.True(main.IsCheckingExportTimestamps);
+                Assert.False(main.ShowExportPreparation);
+                await Task.Delay(350);
+                Dispatcher.UIThread.RunJobs();
+                Assert.True(main.ShowExportPreparation);
+                if (mode == "cancel")
+                    cancellation.Cancel();
+                else if (mode == "error")
+                    completion.SetException(new IOException("read failed"));
+                else
+                    completion.SetResult(["source.ts"]);
+            }
+            if (mode == "cancel")
+                await Assert.ThrowsAnyAsync<OperationCanceledException>(() => pending);
+            else if (mode == "error")
+                await Assert.ThrowsAsync<IOException>(() => pending);
+            else
+                Assert.Equal(mode == "fast" ? [] : new[] { "source.ts" }, await pending);
+            Assert.False(main.IsCheckingExportTimestamps);
+            Assert.False(main.ShowExportPreparation);
+            Assert.Equal(0, dialogs.PreparationCount);
+            await Task.Delay(300);
+            Dispatcher.UIThread.RunJobs();
+            Assert.False(main.ShowExportPreparation);
+        });
+    }
+
     [Fact]
     public async Task LargeQueueAndWarningListsOnlyRealizeTheVisibleItems()
     {
