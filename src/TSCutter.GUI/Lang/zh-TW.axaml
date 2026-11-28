@@ -293,6 +293,7 @@
     <x:String x:Key="String.UpdatesInfo.NewVersionAlert">是否開啟下載頁面？</x:String>
     <x:String x:Key="String.Update.VersionInfo">目前版本: {0}, 新版本: {1}</x:String>
     <x:String x:Key="String.Update.UpToDate">目前已是最新版本。</x:String>
+    <x:String x:Key="String.Update.CheckFailed">無法檢查更新。請稍後重試，或開啟發布頁面。</x:String>
     <x:String x:Key="String.Update.NoNotes">此版本沒有發布說明。</x:String>
     <x:String x:Key="String.Update.OpenInBrowser">在瀏覽器中開啟</x:String>
     <x:String x:Key="String.Update.Skip">略過此版本</x:String>

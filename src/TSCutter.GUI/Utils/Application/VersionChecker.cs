@@ -12,11 +12,16 @@ namespace TSCutter.GUI.Utils.Application;
 
 public static class VersionChecker
 {
-    private const string VersionUrl = "https://api.github.com/repos/nilaoda/TSCutter.GUI/releases/latest";
+    private const string ReleaseApiPrefix = "https://api.github.com/repos/nilaoda/TSCutter.GUI/releases/tags/";
     private const string ReleaseUrl = "https://github.com/nilaoda/TSCutter.GUI/releases/latest";
     private const string ReleaseUrlPrefix = "https://github.com/nilaoda/TSCutter.GUI/releases/tag/";
     private const string DownloadUrlPrefix = "https://github.com/nilaoda/TSCutter.GUI/releases/download/";
     private const string ManifestFileName = "update-manifest.json";
+    private static readonly HttpClient RedirectClient = new(new HttpClientHandler { AllowAutoRedirect = false });
+    private static readonly HttpClient MetadataClient = new()
+    {
+        DefaultRequestHeaders = { { "User-Agent", "TSCutter.GUI" } }
+    };
     private static readonly TimeSpan CacheLifetime = TimeSpan.FromMinutes(10);
     private static readonly SemaphoreSlim CacheGate = new(1, 1);
     private static UpdateInfo? _cachedInfo;
@@ -28,8 +33,7 @@ public static class VersionChecker
 
     internal static bool IsNewerTag(string candidateTag, string currentTag)
     {
-        // Versioned Beta releases supersede the dated Alpha releases. Ignore legacy
-        // and unrecognized tags so a stale /latest response cannot suggest a downgrade.
+        // 只接受版本化的发行标签，忽略旧的日期标签和不能识别的标签。
         return TryParseVersionTag(candidateTag, out var candidate)
                && TryParseVersionTag(currentTag, out var current)
                && candidate > current;
@@ -66,28 +70,35 @@ public static class VersionChecker
         return DownloadUrlPrefix + tag + "/" + fileName;
     }
 
-    public static async Task<string> GetLatestTagAsync()
+    private static async Task<string?> GetLatestTagAsync(HttpClient client)
     {
         try
         {
-            var redirctUrl = await Get302Async(ReleaseUrl);
-            return redirctUrl.StartsWith(ReleaseUrlPrefix, StringComparison.Ordinal)
-                ? redirctUrl[ReleaseUrlPrefix.Length..]
-                : "";
+            var releaseUri = new Uri(ReleaseUrl);
+            using var response = await client.GetAsync(releaseUri, HttpCompletionOption.ResponseHeadersRead)
+                .ConfigureAwait(false);
+            if (response.StatusCode != HttpStatusCode.Found || response.Headers.Location is not { } location)
+                return null;
+
+            var target = new Uri(releaseUri, location).GetLeftPart(UriPartial.Path);
+            return target.Length > ReleaseUrlPrefix.Length && target.StartsWith(ReleaseUrlPrefix, StringComparison.Ordinal)
+                ? target[ReleaseUrlPrefix.Length..]
+                : null;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Failed to get latest tag: {ex.Message}");
-            return "";
+            return null;
         }
     }
 
-    public static async Task<GitHubVersionInfo?> CheckUpdateAsync()
+    private static async Task<GitHubVersionInfo?> GetReleaseAsync(HttpClient client, string tag)
     {
         try
         {
-            var jsonStr = await GetContentAsync(VersionUrl);
-            return JsonSerializer.Deserialize<GitHubVersionInfo>(jsonStr, AppJsonContext.Default.GitHubVersionInfo);
+            var json = await client.GetStringAsync(ReleaseApiPrefix + tag).ConfigureAwait(false);
+            var release = JsonSerializer.Deserialize(json, AppJsonContext.Default.GitHubVersionInfo);
+            return release?.TagName == tag ? release : null;
         }
         catch (Exception ex)
         {
@@ -96,26 +107,25 @@ public static class VersionChecker
         }
     }
 
-    /// <summary>
-    /// Gathers the information needed by the update dialog. The existing tag-based
-    /// check remains the fallback when the API or the release manifest is unavailable;
-    /// in that case <see cref="UpdateInfo.CanInstallInPlace"/> is false and the caller
-    /// keeps the original "open the download page" behavior.
-    /// </summary>
-    public static async Task<UpdateInfo?> CheckForUpdateAsync(bool forceRefresh = false)
+    /// <summary>先比较重定向中的发行标签，发现新版本时再获取发布说明和更新清单。</summary>
+    public static async Task<(UpdateInfo? Update, bool CheckFailed)> CheckForUpdateAsync(bool forceRefresh = false)
     {
         if (!forceRefresh && HasFreshCache())
-            return _cachedInfo;
+            return (_cachedInfo, false);
         await CacheGate.WaitAsync().ConfigureAwait(false);
         try
         {
             if (!forceRefresh && HasFreshCache())
-                return _cachedInfo;
-            var info = await LoadUpdateInfoAsync().ConfigureAwait(false);
-            _cachedInfo = info;
-            _cachedAt = DateTimeOffset.UtcNow;
-            _hasCached = true;
-            return info;
+                return (_cachedInfo, false);
+            var result = await LoadUpdateInfoAsync(RedirectClient, MetadataClient, App.CurrentTag, CurrentRid)
+                .ConfigureAwait(false);
+            if (!result.CheckFailed)
+            {
+                _cachedInfo = result.Update;
+                _cachedAt = DateTimeOffset.UtcNow;
+                _hasCached = true;
+            }
+            return result;
         }
         finally
         {
@@ -133,39 +143,39 @@ public static class VersionChecker
     private static bool HasFreshCache() =>
         _hasCached && DateTimeOffset.UtcNow - _cachedAt < CacheLifetime;
 
-    private static async Task<UpdateInfo?> LoadUpdateInfoAsync()
+    internal static async Task<(UpdateInfo? Update, bool CheckFailed)> LoadUpdateInfoAsync(
+        HttpClient redirectClient, HttpClient metadataClient, string currentTag, string? rid)
     {
         try
         {
-            var release = await CheckUpdateAsync();
-            var tag = release?.TagName;
-            if (string.IsNullOrEmpty(tag))
-                tag = await GetLatestTagAsync();
-            if (string.IsNullOrEmpty(tag) || !TryParseVersionTag(tag, out var parsed) || parsed is null)
-                return null;
+            var tag = await GetLatestTagAsync(redirectClient).ConfigureAwait(false);
+            if (tag is null)
+                return (null, true);
+            if (!IsNewerTag(tag, currentTag))
+                return (null, false);
 
+            var release = await GetReleaseAsync(metadataClient, tag).ConfigureAwait(false);
             var info = new UpdateInfo
             {
                 Tag = tag,
-                Version = parsed.ToString(3),
+                Version = Version.Parse(tag.AsSpan(1)).ToString(3),
                 Notes = release?.Body,
-                ReleaseUrl = release?.HtmlUrl ?? ReleaseUrl
+                ReleaseUrl = release?.HtmlUrl ?? ReleaseUrlPrefix + tag
             };
 
-            var rid = CurrentRid;
             if (rid is null)
-                return info;
+                return (info, false);
 
-            var manifest = await GetManifestAsync(tag);
+            var manifest = await GetManifestAsync(metadataClient, tag).ConfigureAwait(false);
             if (manifest is null || manifest.Tag != tag || manifest.Version != info.Version
                 || manifest.Assets is null
                 || !manifest.Assets.TryGetValue(rid, out var asset)
                 || string.IsNullOrEmpty(asset.File) || string.IsNullOrEmpty(asset.Sha256))
-                return info;
+                return (info, false);
 
             var assetUrl = FindAssetUrl(release, asset.File, tag);
             if (assetUrl is null)
-                return info;
+                return (info, false);
 
             info.Asset = new UpdateAsset
             {
@@ -174,20 +184,21 @@ public static class VersionChecker
                 Size = asset.Size,
                 Sha256 = asset.Sha256
             };
-            return info;
+            return (info, false);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Failed to prepare update info: {ex.Message}");
-            return null;
+            return (null, true);
         }
     }
 
-    private static async Task<UpdateManifest?> GetManifestAsync(string tag)
+    private static async Task<UpdateManifest?> GetManifestAsync(HttpClient client, string tag)
     {
         try
         {
-            var json = await GetContentAsync(DownloadUrlPrefix + tag + "/" + ManifestFileName);
+            var json = await client.GetStringAsync(DownloadUrlPrefix + tag + "/" + ManifestFileName)
+                .ConfigureAwait(false);
             return JsonSerializer.Deserialize<UpdateManifest>(json, AppJsonContext.Default.UpdateManifest);
         }
         catch (Exception ex)
@@ -207,37 +218,5 @@ public static class VersionChecker
         if (OperatingSystem.IsMacOS())
             return arch == Architecture.Arm64 ? "osx-arm64" : arch == Architecture.X64 ? "osx-x64" : null;
         return null;
-    }
-    
-    // 获取网页源码
-    private static async Task<string> GetContentAsync(string url)
-    {
-        using var client = new HttpClient();
-        client.DefaultRequestHeaders.Add("User-Agent", "TSCutter.GUI");
-        using var response = await client.GetAsync(url);
-        using var content = response.Content;
-        return await content.ReadAsStringAsync();
-    }
-    
-    // 重定向
-    private static async Task<string> Get302Async(string url)
-    {
-        var handler = new HttpClientHandler
-        {
-            AllowAutoRedirect = false
-        };
-        var redirectedUrl = "";
-        using var client = new HttpClient(handler);
-        using var response = await client.GetAsync(url, HttpCompletionOption.ResponseHeadersRead);
-        using var content = response.Content;
-        if (response.StatusCode != HttpStatusCode.Found) return redirectedUrl;
-        
-        var headers = response.Headers;
-        if (headers.Location != null)
-        {
-            redirectedUrl = headers.Location.AbsoluteUri;
-        }
-
-        return redirectedUrl;
     }
 }

@@ -12,15 +12,16 @@ fallback, Web-UI suppression, release layout) is preserved.
 The additive implementation is in place:
 
 - CI publishes `update-manifest.json` and `SHA256SUMS.txt` alongside the six packages.
-- `VersionChecker.CheckForUpdateAsync()` reads the release API and manifest, with the
-  original 302 tag check as fallback; `GetLatestTagAsync()`, `CheckUpdateAsync()` and
-  `IsNewerTag()` remain unchanged.
+- `VersionChecker.CheckForUpdateAsync()` compares the tag from the GitHub release
+  redirect with the installed version. It fetches release metadata and the manifest
+  for that tag only when a newer version is available. Startup checks stay silent
+  when the redirect is unavailable. The in-app check reports the failure.
 - `UpdateService` downloads, verifies SHA-256, extracts with zip-slip protection,
   stages, and applies the update with per-file replacement on Linux and a
   whole-bundle swap on macOS, with rollback on both. Staging files are cleaned up
   after success or on the next launch.
 - `UpdatesInfoWindow` is implemented, with a **new** in-app check menu item; the
-  original Help → Check update menu item and browser fallback are untouched.
+  browser-based Help → Check for Updates menu item still opens the releases page.
 - The feature gate, preflight write check, verified relaunch with restore, and
   startup reporting of helper failures are implemented (see 6.5).
 - The manifest file name is trusted but must match an actual release asset; no
@@ -148,7 +149,7 @@ one. The following behavior stays:
    pre-check; a newer tag is still required before any install UI appears.
 5. `CheckUpdateAsync()` and `GitHubVersionInfo` stay available; they are
    extended with asset metadata rather than replaced.
-6. **Help → Check update keeps opening the releases page in the browser.**
+6. **Help → Check for Updates keeps opening the releases page in the browser.**
    This is the universal fallback whenever in-place update is unavailable,
    declined, or fails.
 7. The existing localized strings (`String.UpdatesInfo.*`, `String.Settings.AutoCheckForUpdates`)
@@ -171,7 +172,7 @@ All changes below are additive extensions of the current code.
 | --- | --- | --- |
 | `Models/Application/GitHubVersionInfo.cs` | optional `assets` array (`name`, `size`, `browser_download_url`) and `html_url` | select the right download without hard-coded URLs |
 | `Utils/Application/AppJsonContext.cs` | register the new model types for source-generated JSON | AOT-safe deserialization |
-| `Utils/Application/VersionChecker.cs` | new `CheckForUpdateAsync()` returning an `UpdateInfo`; new RID mapping | API-based discovery with asset metadata |
+| `Utils/Application/VersionChecker.cs` | `CheckForUpdateAsync()` returns update info and check status; resolves the current RID | redirect-based version check with asset metadata |
 | `App.axaml.cs` | keep `CheckUpdatesAsync()` but route "Yes" to the update dialog; keep `MainWindow.CheckUpdateCommand.Execute(null)` for the browser option | richer prompt, old fallback intact |
 | `Views/MainWindow.axaml`, `ViewModels/MainWindowViewModel.cs` | add a **new** menu item and command for an in-app check; leave `CheckUpdateCommand` and its menu item untouched | manual install path without changing existing behavior |
 | `ViewModels/Application/UpdatesInfoWindowViewModel.cs` | version strings, release notes, progress, and commands | drive the new dialog |
@@ -190,16 +191,19 @@ New files: `Models/Application/UpdateModels.cs` and
 ## 4. New architecture
 
 ```text
-Startup (existing)              New menu item: Check for updates (install)
+Startup (existing)              New menu item: Check for Updates (Install)
         |                                   |
    AutoCheckForUpdates                      |
         |                                   |
    [1s delay] → VersionChecker  <------------+
-        |  API /releases/latest (fallback: existing 302 check)
+        |  GET /releases/latest, read only the 302 response headers
+        v
+   IsNewerTag
+        |  Newer version only: fetch release metadata and manifest for the tag
         v
    UpdateInfo (tag, notes, matching asset, checksum)
         |
-   IsNewerTag + SkippedUpdateVersion (existing rule + new skip)
+   SkippedUpdateVersion (startup)
         |
    UpdatesInfoWindow
         +-- Install now ------> UpdateService.DownloadAndPrepareAsync
@@ -208,7 +212,7 @@ Startup (existing)              New menu item: Check for updates (install)
         +-- Skip this version -> AppConfig.SkippedUpdateVersion
         +-- Later ------------> close
 
-Existing Help → Check update menu item: unchanged, always opens the browser.
+Existing Help → Check for Updates menu item: unchanged, always opens the browser.
 ```
 
 ### 4.1 Release manifest
@@ -388,7 +392,7 @@ release notes from `body`, a progress bar during download, and buttons:
 New `String.Update.*` keys are added to all three language files next to the
 existing `String.UpdatesInfo.*` keys; no existing key is changed or deleted.
 The new in-app menu item reports "You are up to date" when there is no newer
-release, while the original Help → Check update menu item keeps opening the
+release, while the original Help → Check for Updates menu item keeps opening the
 releases page as before.
 
 ---
