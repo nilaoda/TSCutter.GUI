@@ -48,19 +48,22 @@ user profile once:
 Original files are left untouched. The update lock and result files are not
 copied, so a stale lock from another install cannot block updates. A new data
 folder is built in a staging folder and activated only after every intended file
-is copied; cleaning up staging never follows directory symlinks, so files outside
-the install folder are untouched. An existing data folder is never deleted or
-renamed: missing files are copied into it without overwriting existing ones, and
-unrelated files are kept. Writability is checked on every launch. If an existing
-folder is still incomplete, the app tries to make it writable in place and
-continues copying; if that fails, it leaves the folder alone. A completed folder
-is never modified: if it has become read-only, the app falls back to the user
-profile while keeping its contents and shows the reason in Settings → General.
-A failed migration leaves the profile in use, and a retry never overwrites
-settings saved in the meantime. The data folder and its files are private:
-owner-only modes (`0700`/`0600`) on Unix and a protected ACL for the current user
-(plus SYSTEM and Administrators) on Windows, because they contain remote-account
-password hashes.
+is copied; neither copying Recovery files nor cleaning up staging follows
+directory symlinks, so files outside the install folder are untouched. A `data`
+folder that is itself a symlink is refused rather than written through. An
+existing data folder is never deleted or renamed: missing files are copied into
+it without overwriting existing ones, and unrelated files are kept. Writability
+is checked on every launch. If an existing folder is still incomplete, the app
+tries to make it writable in place and continues copying; if that fails, it
+leaves the folder alone. On a retry of an incomplete folder, the app data files
+(`config.json`, `remote-editing.json` and `saved-frames.json`) are refreshed from
+the profile so newer profile settings win, while unrelated files in the folder
+are kept. A completed folder is never modified: if it has become read-only, the
+app falls back to the user profile without changing it, keeps its contents and
+shows the reason in Settings → General. A failed migration leaves the profile in
+use. The data folder and its files are private: owner-only modes (`0700`/`0600`)
+on Unix and a protected ACL for the current user (plus SYSTEM and Administrators)
+on Windows, because they contain remote-account password hashes.
 
 ## In-place updates
 
@@ -77,11 +80,14 @@ temporary executable.
 ## Turn it off
 
 Delete `TSCutter.GUI.portable`. On the next launch the app copies the portable
-data back into the user profile if that profile has no config yet, and records a
-`TSCutter.GUI.portable.disabled` opt-out inside `data`. This only happens for a
-`data` folder this application finished migrating; an unrelated folder with the
-same name is never touched. The `data` folder itself stays where it is. Re-creating
-the marker clears the opt-out and turns portable mode back on.
+data back into the user profile and records a `TSCutter.GUI.portable.disabled`
+opt-out inside `data`. Even if the profile already has a config file, the
+portable-only files (remote editing accounts, saved frames and Recovery files)
+are restored into it; an existing profile config is never overwritten. This only
+happens for a `data` folder this application finished migrating; an unrelated
+folder with the same name is never touched, and directory symlinks are not
+followed. The `data` folder itself stays where it is. Re-creating the marker
+clears the opt-out and turns portable mode back on.
 
 ## Notes
 
@@ -98,3 +104,5 @@ the marker clears the opt-out and turns portable mode back on.
 - `data/update.lock` records the owning machine. If a portable folder on a shared
   drive was locked on another machine, updates are blocked until that lock is
   older than two hours or is removed.
+- Private permissions (owner-only modes on Unix, a protected ACL on Windows) are
+  re-applied to existing complete data folders as well as newly migrated ones.

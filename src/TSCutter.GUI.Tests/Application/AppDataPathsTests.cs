@@ -293,6 +293,182 @@ public sealed class AppDataPathsTests : IDisposable
     }
 
     [Fact]
+    public void RecoveryCopyDoesNotFollowDirectorySymlinks()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var external = Path.Combine(_root.FullName, "external-recovery");
+        Directory.CreateDirectory(external);
+        var externalFile = Path.Combine(external, "outside.txt");
+        File.WriteAllText(externalFile, "outside");
+        var externalDirMode = File.GetUnixFileMode(external);
+        var externalFileMode = File.GetUnixFileMode(externalFile);
+
+        var recovery = Path.Combine(AppDataPaths.LocalApplicationDataRootOverride!,
+            AppDataPaths.AppDirectoryName, "Recovery");
+        Directory.CreateDirectory(recovery);
+        File.WriteAllText(Path.Combine(recovery, "keep.txt"), "keep");
+        var link = Path.Combine(recovery, "linked");
+        Directory.CreateSymbolicLink(link, external);
+
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+
+        try
+        {
+            AppDataPaths.Initialize();
+
+            var dataRecovery = Path.Combine(AppDataPaths.DataDirectory, "Recovery");
+            Assert.Equal("keep", File.ReadAllText(Path.Combine(dataRecovery, "keep.txt")));
+            Assert.False(File.Exists(Path.Combine(dataRecovery, "linked", "outside.txt")));
+
+            Assert.True(File.Exists(externalFile));
+            Assert.Equal("outside", File.ReadAllText(externalFile));
+            Assert.Equal(externalDirMode, File.GetUnixFileMode(external));
+            Assert.Equal(externalFileMode, File.GetUnixFileMode(externalFile));
+        }
+        finally
+        {
+            if (Directory.Exists(link)) File.Delete(link);
+            if (Directory.Exists(external)) Directory.Delete(external, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SymlinkedDataDirectoryIsNotWritten()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var external = Path.Combine(_root.FullName, "external-data");
+        Directory.CreateDirectory(external);
+
+        var dataDirectory = AppDataPaths.DataDirectory;
+        Directory.CreateSymbolicLink(dataDirectory, external);
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+
+        try
+        {
+            AppDataPaths.Initialize();
+
+            Assert.NotNull(AppDataPaths.FallbackMessage);
+            Assert.False(AppDataPaths.IsPortable);
+            Assert.Empty(Directory.EnumerateFileSystemEntries(external));
+        }
+        finally
+        {
+            if (Directory.Exists(dataDirectory)) File.Delete(dataDirectory);
+            if (Directory.Exists(external)) Directory.Delete(external, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RetryIncompleteMigrationRefreshesExistingAppSettings()
+    {
+        var configRoot = Path.Combine(AppDataPaths.ApplicationDataRootOverride!, AppDataPaths.AppDirectoryName);
+        Directory.CreateDirectory(configRoot);
+        File.WriteAllText(Path.Combine(configRoot, "config.json"), "new profile");
+        File.WriteAllText(Path.Combine(configRoot, "remote-editing.json"), "remote");
+
+        var dataDirectory = AppDataPaths.DataDirectory;
+        Directory.CreateDirectory(dataDirectory);
+        File.WriteAllText(Path.Combine(dataDirectory, "config.json"), "stale");
+        File.WriteAllText(Path.Combine(dataDirectory, "stale.txt"), "keep");
+        // A directory at a known file destination aborts the first migration
+        // after the stale config has already been refreshed.
+        var blocker = Path.Combine(dataDirectory, "remote-editing.json");
+        Directory.CreateDirectory(blocker);
+
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+
+        AppDataPaths.Initialize();
+
+        Assert.NotNull(AppDataPaths.FallbackMessage);
+        Assert.False(AppDataPaths.IsPortable);
+
+        Directory.Delete(blocker);
+        File.WriteAllText(Path.Combine(configRoot, "config.json"), "newest");
+
+        AppDataPaths.ResetForTests();
+        AppDataPaths.Initialize();
+
+        Assert.Equal("newest", File.ReadAllText(Path.Combine(dataDirectory, "config.json")));
+        Assert.True(File.Exists(Path.Combine(dataDirectory, ".tscutter-portable-ready")));
+        Assert.Equal("keep", File.ReadAllText(Path.Combine(dataDirectory, "stale.txt")));
+    }
+
+    [Fact]
+    public void OptOutRestoresPortableOnlyFilesWhenProfileConfigExists()
+    {
+        var configRoot = Path.Combine(AppDataPaths.ApplicationDataRootOverride!, AppDataPaths.AppDirectoryName);
+        Directory.CreateDirectory(configRoot);
+        File.WriteAllText(Path.Combine(configRoot, "config.json"), "profile");
+
+        var dataDirectory = AppDataPaths.DataDirectory;
+        Directory.CreateDirectory(Path.Combine(dataDirectory, "Recovery"));
+        File.WriteAllText(Path.Combine(dataDirectory, ".tscutter-portable-ready"), "");
+        File.WriteAllText(Path.Combine(dataDirectory, "config.json"), "portable");
+        File.WriteAllText(Path.Combine(dataDirectory, "remote-editing.json"), "portable-remote");
+        File.WriteAllText(Path.Combine(dataDirectory, "saved-frames.json"), "portable-frames");
+        File.WriteAllText(Path.Combine(dataDirectory, "Recovery", "rec.tscut-recovery"), "recovery");
+
+        AppDataPaths.Initialize();
+
+        Assert.Equal("profile", File.ReadAllText(Path.Combine(configRoot, "config.json")));
+        Assert.Equal("portable-remote", File.ReadAllText(Path.Combine(configRoot, "remote-editing.json")));
+        Assert.Equal("portable-frames", File.ReadAllText(Path.Combine(configRoot, "saved-frames.json")));
+        var profileRecovery = Path.Combine(AppDataPaths.LocalApplicationDataRootOverride!,
+            AppDataPaths.AppDirectoryName, "Recovery", "rec.tscut-recovery");
+        Assert.Equal("recovery", File.ReadAllText(profileRecovery));
+
+        // Opt-out restores into the profile but leaves the portable folder intact.
+        Assert.Equal("portable", File.ReadAllText(Path.Combine(dataDirectory, "config.json")));
+        Assert.True(File.Exists(Path.Combine(dataDirectory, "remote-editing.json")));
+        Assert.True(File.Exists(Path.Combine(dataDirectory, "saved-frames.json")));
+        Assert.True(File.Exists(Path.Combine(dataDirectory, "Recovery", "rec.tscut-recovery")));
+    }
+
+    [Fact]
+    public void CompletedFolderPermissionsAreRestricted()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+
+        var dataDirectory = AppDataPaths.DataDirectory;
+        Directory.CreateDirectory(dataDirectory);
+        var config = Path.Combine(dataDirectory, "config.json");
+        File.WriteAllText(config, "settings");
+        File.WriteAllText(Path.Combine(dataDirectory, ".tscutter-portable-ready"), "");
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+
+        var originalDirMode = File.GetUnixFileMode(dataDirectory);
+        var originalFileMode = File.GetUnixFileMode(config);
+        try
+        {
+            File.SetUnixFileMode(dataDirectory, originalDirMode
+                | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite);
+            File.SetUnixFileMode(config, originalFileMode
+                | UnixFileMode.GroupWrite | UnixFileMode.OtherWrite);
+
+            AppDataPaths.Initialize();
+
+            Assert.True(AppDataPaths.IsPortable);
+            Assert.Null(AppDataPaths.FallbackMessage);
+            var dirMode = File.GetUnixFileMode(dataDirectory);
+            Assert.False((dirMode & UnixFileMode.GroupWrite) != 0);
+            Assert.False((dirMode & UnixFileMode.OtherWrite) != 0);
+            var fileMode = File.GetUnixFileMode(config);
+            Assert.False((fileMode & UnixFileMode.GroupWrite) != 0);
+            Assert.False((fileMode & UnixFileMode.OtherWrite) != 0);
+        }
+        finally
+        {
+            File.SetUnixFileMode(dataDirectory, originalDirMode);
+            File.SetUnixFileMode(config, originalFileMode);
+        }
+    }
+
+    [Fact]
     public void FailedMigrationRetryDoesNotOverwriteEdits()
     {
         var configRoot = Path.Combine(AppDataPaths.ApplicationDataRootOverride!, AppDataPaths.AppDirectoryName);

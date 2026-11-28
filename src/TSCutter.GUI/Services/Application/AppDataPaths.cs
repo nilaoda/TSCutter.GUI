@@ -120,14 +120,18 @@ public static class AppDataPaths
         {
             if (_portableUnavailable)
                 return;
-            TryDelete(OptOutFilePath);
+            // Do not even delete the opt-out marker through a symlinked data root.
+            if (IsDataDirectoryUsable())
+                TryDelete(OptOutFilePath);
             EnsurePortableData();
             return;
         }
 
         // A data folder only belongs to us if migration actually completed.
         // This avoids touching an unrelated folder that happens to be named data.
-        if (DataDirectoryOverride is not null || !File.Exists(CompletionFilePath))
+        // Also skip a symlink/junction at the data root so opt-out and restore
+        // never write through a redirect planted by someone else.
+        if (DataDirectoryOverride is not null || !File.Exists(CompletionFilePath) || !IsDataDirectoryUsable())
             return;
         WriteOptOut();
         RestoreFromPortableData();
@@ -137,6 +141,12 @@ public static class AppDataPaths
     {
         try
         {
+            // A symlink/junction at the data root would redirect every write out
+            // of the install folder; refuse it and let the catch below fall back.
+            if (!IsDataDirectoryUsable())
+                throw new UnauthorizedAccessException(
+                    $"The portable data folder is a symlink or junction and will not be used: {DataDirectory}");
+
             if (Directory.Exists(DataDirectory))
             {
                 // An existing data folder may contain user-prepared settings or
@@ -152,11 +162,19 @@ public static class AppDataPaths
                             $"The portable data folder is not writable: {DataDirectory}");
                 }
                 if (complete)
+                {
+                    // Harden folders migrated by an earlier launch that never
+                    // received the current ACL/Unix-mode protection.
+                    RestrictPortableData();
                     return;
-                CopyProfileDataInto(DataDirectory);
+                }
+                // Retry of an interrupted migration: refresh our own app files
+                // from the profile even if stale copies are already present.
+                CopyProfileDataInto(DataDirectory, overwrite: true);
                 var existingMarker = CompletionFilePath;
                 File.WriteAllText(existingMarker, "");
                 RestrictFile(existingMarker);
+                RestrictPortableData();
                 return;
             }
 
@@ -191,6 +209,26 @@ public static class AppDataPaths
         }
     }
 
+    /// <summary>
+    /// A data folder that does not exist yet is fine; an existing symlink or
+    /// junction is not, because writes would land in its target instead.
+    /// </summary>
+    private static bool IsDataDirectoryUsable() =>
+        !Directory.Exists(DataDirectory) || !IsReparsePoint(DataDirectory);
+
+    private static bool IsReparsePoint(string path)
+    {
+        try
+        {
+            return (File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Treat an unreadable path as unsafe instead of following it.
+            return true;
+        }
+    }
+
     private static bool IsWritable(string directory)
     {
         var probe = Path.Combine(directory, ".tscutter-write-test-" + Guid.NewGuid().ToString("N"));
@@ -217,7 +255,9 @@ public static class AppDataPaths
             }
             else
             {
-                File.SetUnixFileMode(directory, File.GetUnixFileMode(directory) | UnixFileMode.UserWrite);
+                // Execute is also required to traverse/use the directory.
+                File.SetUnixFileMode(directory,
+                    File.GetUnixFileMode(directory) | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
             }
             return IsWritable(directory);
         }
@@ -234,12 +274,12 @@ public static class AppDataPaths
             throw new UnauthorizedAccessException($"The portable data folder is not writable: {directory}");
     }
 
-    private static void CopyProfileDataInto(string target)
+    private static void CopyProfileDataInto(string target, bool overwrite = false)
     {
         var configRoot = Path.Combine(ProfileRoot(Environment.SpecialFolder.ApplicationData), AppDirectoryName);
-        CopyFileIfPresent(configRoot, target, "config.json");
-        CopyFileIfPresent(configRoot, target, "remote-editing.json");
-        CopyFileIfPresent(configRoot, target, "saved-frames.json");
+        CopyFileIfPresent(configRoot, target, "config.json", overwrite);
+        CopyFileIfPresent(configRoot, target, "remote-editing.json", overwrite);
+        CopyFileIfPresent(configRoot, target, "saved-frames.json", overwrite);
 
         var recovery = Path.Combine(ProfileRoot(Environment.SpecialFolder.LocalApplicationData),
             AppDirectoryName, "Recovery");
@@ -250,8 +290,9 @@ public static class AppDataPaths
     private static void RestoreFromPortableData()
     {
         var configRoot = Path.Combine(ProfileRoot(Environment.SpecialFolder.ApplicationData), AppDirectoryName);
-        if (File.Exists(Path.Combine(configRoot, "config.json")))
-            return;
+        // An existing profile config is no reason to stop: portable-only
+        // settings and Recovery data may still be missing. overwrite:false keeps
+        // the profile config (and every other existing file) intact.
         try
         {
             Directory.CreateDirectory(configRoot);
@@ -285,15 +326,20 @@ public static class AppDataPaths
         }
     }
 
-    private static void CopyFileIfPresent(string sourceDirectory, string targetDirectory, string name)
+    private static void CopyFileIfPresent(string sourceDirectory, string targetDirectory, string name,
+        bool overwrite = false)
     {
         var source = Path.Combine(sourceDirectory, name);
         if (!File.Exists(source))
             return;
         Directory.CreateDirectory(targetDirectory);
         var target = Path.Combine(targetDirectory, name);
-        // Never overwrite data that already exists in the portable folder.
-        File.Copy(source, target, overwrite: false);
+        // Overwrite only when explicitly refreshing an incomplete portable
+        // folder. Fresh staging and reverse migration preserve existing files;
+        // skipping them must not throw or abort the rest of the copy batch.
+        if (!overwrite && File.Exists(target))
+            return;
+        File.Copy(source, target, overwrite);
         RestrictFile(target);
     }
 
@@ -301,13 +347,51 @@ public static class AppDataPaths
     {
         Directory.CreateDirectory(destination);
         RestrictDirectory(destination);
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
+        // Skip reparse points so a symlink under Recovery is never traversed and
+        // its target is never written to.
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint
+        };
+        foreach (var file in Directory.EnumerateFiles(source, "*", options))
         {
             var target = Path.Combine(destination, Path.GetRelativePath(source, file));
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
             File.Copy(file, target, overwrite: false);
             RestrictFile(target);
         }
+    }
+
+    /// <summary>
+    /// Applies the same protection to an already-populated data folder: our own
+    /// files plus the Recovery tree. Enumeration skips reparse points so no
+    /// symlink target is touched, and only known files are hardened so unrelated
+    /// user files are left alone.
+    /// </summary>
+    private static void RestrictPortableData()
+    {
+        if (!IsDataDirectoryUsable())
+            return;
+        RestrictDirectory(DataDirectory);
+        RestrictFile(Path.Combine(DataDirectory, "config.json"));
+        RestrictFile(Path.Combine(DataDirectory, "remote-editing.json"));
+        RestrictFile(Path.Combine(DataDirectory, "saved-frames.json"));
+        RestrictFile(CompletionFilePath);
+
+        var recovery = Path.Combine(DataDirectory, "Recovery");
+        if (!Directory.Exists(recovery) || IsReparsePoint(recovery))
+            return;
+        RestrictDirectory(recovery);
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint
+        };
+        foreach (var directory in Directory.EnumerateDirectories(recovery, "*", options))
+            RestrictDirectory(directory);
+        foreach (var file in Directory.EnumerateFiles(recovery, "*", options))
+            RestrictFile(file);
     }
 
     /// <summary>
