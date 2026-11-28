@@ -146,7 +146,7 @@ public sealed class AppDataPathsTests : IDisposable
     }
 
     [Fact]
-    public void ReadOnlyExistingDataFolderIsReplacedWithWritableData()
+    public void ReadOnlyExistingDataFolderIsMadeWritableAndPreserved()
     {
         if (OperatingSystem.IsWindows())
             return;
@@ -165,7 +165,7 @@ public sealed class AppDataPathsTests : IDisposable
 
             Assert.True(AppDataPaths.IsPortable);
             Assert.Null(AppDataPaths.FallbackMessage);
-            Assert.False(File.Exists(Path.Combine(dataDirectory, "stale.txt")));
+            Assert.Equal("old", File.ReadAllText(Path.Combine(dataDirectory, "stale.txt")));
             Assert.True((File.GetUnixFileMode(dataDirectory) & UnixFileMode.UserWrite) != 0);
             Assert.True(File.Exists(Path.Combine(dataDirectory, ".tscutter-portable-ready")));
         }
@@ -216,6 +216,80 @@ public sealed class AppDataPathsTests : IDisposable
         Assert.True(File.Exists(Path.Combine(AppDataPaths.DataDirectory, "remote-editing.json")));
         Assert.True(File.Exists(Path.Combine(AppDataPaths.DataDirectory, "saved-frames.json")));
         Assert.True(File.Exists(Path.Combine(AppDataPaths.DataDirectory, ".tscutter-portable-ready")));
+    }
+
+    [Fact]
+    public void CompletedReadOnlyDataFallsBackWithoutLosingContents()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var dataDirectory = AppDataPaths.DataDirectory;
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+        AppDataPaths.Initialize();
+        var userFile = Path.Combine(dataDirectory, "user.txt");
+        File.WriteAllText(userFile, "keep me");
+        var originalMode = File.GetUnixFileMode(dataDirectory);
+        try
+        {
+            File.SetUnixFileMode(dataDirectory, UnixFileMode.UserRead | UnixFileMode.UserExecute
+                | UnixFileMode.GroupRead | UnixFileMode.GroupExecute
+                | UnixFileMode.OtherRead | UnixFileMode.OtherExecute);
+
+            AppDataPaths.Initialize();
+
+            Assert.NotNull(AppDataPaths.FallbackMessage);
+            Assert.False(AppDataPaths.IsPortable);
+            Assert.True(Directory.Exists(dataDirectory));
+            Assert.Equal("keep me", File.ReadAllText(userFile));
+        }
+        finally
+        {
+            File.SetUnixFileMode(dataDirectory, originalMode);
+        }
+    }
+
+    [Fact]
+    public void StagingCleanupDoesNotFollowDirectorySymlinks()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var external = Path.Combine(_root.FullName, "external");
+        Directory.CreateDirectory(external);
+        var externalFile = Path.Combine(external, "keep.txt");
+        File.WriteAllText(externalFile, "keep");
+        var externalDirMode = File.GetUnixFileMode(external);
+        var externalFileMode = File.GetUnixFileMode(externalFile);
+
+        var profileConfigRoot = Path.Combine(AppDataPaths.ApplicationDataRootOverride!, "TSCutter.GUI");
+        Directory.CreateDirectory(profileConfigRoot);
+        File.WriteAllText(Path.Combine(profileConfigRoot, "config.json"), "old");
+
+        var staging = Path.Combine(_root.FullName, "staging-link");
+        Directory.CreateDirectory(staging);
+        var link = Path.Combine(staging, "link");
+        Directory.CreateSymbolicLink(link, external);
+        // A directory at a file target forces migration to fail during copying.
+        Directory.CreateDirectory(Path.Combine(staging, "config.json"));
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+
+        var previous = AppDataPaths.MigrationStagingOverride;
+        AppDataPaths.MigrationStagingOverride = staging;
+        try
+        {
+            AppDataPaths.Initialize();
+
+            Assert.NotNull(AppDataPaths.FallbackMessage);
+            Assert.True(File.Exists(externalFile));
+            Assert.Equal("keep", File.ReadAllText(externalFile));
+            Assert.Equal(externalDirMode, File.GetUnixFileMode(external));
+            Assert.Equal(externalFileMode, File.GetUnixFileMode(externalFile));
+        }
+        finally
+        {
+            AppDataPaths.MigrationStagingOverride = previous;
+            if (Directory.Exists(link)) Directory.Delete(link);
+            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+        }
     }
 
     [Fact]

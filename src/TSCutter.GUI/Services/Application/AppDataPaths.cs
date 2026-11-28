@@ -135,68 +135,72 @@ public static class AppDataPaths
 
     private static void EnsurePortableData()
     {
-        if (File.Exists(CompletionFilePath))
-            return;
-
-        // Build the whole data folder in a staging directory first. The active
-        // data folder only appears once every file and the completion marker are
-        // in place, so a failed migration never exposes partial settings and a
-        // retry can never overwrite edits made in the profile in the meantime.
-        var staging = MigrationStagingOverride
-            ?? Path.Combine(DataRoot, ".tscutter-portable-stage-" + Guid.NewGuid().ToString("N"));
         try
         {
-            Directory.CreateDirectory(staging);
-            var probe = Path.Combine(staging,
-                ".tscutter-write-test-" + Guid.NewGuid().ToString("N"));
-            using (File.Create(probe, 1, FileOptions.DeleteOnClose)) { }
-            TryDelete(probe);
-            RestrictDirectory(staging);
-
-            var configRoot = Path.Combine(ProfileRoot(Environment.SpecialFolder.ApplicationData), AppDirectoryName);
-            CopyFileIfPresent(configRoot, staging, "config.json");
-            CopyFileIfPresent(configRoot, staging, "remote-editing.json");
-            CopyFileIfPresent(configRoot, staging, "saved-frames.json");
-
-            var recovery = Path.Combine(ProfileRoot(Environment.SpecialFolder.LocalApplicationData),
-                AppDirectoryName, "Recovery");
-            if (Directory.Exists(recovery))
-                CopyDirectory(recovery, Path.Combine(staging, "Recovery"));
-
-            var marker = Path.Combine(staging, CompletionMarkerFileName);
-            File.WriteAllText(marker, "");
-            RestrictFile(marker);
-
-            // Rename the old folder instead of deleting it: a read-only folder
-            // can still be moved when its parent is writable.
-            string? previousData = null;
             if (Directory.Exists(DataDirectory))
             {
-                previousData = DataDirectory + ".old-" + Guid.NewGuid().ToString("N");
-                Directory.Move(DataDirectory, previousData);
+                // An existing data folder may contain user-prepared settings or
+                // leftovers from an interrupted migration. Never delete or rename
+                // it: check that it is writable and fill only missing files.
+                RequireWritable(DataDirectory);
+                if (File.Exists(CompletionFilePath))
+                    return;
+                CopyProfileDataInto(DataDirectory);
+                var existingMarker = CompletionFilePath;
+                File.WriteAllText(existingMarker, "");
+                RestrictFile(existingMarker);
+                return;
             }
+
+            // No data folder yet: build it in a staging directory so a partial
+            // migration never becomes active.
+            var staging = MigrationStagingOverride
+                ?? Path.Combine(DataRoot, ".tscutter-portable-stage-" + Guid.NewGuid().ToString("N"));
             try
             {
+                Directory.CreateDirectory(staging);
+                RequireWritable(staging);
+                RestrictDirectory(staging);
+                CopyProfileDataInto(staging);
+                var marker = Path.Combine(staging, CompletionMarkerFileName);
+                File.WriteAllText(marker, "");
+                RestrictFile(marker);
                 Directory.Move(staging, DataDirectory);
             }
             catch
             {
-                if (previousData is not null && !Directory.Exists(DataDirectory))
-                    Directory.Move(previousData, DataDirectory);
+                TryDeleteDirectory(staging);
                 throw;
             }
-            if (previousData is not null)
-                TryDeleteDirectory(previousData);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            TryDeleteDirectory(staging);
             // Keep using the profile for this session; the next launch retries.
             _portableUnavailable = true;
             FallbackMessage = ex.Message;
             Console.Error.WriteLine(
-                $"Portable data migration failed: {ex.Message}. Using the user profile instead.");
+                $"Portable data folder is unavailable: {ex.Message}. Using the user profile instead.");
         }
+    }
+
+    private static void RequireWritable(string directory)
+    {
+        var probe = Path.Combine(directory, ".tscutter-write-test-" + Guid.NewGuid().ToString("N"));
+        using (File.Create(probe, 1, FileOptions.DeleteOnClose)) { }
+        TryDelete(probe);
+    }
+
+    private static void CopyProfileDataInto(string target)
+    {
+        var configRoot = Path.Combine(ProfileRoot(Environment.SpecialFolder.ApplicationData), AppDirectoryName);
+        CopyFileIfPresent(configRoot, target, "config.json");
+        CopyFileIfPresent(configRoot, target, "remote-editing.json");
+        CopyFileIfPresent(configRoot, target, "saved-frames.json");
+
+        var recovery = Path.Combine(ProfileRoot(Environment.SpecialFolder.LocalApplicationData),
+            AppDirectoryName, "Recovery");
+        if (Directory.Exists(recovery))
+            CopyDirectory(recovery, Path.Combine(target, "Recovery"));
     }
 
     private static void RestoreFromPortableData()
@@ -244,8 +248,8 @@ public static class AppDataPaths
             return;
         Directory.CreateDirectory(targetDirectory);
         var target = Path.Combine(targetDirectory, name);
-        // Overwrite so a retry can complete a migration that failed halfway.
-        File.Copy(source, target, overwrite: true);
+        // Never overwrite data that already exists in the portable folder.
+        File.Copy(source, target, overwrite: false);
         RestrictFile(target);
     }
 
@@ -257,7 +261,7 @@ public static class AppDataPaths
         {
             var target = Path.Combine(destination, Path.GetRelativePath(source, file));
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(file, target, overwrite: true);
+            File.Copy(file, target, overwrite: false);
             RestrictFile(target);
         }
     }
@@ -356,23 +360,13 @@ public static class AppDataPaths
         {
             if (!Directory.Exists(path))
                 return;
-            if (!OperatingSystem.IsWindows())
-                MakeDeletable(path);
+            // Only ever used for our own staging folders. Directory.Delete does
+            // not traverse directory symlinks, so external targets are untouched.
             Directory.Delete(path, recursive: true);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             Console.Error.WriteLine($"Could not delete {path}: {ex.Message}");
         }
-    }
-
-    private static void MakeDeletable(string directory)
-    {
-        File.SetUnixFileMode(directory,
-            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
-        foreach (var child in Directory.EnumerateDirectories(directory))
-            MakeDeletable(child);
-        foreach (var file in Directory.EnumerateFiles(directory))
-            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 }
