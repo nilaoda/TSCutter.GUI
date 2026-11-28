@@ -48,15 +48,19 @@ user profile once:
 Original files are left untouched. The update lock and result files are not
 copied, so a stale lock from another install cannot block updates. A new data
 folder is built in a staging folder and activated only after every intended file
-is copied. An existing data folder is never deleted or renamed: missing files are
-copied into it without overwriting existing ones, and unrelated files are kept.
+is copied; cleaning up staging never follows directory symlinks, so files outside
+the install folder are untouched. An existing data folder is never deleted or
+renamed: missing files are copied into it without overwriting existing ones, and
+unrelated files are kept. Writability is checked on every launch. If an existing
+folder is still incomplete, the app tries to make it writable in place and
+continues copying; if that fails, it leaves the folder alone. A completed folder
+is never modified: if it has become read-only, the app falls back to the user
+profile while keeping its contents and shows the reason in Settings → General.
 A failed migration leaves the profile in use, and a retry never overwrites
-settings saved in the meantime. Writability is checked on every launch, including
-for completed folders; an unwritable folder falls back to the user profile while
-keeping its contents. The data folder and its
-files are private: owner-only modes (`0700`/`0600`) on Unix and a protected ACL
-for the current user (plus SYSTEM and Administrators) on Windows, because they
-contain remote-account password hashes.
+settings saved in the meantime. The data folder and its files are private:
+owner-only modes (`0700`/`0600`) on Unix and a protected ACL for the current user
+(plus SYSTEM and Administrators) on Windows, because they contain remote-account
+password hashes.
 
 ## In-place updates
 
