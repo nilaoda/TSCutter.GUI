@@ -174,6 +174,7 @@ public sealed class TsStreamDefinition
 {
     public required byte StreamType { get; init; }
     public byte[] Descriptors { get; init; } = [];
+    internal bool CountsAsAvPayload { get; init; }
 }
 
 public sealed class TsCheckResult
@@ -233,12 +234,15 @@ public sealed class TsCheckTimelineBucket
     public required double StartSeconds { get; init; }
     public required double DurationSeconds { get; init; }
     public required double TotalPacketCount { get; init; }
+    public double AvPayloadBytes { get; init; }
     public required int Segment { get; init; }
     public TsCheckTimelinePidSample[] Pids { get; init; } = [];
     public double EndSeconds => StartSeconds + DurationSeconds;
     public double TotalBitrate => DurationSeconds > 0
         ? TotalPacketCount * TransportPacketBits / DurationSeconds
         : 0;
+
+    public double AvPayloadBitrate => DurationSeconds > 0 ? AvPayloadBytes * 8 / DurationSeconds : 0;
 
     public double GetPidBitrate(int pid)
     {

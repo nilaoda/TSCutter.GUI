@@ -718,7 +718,9 @@
     <x:String x:Key="String.TsCheck.View.Details">Details</x:String>
     <x:String x:Key="String.TsCheck.View.Timeline">Timeline</x:String>
     <x:String x:Key="String.TsCheck.Timeline.Stream">Series:</x:String>
-    <x:String x:Key="String.TsCheck.Timeline.TotalTs">Total TS</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.TotalTs">Total TS bitrate</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.AvPayload">A/V payload bitrate</x:String>
+    <x:String x:Key="String.TsCheck.Timeline.SampleDuration">{0:0.###} s average</x:String>
     <x:String x:Key="String.TsCheck.Timeline.NoData">Waiting for a valid PCR timeline...</x:String>
     <x:String x:Key="String.TsCheck.Timeline.Hint">Hover to inspect bitrate; click a red or yellow marker to open its detail.</x:String>
     <x:String x:Key="String.TsCheck.Column.Type">Type</x:String>

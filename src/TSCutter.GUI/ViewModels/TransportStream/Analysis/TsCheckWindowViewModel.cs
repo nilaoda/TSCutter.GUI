@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
+using System.Linq;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
@@ -110,9 +111,9 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
     [NotifyPropertyChangedFor(nameof(SelectedTimelineSeriesName))]
     private TsCheckTimelineStreamView? _selectedTimelineStream;
 
-    public int SelectedTimelinePid => SelectedTimelineStream?.Pid ?? -1;
+    public int SelectedTimelinePid => SelectedTimelineStream?.Pid ?? TsCheckTimelineStreamView.AvPayloadSeries;
     public string SelectedTimelineSeriesName =>
-        SelectedTimelineStream?.DisplayText ?? _text.Strings.String_TsCheck_Timeline_TotalTs;
+        SelectedTimelineStream?.DisplayText ?? _text.Strings.String_TsCheck_Timeline_AvPayload;
 
     [ObservableProperty]
     private TsCheckEvent? _selectedTimelineEvent;
@@ -395,10 +396,15 @@ public partial class TsCheckWindowViewModel : ViewModelBase, IModalDialogViewMod
 
     private void RebuildTimelineStreams()
     {
-        var selectedPid = SelectedTimelineStream?.Pid ?? -1;
+        var selectedPid = SelectedTimelinePid;
         TimelineStreams.Clear();
+        if (_result is null || _result.Timeline.Any(static bucket => bucket.AvPayloadBytes > 0))
+        {
+            TimelineStreams.Add(new TsCheckTimelineStreamView(
+                TsCheckTimelineStreamView.AvPayloadSeries, _text.Strings.String_TsCheck_Timeline_AvPayload));
+        }
         TimelineStreams.Add(new TsCheckTimelineStreamView(
-            -1, _text.Strings.String_TsCheck_Timeline_TotalTs));
+            TsCheckTimelineStreamView.TotalTsSeries, _text.Strings.String_TsCheck_Timeline_TotalTs));
 
         if (_result is not null)
         {

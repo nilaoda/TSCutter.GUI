@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Data;
@@ -35,7 +36,7 @@ public sealed class TsCheckTimeline : Control
         AvaloniaProperty.Register<TsCheckTimeline, IReadOnlyList<TsCheckEvent>?>(nameof(Events));
 
     public static readonly StyledProperty<int> SelectedPidProperty =
-        AvaloniaProperty.Register<TsCheckTimeline, int>(nameof(SelectedPid), -1);
+        AvaloniaProperty.Register<TsCheckTimeline, int>(nameof(SelectedPid), TsCheckTimelineStreamView.AvPayloadSeries);
 
     public static readonly StyledProperty<string> SeriesNameProperty =
         AvaloniaProperty.Register<TsCheckTimeline, string>(nameof(SeriesName), string.Empty);
@@ -77,6 +78,12 @@ public sealed class TsCheckTimeline : Control
     public static readonly StyledProperty<string> TotalTextProperty =
         AvaloniaProperty.Register<TsCheckTimeline, string>(nameof(TotalText), string.Empty);
 
+    public static readonly StyledProperty<string> AvPayloadTextProperty =
+        AvaloniaProperty.Register<TsCheckTimeline, string>(nameof(AvPayloadText), string.Empty);
+
+    public static readonly StyledProperty<string> SampleDurationTextProperty =
+        AvaloniaProperty.Register<TsCheckTimeline, string>(nameof(SampleDurationText), string.Empty);
+
     public static readonly StyledProperty<string> NoDataTextProperty =
         AvaloniaProperty.Register<TsCheckTimeline, string>(nameof(NoDataText), string.Empty);
 
@@ -100,7 +107,8 @@ public sealed class TsCheckTimeline : Control
             BackgroundBrushProperty, PrimaryBrushProperty, SecondaryBrushProperty, GridBrushProperty,
             TextBrushProperty, ErrorBrushProperty, WarningBrushProperty,
             TooltipBackgroundBrushProperty, TooltipTextBrushProperty, TooltipBorderBrushProperty,
-            TotalTextProperty, NoDataTextProperty, ErrorTextProperty, WarningTextProperty);
+            TotalTextProperty, AvPayloadTextProperty, SampleDurationTextProperty,
+            NoDataTextProperty, ErrorTextProperty, WarningTextProperty);
     }
 
     public TsCheckTimeline()
@@ -209,6 +217,18 @@ public sealed class TsCheckTimeline : Control
         set => SetValue(TotalTextProperty, value);
     }
 
+    public string AvPayloadText
+    {
+        get => GetValue(AvPayloadTextProperty);
+        set => SetValue(AvPayloadTextProperty, value);
+    }
+
+    public string SampleDurationText
+    {
+        get => GetValue(SampleDurationTextProperty);
+        set => SetValue(SampleDurationTextProperty, value);
+    }
+
     public string NoDataText
     {
         get => GetValue(NoDataTextProperty);
@@ -260,8 +280,9 @@ public sealed class TsCheckTimeline : Control
         maxBitrate = NiceCeiling(maxBitrate);
 
         DrawGrid(context, gridBrush, textBrush, maxBitrate);
-        if (SelectedPid >= 0)
-            DrawSeries(context, buckets, -1, maxBitrate, SecondaryBrush ?? gridBrush, 1, 0.55);
+        if (SelectedPid != TsCheckTimelineStreamView.TotalTsSeries)
+            DrawSeries(context, buckets, TsCheckTimelineStreamView.TotalTsSeries, maxBitrate,
+                SecondaryBrush ?? gridBrush, 1, 0.55);
         DrawSeries(context, buckets, SelectedPid, maxBitrate, PrimaryBrush ?? Brushes.DodgerBlue, 2, 1);
         DrawAnomalies(context, Events, gridBrush);
         DrawPointerOverlay(context, buckets, maxBitrate, textBrush, background, gridBrush);
@@ -304,14 +325,23 @@ public sealed class TsCheckTimeline : Control
         using var opacityScope = context.PushOpacity(opacity);
         Point? previous = null;
         var previousSegment = -1;
-        foreach (var bucket in buckets)
+        for (var index = 0; index < buckets.Count; index++)
         {
-            var bitrate = pid < 0 ? bucket.TotalBitrate : bucket.GetPidBitrate(pid);
+            var bucket = buckets[index];
+            var bitrate = pid switch
+            {
+                TsCheckTimelineStreamView.AvPayloadSeries => bucket.AvPayloadBitrate,
+                TsCheckTimelineStreamView.TotalTsSeries => bucket.TotalBitrate,
+                _ => bucket.GetPidBitrate(pid)
+            };
             var x = TimeToX(bucket.StartSeconds + bucket.DurationSeconds / 2);
             var y = _plotBounds.Bottom - Math.Clamp(bitrate / maxBitrate, 0, 1) * _plotBounds.Height;
             var current = new Point(x, y);
             if (previous is { } point && previousSegment == bucket.Segment)
                 context.DrawLine(pen, point, current);
+            else if (index + 1 == buckets.Count || buckets[index + 1].Segment != bucket.Segment)
+                context.DrawLine(pen, new Point(TimeToX(bucket.StartSeconds), y),
+                    new Point(TimeToX(bucket.EndSeconds), y));
             previous = current;
             previousSegment = bucket.Segment;
         }
@@ -369,8 +399,10 @@ public sealed class TsCheckTimeline : Control
         context.DrawLine(new Pen(borderBrush, 1),
             new Point(pointer.X, _plotBounds.Top), new Point(pointer.X, _anomalyBounds.Bottom));
 
-        var totalBitrate = bucket.TotalBitrate;
-        var content = $"{FormatTime(time)}\n{TotalText}  {CommonUtil.FormatBitrate(totalBitrate)}";
+        var sampleDuration = string.Format(CultureInfo.CurrentCulture, SampleDurationText, bucket.DurationSeconds);
+        var content = $"{FormatTime(time)} · {sampleDuration}\n{TotalText}  {CommonUtil.FormatBitrate(bucket.TotalBitrate)}";
+        if (bucket.AvPayloadBytes > 0 || buckets.Any(static item => item.AvPayloadBytes > 0))
+            content += $"\n{AvPayloadText}  {CommonUtil.FormatBitrate(bucket.AvPayloadBitrate)}";
         if (SelectedPid >= 0)
             content += $"\n{SeriesName}  {CommonUtil.FormatBitrate(bucket.GetPidBitrate(SelectedPid))}";
 
