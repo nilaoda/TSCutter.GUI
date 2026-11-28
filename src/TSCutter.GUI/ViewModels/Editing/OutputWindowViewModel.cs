@@ -107,17 +107,18 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
     private static bool ResolveCheckOnExport() =>
         App.ConfigService?.CurrentConfig.TsCheckOnExport ?? true;
 
-    // 起始时间归零、去除空包：与检测开关一样在导出开始时取一次，作用于本次全部 TS 输出。
+    // 在导出开始时读取一次设置，各任务按输出格式应用。
     private TsOutputProcessing _outputProcessing;
 
-    /// <summary>设置中启用的 TS 输出处理；两项默认都关闭。</summary>
+    /// <summary>设置中启用的 TS 输出处理，默认关闭。</summary>
     internal static TsOutputProcessing ResolveOutputProcessing()
     {
         var config = App.ConfigService?.CurrentConfig;
         if (config is null)
             return TsOutputProcessing.None;
         return (config.TsZeroStartTime ? TsOutputProcessing.ZeroStartTime : TsOutputProcessing.None) |
-               (config.TsRemoveNullPackets ? TsOutputProcessing.RemoveNullPackets : TsOutputProcessing.None);
+               (config.TsRemoveNullPackets ? TsOutputProcessing.RemoveNullPackets : TsOutputProcessing.None) |
+               (config.TsRemoveStuffingPackets ? TsOutputProcessing.RemoveStuffingPackets : TsOutputProcessing.None);
     }
 
     private ExportTsCheckSession? CreateCheckSession(string outputPath, bool checkApplicable)
@@ -367,7 +368,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 SetExportClipInfo(frameAccurate.Segments.Count, _frameAccurateRangeSummary);
                 await ExportWithRebuildAsync(frameAccurate.Segments[0].SourcePath, frameAccurate.OutputPath,
                     checkApplicable ? AudioRebuild : null, checkApplicable ? ExcludedPids : null,
-                    checkApplicable ? _outputProcessing : TsOutputProcessing.None, session,
+                    checkApplicable ? OutputProcessingFor(frameAccurate.Segments[0].Settings.Container,
+                        frameAccurate.Segments[0].Settings.Disc is not null) : TsOutputProcessing.None, session,
                     (_, check) => ExportFrameAccurateAsync(frameAccurate, ++_copyGeneration, check));
                 await CompleteCheckAsync(session);
                 Percent = 100;
@@ -404,7 +406,7 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 SetExportClipInfo(media.Segments.Count, FormatRangeList(
                     media.Segments.Select(item => (item.StartSeconds, item.EndSeconds))));
                 await ExportWithRebuildAsync(media.Segments[0].SourcePath, media.OutputPath, null, null,
-                    checkApplicable ? _outputProcessing : TsOutputProcessing.None, session,
+                    checkApplicable ? OutputProcessingFor(container) : TsOutputProcessing.None, session,
                     (_, check) => ExportRemuxAsync(media, ++_copyGeneration, check));
                 await CompleteCheckAsync(session);
                 Percent = 100;
@@ -634,6 +636,8 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
                 _rebuildModifiers |= ExportModifiers.StartTimeZeroed;
             if (processing.HasFlag(TsOutputProcessing.RemoveNullPackets))
                 _rebuildModifiers |= ExportModifiers.NullPacketsRemoved;
+            if (setup.StuffingPacketsRemoved > 0)
+                _rebuildModifiers |= ExportModifiers.StuffingPacketsRemoved;
         }
         catch
         {
@@ -659,6 +663,11 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         }
     }
 
+    private TsOutputProcessing OutputProcessingFor(string? container, bool fromDisc = false) =>
+        fromDisc || container == "m2ts"
+            ? _outputProcessing & ~TsOutputProcessing.RemoveStuffingPackets
+            : _outputProcessing;
+
     private async Task CopyClipAsync(BatchTask task)
     {
         if (RecoveredProgramFor(task.DestinationPath) is { } program)
@@ -681,7 +690,10 @@ public partial class OutputWindowViewModel : ViewModelBase, IModalDialogViewMode
         var producesTs = task.RemuxSettings is null && task.FrameAccurate?.Container is null or "ts" or "m2ts";
         var rebuild = producesTs && !IsRawByteRange;
         // 光盘重封装的 M2TS 由封装器写出，只经过输出处理，不重组音轨。
-        var processing = rebuild || task.RemuxSettings?.Container == "m2ts" ? _outputProcessing : TsOutputProcessing.None;
+        var processing = rebuild || task.RemuxSettings?.Container == "m2ts"
+            ? OutputProcessingFor(task.FrameAccurate?.Container ?? task.RemuxSettings?.Container,
+                task.FrameAccurate?.Disc is not null)
+            : TsOutputProcessing.None;
         try
         {
             ValidateRecoveredProgram(task.SourcePath, task.DestinationPath);

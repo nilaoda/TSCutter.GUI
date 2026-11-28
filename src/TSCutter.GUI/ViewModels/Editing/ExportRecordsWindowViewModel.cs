@@ -66,6 +66,8 @@ public sealed class ExportRecordView
             tags.Add(strings.String_Export_Tag_StartTimeZeroed);
         if (modifiers.HasFlag(ExportModifiers.NullPacketsRemoved))
             tags.Add(strings.String_Export_Tag_NullPacketsRemoved);
+        if (modifiers.HasFlag(ExportModifiers.StuffingPacketsRemoved))
+            tags.Add(strings.String_Export_Tag_StuffingPacketsRemoved);
         return tags;
     }
 

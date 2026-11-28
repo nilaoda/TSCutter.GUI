@@ -102,6 +102,8 @@ public class AppConfig : ObservableObject
     public bool TsZeroStartTime { get; set; }
     // TS 导出删去空包（PID 0x1FFF）；默认关闭。
     public bool TsRemoveNullPackets { get; set; }
+    // 普通 TS 导出删去不承载数据或标志的纯填充包；默认关闭。
+    public bool TsRemoveStuffingPackets { get; set; }
     public bool PreferHardwareDecoding
     {
         get => IsHardwareDecodingSupported && _preferHardwareDecoding;

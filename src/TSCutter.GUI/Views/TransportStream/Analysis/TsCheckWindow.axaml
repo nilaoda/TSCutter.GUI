@@ -243,6 +243,8 @@
                                           TooltipTextBrush="{DynamicResource {x:Static commonControls:SystemColors.InfoTextColorKey}}"
                                           TooltipBorderBrush="{DynamicResource {x:Static commonControls:SystemColors.WindowFrameColorKey}}"
                                           TotalText="{DynamicResource String.TsCheck.Timeline.TotalTs}"
+                                          AvPayloadText="{DynamicResource String.TsCheck.Timeline.AvPayload}"
+                                          SampleDurationText="{DynamicResource String.TsCheck.Timeline.SampleDuration}"
                                           NoDataText="{DynamicResource String.TsCheck.Timeline.NoData}"
                                           ErrorText="{DynamicResource String.TsCheck.Severity.Error}"
                                           WarningText="{DynamicResource String.TsCheck.Severity.Warning}"

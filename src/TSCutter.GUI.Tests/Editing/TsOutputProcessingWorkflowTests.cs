@@ -29,6 +29,55 @@ public sealed class TsOutputProcessingWorkflowTests
     private const int PacketSize = 188;
     private const long Wrap = 1L << 33;
 
+    [Theory]
+    [InlineData(false, true)]
+    [InlineData(false, false)]
+    [InlineData(true, true)]
+    public async Task RecordingPureStuffingRemovalRequiresAnActualChange(bool m2ts, bool hasStuffing)
+    {
+        var directory = Directory.CreateTempSubdirectory("tscutter-stuffing-");
+        try
+        {
+            const int pid = 0x0101;
+            var ext = m2ts ? ".m2ts" : ".ts";
+            var source = Path.Combine(directory.FullName, "source" + ext);
+            var destination = Path.Combine(directory.FullName, "output" + ext);
+            var payload = Enumerable.Range(0, 12).Select(index =>
+            {
+                var packet = TsOutputPostProcessorTests.PureStuffingPacket(pid);
+                packet[3] = (byte)(0x10 | index);
+                return packet;
+            }).ToArray();
+            var bodies = hasStuffing
+                ? payload.SelectMany(packet => new[] { packet, TsOutputPostProcessorTests.PureStuffingPacket(pid) })
+                : payload;
+            var data = m2ts
+                ? bodies.SelectMany((packet, index) => new byte[] { 0, 0, 0, (byte)index }.Concat(packet)).ToArray()
+                : bodies.SelectMany(packet => packet).ToArray();
+            await File.WriteAllBytesAsync(source, data);
+
+            var configuration = new RemoveModeWorkflowTests.MemoryConfiguration();
+            configuration.CurrentConfig.TsRemoveStuffingPackets = true;
+            await RunAsync(configuration, async () =>
+            {
+                var output = new OutputWindowViewModel { SourceFilePath = source, OutputPath = destination, EndPosition = data.Length };
+                output.SetProgramTableChoice([], TsProgramTableExportChoice.Original);
+                await output.OutputCommand.ExecuteAsync(null);
+
+                Assert.Null(output.Exception);
+                var removedStuffing = hasStuffing && !m2ts;
+                Assert.Equal(removedStuffing ? payload.SelectMany(packet => packet).ToArray() : data,
+                    await File.ReadAllBytesAsync(destination));
+                Assert.Equal(removedStuffing ? (ExportKind.TsPacket, ExportModifiers.StuffingPacketsRemoved)
+                    : (ExportKind.TsCopy, ExportModifiers.None), Describe(output.Outcomes, destination));
+            });
+        }
+        finally
+        {
+            directory.Delete(recursive: true);
+        }
+    }
+
     /// <summary>
     /// 设置中开启起始时间归零与去除空包后，关键帧剪辑与智能剪辑的输出：时间戳整体前移到从 0 开始、包数与各时间戳的相对关系不变、
     /// 没有空包，导出记录不再称为字节复制并带上两个标签。两项关闭时关键帧剪辑仍与源文件逐字节相同。

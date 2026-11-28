@@ -93,12 +93,54 @@ public sealed class TsOutputPostProcessorTests
             .Where(packet => Pid(packet) == Program1Pcr).Select(ReadPcr).First());
     }
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void RemovingPureStuffingKeepsPacketsWithInformation(bool m2ts)
+    {
+        var stuffing = PureStuffingPacket(Program1Video);
+        var nonStandardPadding = PureStuffingPacket(Program1Video);
+        nonStandardPadding[^1] = 0xAA;
+        var discontinuity = PureStuffingPacket(Program1Video);
+        discontinuity[5] = 0x80;
+        var privateData = PureStuffingPacket(Program1Audio);
+        privateData[5] = 0x02;
+        privateData[6] = 1;
+        privateData[7] = 0x09;
+        var transportError = PureStuffingPacket(Program1Audio);
+        transportError[1] |= 0x80;
+        var kept = new[]
+        {
+            PcrPacket(Program1Video, Clock1),
+            PcrPacket(Program1Audio, Clock1, original: true),
+            Pes(Program1Video, Clock1 + Step, null, 1),
+            NullPacket(), discontinuity, privateData, nonStandardPadding, transportError
+        };
+        var bodies = kept.Prepend(stuffing).Append(PureStuffingPacket(Program1Audio)).ToArray();
+        var source = m2ts ? ToM2ts(bodies) : bodies.SelectMany(packet => packet).ToArray();
+        var output = Process(source, TsOutputProcessing.RemoveStuffingPackets, out var processor, m2ts ? 192 : PacketSize);
+
+        Assert.Equal(m2ts ? source : kept.SelectMany(packet => packet).ToArray(), output);
+        Assert.Equal(m2ts ? 0 : 2, processor.StuffingPacketsRemoved);
+        Assert.Equal(0, processor.NullPacketsRemoved);
+    }
+
+    internal static byte[] PureStuffingPacket(int pid)
+    {
+        var packet = Header(pid, payloadStart: false, continuity: 0, control: 0x20);
+        packet[4] = 183;
+        packet.AsSpan(6).Fill(0xFF);
+        return packet;
+    }
+
     /// <summary>任意切块写入与一次写入的结果相同，不足一包的尾部原样写出。</summary>
     [Fact]
     public void ChunkedWritesMatchSingleWrite()
     {
-        var source = BuildMultiProgramStream().Concat(new byte[] { 0x47, 1, 2 }).ToArray();
-        var options = TsOutputProcessing.ZeroStartTime | TsOutputProcessing.RemoveNullPackets;
+        var source = BuildMultiProgramStream().Concat(PureStuffingPacket(Program1Video))
+            .Concat(new byte[] { 0x47, 1, 2 }).ToArray();
+        var options = TsOutputProcessing.ZeroStartTime | TsOutputProcessing.RemoveNullPackets |
+                      TsOutputProcessing.RemoveStuffingPackets;
         var expected = Process(source, options, out _);
         var random = new Random(7);
         var chunks = new List<byte>();
@@ -112,6 +154,8 @@ public sealed class TsOutputPostProcessorTests
         }
         processor.Complete();
         Assert.Equal(expected, chunks.ToArray());
+        Assert.Equal(Steps, processor.NullPacketsRemoved);
+        Assert.Equal(1, processor.StuffingPacketsRemoved);
         Assert.Equal(new byte[] { 0x47, 1, 2 }, expected[^3..]);
     }
 

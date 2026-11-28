@@ -75,6 +75,8 @@ public sealed class TsStreamAnalyzer : IDisposable
     private double _timelineBucketDurationSeconds = InitialTimelineBucketSeconds;
     private double _timelineBucketPacketCount;
     private long _timelineIntervalPacketCount;
+    private long _timelineIntervalAvPayloadBytes;
+    private double _timelineBucketAvPayloadBytes;
     private int _timelineSegment;
     private int _timelineCompactionThreshold = MaxTimelineBuckets;
     private int _bitrateReferencePcrPid = -1;
@@ -347,6 +349,8 @@ public sealed class TsStreamAnalyzer : IDisposable
         _timelineBucketDurationSeconds = InitialTimelineBucketSeconds;
         _timelineBucketPacketCount = 0;
         _timelineIntervalPacketCount = 0;
+        _timelineIntervalAvPayloadBytes = 0;
+        _timelineBucketAvPayloadBytes = 0;
         _timelineSegment = 0;
         _timelineCompactionThreshold = MaxTimelineBuckets;
         _bitrateReferencePcrPid = -1;
@@ -450,6 +454,9 @@ public sealed class TsStreamAnalyzer : IDisposable
         {
             state.TimelineIntervalPacketCount++;
             _timelineIntervalPacketCount++;
+            // 按实际负载长度累计，适配字段和仅填充的包不会增加音视频码率。
+            if (hasPayloadFlag && state.TimelineAvProgramCount > 0 && !transportError && info.IsValid)
+                _timelineIntervalAvPayloadBytes += PacketSize - info.PayloadOffset;
         }
 
         if (transportError)
@@ -854,6 +861,7 @@ public sealed class TsStreamAnalyzer : IDisposable
 
         var pmtVersion = (byte)((section[5] >> 1) & 0x1F);
         var rebuildDefinitions = program.StreamDefinitions.Count == 0 || program.PmtVersion != pmtVersion;
+        var rebuildTimelinePids = rebuildDefinitions && HasFeature(TsStreamAnalyzeFeatures.Timeline);
         var syncTracksChanged = program.PcrPid != pcrPid;
         var catalogChanged = rebuildDefinitions || syncTracksChanged;
         HashSet<(int Pid, byte Type, TsSupplementaryStreamType? Supplementary)>? previousSyncTracks = null;
@@ -866,6 +874,15 @@ public sealed class TsStreamAnalyzer : IDisposable
                 var supplementary = _result.Pids[pid].SupplementaryStreamType;
                 if (TsStreamTypes.IsVideo(type) || TsStreamTypes.IsAudio(type, supplementary))
                     previousSyncTracks.Add((pid, type, supplementary));
+            }
+        }
+        if (rebuildTimelinePids)
+        {
+            // 节目表更新后只统计仍有音视频归属的 PID，共用 PID 按节目分别登记。
+            foreach (var (pid, definition) in program.StreamDefinitions)
+            {
+                if (definition.CountsAsAvPayload)
+                    _pidStates[pid].TimelineAvProgramCount--;
             }
         }
         program.PcrPid = pcrPid;
@@ -896,16 +913,26 @@ public sealed class TsStreamAnalyzer : IDisposable
                 syncTracksChanged |= !previousSyncTracks.Remove((elementaryPid, streamInfo.StreamType,
                     streamInfo.SupplementaryStreamType));
             program.Streams[elementaryPid] = streamInfo.StreamType;
+            var state = GetPidState(elementaryPid);
             if (rebuildDefinitions)
             {
+                var countsAsAvPayload = rebuildTimelinePids && elementaryPid != 0x1FFF &&
+                    (TsStreamTypes.IsVideo(streamInfo.StreamType) ||
+                     TsStreamTypes.IsAudio(streamInfo.StreamType, streamInfo.SupplementaryStreamType));
+                if (program.StreamDefinitions.TryGetValue(elementaryPid, out var previousDefinition) &&
+                    previousDefinition.CountsAsAvPayload)
+                    state.TimelineAvProgramCount--;
+                if (countsAsAvPayload)
+                    state.TimelineAvProgramCount++;
                 program.StreamDefinitions[elementaryPid] = new TsStreamDefinition
                 {
                     StreamType = originalStreamType,
-                    Descriptors = descriptors.ToArray()
+                    Descriptors = descriptors.ToArray(),
+                    CountsAsAvPayload = countsAsAvPayload
                 };
             }
             _streamPidPrograms[elementaryPid] = programNumber;
-            var summary = GetPidState(elementaryPid).Summary;
+            var summary = state.Summary;
             summary.StreamType = streamInfo.StreamType;
             summary.SupplementaryStreamType = streamInfo.SupplementaryStreamType;
             summary.Language = streamInfo.Language;
@@ -1701,6 +1728,7 @@ public sealed class TsStreamAnalyzer : IDisposable
 
             var ratio = overlap / intervalDuration;
             _timelineBucketPacketCount += _timelineIntervalPacketCount * ratio;
+            _timelineBucketAvPayloadBytes += _timelineIntervalAvPayloadBytes * ratio;
             foreach (var state in _pidStates.Values)
                 state.TimelineBucketPacketCount += state.TimelineIntervalPacketCount * ratio;
 
@@ -1768,11 +1796,13 @@ public sealed class TsStreamAnalyzer : IDisposable
             StartSeconds = _timelineBucketStartSeconds,
             DurationSeconds = durationSeconds,
             TotalPacketCount = _timelineBucketPacketCount,
+            AvPayloadBytes = _timelineBucketAvPayloadBytes,
             Segment = _timelineSegment,
             Pids = samples
         });
         _timelineBucketStartSeconds += durationSeconds;
         _timelineBucketPacketCount = 0;
+        _timelineBucketAvPayloadBytes = 0;
 
         if (_result.Timeline.Count >= _timelineCompactionThreshold)
             CompactTimeline();
@@ -1840,6 +1870,7 @@ public sealed class TsStreamAnalyzer : IDisposable
             StartSeconds = first.StartSeconds,
             DurationSeconds = first.DurationSeconds + second.DurationSeconds,
             TotalPacketCount = first.TotalPacketCount + second.TotalPacketCount,
+            AvPayloadBytes = first.AvPayloadBytes + second.AvPayloadBytes,
             Segment = first.Segment,
             Pids = merged
         };
@@ -1858,6 +1889,7 @@ public sealed class TsStreamAnalyzer : IDisposable
     private void ResetTimelineCounters()
     {
         _timelineBucketPacketCount = 0;
+        _timelineBucketAvPayloadBytes = 0;
         foreach (var state in _pidStates.Values)
             state.TimelineBucketPacketCount = 0;
         ResetTimelineIntervalCounters();
@@ -1866,6 +1898,7 @@ public sealed class TsStreamAnalyzer : IDisposable
     private void ResetTimelineIntervalCounters()
     {
         _timelineIntervalPacketCount = 0;
+        _timelineIntervalAvPayloadBytes = 0;
         foreach (var state in _pidStates.Values)
             state.TimelineIntervalPacketCount = 0;
     }
@@ -1996,6 +2029,7 @@ public sealed class TsStreamAnalyzer : IDisposable
         public byte[] MpegAudioProbeTail { get; } = new byte[3];
         public int MpegAudioProbeTailLength;
         public int MpegAudioProbeBytes;
+        public int TimelineAvProgramCount;
         // 时间轴仅在 PCR 到达时汇总，逐包热路径只做整数累加，不创建采样对象。
         public long TimelineIntervalPacketCount;
         public double TimelineBucketPacketCount;

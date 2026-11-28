@@ -141,6 +141,69 @@ public sealed class TsStreamAnalyzerTests
     }
 
     [Fact]
+    public async Task TimelineAvPayloadVariesWhenTransportPacketCountIsConstant()
+    {
+        const int pmtPid = 0x0100;
+        const int videoPid = 0x0101;
+        const int audioPid = 0x0102;
+        const int pcrPid = 0x0103;
+        const int dataPid = 0x0104;
+        const int nullPid = 0x1FFF;
+
+        var videoFiller = CreatePacket(videoPid, 0, adaptationControl: 2);
+        videoFiller[4] = 183;
+        videoFiller[5] = 0;
+        var firstAudio = CreatePacket(audioPid, 0, adaptationControl: 3);
+        firstAudio[4] = 99;
+        firstAudio[5] = 0;
+        var secondAudio = CreatePacket(audioPid, 1, adaptationControl: 3);
+        secondAudio[4] = 99;
+        secondAudio[5] = 0;
+
+        var result = await AnalyzeAsync([
+            CreatePsiPacket(0, 0, BuildPatSection(pmtPid)),
+            CreatePsiPacket(pmtPid, 0, BuildPmtSection(pcrPid, (TsStreamTypes.H264, videoPid),
+                (TsStreamTypes.Aac, audioPid), (TsStreamTypes.PrivateData, dataPid))),
+            CreatePacket(pcrPid, 0, pcrBase: 0),
+            CreatePacket(videoPid, 0),
+            firstAudio,
+            videoFiller,
+            CreatePacket(dataPid, 0),
+            CreatePacket(nullPid, 0),
+            CreatePacket(pcrPid, 1, pcrBase: 90_000),
+            CreatePacket(videoPid, 1),
+            CreatePacket(videoPid, 2),
+            secondAudio,
+            CreatePacket(audioPid, 2, transportError: true),
+            CreatePacket(nullPid, 0),
+            CreatePacket(pcrPid, 2, pcrBase: 180_000),
+            CreatePsiPacket(pmtPid, 1, BuildPmtSection(pcrPid, 1, [(TsStreamTypes.H264, videoPid)])),
+            CreatePacket(videoPid, 3),
+            CreatePacket(audioPid, 2),
+            CreatePacket(dataPid, 1),
+            CreatePacket(nullPid, 0),
+            CreatePacket(pcrPid, 3, pcrBase: 270_000)
+        ]);
+
+        Assert.Collection(result.Timeline,
+            bucket =>
+            {
+                Assert.Equal(6 * 188 * 8, bucket.TotalBitrate);
+                Assert.Equal((184 + 84) * 8, bucket.AvPayloadBitrate);
+            },
+            bucket =>
+            {
+                Assert.Equal(6 * 188 * 8, bucket.TotalBitrate);
+                Assert.Equal((184 * 2 + 84) * 8, bucket.AvPayloadBitrate);
+            },
+            bucket =>
+            {
+                Assert.Equal(6 * 188 * 8, bucket.TotalBitrate);
+                Assert.Equal(184 * 8, bucket.AvPayloadBitrate);
+            });
+    }
+
+    [Fact]
     public async Task PtsBeforeFirstTimelinePcrDoesNotCreateEstimatedTimeline()
     {
         const int pmtPid = 0x0100;

@@ -14,13 +14,16 @@ public enum TsOutputProcessing
     /// <summary>整体平移 PCR/OPCR/PTS/DTS，让文件的时间从 0 开始。</summary>
     ZeroStartTime = 1,
     /// <summary>删去 PID 0x1FFF 的空包。</summary>
-    RemoveNullPackets = 2
+    RemoveNullPackets = 2,
+    /// <summary>普通 TS 中整包都是填充的非空 PID 包。</summary>
+    RemoveStuffingPackets = 4
 }
 
 /// <summary>
 /// 对导出服务写出的最终 TS 字节逐包做附加处理，处理后的字节交给输出文件与导出检测。
 /// <list type="bullet">
-/// <item>去除空包：PID 0x1FFF 的包（M2TS 连同附加头）整包删去，其余包原样保留。</item>
+/// <item>去除空包：PID 0x1FFF 的包（M2TS 连同附加头）整包删去。</item>
+/// <item>去除纯填充包：普通 TS 中仅含适配字段、无标志且填充字节全为 0xFF 的非空 PID 包整包删去。</item>
 /// <item>起始时间归零：先暂存开头一段输出（PCR 走过约 3 秒或暂存 32 MB，以先到者为准），按其中出现的 PCR、PTS、DTS
 /// 求出每个时间基准的最小值作为平移量，再把整个文件的时间戳减去平移量（按 33 位取模，源中的回绕与之后输出的回绕都保持正确）。
 /// 时间基准按节目的 PCR PID 区分：各节目的 PCR 与该节目各轨道的 PTS/DTS 使用同一平移量，PCR 与视频不在同一 PID 时也一致；
@@ -76,6 +79,7 @@ internal sealed class TsOutputPostProcessor
     private readonly Action<byte[], int, int> sink;
     private readonly bool zero;
     private readonly bool removeNulls;
+    private readonly bool removeStuffing;
 
     // 待写出的字节：queue[head..tail) 对应输出中的绝对位置 queueBase + head 起。
     private byte[] queue = new byte[1 << 20];
@@ -111,12 +115,14 @@ internal sealed class TsOutputPostProcessor
         this.sink = sink;
         zero = options.HasFlag(TsOutputProcessing.ZeroStartTime);
         removeNulls = options.HasFlag(TsOutputProcessing.RemoveNullPackets);
+        removeStuffing = packetSize == Body && options.HasFlag(TsOutputProcessing.RemoveStuffingPackets);
         partial = new byte[packetSize];
         Array.Fill(groupOfPid, -1);
     }
 
     public TsOutputProcessing Options => options;
     public long NullPacketsRemoved { get; private set; }
+    public long StuffingPacketsRemoved { get; private set; }
     public long TimestampsRewritten { get; private set; }
     /// <summary>各时间基准（PCR PID；节目没有 PCR 时为 0x2000 + 节目号）的平移量，确定之前为空。</summary>
     public IReadOnlyDictionary<int, long> GroupOffsets => groupOffsets;
@@ -177,6 +183,14 @@ internal sealed class TsOutputPostProcessor
         if (removeNulls && pid == NullPid)
         {
             NullPacketsRemoved++;
+            return;
+        }
+        // 仅含适配字段的包不推进 CC。保留带错误、起始、优先级、加扰或适配标志的包。
+        if (removeStuffing && pid is >= 0x20 and < NullPid &&
+            (body[1] & 0xE0) == 0 && (body[3] & 0xF0) == 0x20 &&
+            body[4] == Body - 5 && body[5] == 0 && body[6..].IndexOfAnyExcept((byte)0xFF) < 0)
+        {
+            StuffingPacketsRemoved++;
             return;
         }
         var position = queueBase + tail;
