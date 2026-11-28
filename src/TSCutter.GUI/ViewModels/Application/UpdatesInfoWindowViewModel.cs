@@ -28,14 +28,14 @@ public partial class UpdatesInfoWindowViewModel : ViewModelBase, IModalDialogVie
     [ObservableProperty] private bool _isBusy;
     [ObservableProperty] private bool _canInstall;
 
-    /// <summary>Fills the dialog. A null argument means a manual check found nothing.</summary>
-    public void Prepare(UpdateInfo? info)
+    /// <summary>按检查结果显示更新详情、当前版本状态或检查失败。</summary>
+    public void Prepare(UpdateInfo? info, bool checkFailed)
     {
         Update = info;
         var strings = LocalizationManager.Instance;
         if (info is null)
         {
-            VersionText = strings.String_Update_UpToDate;
+            VersionText = checkFailed ? strings.String_Update_CheckFailed : strings.String_Update_UpToDate;
             NotesText = "";
             StatusText = "";
             Progress = 0;

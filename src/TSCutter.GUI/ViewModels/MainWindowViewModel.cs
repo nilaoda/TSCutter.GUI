@@ -1654,9 +1654,11 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
             CheckUpdateCommand.Execute(null);
             return;
         }
-        var target = info ?? await VersionChecker.CheckForUpdateAsync(forceRefresh: true);
+        var (target, checkFailed) = info is null
+            ? await VersionChecker.CheckForUpdateAsync(forceRefresh: true)
+            : (info, false);
         var viewModel = App.UpdatesInfoDialog;
-        viewModel.Prepare(target);
+        viewModel.Prepare(target, checkFailed);
         await _dialogService.ShowDialogAsync(this, viewModel);
     }
     

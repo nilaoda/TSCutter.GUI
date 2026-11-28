@@ -120,8 +120,8 @@
     <x:String x:Key="String.Menu.Fit">Fit</x:String>
     <x:String x:Key="String.Menu.Theme">Theme</x:String>
     <x:String x:Key="String.Menu.Help">_Help</x:String>
-    <x:String x:Key="String.Menu.CheckUpdate">_Check Update</x:String>
-    <x:String x:Key="String.Menu.CheckForUpdatesInApp">Check for updates (install)</x:String>
+    <x:String x:Key="String.Menu.CheckUpdate">_Check for Updates</x:String>
+    <x:String x:Key="String.Menu.CheckForUpdatesInApp">Check for Updates (Install)</x:String>
     <x:String x:Key="String.Menu.About">_About...</x:String>
     <x:String x:Key="String.Menu.AboutApp">About TSCutter.GUI</x:String>
     <x:String x:Key="String.ToolBar.OpenVideoTip">Open Video...</x:String>
@@ -293,6 +293,7 @@
     <x:String x:Key="String.UpdatesInfo.NewVersionAlert">Do you want to open the download page?</x:String>
     <x:String x:Key="String.Update.VersionInfo">Current: {0}, New: {1}</x:String>
     <x:String x:Key="String.Update.UpToDate">You are up to date.</x:String>
+    <x:String x:Key="String.Update.CheckFailed">Could not check for updates. Try again or open the releases page.</x:String>
     <x:String x:Key="String.Update.NoNotes">No release notes were published for this version.</x:String>
     <x:String x:Key="String.Update.OpenInBrowser">Open in browser</x:String>
     <x:String x:Key="String.Update.Skip">Skip this version</x:String>

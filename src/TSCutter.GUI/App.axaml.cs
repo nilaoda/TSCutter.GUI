@@ -193,10 +193,9 @@ public partial class App : Application
     private async Task CheckUpdatesAsync()
     {
         await Task.Delay(1000);
-        // CheckForUpdateAsync uses the release API and manifest but falls back to the
-        // original 302 /latest-tag discovery when either is unavailable.
-        var info = await VersionChecker.CheckForUpdateAsync();
-        if (info is null || !VersionChecker.IsNewerTag(info.Tag, CurrentTag)) return;
+        var (info, _) = await VersionChecker.CheckForUpdateAsync();
+        if (info is null)
+            return;
         if (ConfigService?.CurrentConfig.SkippedUpdateVersion == info.Tag) return;
         // Feature gate: without in-place support the original browser prompt is used.
         if (ConfigService?.CurrentConfig.EnableInPlaceUpdates == false)
