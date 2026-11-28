@@ -89,6 +89,16 @@
                                   Content="{DynamicResource String.Settings.AutoCheckForUpdates}" />
                         <CheckBox IsChecked="{Binding EnableInPlaceUpdates}"
                                   Content="{DynamicResource String.Settings.EnableInPlaceUpdates}" />
+                        <StackPanel Orientation="Horizontal" Spacing="10">
+                            <TextBlock VerticalAlignment="Center"
+                                       Text="{DynamicResource String.Settings.PortableMode}" />
+                            <TextBlock VerticalAlignment="Center" Text="{Binding PortableStatus}" />
+                            <Button Content="{DynamicResource String.Settings.OpenDataFolder}"
+                                    Command="{Binding OpenDataFolderCommand}" />
+                        </StackPanel>
+                        <TextBlock TextWrapping="Wrap"
+                                   IsVisible="{Binding HasPortableFallbackMessage}"
+                                   Text="{Binding PortableFallbackMessage}" />
                         <CheckBox IsChecked="{Binding ShowSystemProgress}"
                                   IsVisible="{Binding IsSystemProgressAvailable}"
                                   Content="{DynamicResource String.Settings.ShowSystemProgress}">

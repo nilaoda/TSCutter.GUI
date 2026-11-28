@@ -45,8 +45,11 @@ public sealed class UpdateService
     private const string UnixExecutable = "TSCutterGUI";
     private const string MacBundle = "TSCutter.GUI.app";
     private const string ResultFileName = "UpdateResult.txt";
-    private const string AppDataDirectoryName = "data";
     private const string StagingPrefix = ".TSCutter.GUI.update-";
+    private const char LockOwnerSeparator = '|';
+    // A portable folder on a shared drive may be locked by another machine, whose
+    // processes cannot be inspected locally. Treat a recent foreign lock as active.
+    private static readonly TimeSpan ForeignLockExpiry = TimeSpan.FromHours(2);
 
     private readonly HttpClient _http;
     private readonly string? _installRootOverride;
@@ -291,6 +294,12 @@ public sealed class UpdateService
         start.ArgumentList.Add(targetExe);
         start.ArgumentList.Add(staged.PayloadDirectory);
         start.ArgumentList.Add(staged.PackageDirectory);
+        // The helper runs from a temp copy of the exe. Pass the update-state
+        // directory resolved from LocalApplicationData, which is where the
+        // parent's lock and result file live (and the portable data folder when
+        // portable mode is active).
+        start.ArgumentList.Add(
+            AppDataPaths.GetPath(Environment.SpecialFolder.LocalApplicationData));
         foreach (var arg in relaunchArgs)
             start.ArgumentList.Add(arg);
         if (Process.Start(start) is null)
@@ -299,10 +308,14 @@ public sealed class UpdateService
 
     /// <summary>Entrypoint for the hidden --apply-update helper argument.</summary>
     public static int RunWindowsHelper(string pidArgument, string stagedExe, string targetExe,
-        string payloadDirectory, string packageDirectory, IReadOnlyList<string> relaunchArgs)
+        string payloadDirectory, string packageDirectory, IReadOnlyList<string> relaunchArgs,
+        string? dataDirectory = null)
     {
+        if (!string.IsNullOrEmpty(dataDirectory))
+            AppDataPaths.UseDataDirectory(dataDirectory);
         var backup = targetExe + ".old";
-        var noticeTarget = Path.Combine(Path.GetDirectoryName(targetExe)!, NoticeFileName);
+        var installDirectory = Path.GetDirectoryName(targetExe)!;
+        var noticeTarget = Path.Combine(installDirectory, NoticeFileName);
         var noticeBackup = noticeTarget + ".old";
         Process? relaunched = null;
         var replaced = false;
@@ -323,9 +336,8 @@ public sealed class UpdateService
                 ReplaceWithRetry(notice, noticeTarget);
                 noticeReplaced = true;
             }
-
             // Do not discard the backup until the new executable has actually started.
-            relaunched = Relaunch(targetExe, relaunchArgs, Path.GetDirectoryName(targetExe)!);
+            relaunched = Relaunch(targetExe, relaunchArgs, installDirectory);
             if (relaunched is null)
                 throw new InvalidOperationException("The updated application did not start.");
             bool healthy;
@@ -371,7 +383,7 @@ public sealed class UpdateService
                     TryRestore(noticeBackup, noticeTarget);
                 }
                 // Show the error in the restored version instead of just closing.
-                Relaunch(targetExe, relaunchArgs, Path.GetDirectoryName(targetExe)!);
+                Relaunch(targetExe, relaunchArgs, installDirectory);
             }
             TryDeleteDirectory(packageDirectory);
             ReleaseUpdateLock();
@@ -445,9 +457,18 @@ public sealed class UpdateService
             {
                 // A .app bundle is self-contained: swap it as a whole so files
                 // removed in the new release do not linger inside the bundle.
-                var portableData = Path.Combine(staged.InstallRoot, AppDataDirectoryName);
-                if (Directory.Exists(portableData))
-                    CopyDirectory(portableData, Path.Combine(sourceRoot, AppDataDirectoryName));
+                // Portable data lives beside the bundle and is untouched, so a
+                // signed bundle never has to be modified at runtime.
+                // The marker lives at the bundle root. Preserve the installation's
+                // choice: carry an existing marker forward, and remove a marker from
+                // the incoming bundle when the current install has none. A normal
+                // install without an opt-out must not become portable by update.
+                var stagedMarker = Path.Combine(sourceRoot, AppDataPaths.MarkerFileName);
+                var installMarker = Path.Combine(staged.InstallRoot, AppDataPaths.MarkerFileName);
+                if (File.Exists(installMarker))
+                    File.Copy(installMarker, stagedMarker, overwrite: true);
+                else if (File.Exists(stagedMarker))
+                    TryDelete(stagedMarker);
                 SwapDirectories(sourceRoot, staged.InstallRoot, Path.Combine(backupRoot, "install"),
                     () => FinishUnixUpdate(staged, relaunchArgs, relaunch));
             }
@@ -470,12 +491,17 @@ public sealed class UpdateService
     {
         var replaced = new List<(string Backup, string Target)>();
         var created = new List<string>();
+        // An update must preserve the install's choice: a marker in the package
+        // never turns a normal installation portable.
+        var installHasMarker = File.Exists(Path.Combine(staged.InstallRoot, AppDataPaths.MarkerFileName));
         try
         {
             foreach (var source in Directory.EnumerateFiles(sourceRoot, "*", SearchOption.AllDirectories)
                          .OrderBy(path => path, StringComparer.Ordinal))
             {
                 var relative = Path.GetRelativePath(sourceRoot, source);
+                if (relative == AppDataPaths.MarkerFileName && !installHasMarker)
+                    continue;
                 var target = Path.Combine(staged.InstallRoot, relative);
                 Directory.CreateDirectory(Path.GetDirectoryName(target)!);
                 if (File.Exists(target))
@@ -551,17 +577,6 @@ public sealed class UpdateService
                 Kill(launched);
                 throw new InvalidOperationException("The updated application exited with an error.");
             }
-        }
-    }
-
-    private static void CopyDirectory(string source, string destination)
-    {
-        Directory.CreateDirectory(destination);
-        foreach (var file in Directory.EnumerateFiles(source, "*", SearchOption.AllDirectories))
-        {
-            var target = Path.Combine(destination, Path.GetRelativePath(source, file));
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
-            File.Copy(file, target, overwrite: true);
         }
     }
 
@@ -658,8 +673,9 @@ public sealed class UpdateService
             if (File.Exists(UpdateLockFilePath))
             {
                 var owner = File.ReadAllText(UpdateLockFilePath).Trim();
-                if (AppInstanceIdentity.TryParseFileKey(owner, out var identity)
-                    && AppInstanceIdentity.IsRunning(identity))
+                if (TryParseLockOwner(owner, out var machine, out var identity)
+                    && ((!string.IsNullOrEmpty(machine) && IsForeignLockActive(UpdateLockFilePath, machine))
+                        || AppInstanceIdentity.IsRunning(identity)))
                     return;
                 TryDelete(UpdateLockFilePath);
             }
@@ -705,9 +721,14 @@ public sealed class UpdateService
                 TryDeleteDirectory(path);
     }
 
-    internal static string UpdateLockFilePath { get; set; } = Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "TSCutter.GUI", "update.lock");
+    internal static string? UpdateLockFilePathOverride { get; set; }
+
+    internal static string UpdateLockFilePath
+    {
+        get => UpdateLockFilePathOverride ?? AppDataPaths.GetPath(
+            Environment.SpecialFolder.LocalApplicationData, "update.lock");
+        set => UpdateLockFilePathOverride = value;
+    }
 
     internal static bool TryAcquireUpdateLock()
     {
@@ -716,13 +737,18 @@ public sealed class UpdateService
             if (File.Exists(UpdateLockFilePath))
             {
                 var owner = File.ReadAllText(UpdateLockFilePath).Trim();
-                if (AppInstanceIdentity.TryParseFileKey(owner, out var identity)
-                    && identity != AppInstanceIdentity.Current
-                    && AppInstanceIdentity.IsRunning(identity))
-                    return false;
+                if (TryParseLockOwner(owner, out var machine, out var identity))
+                {
+                    if (!string.IsNullOrEmpty(machine) && IsForeignLockActive(UpdateLockFilePath, machine))
+                        return false;
+                    if (identity != AppInstanceIdentity.Current && AppInstanceIdentity.IsRunning(identity))
+                        return false;
+                }
             }
             Directory.CreateDirectory(Path.GetDirectoryName(UpdateLockFilePath)!);
-            File.WriteAllText(UpdateLockFilePath, AppInstanceIdentity.Current.FileKey);
+            File.WriteAllText(UpdateLockFilePath,
+                Environment.MachineName + LockOwnerSeparator + AppInstanceIdentity.Current.FileKey);
+            AppDataPaths.RestrictFile(UpdateLockFilePath);
             return true;
         }
         catch (Exception ex)
@@ -731,6 +757,28 @@ public sealed class UpdateService
             return false;
         }
     }
+
+    /// <summary>Reads both the old bare file key and the machine-qualified lock owner.</summary>
+    private static bool TryParseLockOwner(string text, out string? machine, out AppInstanceIdentity identity)
+    {
+        machine = null;
+        identity = default;
+        var separator = text.IndexOf(LockOwnerSeparator);
+        var key = separator < 0 ? text : text[(separator + 1)..];
+        if (!AppInstanceIdentity.TryParseFileKey(key, out identity))
+            return false;
+        if (separator >= 0)
+        {
+            machine = text[..separator];
+            if (string.IsNullOrWhiteSpace(machine))
+                return false;
+        }
+        return true;
+    }
+
+    private static bool IsForeignLockActive(string path, string machine) =>
+        !string.Equals(machine, Environment.MachineName, StringComparison.OrdinalIgnoreCase)
+        && DateTime.UtcNow - File.GetLastWriteTimeUtc(path) < ForeignLockExpiry;
 
     internal static void ReleaseUpdateLock()
     {
@@ -745,9 +793,8 @@ public sealed class UpdateService
         }
     }
 
-    private static string ResultFilePath => Path.Combine(
-        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-        "TSCutter.GUI", ResultFileName);
+    private static string ResultFilePath => AppDataPaths.GetPath(
+        Environment.SpecialFolder.LocalApplicationData, ResultFileName);
 
     internal static void WriteHelperResult(bool success, string message)
     {
@@ -756,6 +803,7 @@ public sealed class UpdateService
             var path = ResultFilePath;
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             File.WriteAllText(path, success ? "ok\n" : "error\n" + message);
+            AppDataPaths.RestrictFile(path);
         }
         catch (Exception ex)
         {

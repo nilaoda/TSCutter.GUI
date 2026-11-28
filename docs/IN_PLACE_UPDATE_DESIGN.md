@@ -123,12 +123,21 @@ validates `Version = X.Y.Z`, `Stage = Beta`, `Tag = v<Version>`
 
 ### 1.5 Why in-place replacement is safe for user data
 
-Configuration lives in `%APPDATA%\TSCutter.GUI\config.json` (with
+By default configuration lives in `%APPDATA%\TSCutter.GUI\config.json` (with
 `remote-editing.json` beside it), recovery files in
-`%LOCALAPPDATA%\TSCutter.GUI\Recovery`, and saved frames under `%APPDATA%`
-(`ConfigurationService.cs:27-28`, `ProjectRecoveryStore.cs:49-53`,
-`SavedFrameStore.cs:23`). None of these are inside the application directory,
-so replacing the executable or `.app` bundle leaves user settings untouched.
+`%LOCALAPPDATA%\TSCutter.GUI\Recovery`, and saved frames under `%APPDATA%`.
+None of these are inside the application directory, so replacing the executable
+or `.app` bundle leaves user settings untouched.
+
+In portable mode (a user-created `TSCutter.GUI.portable` marker beside the
+executable), all of these move into `<install>/data` via `AppDataPaths` (beside the
+macOS bundle, not inside it). Portable mode is strictly opt-in: release ZIPs do not
+ship the marker, and updates never add it, so a normal installation stays normal.
+Windows and Linux replacements only touch package files, so `data` is untouched.
+The macOS swap replaces only the bundle, leaving the sibling `data` folder alone,
+and preserves or removes the bundle marker to match the installation's choice.
+The Windows helper receives the active data directory from its parent so its lock
+and result files stay with that installation. See [PORTABLE_MODE.md](PORTABLE_MODE.md).
 
 ---
 
@@ -361,7 +370,10 @@ browser, no quarantine attribute is added.
   created before the first rename. Both platforms relaunch with the original
   arguments and only keep the backup after the new process has stayed alive for
   two seconds or exited with code zero; an immediate failure restores the old
-  install.
+  install. In portable mode, the user-created `TSCutter.GUI.portable` marker is
+  carried into the new macOS bundle while the sibling `data` folder is left
+  untouched; if the user opted out, the marker is removed from the incoming bundle.
+  Updates never enable portability on their own.
 - **Transport hardening**: only HTTPS URLs on `github.com` / `*.githubusercontent.com`
   are accepted, and the checksum must be a 64-character hex string.
 - **Multi-instance lock**: `update.lock` under `%LOCALAPPDATA%\TSCutter.GUI` holds the

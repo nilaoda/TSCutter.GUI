@@ -24,8 +24,8 @@ public class ConfigurationService : IConfigurationService
 
     // 构造函数注入
     public ConfigurationService(ILocalizationService locService, bool persistent = true, AppConfig? initialConfig = null)
-        : this(locService, Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "TSCutter.GUI", "config.json"), persistent, initialConfig) { }
+        : this(locService, AppDataPaths.GetPath(Environment.SpecialFolder.ApplicationData, "config.json"),
+            persistent, initialConfig) { }
 
     internal ConfigurationService(ILocalizationService locService, string configPath,
         bool persistent = true, AppConfig? initialConfig = null)
@@ -54,6 +54,8 @@ public class ConfigurationService : IConfigurationService
             {
                 var json = File.ReadAllText(_configPath);
                 CurrentConfig = JsonSerializer.Deserialize(json, AppJsonContext.Default.AppConfig) ?? CurrentConfig;
+                if (AppDataPaths.IsPortable)
+                    CurrentConfig.DropMissingPaths();
             }
         }
         catch (Exception ex)
@@ -125,6 +127,7 @@ public class ConfigurationService : IConfigurationService
         {
             File.WriteAllText(temporary, json);
             File.Move(temporary, path, overwrite: true);
+            AppDataPaths.RestrictFile(path);
         }
         finally
         {

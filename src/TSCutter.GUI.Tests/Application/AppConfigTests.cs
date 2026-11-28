@@ -1,3 +1,4 @@
+using System.IO;
 using System.Text.Json;
 using Xunit;
 using TSCutter.GUI.Models.Application;
@@ -8,6 +9,36 @@ namespace TSCutter.GUI.Tests.Application;
 
 public class AppConfigTests
 {
+    [Fact]
+    public void DropMissingPaths_RemovesStaleFoldersAndRecentItems()
+    {
+        var root = Directory.CreateTempSubdirectory("tscutter-paths-");
+        try
+        {
+            var existing = Directory.CreateDirectory(Path.Combine(root.FullName, "exists")).FullName;
+            var config = new AppConfig
+            {
+                LastImportFolder = Path.Combine(root.FullName, "missing-import"),
+                LastExportFolder = existing,
+                RecentItems =
+                [
+                    new RecentItem { Path = Path.Combine(root.FullName, "gone.ts") },
+                    new RecentItem { Path = existing }
+                ]
+            };
+
+            config.DropMissingPaths();
+
+            Assert.Null(config.LastImportFolder);
+            Assert.Equal(existing, config.LastExportFolder);
+            Assert.Single(config.RecentItems);
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
     [Theory]
     [InlineData("Removed Theme", "Removed Dark Theme")]
     [InlineData("macOS", "macOS (Dark)")]

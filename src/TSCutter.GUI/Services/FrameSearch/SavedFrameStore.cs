@@ -5,6 +5,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using TSCutter.GUI.Models.FrameSearch;
+using TSCutter.GUI.Services.Application;
 using TSCutter.GUI.Utils.Application;
 
 namespace TSCutter.GUI.Services.FrameSearch;
@@ -19,9 +20,8 @@ internal sealed class SavedFrameStore
 
     private SavedFrameStore(string? path, bool inMemory)
     {
-        this.path = inMemory ? null : path ?? Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-            "TSCutter.GUI", "saved-frames.json");
+        this.path = inMemory ? null : path ?? AppDataPaths.GetPath(
+            Environment.SpecialFolder.ApplicationData, "saved-frames.json");
     }
 
     // 内存实例由宿主持有，生命周期随工作区；每次读取仍从 JSON 还原独立的数据对象。
@@ -72,6 +72,7 @@ internal sealed class SavedFrameStore
         {
             await File.WriteAllTextAsync(temporary, json, token).ConfigureAwait(false);
             File.Move(temporary, path, overwrite: true);
+            AppDataPaths.RestrictFile(path);
         }
         finally
         {

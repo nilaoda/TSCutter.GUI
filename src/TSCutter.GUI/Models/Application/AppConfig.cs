@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text.Json.Serialization;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -182,4 +183,20 @@ public class AppConfig : ObservableObject
         : Math.Clamp(seconds, MinAutoSaveIntervalSeconds, MaxAutoSaveIntervalSeconds);
 
     internal static bool NormalizeHardwareDecodingPreference(bool requested, bool supported) => requested && supported;
+
+    /// <summary>
+    /// Drops folders and recent items that do not exist on this machine. Used when
+    /// a portable install is moved to another computer, where absolute paths from
+    /// the previous machine are meaningless.
+    /// </summary>
+    internal void DropMissingPaths()
+    {
+        if (!string.IsNullOrEmpty(_lastImportFolder) && !Directory.Exists(_lastImportFolder))
+            _lastImportFolder = null;
+        if (!string.IsNullOrEmpty(_lastExportFolder) && !Directory.Exists(_lastExportFolder))
+            _lastExportFolder = null;
+        RecentItems = RecentItems
+            .Where(item => File.Exists(item.Path) || Directory.Exists(item.Path))
+            .ToList();
+    }
 }

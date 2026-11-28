@@ -253,6 +253,11 @@
     <x:String x:Key="String.Settings.CurrentDarkTheme">当前深色主题</x:String>
     <x:String x:Key="String.Settings.AutoCheckForUpdates">程序启动后自动检查更新</x:String>
     <x:String x:Key="String.Settings.EnableInPlaceUpdates">允许就地更新（下载并安装）</x:String>
+    <x:String x:Key="String.Settings.PortableMode">便携模式</x:String>
+    <x:String x:Key="String.Settings.PortableOn">已开启 - 数据保存在程序旁的 data 文件夹</x:String>
+    <x:String x:Key="String.Settings.PortableOff">已关闭 - 数据保存在用户配置目录</x:String>
+    <x:String x:Key="String.Settings.OpenDataFolder">打开数据文件夹</x:String>
+    <x:String x:Key="String.Settings.PortableFallback">便携数据文件夹不可用：{0}。改用用户配置目录。</x:String>
     <x:String x:Key="String.Settings.ShowSystemProgress">在任务栏或程序坞图标上显示进度</x:String>
     <x:String x:Key="String.Settings.ShowSystemProgressTip">在任务栏按钮（Windows）或程序坞图标（macOS）上显示导出、检测、修复等耗时操作的进度。&#10;操作失败时进度条会变红。</x:String>
     <x:String x:Key="String.Settings.ShowImageNavigator">显示图像导航小地图</x:String>
