@@ -82,6 +82,8 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
     [ObservableProperty]
     private bool _tsRemoveNullPackets;
     [ObservableProperty]
+    private bool _tsRemoveStuffingPackets;
+    [ObservableProperty]
     private bool _showExportResult;
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(SaveDialogFolderIndex))]
@@ -258,6 +260,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         TsCheckOnExport = _configService.CurrentConfig.TsCheckOnExport;
         TsZeroStartTime = _configService.CurrentConfig.TsZeroStartTime;
         TsRemoveNullPackets = _configService.CurrentConfig.TsRemoveNullPackets;
+        TsRemoveStuffingPackets = _configService.CurrentConfig.TsRemoveStuffingPackets;
         ShowExportResult = _configService.CurrentConfig.ShowExportResult;
         SaveDialogsStartInSourceFolder = _configService.CurrentConfig.SaveDialogsStartInSourceFolder;
         LoadInputPreferences(_configService.CurrentConfig.Input);
@@ -437,6 +440,7 @@ public partial class SettingsWindowViewModel : ViewModelBase, IModalDialogViewMo
         _configService.CurrentConfig.TsCheckOnExport = TsCheckOnExport;
         _configService.CurrentConfig.TsZeroStartTime = TsZeroStartTime;
         _configService.CurrentConfig.TsRemoveNullPackets = TsRemoveNullPackets;
+        _configService.CurrentConfig.TsRemoveStuffingPackets = TsRemoveStuffingPackets;
         _configService.CurrentConfig.ShowExportResult = ShowExportResult;
         _configService.CurrentConfig.SaveDialogsStartInSourceFolder = SaveDialogsStartInSourceFolder;
         _configService.CurrentConfig.Input = CurrentInputPreferences();

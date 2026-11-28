@@ -113,9 +113,9 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
         _exportCurrentProgramOnly = configService.CurrentConfig.ExportCurrentProgramOnly;
         ExportQueue.CollectionChanged += (_, e) =>
         {
-            var removesNulls = RemovesNullPackets;
+            var processing = ConfiguredTsOutputProcessing;
             foreach (var item in e.NewItems?.OfType<ExportQueueItem>() ?? [])
-                item.SizeIsUpperBound = removesNulls && item.IsTsSource;
+                item.SizeIsUpperBound = item.IsTsSource && RemovesTsPackets(processing, item.IsStandardTsSource);
             NotifyQueueChanged();
         };
         // 片段的模式和显示序号由当前工作区列表统一维护。
@@ -2277,6 +2277,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 SizeIsApproximate = saved.FrameAccurate is not null && CanEstimateFrameAccurateSize &&
                     PathsEqual(saved.Source.Path, VideoPath),
                 IsTsSource = IsTsTrackExport && PathsEqual(saved.Source.Path, VideoPath),
+                IsStandardTsSource = IsStandardTsSource && PathsEqual(saved.Source.Path, VideoPath),
                 EstimatedBytes = Math.Max(0,
                     (saved.EndPosition > 0 ? saved.EndPosition :
                         new FileInfo(saved.Source.Path).Length) - saved.StartPosition)
@@ -2385,12 +2386,14 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
     {
         var dialogViewModel = _dialogService.CreateViewModel<SettingsWindowViewModel>();
         dialogViewModel.SelectedTabIndex = tabIndex;
-        var processing = TsOutputProcessing;
+        var processing = ConfiguredTsOutputProcessing;
         await _dialogService.ShowDialogAsync(this, dialogViewModel);
-        // 起始时间归零、去除空包改变了 TS 输出：已导出的片段需要重新导出。
-        if (TsOutputProcessing != processing)
+        var changedProcessing = processing ^ ConfiguredTsOutputProcessing;
+        if (changedProcessing != TsOutputProcessing.None)
         {
-            InvalidateClipExports();
+            if (IsStandardTsSource ||
+                (changedProcessing & ~TsOutputProcessing.RemoveStuffingPackets) != TsOutputProcessing.None)
+                InvalidateClipExports();
             NotifyTsTracksChanged(selectionChanged: false);
         }
         // 设置中可能关闭了记录、清空了列表或切换了语言。
@@ -3508,6 +3511,7 @@ public partial class MainWindowViewModel : ViewModelBase, IWeakEventSubscriber<P
                 - clip.StartPosition),
             SizeIsApproximate = frameAccurate is not null && CanEstimateFrameAccurateSize,
             IsTsSource = IsTsTrackExport,
+            IsStandardTsSource = IsStandardTsSource,
         };
         ExportQueue.Add(item);
     }

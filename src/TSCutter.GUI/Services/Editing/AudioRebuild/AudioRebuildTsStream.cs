@@ -24,10 +24,11 @@ internal sealed class AudioRebuildSetup(AudioRebuildPlan? plan, string sourcePat
     public IReadOnlySet<int> ExcludedPids { get; } = new HashSet<int>(excludedPids ?? []);
     /// <summary>对最终输出字节做的附加处理（重组之后、写入文件与检测之前）。</summary>
     public TsOutputProcessing Processing { get; } = processing;
-    /// <summary>实际按 <see cref="Processing"/> 处理了输出的流个数；为 0 说明这条导出路径没有经过输出处理。</summary>
+    /// <summary>进入输出处理流程并确认包长的流个数。</summary>
     public int ProcessedStreamCount { get; internal set; }
     /// <summary>去除空包时删去的空包个数。</summary>
     public long NullPacketsRemoved { get; internal set; }
+    public long StuffingPacketsRemoved { get; internal set; }
     /// <summary>实际删去了未选轨道的包或节目表条目。</summary>
     public bool TracksRemoved { get; internal set; }
     /// <summary>导出的源文件：开头的节目表决定来源音轨所在的节目与可用的 PID。</summary>
@@ -461,14 +462,19 @@ internal sealed class AudioRebuildTsStream : FileStream
             return;
         processor.Complete();
         setup.NullPacketsRemoved += processor.NullPacketsRemoved;
+        setup.StuffingPacketsRemoved += processor.StuffingPacketsRemoved;
     }
 
     private void CreateProcessor(int packetSize)
     {
-        if (setup.Processing == TsOutputProcessing.None)
+        var processing = setup.Processing;
+        if (processing == TsOutputProcessing.None)
             return;
-        processor = new TsOutputPostProcessor(setup.Processing, packetSize, WriteOutput);
         setup.ProcessedStreamCount++;
+        if (packetSize != PacketBodySize)
+            processing &= ~TsOutputProcessing.RemoveStuffingPackets;
+        if (processing != TsOutputProcessing.None)
+            processor = new TsOutputPostProcessor(processing, packetSize, WriteOutput);
     }
 
     /// <summary>

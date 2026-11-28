@@ -44,6 +44,7 @@ public partial class MainWindowViewModel
         var video = _videoInstance;
         var settings = CurrentRemuxSettings!.Snapshot();
         var dialog = _dialogService.CreateViewModel<RemuxExportOptionsViewModel>();
+        var processing = GetTsOutputProcessingNames(standardTs: false);
         dialog.Initialize(settings, video!.ExportTracks.Select(track => new RemuxExportTrackChoice
         {
             Index = track.Index, Description = track.Description,
@@ -52,8 +53,8 @@ public partial class MainWindowViewModel
                 track.Codec is not ("hdmv_pgs_subtitle" or "dvd_subtitle"),
             IsSelected = settings.StreamIndices.Contains(track.Index),
             AudioStreamIndex = track.Type == AVMediaType.AVMEDIA_TYPE_AUDIO ? track.Index : -1
-        }), video.Disc is null && video.ClipExtension == "mkv", TsOutputProcessingNames.Count == 0 ? ""
-            : string.Format(LocalizationManager.Instance.String_RemuxExport_ProcessingNotice, string.Join(" · ", TsOutputProcessingNames)));
+        }), video.Disc is null && video.ClipExtension == "mkv", processing.Count == 0 ? ""
+            : string.Format(LocalizationManager.Instance.String_RemuxExport_ProcessingNotice, string.Join(" · ", processing)));
         dialog.EnableSilenceDetection(AnalyzeAudioTracks(video, VideoPath));
         await _dialogService.ShowDialogAsync(this, dialog);
         if (dialog.DialogResult != true || !ReferenceEquals(video, _videoInstance)) return;

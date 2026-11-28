@@ -41,7 +41,9 @@ public enum ExportModifiers
     /// <summary>删去了空包（PID 0x1FFF）。</summary>
     NullPacketsRemoved = 128,
     /// <summary>从音频帧头补齐了 AV3A 封装配置，在导出详情中记录。</summary>
-    Av3aConfigurationRecovered = 256
+    Av3aConfigurationRecovered = 256,
+    /// <summary>删去了不承载数据或标志的纯填充包。</summary>
+    StuffingPacketsRemoved = 512
 }
 
 public enum TsExportCheckState

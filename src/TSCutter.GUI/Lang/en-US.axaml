@@ -425,8 +425,10 @@
     <x:String x:Key="String.Settings.TsZeroStartTime">Start at time zero</x:String>
     <x:String x:Key="String.Settings.TsZeroStartTimeTip">Shifts all PCR, PTS and DTS values in the output&#10;so the file starts at time zero.&#10;Avoids wrong durations in some older players.&#10;Audio and video are not re-encoded and&#10;stay in sync with each other.&#10;Programs with separate clocks each start at zero.</x:String>
     <x:String x:Key="String.Settings.TsRemoveNullPackets">Remove null packets</x:String>
-    <x:String x:Key="String.Settings.TsRemoveNullPacketsTip">Drops the PID 0x1FFF stuffing packets.&#10;The file gets smaller and the bitrate&#10;becomes variable instead of constant.&#10;Devices or workflows that expect a constant&#10;bitrate may not accept it.</x:String>
-    <x:String x:Key="String.Settings.TsOutputProcessingHint">Applies to TS/M2TS files from keyframe cuts, smart cuts and Blu-ray disc exports. When on, keyframe cuts are rewritten too instead of copying the source range as is, and the export record shows which processing was applied.</x:String>
+    <x:String x:Key="String.Settings.TsRemoveNullPacketsTip">Drops packets on PID 0x1FFF.&#10;The file can get smaller and the bitrate may change.&#10;Devices or workflows that require a constant bitrate may not accept it.</x:String>
+    <x:String x:Key="String.Settings.TsRemoveStuffingPackets">Remove pure stuffing packets</x:String>
+    <x:String x:Key="String.Settings.TsRemoveStuffingPacketsTip">Drops packets containing only padding. Keeps payload, PCR, and other adaptation-field information.&#10;Applies only to 188-byte TS. The bitrate may change.</x:String>
+    <x:String x:Key="String.Settings.TsOutputProcessingHint">Start at time zero and Remove null packets apply to TS/M2TS, including Blu-ray exports. Remove pure stuffing packets applies only to 188-byte TS.</x:String>
     <x:String x:Key="String.Menu.TsCheck">TS Quick _Check</x:String>
     <x:String x:Key="String.Menu.TsTimelineRepair">TS _Timeline Repair...</x:String>
     <x:String x:Key="String.Menu.TsFilterPid">TS Filter by _PID...</x:String>
@@ -1774,6 +1776,7 @@
     <x:String x:Key="String.Export_Tag_ChannelMerge">Merged to 5.1</x:String>
     <x:String x:Key="String.Export_Tag_StartTimeZeroed">Start time zeroed</x:String>
     <x:String x:Key="String.Export_Tag_NullPacketsRemoved">Null packets removed</x:String>
+    <x:String x:Key="String.Export_Tag_StuffingPacketsRemoved">Pure stuffing packets removed</x:String>
     <x:String x:Key="String.ChannelMerge.Button">Merge 5.1…</x:String>
     <x:String x:Key="String.ChannelMerge.ButtonTip">This program has three or more stereo tracks. Some broadcast feeds carry one 5.1 mix as three stereo tracks (L/R, C/LFE, Ls/Rs).&#10;Click to merge them into one 5.1 track on export.</x:String>
     <x:String x:Key="String.ChannelMerge.SummaryReplace">Set: merge to {0}, replace the originals</x:String>
@@ -1846,8 +1849,8 @@
     <x:String x:Key="String.TsTracks.Notice">With all tracks kept, the clip is copied as is. Unchecked tracks are removed from the output and their entries are dropped from the program tables; all other packets are copied unchanged.</x:String>
     <x:String x:Key="String.TsTracks.NoticeProcessed">Unchecked tracks are removed from the output and their entries are dropped from the program tables.</x:String>
     <x:String x:Key="String.TsTracks.ProcessingNotice">Enabled in Settings: {0}. The output is rewritten accordingly instead of being copied from the source as is.</x:String>
-    <x:String x:Key="String.TsTracks.ProcessingAvailable">If needed, Start at time zero and Remove null packets can be turned on in Settings → Export.</x:String>
-    <x:String x:Key="String.TsTracks.ProcessingTip">Start at time zero: shifts all timestamps so the file&#10;starts at zero, which avoids wrong durations&#10;in some older players.&#10;Remove null packets: drops the stuffing packets,&#10;so the file gets smaller and the bitrate&#10;becomes variable.</x:String>
+    <x:String x:Key="String.TsTracks.ProcessingAvailable">If needed, enable TS output processing in Settings → Export.</x:String>
+    <x:String x:Key="String.TsTracks.ProcessingTip">Start at time zero shifts timestamps so the file starts at zero.&#10;Remove null packets drops PID 0x1FFF packets.&#10;Remove pure stuffing packets drops packets containing only adaptation-field padding in 188-byte TS.</x:String>
     <x:String x:Key="String.TsTracks.FrameAccurateHint">Smart cut only outputs the video, audio and subtitles of the previewed program.</x:String>
     <x:String x:Key="String.TsTracks.SummaryAll">All {0} tracks exported</x:String>
     <x:String x:Key="String.TsTracks.Summary">{0} of {1} tracks exported · program tables rewritten</x:String>

@@ -62,10 +62,11 @@ public partial class ExportQueueItem : ObservableObject
     /// <summary>帧精确任务按单节目 TS 的源字节范围预估大小，显示时带“~”。</summary>
     public bool SizeIsApproximate { get; init; }
 
-    /// <summary>来源是按字节剪辑的 TS：设置中去除空包时，大小只是上限。</summary>
+    /// <summary>来源是按字节剪辑的 TS 或 M2TS。</summary>
     public bool IsTsSource { get; init; }
+    internal bool IsStandardTsSource { get; init; }
 
-    /// <summary>去除空包时显示为“≤”大小上限。由主窗口按设置同步。</summary>
+    /// <summary>启用删包时显示为“≤”大小上限。由主窗口按设置同步。</summary>
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(EstimatedSizeStr))]
     private bool _sizeIsUpperBound;
