@@ -141,9 +141,17 @@ public static class AppDataPaths
             {
                 // An existing data folder may contain user-prepared settings or
                 // leftovers from an interrupted migration. Never delete or rename
-                // it: check that it is writable and fill only missing files.
-                RequireWritable(DataDirectory);
-                if (File.Exists(CompletionFilePath))
+                // it: fill only missing files, preserving everything already there.
+                var complete = File.Exists(CompletionFilePath);
+                if (!IsWritable(DataDirectory))
+                {
+                    // A completed folder stays untouched on failure: fall back to
+                    // the profile rather than changing data the user may rely on.
+                    if (complete || !TryMakeWritable(DataDirectory))
+                        throw new UnauthorizedAccessException(
+                            $"The portable data folder is not writable: {DataDirectory}");
+                }
+                if (complete)
                     return;
                 CopyProfileDataInto(DataDirectory);
                 var existingMarker = CompletionFilePath;
@@ -183,11 +191,47 @@ public static class AppDataPaths
         }
     }
 
-    private static void RequireWritable(string directory)
+    private static bool IsWritable(string directory)
     {
         var probe = Path.Combine(directory, ".tscutter-write-test-" + Guid.NewGuid().ToString("N"));
-        using (File.Create(probe, 1, FileOptions.DeleteOnClose)) { }
-        TryDelete(probe);
+        try
+        {
+            using (File.Create(probe, 1, FileOptions.DeleteOnClose)) { }
+            TryDelete(probe);
+            return true;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return false;
+        }
+    }
+
+    private static bool TryMakeWritable(string directory)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                var attributes = File.GetAttributes(directory);
+                File.SetAttributes(directory, attributes & ~FileAttributes.ReadOnly);
+            }
+            else
+            {
+                File.SetUnixFileMode(directory, File.GetUnixFileMode(directory) | UnixFileMode.UserWrite);
+            }
+            return IsWritable(directory);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException
+                                       or PlatformNotSupportedException or SystemException)
+        {
+            return false;
+        }
+    }
+
+    private static void RequireWritable(string directory)
+    {
+        if (!IsWritable(directory))
+            throw new UnauthorizedAccessException($"The portable data folder is not writable: {directory}");
     }
 
     private static void CopyProfileDataInto(string target)
