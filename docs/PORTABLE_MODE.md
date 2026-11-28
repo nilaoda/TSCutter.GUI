@@ -46,11 +46,14 @@ user profile once:
   Application Support folder).
 
 Original files are left untouched. The update lock and result files are not
-copied, so a stale lock from another install cannot block updates. Migration is
-built in a staging folder and activated only after every intended file is copied;
-a failed migration leaves the profile in use, and a retry never overwrites
-settings saved in the meantime. The folder must be writable or the app falls back
-to the user profile and shows the reason in Settings. The data folder and its
+copied, so a stale lock from another install cannot block updates. A new data
+folder is built in a staging folder and activated only after every intended file
+is copied. An existing data folder is never deleted or renamed: missing files are
+copied into it without overwriting existing ones, and unrelated files are kept.
+A failed migration leaves the profile in use, and a retry never overwrites
+settings saved in the meantime. Writability is checked on every launch, including
+for completed folders; an unwritable folder falls back to the user profile while
+keeping its contents. The data folder and its
 files are private: owner-only modes (`0700`/`0600`) on Unix and a protected ACL
 for the current user (plus SYSTEM and Administrators) on Windows, because they
 contain remote-account password hashes.
