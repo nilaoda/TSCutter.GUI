@@ -77,9 +77,13 @@ public static class AppDataPaths
 
     internal static void UseDataDirectory(string directory) => DataDirectoryOverride = directory;
 
+    /// <summary>Test seam for forcing a migration to fail before it becomes active.</summary>
+    internal static string? MigrationStagingOverride { get; set; }
+
     internal static void ResetForTests()
     {
         DataDirectoryOverride = null;
+        MigrationStagingOverride = null;
         _portableUnavailable = false;
         FallbackMessage = null;
     }
@@ -131,47 +135,67 @@ public static class AppDataPaths
 
     private static void EnsurePortableData()
     {
+        if (File.Exists(CompletionFilePath))
+            return;
+
+        // Build the whole data folder in a staging directory first. The active
+        // data folder only appears once every file and the completion marker are
+        // in place, so a failed migration never exposes partial settings and a
+        // retry can never overwrite edits made in the profile in the meantime.
+        var staging = MigrationStagingOverride
+            ?? Path.Combine(DataRoot, ".tscutter-portable-stage-" + Guid.NewGuid().ToString("N"));
         try
         {
-            Directory.CreateDirectory(DataDirectory);
-            var probe = Path.Combine(DataDirectory,
+            Directory.CreateDirectory(staging);
+            var probe = Path.Combine(staging,
                 ".tscutter-write-test-" + Guid.NewGuid().ToString("N"));
             using (File.Create(probe, 1, FileOptions.DeleteOnClose)) { }
             TryDelete(probe);
-            RestrictDirectory(DataDirectory);
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            // A read-only install folder cannot hold portable data. Fall back to
-            // the user profile so the app still starts with writable settings.
-            _portableUnavailable = true;
-            FallbackMessage = ex.Message;
-            Console.Error.WriteLine(
-                $"Portable data folder is unavailable: {ex.Message}. Using the user profile instead.");
-            return;
-        }
+            RestrictDirectory(staging);
 
-        if (File.Exists(CompletionFilePath))
-            return;
-        try
-        {
             var configRoot = Path.Combine(ProfileRoot(Environment.SpecialFolder.ApplicationData), AppDirectoryName);
-            CopyFileIfPresent(configRoot, DataDirectory, "config.json");
-            CopyFileIfPresent(configRoot, DataDirectory, "remote-editing.json");
-            CopyFileIfPresent(configRoot, DataDirectory, "saved-frames.json");
+            CopyFileIfPresent(configRoot, staging, "config.json");
+            CopyFileIfPresent(configRoot, staging, "remote-editing.json");
+            CopyFileIfPresent(configRoot, staging, "saved-frames.json");
 
             var recovery = Path.Combine(ProfileRoot(Environment.SpecialFolder.LocalApplicationData),
                 AppDirectoryName, "Recovery");
             if (Directory.Exists(recovery))
-                CopyDirectory(recovery, Path.Combine(DataDirectory, "Recovery"));
+                CopyDirectory(recovery, Path.Combine(staging, "Recovery"));
 
-            File.WriteAllText(CompletionFilePath, "");
-            RestrictFile(CompletionFilePath);
+            var marker = Path.Combine(staging, CompletionMarkerFileName);
+            File.WriteAllText(marker, "");
+            RestrictFile(marker);
+
+            // Rename the old folder instead of deleting it: a read-only folder
+            // can still be moved when its parent is writable.
+            string? previousData = null;
+            if (Directory.Exists(DataDirectory))
+            {
+                previousData = DataDirectory + ".old-" + Guid.NewGuid().ToString("N");
+                Directory.Move(DataDirectory, previousData);
+            }
+            try
+            {
+                Directory.Move(staging, DataDirectory);
+            }
+            catch
+            {
+                if (previousData is not null && !Directory.Exists(DataDirectory))
+                    Directory.Move(previousData, DataDirectory);
+                throw;
+            }
+            if (previousData is not null)
+                TryDeleteDirectory(previousData);
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // Leave the completion marker absent so the next launch retries.
-            Console.Error.WriteLine($"Portable data migration incomplete: {ex.Message}");
+            TryDeleteDirectory(staging);
+            // Keep using the profile for this session; the next launch retries.
+            _portableUnavailable = true;
+            FallbackMessage = ex.Message;
+            Console.Error.WriteLine(
+                $"Portable data migration failed: {ex.Message}. Using the user profile instead.");
         }
     }
 
@@ -324,5 +348,31 @@ public static class AppDataPaths
         {
             Console.Error.WriteLine($"Could not delete {path}: {ex.Message}");
         }
+    }
+
+    private static void TryDeleteDirectory(string path)
+    {
+        try
+        {
+            if (!Directory.Exists(path))
+                return;
+            if (!OperatingSystem.IsWindows())
+                MakeDeletable(path);
+            Directory.Delete(path, recursive: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            Console.Error.WriteLine($"Could not delete {path}: {ex.Message}");
+        }
+    }
+
+    private static void MakeDeletable(string directory)
+    {
+        File.SetUnixFileMode(directory,
+            UnixFileMode.UserRead | UnixFileMode.UserWrite | UnixFileMode.UserExecute);
+        foreach (var child in Directory.EnumerateDirectories(directory))
+            MakeDeletable(child);
+        foreach (var file in Directory.EnumerateFiles(directory))
+            File.SetUnixFileMode(file, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 }

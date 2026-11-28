@@ -146,12 +146,13 @@ public sealed class AppDataPathsTests : IDisposable
     }
 
     [Fact]
-    public void ReadOnlyDataFolderFallsBack()
+    public void ReadOnlyExistingDataFolderIsReplacedWithWritableData()
     {
         if (OperatingSystem.IsWindows())
             return;
         var dataDirectory = AppDataPaths.DataDirectory;
         Directory.CreateDirectory(dataDirectory);
+        File.WriteAllText(Path.Combine(dataDirectory, "stale.txt"), "old");
         var originalMode = File.GetUnixFileMode(dataDirectory);
         File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
         try
@@ -162,6 +163,32 @@ public sealed class AppDataPathsTests : IDisposable
 
             AppDataPaths.Initialize();
 
+            Assert.True(AppDataPaths.IsPortable);
+            Assert.Null(AppDataPaths.FallbackMessage);
+            Assert.False(File.Exists(Path.Combine(dataDirectory, "stale.txt")));
+            Assert.True((File.GetUnixFileMode(dataDirectory) & UnixFileMode.UserWrite) != 0);
+            Assert.True(File.Exists(Path.Combine(dataDirectory, ".tscutter-portable-ready")));
+        }
+        finally
+        {
+            File.SetUnixFileMode(dataDirectory, originalMode);
+        }
+    }
+
+    [Fact]
+    public void UnwritableInstallRootFallsBack()
+    {
+        if (OperatingSystem.IsWindows())
+            return;
+        var installRoot = AppDataPaths.InstallRoot;
+        var originalMode = File.GetUnixFileMode(installRoot);
+        File.WriteAllText(Path.Combine(installRoot, AppDataPaths.MarkerFileName), "");
+        try
+        {
+            File.SetUnixFileMode(installRoot, UnixFileMode.UserRead | UnixFileMode.UserExecute);
+
+            AppDataPaths.Initialize();
+
             Assert.NotNull(AppDataPaths.FallbackMessage);
             Assert.False(AppDataPaths.IsPortable);
             Assert.Equal(ProfileConfig(AppDataPaths.ApplicationDataRootOverride!, "config.json"),
@@ -169,7 +196,7 @@ public sealed class AppDataPathsTests : IDisposable
         }
         finally
         {
-            File.SetUnixFileMode(dataDirectory, originalMode);
+            File.SetUnixFileMode(installRoot, originalMode);
         }
     }
 
@@ -189,6 +216,48 @@ public sealed class AppDataPathsTests : IDisposable
         Assert.True(File.Exists(Path.Combine(AppDataPaths.DataDirectory, "remote-editing.json")));
         Assert.True(File.Exists(Path.Combine(AppDataPaths.DataDirectory, "saved-frames.json")));
         Assert.True(File.Exists(Path.Combine(AppDataPaths.DataDirectory, ".tscutter-portable-ready")));
+    }
+
+    [Fact]
+    public void FailedMigrationRetryDoesNotOverwriteEdits()
+    {
+        var configRoot = Path.Combine(AppDataPaths.ApplicationDataRootOverride!, AppDataPaths.AppDirectoryName);
+        Directory.CreateDirectory(configRoot);
+        File.WriteAllText(Path.Combine(configRoot, "config.json"), "old");
+        File.WriteAllText(Path.Combine(configRoot, "remote-editing.json"), "remote");
+        File.WriteAllText(Path.Combine(AppDataPaths.InstallRoot, AppDataPaths.MarkerFileName), "");
+
+        var staging = Path.Combine(_root.FullName, "staging");
+        var previous = AppDataPaths.MigrationStagingOverride;
+        try
+        {
+            AppDataPaths.MigrationStagingOverride = staging;
+            Directory.CreateDirectory(staging);
+            // A directory at the copy destination makes File.Copy fail mid-migration.
+            Directory.CreateDirectory(Path.Combine(staging, "config.json"));
+
+            AppDataPaths.Initialize();
+
+            Assert.NotNull(AppDataPaths.FallbackMessage);
+            Assert.False(AppDataPaths.IsPortable);
+            Assert.False(Directory.Exists(AppDataPaths.DataDirectory));
+
+            // The user keeps editing the profile while portable mode is unavailable.
+            File.WriteAllText(Path.Combine(configRoot, "config.json"), "edited");
+
+            AppDataPaths.MigrationStagingOverride = null;
+            AppDataPaths.ResetForTests();
+            AppDataPaths.Initialize();
+
+            Assert.Equal("edited", File.ReadAllText(Path.Combine(AppDataPaths.DataDirectory, "config.json")));
+            Assert.True(File.Exists(Path.Combine(AppDataPaths.DataDirectory, ".tscutter-portable-ready")));
+        }
+        finally
+        {
+            AppDataPaths.MigrationStagingOverride = previous;
+            if (Directory.Exists(staging))
+                Directory.Delete(staging, recursive: true);
+        }
     }
 
     [Fact]
@@ -234,6 +303,56 @@ public sealed class AppDataPathsTests : IDisposable
         finally
         {
             UpdateService.UpdateLockFilePathOverride = previous;
+        }
+    }
+
+    [Fact]
+    public void HelperResultUsesLocalProfileInNormalMode()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        var localRoot = Path.Combine(AppDataPaths.LocalApplicationDataRootOverride!, AppDataPaths.AppDirectoryName);
+        var roamingRoot = Path.Combine(AppDataPaths.ApplicationDataRootOverride!, AppDataPaths.AppDirectoryName);
+        var localResult = Path.Combine(localRoot, "UpdateResult.txt");
+        var roamingResult = Path.Combine(roamingRoot, "UpdateResult.txt");
+        Directory.CreateDirectory(localRoot);
+
+        var previousLockPath = UpdateService.UpdateLockFilePathOverride;
+        var helperRoot = Directory.CreateTempSubdirectory("tscutter-helper-normal-");
+        try
+        {
+            var install = Path.Combine(helperRoot.FullName, "install");
+            var payload = Path.Combine(helperRoot.FullName, "payload");
+            var package = Path.Combine(helperRoot.FullName, ".TSCutter.GUI.update-1");
+            Directory.CreateDirectory(install);
+            Directory.CreateDirectory(payload);
+            Directory.CreateDirectory(package);
+            var cmd = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.System), "cmd.exe");
+            var stagedExe = Path.Combine(payload, "TSCutterGUI.exe");
+            var targetExe = Path.Combine(install, "TSCutterGUI.exe");
+            File.Copy(cmd, stagedExe, overwrite: true);
+            File.Copy(cmd, targetExe, overwrite: true);
+            UpdateService.UpdateLockFilePathOverride = Path.Combine(localRoot, "update.lock");
+
+            UpdateService.RunWindowsHelper("999999", stagedExe, targetExe, payload, package,
+                ["/c", "exit", "0"], localRoot);
+
+            // The helper set a data override; clear it so paths resolve from the
+            // local profile again before reading back the result.
+            AppDataPaths.ResetForTests();
+
+            Assert.True(UpdateService.ReadHelperResult()?.Success);
+            Assert.True(File.Exists(localResult));
+            Assert.False(File.Exists(roamingResult));
+        }
+        finally
+        {
+            AppDataPaths.ResetForTests();
+            UpdateService.UpdateLockFilePathOverride = previousLockPath;
+            if (File.Exists(localResult))
+                File.Delete(localResult);
+            helperRoot.Delete(recursive: true);
         }
     }
 

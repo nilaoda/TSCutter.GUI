@@ -448,6 +448,38 @@ public class UpdateServiceTests
     }
 
     [Fact]
+    public void MacUpdate_RemovesIncomingMarkerOnNormalInstall()
+    {
+        var root = Directory.CreateTempSubdirectory("tscutter-mac-normal-");
+        try
+        {
+            var install = Path.Combine(root.FullName, "TSCutter.GUI.app");
+            var package = Path.Combine(root.FullName, ".TSCutter.GUI.update-1");
+            var payload = Path.Combine(package, "payload");
+            var incomingBundle = Path.Combine(payload, "TSCutter.GUI.app");
+            var sourceBundle = Path.Combine(incomingBundle, "Contents", "MacOS");
+            var targetBundle = Path.Combine(install, "Contents", "MacOS");
+            Directory.CreateDirectory(sourceBundle);
+            Directory.CreateDirectory(targetBundle);
+            File.WriteAllText(Path.Combine(sourceBundle, "TSCutterGUI"), "new exe");
+            File.WriteAllText(Path.Combine(targetBundle, "TSCutterGUI"), "old exe");
+            // A normal install has no marker and no opt-out. Even if the incoming
+            // release bundle carries a marker, it must not turn the install portable.
+            File.WriteAllText(Path.Combine(incomingBundle, AppDataPaths.MarkerFileName), "");
+
+            var staged = CreateStagedUpdate(package, payload, install, StagedUpdateLayout.MacAppBundle);
+            UpdateService.ApplyUnixUpdate(staged, [], relaunch: false);
+
+            Assert.False(File.Exists(Path.Combine(install, AppDataPaths.MarkerFileName)));
+            Assert.Equal("new exe", File.ReadAllText(Path.Combine(targetBundle, "TSCutterGUI")));
+        }
+        finally
+        {
+            root.Delete(recursive: true);
+        }
+    }
+
+    [Fact]
     public void MacUpdate_PreservesInstallMarker()
     {
         var root = Directory.CreateTempSubdirectory("tscutter-mac-marker-");

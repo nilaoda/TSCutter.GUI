@@ -47,8 +47,9 @@ user profile once:
 
 Original files are left untouched. The update lock and result files are not
 copied, so a stale lock from another install cannot block updates. Migration is
-considered complete only after all intended files are copied; a partial migration
-is retried on the next launch. The folder must be writable or the app falls back
+built in a staging folder and activated only after every intended file is copied;
+a failed migration leaves the profile in use, and a retry never overwrites
+settings saved in the meantime. The folder must be writable or the app falls back
 to the user profile and shows the reason in Settings. The data folder and its
 files are private: owner-only modes (`0700`/`0600`) on Unix and a protected ACL
 for the current user (plus SYSTEM and Administrators) on Windows, because they
@@ -60,8 +61,11 @@ In-place updates replace only files shipped in the package, so the marker and th
 `data` folder survive. The macOS update replaces only the `.app` bundle; the sibling
 `data` folder is untouched. If the marker was deleted, a marker in an incoming
 bundle or package is removed or ignored, so an update never enables portability.
-The Windows update helper receives the active data directory from the parent
-process, so its lock and result files stay with that installation.
+The Windows update helper receives the parent's update-state directory
+(`LocalApplicationData`, or the portable data folder), so its lock and result
+files stay with that installation. The helper handles its arguments before any
+portable initialization, so it never initializes storage relative to its own
+temporary executable.
 
 ## Turn it off
 
